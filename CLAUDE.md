@@ -290,6 +290,48 @@ archives-tool/
 - Versionnement des fichiers (historique des remplacements).
 - Empaquetage distribuable (PyInstaller ou équivalent).
 
+### Création à partir de zéro (hors import)
+
+La création pure — sans tableur source — est une fonction de premier
+ordre, répartie sur plusieurs versions :
+
+**V1 (minimum utilisable)** :
+
+- CLI : `archives-tool collection creer` avec options de base
+  (cote, titre, parent éventuel).
+- CLI : `archives-tool item creer` rattaché à une collection, avec
+  métadonnées minimales.
+- CLI : `archives-tool fichier rattacher` pour lier un fichier
+  existant sur disque à un item.
+- Ces commandes couvrent la création programmatique, suffisante
+  pour amorcer une collection avant que l'interface arrive.
+
+**V2 (interface, sur base existante)** :
+
+- Formulaire web de création de collection avec rattachement
+  optionnel à un parent.
+- Formulaire de création d'item avec valeurs par défaut héritées
+  de la collection (copiées, pas référencées — cf. principe
+  d'autonomie).
+- Zone d'ajout de fichiers à un item : sélection depuis une racine
+  configurée, copie/déplacement selon la convention de nommage,
+  génération des dérivés.
+
+**V2+ / V3 (confort du catalogage en flux)** :
+
+- Création en série d'items (N items suivant un pattern de cote et
+  un numéro auto-incrémenté).
+- « Feuille de scan » : vue dédiée pour cataloguer au fil du scan
+  avec raccourcis clavier, passage rapide d'un item au suivant,
+  valeurs communes pré-remplies.
+
+**Hors scope initial** :
+
+- Import direct par glisser-déposer de fichiers externes dans le
+  navigateur.
+- Édition destructive des scans (rotation persistante, recadrage,
+  découpe) — V3 ou plus tard.
+
 ### Hors scope initial (à ne pas implémenter sans discussion)
 
 - Dépôt vers Nakala.
@@ -385,23 +427,34 @@ Les profils d'import déclarent une granularité source (`item` ou
 
 ### Hiérarchie archivistique
 
-Certaines collections (fonds d'archives type Ainsa) expriment une
-hiérarchie profonde (fonds > série > sous-série > item) dans la cote
-et dans un champ « Type » à séparateurs.
+Les collections peuvent être imbriquées via `Collection.parent_id`.
+Cas d'usage : fonds d'archives avec séries et sous-séries, éditeur
+avec plusieurs revues, bibliothèque avec sous-ensembles thématiques.
 
-**Décision V1 : ne pas introduire `Collection.parent_id`.** La
-hiérarchie est exprimée via :
+Règles :
 
-- `Item.metadonnees.hierarchie` (JSON, rempli par décomposition de la
-  cote via regex déclarée dans le profil).
-- `Item.metadonnees.typologie` (JSON, rempli par décomposition du
-  champ « Type » via séparateur déclaré dans le profil).
+- Collection racine : `parent_id = NULL`.
+- La cote reste unique globalement (pas de cote relative au parent).
+- Un item peut être rattaché à une collection à n'importe quel niveau
+  de l'arbre.
+- Pas d'héritage automatique des métadonnées parent → enfant
+  (cohérent avec le principe d'autonomie).
+- Pas de limite de profondeur dans le schéma. 2–3 niveaux attendus
+  en pratique.
+- Validation anti-cycle au niveau applicatif (listener SQLAlchemy
+  `before_flush` dans `models/collection.py` — SQLite ne supporte
+  pas les CHECK récursifs).
+- Cascade de suppression complet : parent → enfants → items des
+  enfants.
 
-Les vues de consultation reconstruiront dynamiquement l'arborescence
-par regroupement sur ces champs.
-
-Revisiter cette décision si l'usage montre un besoin réel de
-collections imbriquées pour la navigation ou les droits d'accès.
+En complément, certaines collections expriment aussi une hiérarchie
+**interne** dans la cote elle-même (exemple : fonds avec cote type
+`FA-AA-00-01` encodant fonds/sous-fonds/série/numéro). Cette
+hiérarchie interne est parsée à l'import via regex du profil et
+stockée dans `Item.metadonnees.hierarchie`. Les deux mécanismes
+cohabitent sans se remplacer : `parent_id` exprime l'arborescence
+de collections, `metadonnees.hierarchie` décompose la cote d'un
+item individuel.
 
 ### Conventions de valeur nulle
 
@@ -465,6 +518,11 @@ dédiée avec URI + label, pas en dur dans le code.
       ou cloisonnement ?).
 - [ ] Format canonique des noms de fichiers après renommage (tout
       minuscule ? tirets ou underscores ?).
+- [ ] Faut-il un champ `Collection.ordre` pour ordonner les enfants
+      d'un même parent dans la navigation, ou l'ordre alphabétique
+      de la cote suffit-il ?
+- [ ] Pour la création en série d'items (V2+), où stocker le pattern
+      de génération (profil YAML, champ `Collection`, autre) ?
 - [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
       **À concevoir après le premier import réel**, pour indexer ce
       qui s'avère utile en pratique — ne pas anticiper. SQL et

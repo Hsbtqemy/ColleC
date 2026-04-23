@@ -7,7 +7,7 @@ classes sur `Base.metadata` pour Alembic et `create_all`.
 from __future__ import annotations
 
 from .base import Base, TracabiliteMixin
-from .collection import Collection
+from .collection import Collection, valider_hierarchie
 from .enums import (
     EtatCatalogage,
     EtatFichier,
@@ -28,6 +28,7 @@ __all__ = [
     "Base",
     "TracabiliteMixin",
     "Collection",
+    "valider_hierarchie",
     "Item",
     "Fichier",
     "Utilisateur",

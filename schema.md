@@ -180,6 +180,7 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `description` | TEXT | | |
 | `metadonnees` | JSON | | Champs étendus spécifiques |
 | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
+| `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |
 | `notes_internes` | TEXT | | |
 | `cree_le` | DATETIME | NOT NULL | |
 | `cree_par` | INTEGER | FK → `utilisateur.id` | |
@@ -187,7 +188,29 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `modifie_par` | INTEGER | FK → `utilisateur.id` | |
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
-**Index :** `cote_collection`, `titre`, `doi_nakala`.
+**Index :** `cote_collection`, `titre`, `doi_nakala`, `parent_id`.
+
+#### Hiérarchie de collections
+
+Les collections peuvent être imbriquées via `parent_id`
+(auto-référence sur `collection.id`). Règles :
+
+- **Racine** : `parent_id = NULL`.
+- **Cote unique globale** : la hiérarchie ne remplace pas l'unicité
+  de `cote_collection`. Une série garde sa propre cote, différente
+  de celle du fonds.
+- **Attachement libre des items** : un item peut être rattaché à
+  n'importe quel niveau de l'arbre, pas seulement aux feuilles.
+- **Pas d'héritage automatique** des métadonnées parent → enfant.
+  Chaque collection est autonome (principe d'autonomie des items
+  étendu aux collections).
+- **Anti-cycle** validé au niveau applicatif (listener SQLAlchemy
+  `before_flush`) ; SQLite ne supporte pas les CHECK récursifs.
+- **Cascade de suppression** : supprimer une collection supprime
+  ses enfants et les items des enfants (`cascade="all, delete-orphan"`
+  sur les deux relations).
+- **Pas de limite de profondeur** dans le schéma. 2–3 niveaux
+  attendus en pratique.
 
 ---
 

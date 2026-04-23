@@ -161,6 +161,66 @@ def test_doi_collection_nakala_item_partageable(session: Session) -> None:
     session.flush()  # ne doit pas lever
 
 
+def test_collection_racine_valide(session: Session) -> None:
+    col = Collection(cote_collection="RACINE", titre="Fonds", parent_id=None)
+    session.add(col)
+    session.flush()
+    assert col.parent is None
+    assert col.parent_id is None
+
+
+def test_sous_collection_valide(session: Session) -> None:
+    parent = Collection(cote_collection="FONDS-A", titre="Fonds A")
+    enfant = Collection(cote_collection="FONDS-A-1", titre="Série 1", parent=parent)
+    session.add(parent)
+    session.flush()
+    assert enfant.parent_id == parent.id
+    assert enfant in parent.enfants
+
+
+def test_cascade_suppression_parent(session: Session) -> None:
+    # Pré-condition : FK actives pour que l'ORM déclenche le cascade à la
+    # session. Sinon on ne teste pas ce qu'on croit.
+    from sqlalchemy import text
+
+    assert session.execute(text("PRAGMA foreign_keys")).scalar() == 1
+
+    parent = Collection(cote_collection="P", titre="Parent")
+    enfant = Collection(cote_collection="P-1", titre="Enfant", parent=parent)
+    item = Item(collection=enfant, cote="X1")
+    session.add(parent)
+    session.commit()
+
+    enfant_id, item_id = enfant.id, item.id
+    session.delete(parent)
+    session.commit()
+
+    assert session.get(Collection, enfant_id) is None
+    assert session.get(Item, item_id) is None
+
+
+def test_anti_cycle_auto_reference(session: Session) -> None:
+    col = Collection(cote_collection="CYC1", titre="Auto")
+    session.add(col)
+    session.flush()
+    col.parent = col
+    with pytest.raises(ValueError, match="propre parent"):
+        session.flush()
+
+
+def test_anti_cycle_profond(session: Session) -> None:
+    a = Collection(cote_collection="CYC-A", titre="A")
+    b = Collection(cote_collection="CYC-B", titre="B", parent=a)
+    c = Collection(cote_collection="CYC-C", titre="C", parent=b)
+    session.add(a)
+    session.commit()
+
+    # A > B > C ; puis on tente C -> parent de A, ce qui fermerait la boucle.
+    a.parent = c
+    with pytest.raises(ValueError, match="[Cc]ycle"):
+        session.flush()
+
+
 def test_etat_catalogage_check_constraint(session: Session) -> None:
     col = _nouvelle_collection(session)
     session.add(Item(collection_id=col.id, cote="N1", etat_catalogage="inexistant"))

@@ -87,6 +87,25 @@ def test_doi_nakala_roundtrip(session: Session) -> None:
     assert item_relu.doi_collection_nakala == "10.34847/nkl.coll_abc"
 
 
+def test_roundtrip_hierarchie_collections(session: Session) -> None:
+    fonds = Collection(cote_collection="AINSA", titre="Fonds Ainsa")
+    serie = Collection(cote_collection="AINSA-01", titre="Correspondance", parent=fonds)
+    sous_serie = Collection(
+        cote_collection="AINSA-01-A", titre="Lettres reçues", parent=serie
+    )
+    item = Item(collection=sous_serie, cote="AINSA-01-A-1923-001")
+    session.add(fonds)
+    session.commit()
+
+    item_relu = session.get(Item, item.id)
+    assert item_relu is not None
+    # Remontée complète de l'arbre depuis l'item-feuille.
+    assert item_relu.collection.cote_collection == "AINSA-01-A"
+    assert item_relu.collection.parent.cote_collection == "AINSA-01"
+    assert item_relu.collection.parent.parent.cote_collection == "AINSA"
+    assert item_relu.collection.parent.parent.parent is None
+
+
 def test_fk_rejette_collection_id_inexistant(session: Session) -> None:
     # Vérification directe que les FK sont *enforced* au niveau base,
     # pas uniquement au niveau ORM. Si les pragmas tombent, ce test

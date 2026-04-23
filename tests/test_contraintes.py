@@ -1,0 +1,132 @@
+"""Contraintes d'unicité et d'intégrité sur le modèle."""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from archives_tool.models import Collection, Fichier, Item
+
+
+def _nouvelle_collection(session: Session, cote: str = "COL-A") -> Collection:
+    col = Collection(cote_collection=cote, titre=f"Revue {cote}")
+    session.add(col)
+    session.flush()
+    return col
+
+
+def test_cote_item_unique_dans_collection(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    session.add(Item(collection_id=col.id, cote="1923-01"))
+    session.flush()
+    session.add(Item(collection_id=col.id, cote="1923-01"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_meme_cote_autorisee_dans_collections_differentes(session: Session) -> None:
+    col_a = _nouvelle_collection(session, "COL-A")
+    col_b = _nouvelle_collection(session, "COL-B")
+    session.add(Item(collection_id=col_a.id, cote="1923-01"))
+    session.add(Item(collection_id=col_b.id, cote="1923-01"))
+    session.flush()  # ne doit pas lever
+
+
+def test_cote_collection_globale_unique(session: Session) -> None:
+    _nouvelle_collection(session, "COL-X")
+    session.add(Collection(cote_collection="COL-X", titre="Doublon"))
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_ordre_fichier_unique_dans_item(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    item = Item(collection_id=col.id, cote="N1")
+    session.add(item)
+    session.flush()
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="a/1.tif",
+            nom_fichier="1.tif",
+            ordre=1,
+        )
+    )
+    session.flush()
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="a/2.tif",
+            nom_fichier="2.tif",
+            ordre=1,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_meme_ordre_autorise_sur_items_differents(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    item_a = Item(collection_id=col.id, cote="N1")
+    item_b = Item(collection_id=col.id, cote="N2")
+    session.add_all([item_a, item_b])
+    session.flush()
+    session.add(
+        Fichier(
+            item_id=item_a.id,
+            racine="scans",
+            chemin_relatif="a/1.tif",
+            nom_fichier="1.tif",
+            ordre=1,
+        )
+    )
+    session.add(
+        Fichier(
+            item_id=item_b.id,
+            racine="scans",
+            chemin_relatif="b/1.tif",
+            nom_fichier="1.tif",
+            ordre=1,
+        )
+    )
+    session.flush()
+
+
+def test_chemin_fichier_globalement_unique(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    item = Item(collection_id=col.id, cote="N1")
+    session.add(item)
+    session.flush()
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="dup/1.tif",
+            nom_fichier="1.tif",
+            ordre=1,
+        )
+    )
+    session.flush()
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="dup/1.tif",
+            nom_fichier="1.tif",
+            ordre=2,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_etat_catalogage_check_constraint(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    session.add(
+        Item(collection_id=col.id, cote="N1", etat_catalogage="inexistant")
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()

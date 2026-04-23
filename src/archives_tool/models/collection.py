@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TracabiliteMixin
@@ -29,6 +29,7 @@ class Collection(Base, TracabiliteMixin):
     date_debut: Mapped[str | None] = mapped_column(String(50))
     date_fin: Mapped[str | None] = mapped_column(String(50))
     issn: Mapped[str | None] = mapped_column(String(20))
+    doi_nakala: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     notes_internes: Mapped[str | None] = mapped_column(Text)
@@ -45,4 +46,8 @@ class Collection(Base, TracabiliteMixin):
         back_populates="collection", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("ix_collection_titre", "titre"),)
+    __table_args__ = (
+        UniqueConstraint("doi_nakala", name="uq_collection_doi_nakala"),
+        Index("ix_collection_titre", "titre"),
+        Index("ix_collection_doi_nakala", "doi_nakala"),
+    )

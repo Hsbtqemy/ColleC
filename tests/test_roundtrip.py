@@ -64,6 +64,29 @@ def test_cascade_suppression_collection(session: Session) -> None:
     assert session.get(Item, item_id) is None
 
 
+def test_doi_nakala_roundtrip(session: Session) -> None:
+    collection = Collection(
+        cote_collection="REV-DOI",
+        titre="Revue avec DOI",
+        doi_nakala="10.34847/nkl.coll_abc",
+    )
+    item = Item(
+        collection=collection,
+        cote="N1",
+        doi_nakala="10.34847/nkl.item_xyz",
+        doi_collection_nakala="10.34847/nkl.coll_abc",
+    )
+    session.add(collection)
+    session.commit()
+
+    col_relue = session.get(Collection, collection.id)
+    assert col_relue is not None
+    assert col_relue.doi_nakala == "10.34847/nkl.coll_abc"
+    (item_relu,) = col_relue.items
+    assert item_relu.doi_nakala == "10.34847/nkl.item_xyz"
+    assert item_relu.doi_collection_nakala == "10.34847/nkl.coll_abc"
+
+
 def test_fk_rejette_collection_id_inexistant(session: Session) -> None:
     # Vérification directe que les FK sont *enforced* au niveau base,
     # pas uniquement au niveau ORM. Si les pragmas tombent, ce test

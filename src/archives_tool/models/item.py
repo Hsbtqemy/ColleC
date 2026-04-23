@@ -45,6 +45,11 @@ class Item(Base, TracabiliteMixin):
     type_coar: Mapped[str | None] = mapped_column(String(200))
     langue: Mapped[str | None] = mapped_column(String(10))
 
+    # DOI Nakala : unique pour l'item lui-même ; non-unique pour le
+    # rattachement à une collection Nakala partagée par plusieurs items.
+    doi_nakala: Mapped[str | None] = mapped_column(Text)
+    doi_collection_nakala: Mapped[str | None] = mapped_column(Text)
+
     description: Mapped[str | None] = mapped_column(Text)
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
@@ -66,6 +71,7 @@ class Item(Base, TracabiliteMixin):
 
     __table_args__ = (
         UniqueConstraint("collection_id", "cote", name="uq_item_collection_cote"),
+        UniqueConstraint("doi_nakala", name="uq_item_doi_nakala"),
         CheckConstraint(
             "etat_catalogage IN "
             "('brouillon', 'a_verifier', 'verifie', 'valide', 'a_corriger')",
@@ -74,4 +80,6 @@ class Item(Base, TracabiliteMixin):
         Index("ix_item_collection_id", "collection_id"),
         Index("ix_item_annee", "annee"),
         Index("ix_item_etat", "etat_catalogage"),
+        Index("ix_item_doi_nakala", "doi_nakala"),
+        Index("ix_item_doi_collection_nakala", "doi_collection_nakala"),
     )

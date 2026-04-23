@@ -123,6 +123,50 @@ def test_chemin_fichier_globalement_unique(session: Session) -> None:
         session.flush()
 
 
+def test_doi_nakala_collection_unique(session: Session) -> None:
+    doi = "10.34847/nkl.abc123"
+    session.add(Collection(cote_collection="A", titre="A", doi_nakala=doi))
+    session.flush()
+    session.add(Collection(cote_collection="B", titre="B", doi_nakala=doi))
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_doi_nakala_collection_null_non_unique(session: Session) -> None:
+    # Les NULL ne sont pas considérés comme égaux : plusieurs collections
+    # sans DOI Nakala doivent coexister.
+    session.add(Collection(cote_collection="A", titre="A"))
+    session.add(Collection(cote_collection="B", titre="B"))
+    session.flush()
+
+
+def test_doi_nakala_item_unique(session: Session) -> None:
+    col = _nouvelle_collection(session)
+    doi = "10.34847/nkl.item001"
+    session.add(Item(collection_id=col.id, cote="N1", doi_nakala=doi))
+    session.flush()
+    session.add(Item(collection_id=col.id, cote="N2", doi_nakala=doi))
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_doi_collection_nakala_item_partageable(session: Session) -> None:
+    # Contrepartie critique : plusieurs items doivent pouvoir pointer
+    # vers la même collection Nakala. Aucune contrainte d'unicité.
+    col = _nouvelle_collection(session)
+    doi_col = "10.34847/nkl.coll001"
+    session.add(
+        Item(collection_id=col.id, cote="N1", doi_collection_nakala=doi_col)
+    )
+    session.add(
+        Item(collection_id=col.id, cote="N2", doi_collection_nakala=doi_col)
+    )
+    session.add(
+        Item(collection_id=col.id, cote="N3", doi_collection_nakala=doi_col)
+    )
+    session.flush()  # ne doit pas lever
+
+
 def test_etat_catalogage_check_constraint(session: Session) -> None:
     col = _nouvelle_collection(session)
     session.add(

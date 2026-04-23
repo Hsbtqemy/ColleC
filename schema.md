@@ -176,6 +176,7 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `date_debut` | TEXT | | Format EDTF |
 | `date_fin` | TEXT | | Format EDTF, NULL si en cours |
 | `issn` | TEXT | | |
+| `doi_nakala` | TEXT | UNIQUE | DOI d'une collection publiée sur Nakala. Unique pour détecter les doubles imports. |
 | `description` | TEXT | | |
 | `metadonnees` | JSON | | Champs étendus spécifiques |
 | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
@@ -186,7 +187,7 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `modifie_par` | INTEGER | FK → `utilisateur.id` | |
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
-**Index :** `cote_collection`, `titre`.
+**Index :** `cote_collection`, `titre`, `doi_nakala`.
 
 ---
 
@@ -206,6 +207,8 @@ L'unité principale de catalogage : un numéro, un volume, une unité.
 | `annee` | INTEGER | | Pour filtre/tri rapide |
 | `type_coar` | TEXT | | URI COAR, ex. `http://purl.org/coar/resource_type/c_2fe3` |
 | `langue` | TEXT | | ISO 639-3 |
+| `doi_nakala` | TEXT | UNIQUE | DOI Nakala de l'item. Unique : un DOI ne référence qu'un seul item local. |
+| `doi_collection_nakala` | TEXT | | DOI de la collection Nakala de rattachement. Non-unique : plusieurs items partagent la même collection Nakala. |
 | `description` | TEXT | | Résumé, sommaire |
 | `metadonnees` | JSON | | Champs étendus (auteurs multiples, sujets, relations...) |
 | `etat_catalogage` | TEXT | NOT NULL, DEFAULT `brouillon` | Enum |
@@ -218,9 +221,11 @@ L'unité principale de catalogage : un numéro, un volume, une unité.
 
 **Contraintes :**
 - UNIQUE (`collection_id`, `cote`)
+- UNIQUE (`doi_nakala`)
 - CHECK sur `etat_catalogage` (valeurs enum)
 
 **Index :** `collection_id`, `cote`, `annee`, `etat_catalogage`,
+`doi_nakala`, `doi_collection_nakala`,
 index plein texte FTS5 sur `titre` + `description` + `metadonnees`.
 
 **Note sur `metadonnees` JSON :** structure recommandée :

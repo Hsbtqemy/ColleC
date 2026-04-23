@@ -55,6 +55,24 @@ code. Si une demande les contredit, signaler avant d'exécuter.
 7. **Tests d'abord sur les zones à risque.** Importers, renamer,
    rapprochement fichiers / base : tests écrits avant implémentation.
 
+8. **Autonomie des items.** Chaque item stocke ses métadonnées de
+   manière complète et autonome. Même si certains champs (responsable
+   scientifique, éditeur, auteur de la notice) ont la même valeur pour
+   tous les items d'une collection, cette valeur est stockée sur chaque
+   item, sans factorisation ni résolution dynamique.
+
+   Justifications :
+   - Traçabilité : chaque notice est auto-suffisante, lisible et
+     exportable sans contexte.
+   - Évolution : un item peut diverger d'un défaut collection sans
+     casser la structure.
+   - Export propre : les exports Dublin Core et Nakala reflètent ce
+     qui est en base.
+
+   Conséquence sur les profils d'import : une clé
+   `valeurs_par_defaut` sera prévue pour la commodité de saisie, mais
+   elle écrit les valeurs sur chaque item individuellement.
+
 ---
 
 ## Stack technique
@@ -349,6 +367,74 @@ journal DELETE classique (plus fiable sur SMB/NFS).
 - **Config partagée (en base ou dans le dépôt)** : profils de
   collections, vocabulaires contrôlés, templates de nommage.
 
+### Double granularité item / fichier
+
+Le modèle `Item 1..n Fichier` supporte nativement deux vues qui sont
+des concepts de premier ordre dans l'outil :
+
+- **Granularité item** : unité de catalogage (un numéro, un volume,
+  une loi, un document archivistique). Vue principale pour la
+  consultation bibliothéconomique.
+- **Granularité fichier** : unité de numérisation (une page, un scan,
+  un fac-similé). Vue principale pour les opérations techniques
+  (renommage, dérivés, intégrité) et pour les exports
+  Nakala-compatibles.
+
+Les profils d'import déclarent une granularité source (`item` ou
+`fichier`). L'interface et la CLI exposeront les deux vues.
+
+### Hiérarchie archivistique
+
+Certaines collections (fonds d'archives type Ainsa) expriment une
+hiérarchie profonde (fonds > série > sous-série > item) dans la cote
+et dans un champ « Type » à séparateurs.
+
+**Décision V1 : ne pas introduire `Collection.parent_id`.** La
+hiérarchie est exprimée via :
+
+- `Item.metadonnees.hierarchie` (JSON, rempli par décomposition de la
+  cote via regex déclarée dans le profil).
+- `Item.metadonnees.typologie` (JSON, rempli par décomposition du
+  champ « Type » via séparateur déclaré dans le profil).
+
+Les vues de consultation reconstruiront dynamiquement l'arborescence
+par regroupement sur ces champs.
+
+Revisiter cette décision si l'usage montre un besoin réel de
+collections imbriquées pour la navigation ou les droits d'accès.
+
+### Conventions de valeur nulle
+
+Les tableurs sources utilisent des sentinelles variées pour
+représenter l'absence de valeur : `"none"`, `"n/a"`, `"s.d."`, chaîne
+vide, NaN pandas.
+
+Les profils d'import déclareront une liste `valeurs_nulles`
+configurable. Ces valeurs sont converties en `NULL` avant toute autre
+transformation.
+
+En revanche, les **dates archivistiques incertaines** (`"s.d."`,
+`"vers 1964"`, `"1923 ?"`) sont conservées telles quelles dans un
+champ texte (format EDTF tolérant), sans normalisation forcée qui
+perdrait l'information.
+
+### Nakala comme première classe
+
+Les DOI Nakala sont stockés dans des colonnes dédiées sur `Item` et
+`Collection`, pas dans `metadonnees` JSON. Cela permet :
+
+- Une contrainte d'unicité pour détecter les doubles imports.
+- Un index pour les requêtes rapides lors de la consultation.
+- Une assise claire pour les liens externes riches (V2+ via
+  `SourceExterne` / `RessourceExterne` / `LienExterneItem`).
+
+Colonnes :
+
+- `Collection.doi_nakala` : UNIQUE, le DOI de la collection publiée.
+- `Item.doi_nakala` : UNIQUE, le DOI de l'item publié.
+- `Item.doi_collection_nakala` : non-unique, rattachement à une
+  collection Nakala partagée par plusieurs items.
+
 ---
 
 ## Vocabulaires et standards
@@ -379,12 +465,13 @@ dédiée avec URI + label, pas en dur dans le code.
       ou cloisonnement ?).
 - [ ] Format canonique des noms de fichiers après renommage (tout
       minuscule ? tirets ou underscores ?).
-- [ ] Intégration FTS5 sur `item` (titre, description, métadonnées). SQL
-      et triggers déjà rédigés dans le modèle initial mais non portés en
-      migration. À faire dans une migration dédiée.
-      **Piège à retenir** : `render_as_batch=True` reconstruit la table
-      pour certains `ALTER` SQLite et peut perdre les triggers. Prévoir
-      `alembic/helpers.py` avec `drop_fts_triggers()` /
+- [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
+      **À concevoir après le premier import réel**, pour indexer ce
+      qui s'avère utile en pratique — ne pas anticiper. SQL et
+      triggers de référence rédigés dans l'historique du projet.
+      **Piège à retenir** : `render_as_batch=True` reconstruit la
+      table pour certains `ALTER` SQLite et peut perdre les triggers.
+      Prévoir `alembic/helpers.py` avec `drop_fts_triggers()` /
       `create_fts_triggers()` à appeler en début et fin de toute
       migration qui touche à `item`.
 

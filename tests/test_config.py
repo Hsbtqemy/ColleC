@@ -79,8 +79,6 @@ def test_yaml_non_mapping_rejete(tmp_path: Path) -> None:
 
 
 def test_config_sans_racines_ok(tmp_path: Path) -> None:
-    cfg_path = _ecrire_yaml(
-        tmp_path / "config.yaml", 'utilisateur: "Jean"\n'
-    )
+    cfg_path = _ecrire_yaml(tmp_path / "config.yaml", 'utilisateur: "Jean"\n')
     cfg = charger_config(cfg_path)
     assert cfg.racines == {}

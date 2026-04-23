@@ -155,22 +155,14 @@ def test_doi_collection_nakala_item_partageable(session: Session) -> None:
     # vers la même collection Nakala. Aucune contrainte d'unicité.
     col = _nouvelle_collection(session)
     doi_col = "10.34847/nkl.coll001"
-    session.add(
-        Item(collection_id=col.id, cote="N1", doi_collection_nakala=doi_col)
-    )
-    session.add(
-        Item(collection_id=col.id, cote="N2", doi_collection_nakala=doi_col)
-    )
-    session.add(
-        Item(collection_id=col.id, cote="N3", doi_collection_nakala=doi_col)
-    )
+    session.add(Item(collection_id=col.id, cote="N1", doi_collection_nakala=doi_col))
+    session.add(Item(collection_id=col.id, cote="N2", doi_collection_nakala=doi_col))
+    session.add(Item(collection_id=col.id, cote="N3", doi_collection_nakala=doi_col))
     session.flush()  # ne doit pas lever
 
 
 def test_etat_catalogage_check_constraint(session: Session) -> None:
     col = _nouvelle_collection(session)
-    session.add(
-        Item(collection_id=col.id, cote="N1", etat_catalogage="inexistant")
-    )
+    session.add(Item(collection_id=col.id, cote="N1", etat_catalogage="inexistant"))
     with pytest.raises(IntegrityError):
         session.flush()

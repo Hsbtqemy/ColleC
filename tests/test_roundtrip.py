@@ -25,7 +25,7 @@ def test_creation_et_navigation_relations(session: Session) -> None:
         annee=1923,
         etat_catalogage=EtatCatalogage.BROUILLON.value,
     )
-    fichier = Fichier(
+    Fichier(
         item=item,
         racine="scans",
         chemin_relatif="rev1/1923/01/0001.tif",
@@ -70,7 +70,7 @@ def test_doi_nakala_roundtrip(session: Session) -> None:
         titre="Revue avec DOI",
         doi_nakala="10.34847/nkl.coll_abc",
     )
-    item = Item(
+    Item(
         collection=collection,
         cote="N1",
         doi_nakala="10.34847/nkl.item_xyz",

@@ -34,9 +34,7 @@ class Collection(Base, TracabiliteMixin):
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     notes_internes: Mapped[str | None] = mapped_column(Text)
 
-    profil_import_id: Mapped[int | None] = mapped_column(
-        ForeignKey("profil_import.id")
-    )
+    profil_import_id: Mapped[int | None] = mapped_column(ForeignKey("profil_import.id"))
 
     items: Mapped[list[Item]] = relationship(
         back_populates="collection", cascade="all, delete-orphan"

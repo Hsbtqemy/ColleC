@@ -14,7 +14,6 @@ from alembic.config import Config
 from sqlalchemy import Engine, inspect
 
 from archives_tool.db import creer_engine
-from archives_tool.models import Base
 
 RACINE = Path(__file__).resolve().parent.parent
 

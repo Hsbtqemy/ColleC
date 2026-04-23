@@ -62,9 +62,7 @@ class Fichier(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     item: Mapped[Item] = relationship(back_populates="fichiers")
-    operations: Mapped[list[OperationFichier]] = relationship(
-        back_populates="fichier"
-    )
+    operations: Mapped[list[OperationFichier]] = relationship(back_populates="fichier")
 
     __table_args__ = (
         UniqueConstraint("racine", "chemin_relatif", name="uq_fichier_chemin"),

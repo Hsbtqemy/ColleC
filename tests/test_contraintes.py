@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -181,8 +182,6 @@ def test_sous_collection_valide(session: Session) -> None:
 def test_cascade_suppression_parent(session: Session) -> None:
     # Pré-condition : FK actives pour que l'ORM déclenche le cascade à la
     # session. Sinon on ne teste pas ce qu'on croit.
-    from sqlalchemy import text
-
     assert session.execute(text("PRAGMA foreign_keys")).scalar() == 1
 
     parent = Collection(cote_collection="P", titre="Parent")
@@ -204,6 +203,18 @@ def test_anti_cycle_auto_reference(session: Session) -> None:
     session.add(col)
     session.flush()
     col.parent = col
+    with pytest.raises(ValueError, match="propre parent"):
+        session.flush()
+
+
+def test_anti_cycle_via_parent_id_direct(session: Session) -> None:
+    # Verrouille le chemin d'assignation probable de la CLI : affecter
+    # directement parent_id sans toucher à la relation. Le validator
+    # doit quand même détecter la boucle via lazy-load de parent.
+    col = Collection(cote_collection="CYCID", titre="Auto id")
+    session.add(col)
+    session.flush()
+    col.parent_id = col.id
     with pytest.raises(ValueError, match="propre parent"):
         session.flush()
 

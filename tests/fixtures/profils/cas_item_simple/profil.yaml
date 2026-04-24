@@ -41,7 +41,7 @@ mapping:
 
 fichiers:
   racine: "scans_revues"
-  motif_chemin: "{numero:02d}.png"
+  motif_chemin: "{numero:0>2}.png"
   type_motif: "template"
   extensions: [".png", ".jpg", ".tif"]
 

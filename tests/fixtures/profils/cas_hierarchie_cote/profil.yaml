@@ -30,7 +30,11 @@ mapping:
 
 fichiers:
   racine: "scans_archives"
-  motif_chemin: "^(?P<serie>SERIE-\\d+)/(?P<cote>FA-[A-Z]+-\\d+-\\d+)\\.png$"
+  # Le groupe « dossier_serie » est auxiliaire, pas rattaché à un
+  # champ d'item — il n'entre pas dans la vérification de cohérence.
+  # (Contraste avec « serie » qui, lui, est rempli par
+  # decomposition_cote et représente la partie \d+ de la cote.)
+  motif_chemin: "^(?P<dossier_serie>SERIE-\\d+)/(?P<cote>FA-[A-Z]+-\\d+-\\d+)\\.png$"
   type_motif: "regex"
   recursif: true
   extensions: [".png"]

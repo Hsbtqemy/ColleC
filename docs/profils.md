@@ -135,6 +135,19 @@ Utile quand une colonne contient une liste encodée avec séparateur,
 ou qu'on veut normaliser (slug, majuscules...). Équivalent interne à
 `MappingTransforme`.
 
+Transformations acceptées sur `transformation` (forme 2 et forme 3) :
+
+| Valeur | Sémantique |
+|---|---|
+| `slug` | `lower` + non-alphanumériques remplacés par tirets + collapse. |
+| `upper` | `str.upper()`. |
+| `lower` | `str.lower()`. |
+| `strip` | Suppression des espaces en bordure. |
+| `strip_accents` | NFD + filtrage des diacritiques combinants + NFC. |
+
+Toute autre valeur lève une `ProfilInvalide` à la validation, avec
+la liste des valeurs acceptées dans le message.
+
 **Forme 3 — agrégation multi-colonnes**
 
 ```yaml

@@ -144,6 +144,19 @@ def test_granularite_fichier_sans_cote() -> None:
     assert "cote" in str(exc.value).lower()
 
 
+def test_transformation_valeur_invalide() -> None:
+    # transformation est un Literal["slug", "upper", "lower", "strip",
+    # "strip_accents"] — toute autre valeur doit être rejetée avec
+    # énumération des possibles dans le message Pydantic.
+    with pytest.raises(ProfilInvalide) as exc:
+        charger_profil(INVALIDES / "transformation_inconnue.yaml")
+    message = str(exc.value)
+    assert "transformation" in message
+    # Pydantic remonte la liste des valeurs acceptées dans l'erreur.
+    assert "upper" in message
+    assert "slug" in message
+
+
 def test_motif_fichiers_regex_invalide() -> None:
     # Contrepartie de test_regex_cassee (sur decomposition_cote.regex) :
     # le validator de ResolutionFichiers doit également rejeter un

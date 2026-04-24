@@ -17,6 +17,17 @@ from __future__ import annotations
 import re
 from typing import Any, Literal, Union
 
+TypeTransformation = Literal["slug", "upper", "lower", "strip", "strip_accents"]
+"""Transformations applicables à une valeur mappée.
+
+- `slug` : lower + non-alphanum remplacés par tirets + collapse.
+- `upper` / `lower` : changement de casse.
+- `strip` : suppression des espaces en bordure.
+- `strip_accents` : suppression des diacritiques (NFD + filtrage + NFC).
+
+Le câblage effectif est dans `archives_tool.importers.transformateur`.
+"""
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -74,7 +85,7 @@ class MappingTransforme(_ProfilBase):
 
     source: str
     separateur: str | list[str] | None = None
-    transformation: str | None = None
+    transformation: TypeTransformation | None = None
 
 
 class MappingAgrege(_ProfilBase):
@@ -82,7 +93,7 @@ class MappingAgrege(_ProfilBase):
 
     sources: list[str] = Field(min_length=1)
     separateur_sortie: str = " | "
-    transformation: str | None = None
+    transformation: TypeTransformation | None = None
 
 
 MappingChamp = Union[MappingSimple, MappingTransforme, MappingAgrege]

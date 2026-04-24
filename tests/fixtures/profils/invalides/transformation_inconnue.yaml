@@ -1,0 +1,11 @@
+version_profil: 1
+collection:
+  cote: "X"
+  titre: "Transformation inconnue"
+tableur:
+  chemin: "x.csv"
+mapping:
+  cote: "Cote"
+  metadonnees.titre_norm:
+    source: "Titre"
+    transformation: "uppeer"  # typo volontaire : attendu "upper"

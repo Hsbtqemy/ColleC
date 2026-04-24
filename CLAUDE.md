@@ -22,6 +22,33 @@ même item, consultation possible à plusieurs.
 
 ---
 
+## Positionnement de l'outil
+
+Cet outil est un **espace de travail** pour des chantiers de
+constitution et d'enrichissement de collections numériques. Il n'est
+pas un catalogue bibliothéconomique figé qui attendrait des données
+déjà propres.
+
+Conséquences structurantes :
+
+- La création, la restructuration et le nettoyage sont des
+  opérations de premier ordre, pas des cas marginaux.
+- Les structures de métadonnées (champs personnalisés, vocabulaires)
+  évoluent en cours de route. Ajouter, renommer, scinder, fusionner
+  un champ doit être possible nativement depuis l'interface.
+- Plusieurs personnes peuvent se passer le relais sur la vie longue
+  d'une collection. L'outil doit capitaliser la connaissance tacite
+  (descriptions internes sur les entités, traçabilité des
+  opérations, journal auto-généré consultable).
+- L'export vers des formats canoniques (Dublin Core, COAR, Nakala)
+  est un aboutissement vérifiable : il permet de sortir le travail
+  pour relecture externe, archivage, publication.
+- L'import depuis des tableurs existants est un point d'entrée
+  utile (amorçage, rapatriement de travail fait ailleurs), mais pas
+  la voie royale.
+
+---
+
 ## Principes directeurs
 
 Ces principes doivent guider toutes les décisions de conception et de
@@ -72,6 +99,11 @@ code. Si une demande les contredit, signaler avant d'exécuter.
    Conséquence sur les profils d'import : une clé
    `valeurs_par_defaut` sera prévue pour la commodité de saisie, mais
    elle écrit les valeurs sur chaque item individuellement.
+
+9. **La structure s'adapte au chantier.** Les champs personnalisés
+   et les vocabulaires contrôlés ne sont pas figés dans le code. Ils
+   se créent, se renomment, se déprécient au fil du travail, via
+   l'interface et via des opérations tracées.
 
 ---
 
@@ -259,86 +291,74 @@ archives-tool/
 
 ## Plan de développement (phasage)
 
-### V1 — Socle utilisable (objectif : 2-4 semaines)
+### V1 — Socle utilisable pour un premier chantier
 
-- Modèle de données SQLAlchemy + Alembic.
-- CLI minimale (init, import, list, export).
-- Importers avec profils YAML : lire un Excel existant + scanner une
-  arborescence, peupler la base.
-- Résolution chemins via racines configurables par utilisateur.
-- Génération de dérivés (vignettes + aperçu moyen).
-- Interface web FastAPI + HTMX : vue collection, vue item, visionneuse
-  OpenSeadragon, formulaire de consultation/édition basique.
-- Renommage transactionnel avec aperçu et journal (batch_id, undo
-  dernier batch).
-- Exports CSV/Excel de base.
-- Contrôles de cohérence minimaux (fichiers orphelins, liens cassés).
+**Modèle de données, migrations, CLI minimale** :
 
-### V2 — Nakala et enrichissement
+- Création de collection, sous-collection, item, rattachement de
+  fichier depuis la CLI.
+- Import depuis profil YAML (voir session dédiée).
+- Renommage transactionnel avec aperçu et journal.
+- Résolution des chemins via racines configurables.
+- Génération de dérivés (vignettes, aperçu moyen).
 
-- Connecteur Nakala (API REST) avec cache local.
-- Support IIIF pour visionneuse (local et externe).
-- Exploration et consultation de collections Nakala.
-- Liens optionnels entre items locaux et ressources externes.
-- Exports enrichis (Dublin Core XML, JSON-LD).
+**Interface web (FastAPI + HTMX + Tailwind)** :
 
-### V3 — Confort et robustesse
+- Tableau de bord simple (inventaire, alertes).
+- Vue collection avec onglets Sous-collections / Items / Fichiers.
+- Vue item trois zones (fichiers, visionneuse, métadonnées) avec
+  édition.
+- Édition structurelle des champs personnalisés d'une collection
+  (créer, renommer, déprécier) depuis l'UI.
+- Édition des vocabulaires contrôlés depuis l'UI.
+- Visionneuse OpenSeadragon.
+- Rattachement de fichiers à un item depuis l'UI (ajout depuis
+  disque, copie ou déplacement selon la convention).
 
-- Édition en masse avec aperçu.
-- Rapports de qualité avancés.
-- Scission / fusion de scans multi-pages.
-- Versionnement des fichiers (historique des remplacements).
+**Exports canoniques** :
+
+- Export Excel / CSV d'une collection (granularité item ou fichier).
+- Export Dublin Core XML.
+- Export JSON-LD avec contextes COAR et Nakala.
+- Rapport de préparation avant export (champs manquants, valeurs
+  non mappées vers URI canoniques).
+
+**Contrôles de cohérence de base** :
+
+- Fichiers référencés sans fichier sur disque.
+- Fichiers sur disque sans référence en base.
+- Items sans fichier.
+- Doublons potentiels (même hash).
+
+### V2 — Confort du chantier vivant
+
+- Refactoring de métadonnées en masse (scinder un champ en deux,
+  normaliser des valeurs, remplacer en lot avec aperçu).
+- Vue tableau éditable type tableur pour saisie rapide (composant
+  à choisir : AG Grid, Handsontable, ou équivalent).
+- Journal de bord auto-généré par collection, consultable, avec
+  possibilité d'annoter les entrées.
+- Création en série d'items (pattern + incrément).
+- « Feuille de scan » : flux rapide avec raccourcis clavier.
+- Consultation Nakala (API REST + IIIF) pour vérification croisée
+  et import de notices.
+
+### V3 — Finition et interop
+
+- Versionnement des fichiers (remplacement avec historique).
+- Opérations sur scans (rotation persistante, recadrage, scission
+  d'un scan multi-pages, fusion).
+- Dépôt vers Nakala depuis l'outil.
+- OCR intégré.
 - Empaquetage distribuable (PyInstaller ou équivalent).
 
-### Création à partir de zéro (hors import)
+### Hors scope prévisible
 
-La création pure — sans tableur source — est une fonction de premier
-ordre, répartie sur plusieurs versions :
-
-**V1 (minimum utilisable)** :
-
-- CLI : `archives-tool collection creer` avec options de base
-  (cote, titre, parent éventuel).
-- CLI : `archives-tool item creer` rattaché à une collection, avec
-  métadonnées minimales.
-- CLI : `archives-tool fichier rattacher` pour lier un fichier
-  existant sur disque à un item.
-- Ces commandes couvrent la création programmatique, suffisante
-  pour amorcer une collection avant que l'interface arrive.
-
-**V2 (interface, sur base existante)** :
-
-- Formulaire web de création de collection avec rattachement
-  optionnel à un parent.
-- Formulaire de création d'item avec valeurs par défaut héritées
-  de la collection (copiées, pas référencées — cf. principe
-  d'autonomie).
-- Zone d'ajout de fichiers à un item : sélection depuis une racine
-  configurée, copie/déplacement selon la convention de nommage,
-  génération des dérivés.
-
-**V2+ / V3 (confort du catalogage en flux)** :
-
-- Création en série d'items (N items suivant un pattern de cote et
-  un numéro auto-incrémenté).
-- « Feuille de scan » : vue dédiée pour cataloguer au fil du scan
-  avec raccourcis clavier, passage rapide d'un item au suivant,
-  valeurs communes pré-remplies.
-
-**Hors scope initial** :
-
+- Multi-utilisateurs simultanés avec résolution de conflits.
+- Authentification, rôles, droits.
+- Déploiement cloud.
 - Import direct par glisser-déposer de fichiers externes dans le
   navigateur.
-- Édition destructive des scans (rotation persistante, recadrage,
-  découpe) — V3 ou plus tard.
-
-### Hors scope initial (à ne pas implémenter sans discussion)
-
-- Dépôt vers Nakala.
-- OCR intégré (possible en V3+ mais non prioritaire).
-- Multi-utilisateurs simultanés en édition avec résolution de conflits.
-- Authentification forte, gestion de droits.
-- Déploiement cloud.
 
 ---
 
@@ -488,6 +508,31 @@ Colonnes :
 - `Item.doi_collection_nakala` : non-unique, rattachement à une
   collection Nakala partagée par plusieurs items.
 
+### Identité simplifiée
+
+L'outil ne gère pas d'utilisateurs structurés. Chaque poste est
+configuré avec un nom libre dans la config locale
+(`utilisateur: "Marie"`). Ce nom est copié comme chaîne de caractères
+dans les champs d'audit (`cree_par`, `modifie_par`, `ajoute_par`,
+`execute_par`). Aucune contrainte d'unicité, aucune FK.
+
+Si une personne change de nom, ou si deux personnes ont le même nom,
+ce n'est pas un problème technique — l'information reste uniquement
+informative, pas une clé métier.
+
+### Descriptions publiques vs internes
+
+Les entités structurantes (`Collection`, `ChampPersonnalise`,
+`Vocabulaire`, `ValeurControlee`) portent deux types de descriptions :
+
+- `description` : public / catalographique, destinée aux exports
+  et aux consultations externes.
+- `description_interne` : équipe / chantier, destinée à documenter
+  les choix et les conventions pour les catalogueurs qui reprennent
+  le travail.
+
+Les deux sont libres (TEXT), aucune structure imposée.
+
 ---
 
 ## Vocabulaires et standards
@@ -523,6 +568,16 @@ dédiée avec URI + label, pas en dur dans le code.
       de la cote suffit-il ?
 - [ ] Pour la création en série d'items (V2+), où stocker le pattern
       de génération (profil YAML, champ `Collection`, autre) ?
+- [ ] Choix du composant de vue tableau éditable pour V2 (AG Grid
+      community, Handsontable community, tabulator.js, autre). À
+      évaluer en amont de V2.
+- [ ] Stratégie d'implémentation des refactorings de métadonnées
+      (scinder / fusionner / renommer un champ personnalisé) :
+      opération directe avec journal, ou migration applicative avec
+      état `a_migrer` temporaire ?
+- [ ] Journal de bord : vue calculée pure à partir des tables
+      existantes (`ModificationItem`, `OperationFichier`), ou table
+      `NoteCollection` pour entrées libres additionnelles ?
 - [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
       **À concevoir après le premier import réel**, pour indexer ce
       qui s'avère utile en pratique — ne pas anticiper. SQL et

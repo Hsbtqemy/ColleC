@@ -116,6 +116,8 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
             "contre l'inventaire manuscrit."
         ),
         auteur_principal="Marie Dupont",
+        # Champs d'audit désormais en texte libre (pas de FK Utilisateur).
+        cree_par="Marie Dupont",
     )
     session.add(collection)
     session.commit()
@@ -125,14 +127,17 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
     assert relue.description.startswith("Publication")
     assert relue.description_interne.startswith("Chantier repris")
     assert relue.auteur_principal == "Marie Dupont"
+    assert relue.cree_par == "Marie Dupont"
 
     # Les champs sont mutables sans contrainte.
     relue.auteur_principal = "Jean Martin"
     relue.description_interne = None
+    relue.modifie_par = "Jean Martin"
     session.commit()
     rerelue = session.get(Collection, collection.id)
     assert rerelue.auteur_principal == "Jean Martin"
     assert rerelue.description_interne is None
+    assert rerelue.modifie_par == "Jean Martin"
 
 
 def test_fk_rejette_collection_id_inexistant(session: Session) -> None:

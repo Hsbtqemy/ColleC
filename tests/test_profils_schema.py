@@ -144,6 +144,17 @@ def test_granularite_fichier_sans_cote() -> None:
     assert "cote" in str(exc.value).lower()
 
 
+def test_motif_fichiers_regex_invalide() -> None:
+    # Contrepartie de test_regex_cassee (sur decomposition_cote.regex) :
+    # le validator de ResolutionFichiers doit également rejeter un
+    # motif_chemin non compilable quand type_motif=="regex".
+    with pytest.raises(ProfilInvalide) as exc:
+        charger_profil(INVALIDES / "motif_fichiers_regex_cassee.yaml")
+    message = str(exc.value).lower()
+    assert "motif_chemin" in message
+    assert "regex" in message
+
+
 def test_cle_inconnue_au_niveau_racine() -> None:
     # Verrouille la strictness *partout* dans le schéma : un typo sur
     # un champ de premier niveau (ici `tabelur` pour `tableur`) doit

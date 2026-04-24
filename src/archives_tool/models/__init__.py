@@ -20,9 +20,8 @@ from .enums import (
 from .externe import LienExterneItem, RessourceExterne, SourceExterne
 from .fichier import Fichier
 from .item import Item
-from .journal import ModificationItem, OperationFichier, SessionEdition
+from .journal import ModificationItem, OperationFichier
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
-from .utilisateur import Utilisateur
 
 __all__ = [
     "Base",
@@ -31,14 +30,12 @@ __all__ = [
     "valider_hierarchie",
     "Item",
     "Fichier",
-    "Utilisateur",
     "ProfilImport",
     "ChampPersonnalise",
     "Vocabulaire",
     "ValeurControlee",
     "OperationFichier",
     "ModificationItem",
-    "SessionEdition",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",

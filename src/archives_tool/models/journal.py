@@ -1,4 +1,4 @@
-"""Journaux : opérations fichiers, modifications items, sessions d'édition."""
+"""Journaux : opérations fichiers, modifications items."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class OperationFichier(Base):
     execute_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
-    execute_par_id: Mapped[int | None] = mapped_column(ForeignKey("utilisateur.id"))
+    execute_par: Mapped[str | None] = mapped_column(Text)
     annule_par_batch_id: Mapped[str | None] = mapped_column(String(36))
 
     fichier: Mapped[Fichier | None] = relationship(back_populates="operations")
@@ -60,7 +60,7 @@ class ModificationItem(Base):
     modifie_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
-    modifie_par_id: Mapped[int | None] = mapped_column(ForeignKey("utilisateur.id"))
+    modifie_par: Mapped[str | None] = mapped_column(Text)
 
     item: Mapped[Item] = relationship(back_populates="modifications")
 
@@ -68,20 +68,3 @@ class ModificationItem(Base):
         Index("ix_mod_item", "item_id"),
         Index("ix_mod_date", "modifie_le"),
     )
-
-
-class SessionEdition(Base):
-    __tablename__ = "session_edition"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    utilisateur_id: Mapped[int] = mapped_column(
-        ForeignKey("utilisateur.id"), nullable=False
-    )
-    item_id: Mapped[int | None] = mapped_column(ForeignKey("item.id"))
-    ouverte_le: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
-    dernier_heartbeat: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default=func.now()
-    )
-    fermee_le: Mapped[datetime | None] = mapped_column(DateTime)

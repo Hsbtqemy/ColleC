@@ -84,7 +84,7 @@ class LienExterneItem(Base):
     cree_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
-    cree_par_id: Mapped[int | None] = mapped_column(ForeignKey("utilisateur.id"))
+    cree_par: Mapped[str | None] = mapped_column(Text)
 
     item: Mapped[Item] = relationship(back_populates="liens_externes")
     ressource: Mapped[RessourceExterne] = relationship(back_populates="liens")

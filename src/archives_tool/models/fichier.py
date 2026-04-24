@@ -57,7 +57,7 @@ class Fichier(Base):
     ajoute_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
-    ajoute_par_id: Mapped[int | None] = mapped_column(ForeignKey("utilisateur.id"))
+    ajoute_par: Mapped[str | None] = mapped_column(Text)
     modifie_le: Mapped[datetime | None] = mapped_column(DateTime)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 

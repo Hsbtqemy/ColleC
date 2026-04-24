@@ -106,6 +106,35 @@ def test_roundtrip_hierarchie_collections(session: Session) -> None:
     assert item_relu.collection.parent.parent.parent is None
 
 
+def test_description_interne_et_auteur_principal(session: Session) -> None:
+    collection = Collection(
+        cote_collection="CHANTIER-1",
+        titre="Revue en cours",
+        description="Publication trimestrielle du XIXᵉ siècle.",
+        description_interne=(
+            "Chantier repris en 2026 ; cotes antérieures à 1870 à vérifier "
+            "contre l'inventaire manuscrit."
+        ),
+        auteur_principal="Marie Dupont",
+    )
+    session.add(collection)
+    session.commit()
+
+    relue = session.get(Collection, collection.id)
+    assert relue is not None
+    assert relue.description.startswith("Publication")
+    assert relue.description_interne.startswith("Chantier repris")
+    assert relue.auteur_principal == "Marie Dupont"
+
+    # Les champs sont mutables sans contrainte.
+    relue.auteur_principal = "Jean Martin"
+    relue.description_interne = None
+    session.commit()
+    rerelue = session.get(Collection, collection.id)
+    assert rerelue.auteur_principal == "Jean Martin"
+    assert rerelue.description_interne is None
+
+
 def test_fk_rejette_collection_id_inexistant(session: Session) -> None:
     # Vérification directe que les FK sont *enforced* au niveau base,
     # pas uniquement au niveau ORM. Si les pragmas tombent, ce test

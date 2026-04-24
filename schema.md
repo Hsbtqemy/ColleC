@@ -147,16 +147,13 @@ Typologie métier des scans.
 
 ## Tables
 
-### `utilisateur`
+### Identité
 
-Identité simple pour attribuer les modifications. Pas de mot de passe.
-
-| Colonne | Type | Contraintes |
-|---|---|---|
-| `id` | INTEGER | PK, autoincrement |
-| `nom` | TEXT | NOT NULL, UNIQUE |
-| `actif` | BOOLEAN | NOT NULL, DEFAULT 1 |
-| `cree_le` | DATETIME | NOT NULL |
+Il n'y a pas de table `utilisateur`. Chaque poste est configuré avec
+un nom libre dans la config locale (`utilisateur: "Marie"`). Ce nom
+est copié tel quel dans les champs d'audit des tables (`cree_par`,
+`modifie_par`, `ajoute_par`, `execute_par`). Aucune FK, aucune
+contrainte d'unicité : l'information est uniquement informative.
 
 ---
 
@@ -177,15 +174,17 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `date_fin` | TEXT | | Format EDTF, NULL si en cours |
 | `issn` | TEXT | | |
 | `doi_nakala` | TEXT | UNIQUE | DOI d'une collection publiée sur Nakala. Unique pour détecter les doubles imports. |
-| `description` | TEXT | | |
+| `description` | TEXT | | Description publique/catalographique. |
+| `description_interne` | TEXT | | Description usage équipe : choix de chantier, conventions, points d'attention. |
+| `auteur_principal` | TEXT | | Nom libre, informatif. Pas une FK. |
 | `metadonnees` | JSON | | Champs étendus spécifiques |
 | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
 | `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |
 | `notes_internes` | TEXT | | |
 | `cree_le` | DATETIME | NOT NULL | |
-| `cree_par` | INTEGER | FK → `utilisateur.id` | |
+| `cree_par` | TEXT | | Nom libre copié de la config locale. |
 | `modifie_le` | DATETIME | | |
-| `modifie_par` | INTEGER | FK → `utilisateur.id` | |
+| `modifie_par` | TEXT | | Idem. |
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
 **Index :** `cote_collection`, `titre`, `doi_nakala`, `parent_id`.
@@ -237,9 +236,9 @@ L'unité principale de catalogage : un numéro, un volume, une unité.
 | `etat_catalogage` | TEXT | NOT NULL, DEFAULT `brouillon` | Enum |
 | `notes_internes` | TEXT | | |
 | `cree_le` | DATETIME | NOT NULL | |
-| `cree_par` | INTEGER | FK → `utilisateur.id` | |
+| `cree_par` | TEXT | | Nom libre copié de la config locale. |
 | `modifie_le` | DATETIME | | |
-| `modifie_par` | INTEGER | FK → `utilisateur.id` | |
+| `modifie_par` | TEXT | | Idem. |
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
 **Contraintes :**
@@ -294,7 +293,7 @@ Un scan ou document rattaché à un item.
 | `derive_genere` | BOOLEAN | NOT NULL, DEFAULT 0 | Vignette/aperçu générés ? |
 | `notes_techniques` | TEXT | | |
 | `ajoute_le` | DATETIME | NOT NULL | |
-| `ajoute_par` | INTEGER | FK → `utilisateur.id` | |
+| `ajoute_par` | TEXT | | Nom libre copié de la config locale. |
 | `modifie_le` | DATETIME | | |
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
@@ -340,6 +339,7 @@ Définit les champs étendus utilisables par une collection.
 | `valeurs_controlees_id` | INTEGER | FK → `vocabulaire.id` | Pour listes |
 | `ordre` | INTEGER | NOT NULL | Ordre d'affichage |
 | `aide` | TEXT | | Infobulle |
+| `description_interne` | TEXT | | Documentation longue pour l'équipe : pourquoi ce champ, comment le remplir. |
 
 **Contraintes :** UNIQUE (`collection_id`, `cle`).
 
@@ -357,7 +357,8 @@ métier).
 | `id` | INTEGER | PK |
 | `code` | TEXT | UNIQUE, NOT NULL — ex. `coar_resource_types` |
 | `libelle` | TEXT | NOT NULL |
-| `description` | TEXT | |
+| `description` | TEXT | Description publique du vocabulaire. |
+| `description_interne` | TEXT | Documentation équipe (conventions, périmètre). |
 | `uri_base` | TEXT | |
 
 **`valeur_controlee`** :
@@ -369,6 +370,7 @@ métier).
 | `code` | TEXT | NOT NULL |
 | `libelle` | TEXT | NOT NULL |
 | `uri` | TEXT | |
+| `description_interne` | TEXT | Documentation équipe sur la valeur. |
 | `parent_id` | INTEGER | FK → `valeur_controlee.id` — pour hiérarchies |
 | `ordre` | INTEGER | |
 | `actif` | BOOLEAN | NOT NULL, DEFAULT 1 |
@@ -396,7 +398,7 @@ Journal des opérations sur fichiers (renommage, déplacement, suppression).
 | `statut` | TEXT | NOT NULL | Enum |
 | `message` | TEXT | | Erreur ou info |
 | `execute_le` | DATETIME | NOT NULL | |
-| `execute_par` | INTEGER | FK → `utilisateur.id` | |
+| `execute_par` | TEXT | | Nom libre copié de la config locale. |
 | `annule_par_batch_id` | TEXT | | Batch qui a annulé |
 
 **Index :** `batch_id`, `fichier_id`, `execute_le`.
@@ -415,27 +417,9 @@ Journal des modifications de métadonnées sur les items.
 | `valeur_avant` | TEXT | JSON sérialisé si complexe |
 | `valeur_apres` | TEXT | |
 | `modifie_le` | DATETIME | NOT NULL |
-| `modifie_par` | INTEGER | FK → `utilisateur.id` |
+| `modifie_par` | TEXT | | Nom libre copié de la config locale. |
 
 **Index :** `item_id`, `modifie_le`.
-
----
-
-### `session_edition`
-
-Pour le verrou coopératif entre utilisateurs.
-
-| Colonne | Type | Contraintes |
-|---|---|---|
-| `id` | INTEGER | PK |
-| `utilisateur_id` | INTEGER | FK, NOT NULL |
-| `item_id` | INTEGER | FK → `item.id` | NULL = session générale |
-| `ouverte_le` | DATETIME | NOT NULL |
-| `dernier_heartbeat` | DATETIME | NOT NULL |
-| `fermee_le` | DATETIME | |
-
-Une session est active si `fermee_le IS NULL` et `dernier_heartbeat`
-récent (< 2 min). Le client envoie un heartbeat périodique.
 
 ---
 
@@ -492,7 +476,7 @@ Rattachement optionnel entre un item local et une ressource externe.
 | `type_relation` | TEXT | NOT NULL — `meme_ressource`, `partie_de`, `supplement_de`, `evoque` |
 | `notes` | TEXT | |
 | `cree_le` | DATETIME | NOT NULL |
-| `cree_par` | INTEGER | FK → `utilisateur.id` |
+| `cree_par` | TEXT | | Nom libre copié de la config locale. |
 
 **Contrainte :** UNIQUE (`item_id`, `ressource_externe_id`, `type_relation`).
 

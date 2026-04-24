@@ -37,6 +37,8 @@ class Collection(Base, TracabiliteMixin):
     issn: Mapped[str | None] = mapped_column(String(20))
     doi_nakala: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
+    description_interne: Mapped[str | None] = mapped_column(Text)
+    auteur_principal: Mapped[str | None] = mapped_column(Text)
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     notes_internes: Mapped[str | None] = mapped_column(Text)
 

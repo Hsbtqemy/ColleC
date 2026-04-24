@@ -45,6 +45,7 @@ class Vocabulaire(Base):
     code: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     libelle: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    description_interne: Mapped[str | None] = mapped_column(Text)
     uri_base: Mapped[str | None] = mapped_column(Text)
 
     valeurs: Mapped[list[ValeurControlee]] = relationship(
@@ -62,6 +63,7 @@ class ValeurControlee(Base):
     code: Mapped[str] = mapped_column(String(120), nullable=False)
     libelle: Mapped[str] = mapped_column(String(300), nullable=False)
     uri: Mapped[str | None] = mapped_column(Text)
+    description_interne: Mapped[str | None] = mapped_column(Text)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("valeur_controlee.id"))
     ordre: Mapped[int | None] = mapped_column(Integer)
     actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -87,6 +89,7 @@ class ChampPersonnalise(Base):
     )
     ordre: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     aide: Mapped[str | None] = mapped_column(Text)
+    description_interne: Mapped[str | None] = mapped_column(Text)
 
     collection: Mapped[Collection | None] = relationship(
         back_populates="champs_personnalises"

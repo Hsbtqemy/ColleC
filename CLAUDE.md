@@ -160,6 +160,15 @@ avec ses métadonnées Dublin Core étendues.
 Un **Fichier** est un scan rattaché à un item, avec un ordre, un type de
 page (couverture, page, planche...), un folio.
 
+### Profils d'import
+
+Les profils d'import YAML sont chargés et validés dans
+`src/archives_tool/profils/` (schéma Pydantic + loader). Ils décrivent
+comment lire un tableur existant et une arborescence de scans pour
+amorcer une collection. Référence complète dans
+[`docs/profils.md`](docs/profils.md). Fixtures représentatives sous
+`tests/fixtures/profils/`.
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans

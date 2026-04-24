@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from typing import Any, Literal, Union
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
 TypeTransformation = Literal["slug", "upper", "lower", "strip", "strip_accents"]
 """Transformations applicables à une valeur mappée.
 
@@ -27,8 +29,6 @@ TypeTransformation = Literal["slug", "upper", "lower", "strip", "strip_accents"]
 
 Le câblage effectif est dans `archives_tool.importers.transformateur`.
 """
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _ProfilBase(BaseModel):

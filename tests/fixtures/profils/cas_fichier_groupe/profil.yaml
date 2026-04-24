@@ -36,7 +36,9 @@ mapping:
 
 fichiers:
   racine: "scans_revues"
-  motif_chemin: "{fichier}"
+  # La clé source s'appelle « fichier » dans le tableur, stockée sous
+  # metadonnees.fichier_source par le mapping ci-dessus.
+  motif_chemin: "{fichier_source}"
   type_motif: "template"
   extensions: [".png", ".jpg", ".tif"]
 

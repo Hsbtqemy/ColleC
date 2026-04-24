@@ -40,7 +40,7 @@ mapping:
 
 fichiers:
   racine: "scans_nakala"
-  motif_chemin: "{fichier}"
+  motif_chemin: "{fichier_source}"
   type_motif: "template"
   extensions: [".png", ".jpg", ".tif"]
 

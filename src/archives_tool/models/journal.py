@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -46,6 +46,37 @@ class OperationFichier(Base):
         Index("ix_op_batch", "batch_id"),
         Index("ix_op_fichier", "fichier_id"),
         Index("ix_op_date", "execute_le"),
+    )
+
+
+class OperationImport(Base):
+    """Journal des imports depuis profil YAML.
+
+    Une entrée par exécution réelle (pas en dry-run). Le rapport
+    complet est sérialisé dans `rapport_json` pour navigation future.
+    Le `batch_id` fait le lien avec d'éventuelles `OperationFichier`
+    générées pendant l'import.
+    """
+
+    __tablename__ = "operation_import"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    profil_chemin: Mapped[str] = mapped_column(Text, nullable=False)
+    collection_id: Mapped[int | None] = mapped_column(ForeignKey("collection.id"))
+    items_crees: Mapped[int] = mapped_column(default=0)
+    items_mis_a_jour: Mapped[int] = mapped_column(default=0)
+    items_inchanges: Mapped[int] = mapped_column(default=0)
+    fichiers_ajoutes: Mapped[int] = mapped_column(default=0)
+    execute_le: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    execute_par: Mapped[str | None] = mapped_column(Text)
+    rapport_json: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        UniqueConstraint("batch_id", name="uq_op_import_batch_id"),
+        Index("ix_op_import_batch", "batch_id"),
     )
 
 

@@ -121,9 +121,9 @@ def test_tri_alphabetique_nfc() -> None:
     # que l'ordre de sortie est bien alphabétique sur le chemin NFC.
     profil = charger_profil(FIXTURES / "cas_fichier_groupe" / "profil.yaml")
     config = _config({"scans_revues": FIXTURES / "cas_fichier_groupe" / "arbre"})
-    # Template "{fichier}" → matche un seul fichier par item ; pour
-    # tester le tri on bâtit un item synthétique avec un motif glob.
-    item = ItemPrepare(cote="PF-001", champs_colonne={"fichier": "pf_001_p*.png"})
+    # Template "{fichier_source}" → matche un seul fichier par item ;
+    # pour tester le tri on bâtit un item synthétique avec un glob.
+    item = ItemPrepare(cote="PF-001", metadonnees={"fichier_source": "pf_001_p*.png"})
     fichiers = resoudre_fichiers_pour_item(item, profil, config)
     assert len(fichiers) == 2
     assert fichiers[0].chemin_relatif < fichiers[1].chemin_relatif

@@ -40,12 +40,21 @@ class FichierPrepare:
 
 
 def _valeurs_pour_substitution(item: ItemPrepare) -> dict[str, Any]:
-    """Dict de substitution pour un motif template. cote prend la
-    valeur de l'item, tous les autres champs_colonne aussi."""
-    base = {"cote": item.cote}
+    """Dict de substitution pour un motif template.
+
+    Accessible dans le motif :
+    - `{cote}` (toujours présent) ;
+    - toutes les clés de `champs_colonne` non-None ;
+    - toutes les clés de `metadonnees` non-None (après stripping du
+      préfixe `metadonnees.`) ;
+    - toutes les clés de `hierarchie` (issues de decomposition_cote).
+
+    En cas de collision de noms, priorité hierarchie > metadonnees >
+    champs_colonne > cote, sur le principe du dernier-gagnant.
+    """
+    base: dict[str, Any] = {"cote": item.cote}
     base.update({k: v for k, v in item.champs_colonne.items() if v is not None})
-    # Champs de hierarchie accessibles aussi pour les profils qui les
-    # référencent dans le motif (ex : {fonds}).
+    base.update({k: v for k, v in item.metadonnees.items() if v is not None})
     if item.hierarchie:
         base.update(item.hierarchie)
     return base

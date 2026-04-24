@@ -20,7 +20,7 @@ from .enums import (
 from .externe import LienExterneItem, RessourceExterne, SourceExterne
 from .fichier import Fichier
 from .item import Item
-from .journal import ModificationItem, OperationFichier
+from .journal import ModificationItem, OperationFichier, OperationImport
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
 
 __all__ = [
@@ -36,6 +36,7 @@ __all__ = [
     "ValeurControlee",
     "OperationFichier",
     "ModificationItem",
+    "OperationImport",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",

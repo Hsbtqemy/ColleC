@@ -169,6 +169,23 @@ amorcer une collection. Référence complète dans
 [`docs/profils.md`](docs/profils.md). Fixtures représentatives sous
 `tests/fixtures/profils/`.
 
+### Importer
+
+Le pipeline d'import est découpé en quatre modules sous
+`src/archives_tool/importers/` :
+
+- `lecteur_tableur.py` : lit un CSV/Excel avec pandas en `dtype=str`,
+  normalise NFC + strip, convertit les sentinelles nulles en `None`.
+- `transformateur.py` : fonction pure ligne → `ItemPrepare`, applique
+  mapping, valeurs par défaut, décompositions, transformations.
+- `resolveur_fichiers.py` : cherche les fichiers sur disque selon
+  le motif template ou regex du profil.
+- `ecrivain.py` : orchestre, écrit en base sous transaction avec
+  dry-run par défaut, journalise dans `OperationImport`.
+
+CLI : `archives-tool importer <profil>` (Typer). Référence
+complète dans [`docs/importer.md`](docs/importer.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -635,6 +652,13 @@ uv run uvicorn archives_tool.api.main:app --reload
 
 # CLI
 uv run archives-tool --help
+
+# Import d'un profil (dry-run par défaut)
+uv run archives-tool importer profils/ma_collection.yaml
+
+# Import réel avec journal
+uv run archives-tool importer profils/ma_collection.yaml \
+    --no-dry-run --utilisateur "Marie" --verbose
 
 # Migration base
 uv run alembic upgrade head

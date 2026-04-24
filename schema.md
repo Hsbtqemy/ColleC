@@ -423,6 +423,31 @@ Journal des modifications de métadonnées sur les items.
 
 ---
 
+### `operation_import`
+
+Journal des imports depuis un profil YAML. Une entrée par exécution
+réelle (pas en dry-run). Le `rapport_json` contient la sérialisation
+complète du `RapportImport` pour inspection future.
+
+| Colonne | Type | Contraintes | Notes |
+|---|---|---|---|
+| `id` | INTEGER | PK | |
+| `batch_id` | TEXT | NOT NULL, UNIQUE | UUID du lot. Lié aux `operation_fichier` éventuellement produites pendant l'import. |
+| `profil_chemin` | TEXT | NOT NULL | Chemin du profil YAML utilisé. |
+| `collection_id` | INTEGER | FK → `collection.id` | |
+| `items_crees` | INTEGER | | |
+| `items_mis_a_jour` | INTEGER | | |
+| `items_inchanges` | INTEGER | | |
+| `fichiers_ajoutes` | INTEGER | | |
+| `execute_le` | DATETIME | NOT NULL | |
+| `execute_par` | TEXT | | Nom libre copié de la config locale. |
+| `rapport_json` | TEXT | | Sérialisation JSON du `RapportImport`. |
+
+**Contrainte :** UNIQUE (`batch_id`).
+**Index :** `batch_id`.
+
+---
+
 ## Sources externes (V2+)
 
 ### `source_externe`

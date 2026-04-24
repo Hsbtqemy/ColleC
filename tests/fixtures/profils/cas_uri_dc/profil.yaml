@@ -1,0 +1,49 @@
+# Profil d'import — colonnes nommées par des URI Dublin Core
+# et agrégation multi-colonnes (sujets, créateurs).
+# Inspiré librement du format de dépôt Nakala.
+
+version_profil: 1
+
+collection:
+  cote: "NKLDC"
+  titre: "Collection Nakala / Dublin Core (fictive)"
+  doi_nakala: "10.34847/nkl.fakedccoll"
+  description: "Collection démonstrative pour colonnes URI DC."
+  description_interne: >
+    Fixture de test. Démontre :
+    - noms de colonnes sous forme d'URI (dc:identifier, dc:title...) ;
+    - agrégation multi-colonnes (sujet 1_fr, sujet 2_fr, sujet 3_fr
+      en un seul champ metadonnees.sujets) ;
+    - agrégation de créateurs avec un autre séparateur.
+    Les cellules vides ("") font partie de la liste valeurs_nulles.
+  auteur_principal: "Équipe fixture"
+
+tableur:
+  chemin: "tableur.csv"
+  ligne_entete: 1
+  valeurs_nulles: ["none", "n/a", "s.d.", "NaN", ""]
+  separateur_csv: ";"
+
+granularite_source: "item"
+
+mapping:
+  cote: "http://purl.org/dc/terms/identifier"
+  titre: "http://purl.org/dc/terms/title"
+  date: "http://purl.org/dc/terms/date"
+  metadonnees.sujets:
+    sources: ["sujet 1_fr", "sujet 2_fr", "sujet 3_fr"]
+    separateur_sortie: " | "
+  metadonnees.createurs:
+    sources: ["creator_1", "creator_2"]
+    separateur_sortie: " / "
+  metadonnees.fichier_source: "fichier"
+
+fichiers:
+  racine: "scans_nakala"
+  motif_chemin: "{fichier}"
+  type_motif: "template"
+  extensions: [".png", ".jpg", ".tif"]
+
+valeurs_par_defaut:
+  langue: "fra"
+  etat_catalogage: "a_verifier"

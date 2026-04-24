@@ -1,0 +1,11 @@
+version_profil: 1
+collection:
+  cote: "X"
+  titre: "Regex cassée"
+tableur:
+  chemin: "x.csv"
+mapping:
+  cote: "Cote"
+decomposition_cote:
+  regex: "^(?P<bad"
+  stockage: "hierarchie"

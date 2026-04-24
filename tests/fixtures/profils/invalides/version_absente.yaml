@@ -1,0 +1,7 @@
+collection:
+  cote: "X"
+  titre: "Sans version"
+tableur:
+  chemin: "x.csv"
+mapping:
+  cote: "Cote"

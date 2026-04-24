@@ -1,0 +1,50 @@
+# Profil d'import — hiérarchie dans la cote et dans le champ Type
+# La cote FA-AA-01-01 encode fonds / sous-fonds / série / numéro.
+# La colonne Type encode catégorie / sous-catégorie / spécifique.
+# Inspiré librement d'un fonds d'archives type Ainsa.
+
+version_profil: 1
+
+collection:
+  cote: "FA"
+  titre: "Fonds d'archives (fictif)"
+  description: "Fonds archivistique avec séries et sous-séries."
+  description_interne: >
+    Fixture de test. Démontre la double décomposition : cote parsée
+    par regex pour la hiérarchie archivistique, colonne Type parsée
+    par séparateur pour la typologie documentaire.
+  auteur_principal: "Équipe fixture"
+
+tableur:
+  chemin: "tableur.csv"
+  ligne_entete: 1
+  separateur_csv: ";"
+
+granularite_source: "item"
+
+mapping:
+  cote: "Cote"
+  titre: "Titre"
+  date: "Date"
+  metadonnees.serie_visible: "Serie_visible"
+
+fichiers:
+  racine: "scans_archives"
+  motif_chemin: "^(?P<serie>SERIE-\\d+)/(?P<cote>FA-[A-Z]+-\\d+-\\d+)\\.png$"
+  type_motif: "regex"
+  recursif: true
+  extensions: [".png"]
+
+decomposition_cote:
+  regex: "^(?P<fonds>[A-Z]+)-(?P<sous_fonds>[A-Z]+)-(?P<serie>\\d+)-(?P<numero>\\d+)$"
+  stockage: "hierarchie"
+
+decomposition_type:
+  colonne: "Type"
+  separateur: " | "
+  niveaux: ["categorie", "sous_categorie", "specifique"]
+  stockage: "typologie"
+
+valeurs_par_defaut:
+  langue: "fra"
+  etat_catalogage: "a_verifier"

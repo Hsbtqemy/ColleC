@@ -1,0 +1,50 @@
+# Profil d'import — cas item simple
+# Granularité item : une ligne du tableur = un item en base.
+# Inspiré librement d'un périodique type Hara-Kiri.
+
+version_profil: 1
+
+collection:
+  cote: "HK"
+  titre: "Hara-Kiri (fictif)"
+  editeur: "Éditions du Square (fictif)"
+  lieu_edition: "Paris"
+  periodicite: "mensuel"
+  date_debut: "1960"
+  date_fin: "1985"
+  description: "Périodique satirique français, exemple synthétique."
+  description_interne: >
+    Fixture de test — aucune donnée réelle. Démontre le cas le plus
+    courant : colonnes bibliographiques simples, pas de hiérarchie,
+    un fichier par item.
+  auteur_principal: "Équipe fixture"
+
+tableur:
+  chemin: "tableur.csv"
+  ligne_entete: 1
+  valeurs_nulles: ["none", "n/a", "s.d.", "NaN", ""]
+  separateur_csv: ";"
+
+granularite_source: "item"
+
+mapping:
+  cote: "Cote"
+  numero: "Numero"
+  titre: "Titre"
+  date: "Date"
+  annee: "Annee"
+  metadonnees.rubrique: "Rubrique"
+  metadonnees.collaborateurs:
+    source: "Collaborateurs"
+    separateur: " / "
+  metadonnees.notes_source: "Notes"
+
+fichiers:
+  racine: "scans_revues"
+  motif_chemin: "{numero:02d}.png"
+  type_motif: "template"
+  extensions: [".png", ".jpg", ".tif"]
+
+valeurs_par_defaut:
+  langue: "fra"
+  etat_catalogage: "brouillon"

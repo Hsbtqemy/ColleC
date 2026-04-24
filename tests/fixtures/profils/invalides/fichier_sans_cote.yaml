@@ -1,0 +1,9 @@
+version_profil: 1
+collection:
+  cote: "X"
+  titre: "Granularité fichier sans cote mappée"
+tableur:
+  chemin: "x.csv"
+granularite_source: "fichier"
+mapping:
+  titre: "Titre"

@@ -1,0 +1,8 @@
+version_profil: 2
+collection:
+  cote: "X"
+  titre: "Version future"
+tableur:
+  chemin: "x.csv"
+mapping:
+  cote: "Cote"

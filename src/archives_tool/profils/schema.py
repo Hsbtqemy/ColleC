@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class _ProfilBase(BaseModel):
     """Configuration commune à tous les sous-modèles du profil."""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+    model_config = ConfigDict(extra="forbid")
 
 
 class CollectionProfil(_ProfilBase):
@@ -124,11 +124,13 @@ class MappingProfil(_ProfilBase):
 
     Clés : nom du champ en base (`cote`, `titre`, `date`...) ou clé
     étendue préfixée `metadonnees.` (ex. `metadonnees.auteurs`).
-    """
 
-    # `extra="allow"` ici est intentionnel : on veut permettre des clés
-    # arbitraires, on les validera au niveau du dict parent.
-    model_config = ConfigDict(extra="allow")
+    Les clés du dict `champs` sont arbitraires. Mais la strictness
+    `extra="forbid"` héritée de `_ProfilBase` s'applique au niveau du
+    modèle : après l'absorber qui wrappe le YAML flat en
+    `{champs: {...}}`, aucune clé supplémentaire à `champs` n'est
+    tolérée.
+    """
 
     champs: dict[str, MappingChamp]
 

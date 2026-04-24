@@ -1,0 +1,8 @@
+version_profil: 1
+collection:
+  cote: "X"
+  titre: "Avec extra au niveau racine"
+tabelur:  # typo volontaire sur "tableur"
+  chemin: "x.csv"
+mapping:
+  cote: "Cote"

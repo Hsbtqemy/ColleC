@@ -142,3 +142,15 @@ def test_granularite_fichier_sans_cote() -> None:
     with pytest.raises(ProfilInvalide) as exc:
         charger_profil(INVALIDES / "fichier_sans_cote.yaml")
     assert "cote" in str(exc.value).lower()
+
+
+def test_cle_inconnue_au_niveau_racine() -> None:
+    # Verrouille la strictness *partout* dans le schéma : un typo sur
+    # un champ de premier niveau (ici `tabelur` pour `tableur`) doit
+    # être détecté, pas silencieusement ignoré.
+    with pytest.raises(ProfilInvalide) as exc:
+        charger_profil(INVALIDES / "cle_inconnue_racine.yaml")
+    message = str(exc.value)
+    assert "tabelur" in message
+    # Et comme tableur manque, son absence doit aussi être signalée.
+    assert "tableur" in message

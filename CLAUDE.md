@@ -186,6 +186,22 @@ Le pipeline d'import est découpé en quatre modules sous
 CLI : `archives-tool importer <profil>` (Typer). Référence
 complète dans [`docs/importer.md`](docs/importer.md).
 
+### Exports canoniques
+
+`src/archives_tool/exporters/` regroupe les trois formats canoniques
+(xlsx/csv, Dublin Core XML, CSV Nakala) plus les utilitaires communs :
+
+- `selection.py` : `CritereSelection` + streaming via yield_per.
+- `mapping_dc.py` : source de vérité des correspondances champs
+  internes → URI Dublin Core Terms.
+- `rapport.py` : rapport de pré-export (items incomplets, valeurs
+  non canoniques).
+- `excel.py`, `dublin_core.py`, `nakala.py` : producteurs par format.
+
+CLI : `archives-tool exporter <format> --collection ... --sortie ...`.
+Dry-run et mode strict disponibles. Référence complète dans
+[`docs/exports.md`](docs/exports.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -341,13 +357,14 @@ archives-tool/
 - Rattachement de fichiers à un item depuis l'UI (ajout depuis
   disque, copie ou déplacement selon la convention).
 
-**Exports canoniques** :
+**Exports canoniques** (fait) :
 
-- Export Excel / CSV d'une collection (granularité item ou fichier).
-- Export Dublin Core XML.
-- Export JSON-LD avec contextes COAR et Nakala.
-- Rapport de préparation avant export (champs manquants, valeurs
+- ✅ Export Excel / CSV d'une collection (granularité item ou fichier).
+- ✅ Export Dublin Core XML (agrégé ou un fichier par item).
+- ✅ Export CSV de dépôt Nakala.
+- ✅ Rapport de préparation avant export (champs manquants, valeurs
   non mappées vers URI canoniques).
+- Export JSON-LD avec contextes COAR et Nakala (reporté).
 
 **Contrôles de cohérence de base** :
 
@@ -659,6 +676,12 @@ uv run archives-tool importer profils/ma_collection.yaml
 # Import réel avec journal
 uv run archives-tool importer profils/ma_collection.yaml \
     --no-dry-run --utilisateur "Marie" --verbose
+
+# Exports canoniques
+uv run archives-tool exporter xlsx --collection RDM --sortie inventaire.xlsx
+uv run archives-tool exporter dc-xml --collection FA --recursif --sortie fa.xml
+uv run archives-tool exporter nakala-csv --collection RDM --etat valide \
+    --sortie depot.csv --licence "CC-BY-4.0" --strict
 
 # Migration base
 uv run alembic upgrade head

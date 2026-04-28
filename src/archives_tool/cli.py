@@ -9,6 +9,7 @@ import typer
 from archives_tool.affichage.collections import (
     afficher_collections_arbre,
     afficher_collections_plat,
+    afficher_fiche_collection,
 )
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
@@ -318,6 +319,33 @@ montrer = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(montrer, name="montrer")
+
+
+@montrer.command("collection")
+def cmd_montrer_collection(
+    cote: str = typer.Argument(..., help="Cote de la collection."),
+    items: bool = typer.Option(True, "--items/--pas-items"),
+    limite: int = typer.Option(
+        50,
+        "--limite",
+        help="Nombre max d'items à afficher (0 = illimité).",
+    ),
+    tri_par: str = typer.Option(
+        "cote",
+        "--tri-par",
+        help="Tri des items : cote, date, etat, modifie.",
+    ),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+) -> None:
+    """Afficher la fiche d'une collection avec ses items."""
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        ok = afficher_fiche_collection(
+            session, cote, items=items, limite=limite, tri_par=tri_par
+        )
+    if not ok:
+        raise typer.Exit(1)
 
 
 @montrer.command("collections")

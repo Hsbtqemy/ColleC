@@ -132,6 +132,56 @@ def test_montrer_collections_avec_items_seulement(base_avec_items: Path) -> None
     assert "FA" in sortie
 
 
+def test_montrer_collection_existante(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "collection", "HK", "--db-path", str(base_avec_items)]
+    )
+    assert code == 0
+    # Fiche : titre + champs.
+    assert "Hara-Kiri" in sortie
+    assert "Périodicité" in sortie
+    assert "mensuel" in sortie
+    # Tableau d'items : au moins une cote.
+    assert "HK-1960-01" in sortie
+    # Description publique présente.
+    assert "satirique" in sortie.lower()
+
+
+def test_montrer_collection_inexistante(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "collection", "QUI_NEXISTE_PAS", "--db-path", str(base_avec_items)]
+    )
+    assert code == 1
+    assert "introuvable" in sortie.lower()
+
+
+def test_montrer_collection_sans_items(base_avec_items: Path) -> None:
+    # FA-SOUS est vide.
+    code, sortie = _invoquer(
+        ["montrer", "collection", "FA-SOUS", "--db-path", str(base_avec_items)]
+    )
+    assert code == 0
+    assert "Sous-fonds A" in sortie
+    assert "Aucun item" in sortie
+
+
+def test_montrer_collection_pas_items(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        [
+            "montrer",
+            "collection",
+            "HK",
+            "--pas-items",
+            "--db-path",
+            str(base_avec_items),
+        ]
+    )
+    assert code == 0
+    assert "Hara-Kiri" in sortie
+    # Pas de tableau d'items affiché.
+    assert "HK-1960-01" not in sortie
+
+
 def test_montrer_collections_base_vide(base_vide: Path) -> None:
     code, sortie = _invoquer(["montrer", "collections", "--db-path", str(base_vide)])
     assert code == 0

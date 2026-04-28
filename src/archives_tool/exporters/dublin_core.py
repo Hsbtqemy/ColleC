@@ -57,7 +57,7 @@ def _notice_pour_item(item: Item) -> ET.Element:
     Les champs absents ne génèrent aucun élément (pas de <dc:xxx/>
     vide). Les champs listes produisent plusieurs éléments homonymes.
     """
-    notice = ET.Element("notice", attrib={"xmlns:dc": NS_DC})
+    notice = ET.Element("notice")
 
     for champ_interne, uri in MAPPING_DC.items():
         valeur = extraire_valeur(item, champ_interne)
@@ -73,10 +73,15 @@ def _notice_pour_item(item: Item) -> ET.Element:
 
 
 def _serialiser(racine: ET.Element) -> bytes:
-    """Sérialise avec indentation et prologue UTF-8. ElementTree gère
-    l'échappement ; ne jamais concaténer du XML à la main."""
+    """Sérialise avec indentation et prologue UTF-8.
+
+    On force le préfixe `dc:` *au moment* de la sérialisation, pas au
+    chargement du module : openpyxl/pandas (importés ailleurs dans le
+    projet) réenregistrent `dcterms` plus tard et écraseraient un
+    appel one-shot à l'import.
+    """
+    ET.register_namespace("dc", NS_DC)
     ET.indent(racine, space="  ")
-    # tree.write ajoute le prologue si xml_declaration=True.
     return ET.tostring(racine, encoding="utf-8", xml_declaration=True)
 
 

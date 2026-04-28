@@ -171,6 +171,16 @@ amorcer une collection. Référence complète dans
 [`docs/profils.md`](docs/profils.md). Fixtures représentatives sous
 `tests/fixtures/profils/`.
 
+Le module `profils/generateur.py` produit des squelettes YAML
+commentés :
+- `generer_squelette` : profil minimal avec placeholder à remplir.
+- `analyser_tableur` : profil pré-rempli des colonnes détectées,
+  avec heuristique pour les champs structurants (cote, titre, date,
+  URI Dublin Core, ...).
+
+CLI : `archives-tool profil init` et `archives-tool profil analyser`.
+Guide utilisateur : [`docs/profils_creation.md`](docs/profils_creation.md).
+
 ### Importer
 
 Le pipeline d'import est découpé en quatre modules sous
@@ -701,6 +711,11 @@ uv run archives-tool exporter xlsx --collection RDM --sortie inventaire.xlsx
 uv run archives-tool exporter dc-xml --collection FA --recursif --sortie fa.xml
 uv run archives-tool exporter nakala-csv --collection RDM --etat valide \
     --sortie depot.csv --licence "CC-BY-4.0" --strict
+
+# Aide à la création d'un profil d'import
+uv run archives-tool profil analyser inventaire.xlsx --sortie mon_profil.yaml
+uv run archives-tool profil init --cote HK --titre "Hara-Kiri" \
+    --tableur inventaire.xlsx --sortie squelette.yaml
 
 # Visualisation (lecture seule, Rich)
 uv run archives-tool montrer collections

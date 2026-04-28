@@ -4,6 +4,11 @@ Un profil d'import est un fichier YAML qui décrit **comment lire un
 tableur existant et une arborescence de scans** pour amorcer une
 collection en base.
 
+> **Vous écrivez votre premier profil ?** Voir le guide pas-à-pas
+> dans [`profils_creation.md`](profils_creation.md). Ce document-ci
+> est la référence complète du format, à consulter une fois les
+> bases acquises.
+
 ## Rôle
 
 Les profils sont un **point d'entrée**, pas une configuration

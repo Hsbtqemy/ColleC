@@ -229,6 +229,52 @@ def test_montrer_item_sans_fichiers(base_avec_items: Path) -> None:
     assert "Aucun fichier" in sortie
 
 
+def test_montrer_fichier_existant(base_avec_items: Path, tmp_path: Path) -> None:
+    # Premier fichier en base = ordre 1.
+    from sqlalchemy import select as sqla_select
+
+    from archives_tool.db import creer_session_factory
+    from archives_tool.models import Fichier
+
+    engine = creer_engine(base_avec_items)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fichier_id = s.scalar(sqla_select(Fichier.id))
+    engine.dispose()
+    assert fichier_id is not None
+
+    # Config bidon (la racine pointera vers tmp_path qui existe mais pas le fichier).
+    cfg = tmp_path / "cfg.yaml"
+    cfg.write_text(
+        f"utilisateur: T\nracines:\n  scans_revues: {tmp_path}\n",
+        encoding="utf-8",
+    )
+    code, sortie = _invoquer(
+        [
+            "montrer",
+            "fichier",
+            str(fichier_id),
+            "--db-path",
+            str(base_avec_items),
+            "--config",
+            str(cfg),
+        ]
+    )
+    assert code == 0
+    assert f"Fichier #{fichier_id}" in sortie
+    # Diagnostic disque attendu : fichier absent (chemin relatif jamais
+    # créé sous tmp_path).
+    assert "absent" in sortie.lower() or "✗" in sortie
+
+
+def test_montrer_fichier_inexistant(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "fichier", "99999", "--db-path", str(base_avec_items)]
+    )
+    assert code == 1
+    assert "introuvable" in sortie.lower()
+
+
 def test_montrer_collections_base_vide(base_vide: Path) -> None:
     code, sortie = _invoquer(["montrer", "collections", "--db-path", str(base_vide)])
     assert code == 0

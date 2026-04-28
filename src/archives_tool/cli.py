@@ -11,6 +11,7 @@ from archives_tool.affichage.collections import (
     afficher_collections_plat,
     afficher_fiche_collection,
 )
+from archives_tool.affichage.fichiers import afficher_fiche_fichier
 from archives_tool.affichage.items import afficher_fiche_item
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
@@ -320,6 +321,32 @@ montrer = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(montrer, name="montrer")
+
+
+@montrer.command("fichier")
+def cmd_montrer_fichier(
+    fichier_id: int = typer.Argument(..., help="ID numérique du fichier en base."),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(
+        Path("config_local.yaml"),
+        "--config",
+        help="Config locale pour le diagnostic disque (optionnelle).",
+    ),
+) -> None:
+    """Afficher la fiche d'un fichier avec diagnostic disque."""
+    config: ConfigLocale | None = None
+    try:
+        config = charger_config(config_path)
+    except Exception:
+        # Config absente ou invalide : on continue sans diagnostic disque.
+        config = None
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        ok = afficher_fiche_fichier(session, fichier_id, config)
+    if not ok:
+        raise typer.Exit(1)
 
 
 @montrer.command("item")

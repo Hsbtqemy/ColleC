@@ -118,6 +118,8 @@ code. Si une demande les contredit, signaler avant d'exécuter.
 - SQLite (base locale, mode WAL activé)
 - Pydantic 2.x (validation, schemas)
 - Typer (CLI)
+- Rich (affichage tableaux, panneaux, arbres, syntaxe colorée pour
+  les commandes `archives-tool montrer ...`)
 
 **Frontend :**
 - Jinja2 + HTMX pour les interactions
@@ -201,6 +203,23 @@ complète dans [`docs/importer.md`](docs/importer.md).
 CLI : `archives-tool exporter <format> --collection ... --sortie ...`.
 Dry-run et mode strict disponibles. Référence complète dans
 [`docs/exports.md`](docs/exports.md).
+
+### Affichage CLI
+
+`src/archives_tool/affichage/` regroupe le sous-groupe de commandes
+`archives-tool montrer ...` (Rich) :
+
+- `console.py` : instance Console partagée, thème (états colorés,
+  succès/avertissement/erreur), helper `silencer_pour_tests`.
+- `formatters.py` : utilitaires `formater_date`, `formater_etat`,
+  `formater_taille_octets`, `tronquer`, `barre_progression`.
+- `collections.py`, `items.py`, `fichiers.py`, `statistiques.py` :
+  un module par vue. Lecture seule, pas d'écriture en base.
+
+Commandes : `montrer collections`, `montrer collection COTE`,
+`montrer item COTE`, `montrer fichier ID`, `montrer statistiques`.
+Référence complète dans
+[`docs/commandes_montrer.md`](docs/commandes_montrer.md).
 
 ### Sources externes (V2+)
 
@@ -682,6 +701,14 @@ uv run archives-tool exporter xlsx --collection RDM --sortie inventaire.xlsx
 uv run archives-tool exporter dc-xml --collection FA --recursif --sortie fa.xml
 uv run archives-tool exporter nakala-csv --collection RDM --etat valide \
     --sortie depot.csv --licence "CC-BY-4.0" --strict
+
+# Visualisation (lecture seule, Rich)
+uv run archives-tool montrer collections
+uv run archives-tool montrer collections --recursif
+uv run archives-tool montrer collection FA
+uv run archives-tool montrer item HK-1960-01 --metadonnees-completes
+uv run archives-tool montrer fichier 142
+uv run archives-tool montrer statistiques
 
 # Migration base
 uv run alembic upgrade head

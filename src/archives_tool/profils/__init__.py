@@ -1,5 +1,6 @@
 """Profils d'import : schéma Pydantic et loader YAML."""
 
+from .generateur import analyser_tableur, generer_squelette
 from .loader import ProfilInvalide, charger_profil
 from .schema import (
     CollectionProfil,
@@ -27,4 +28,6 @@ __all__ = [
     "DecompositionType",
     "charger_profil",
     "ProfilInvalide",
+    "generer_squelette",
+    "analyser_tableur",
 ]

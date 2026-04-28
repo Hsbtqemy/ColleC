@@ -182,6 +182,53 @@ def test_montrer_collection_pas_items(base_avec_items: Path) -> None:
     assert "HK-1960-01" not in sortie
 
 
+def test_montrer_item_existant(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "item", "HK-1960-01", "--db-path", str(base_avec_items)]
+    )
+    assert code == 0
+    assert "HK-1960-01" in sortie
+    assert "Premier numéro" in sortie
+    # Métadonnées étendues présentes : collaborateurs.
+    assert "collaborateurs" in sortie
+    # Tableau des fichiers : un PNG rattaché à l'item HK-1960-01.
+    assert "01.png" in sortie
+
+
+def test_montrer_item_inexistant(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "item", "INTROUVABLE", "--db-path", str(base_avec_items)]
+    )
+    assert code == 1
+    assert "introuvable" in sortie.lower()
+
+
+def test_montrer_item_pas_fichiers(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        [
+            "montrer",
+            "item",
+            "HK-1961-02",
+            "--pas-fichiers",
+            "--db-path",
+            str(base_avec_items),
+        ]
+    )
+    assert code == 0
+    assert "HK-1961-02" in sortie
+    # Pas de tableau Fichiers.
+    assert "Aucun fichier" not in sortie
+
+
+def test_montrer_item_sans_fichiers(base_avec_items: Path) -> None:
+    # HK-1961-02 a numero=4 → pas de PNG (uniquement 01,02,03)
+    code, sortie = _invoquer(
+        ["montrer", "item", "HK-1961-02", "--db-path", str(base_avec_items)]
+    )
+    assert code == 0
+    assert "Aucun fichier" in sortie
+
+
 def test_montrer_collections_base_vide(base_vide: Path) -> None:
     code, sortie = _invoquer(["montrer", "collections", "--db-path", str(base_vide)])
     assert code == 0

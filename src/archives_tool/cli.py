@@ -11,6 +11,7 @@ from archives_tool.affichage.collections import (
     afficher_collections_plat,
     afficher_fiche_collection,
 )
+from archives_tool.affichage.items import afficher_fiche_item
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dc_xml
@@ -319,6 +320,37 @@ montrer = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(montrer, name="montrer")
+
+
+@montrer.command("item")
+def cmd_montrer_item(
+    cote_item: str = typer.Argument(..., help="Cote de l'item."),
+    collection: str = typer.Option(
+        None,
+        "--collection",
+        help="Cote de la collection si la cote item n'est pas unique.",
+    ),
+    metadonnees_completes: bool = typer.Option(
+        False,
+        "--metadonnees-completes",
+        help="Afficher tout le JSON metadonnees (sinon résumé tronqué).",
+    ),
+    fichiers: bool = typer.Option(True, "--fichiers/--pas-fichiers"),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+) -> None:
+    """Afficher la fiche détaillée d'un item."""
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        ok = afficher_fiche_item(
+            session,
+            cote_item,
+            collection_cote=collection,
+            metadonnees_completes=metadonnees_completes,
+            fichiers=fichiers,
+        )
+    if not ok:
+        raise typer.Exit(1)
 
 
 @montrer.command("collection")

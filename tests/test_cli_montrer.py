@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 import archives_tool.affichage.console as console_module
 from archives_tool.affichage.console import silencer_pour_tests
+from archives_tool.cli import app
 from archives_tool.config import ConfigLocale
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.importers.ecrivain import importer as importer_profil
@@ -76,10 +77,11 @@ def base_vide(tmp_path: Path) -> Path:
 
 
 def _invoquer(args: list[str]) -> tuple[int, str]:
-    # Importe le module CLI à chaud pour qu'il prenne la console
-    # silencée *après* l'autouse fixture (évite un cache d'instance).
-    from archives_tool.cli import app
-
+    # Capture la sortie via la console partagée. La fixture autouse
+    # `silencer_pour_tests` rebind `console_module.console` avant
+    # chaque test ; les modules `affichage.*` accèdent à la console
+    # par `cons.console`, donc voient la nouvelle instance sans qu'on
+    # ait à ré-importer le CLI.
     with console_module.console.capture() as cap:
         result = runner.invoke(app, args, catch_exceptions=False)
     return result.exit_code, cap.get()
@@ -93,9 +95,22 @@ def test_montrer_collections_plat(base_avec_items: Path) -> None:
     assert "HK" in sortie
     assert "FA" in sortie
     assert "Hara-Kiri" in sortie
-    # Les compteurs apparaissent.
-    assert "5" in sortie  # 5 items HK
-    assert "4" in sortie  # 4 items FA
+
+    # Vérification précise des compteurs : on cherche la ligne du
+    # tableau qui commence par la cote, et on vérifie que le compte
+    # d'items y figure. Évite les faux positifs sur "5" ou "4" qui
+    # pourraient apparaître ailleurs (dates, pourcentages, etc.).
+    lignes = [ligne for ligne in sortie.splitlines() if "│ HK " in ligne]
+    assert lignes, f"Pas de ligne HK trouvée dans :\n{sortie}"
+    assert " 5 " in lignes[0], f"Compteur 5 items absent de la ligne HK : {lignes[0]}"
+
+    lignes_fa = [
+        ligne
+        for ligne in sortie.splitlines()
+        if "│ FA " in ligne and "FA-SOUS" not in ligne
+    ]
+    assert lignes_fa, f"Pas de ligne FA trouvée dans :\n{sortie}"
+    assert " 4 " in lignes_fa[0]
 
 
 def test_montrer_collections_arbre(base_avec_items: Path) -> None:

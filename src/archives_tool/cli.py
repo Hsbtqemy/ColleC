@@ -32,8 +32,11 @@ app = typer.Typer(
 
 @app.callback()
 def _callback() -> None:
-    """Force la structure en sous-commandes (sinon Typer promeut la
-    commande unique au niveau racine et masque le nom `importer`)."""
+    """Callback racine (sans option), nécessaire à Typer pour préserver
+    l'aide en arborescence et la structure en sous-commandes (`importer`,
+    `exporter`, `montrer ...`). Ne pas retirer même quand plusieurs
+    commandes coexistent au niveau racine — il garantit que Typer
+    rend le help de manière cohérente."""
 
 
 def _charger_config_ou_sortie(chemin: Path) -> ConfigLocale:

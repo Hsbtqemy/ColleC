@@ -22,7 +22,12 @@ from archives_tool.exporters.nakala import exporter_nakala_csv
 from archives_tool.exporters.rapport import RapportExport
 from archives_tool.exporters.selection import CritereSelection, SelectionErreur
 from archives_tool.importers.ecrivain import RapportImport, importer as importer_profil
-from archives_tool.profils import ProfilInvalide, charger_profil
+from archives_tool.profils import (
+    ProfilInvalide,
+    analyser_tableur,
+    charger_profil,
+    generer_squelette,
+)
 
 app = typer.Typer(
     help="Outil de gestion de collections numérisées.",
@@ -451,6 +456,158 @@ def cmd_montrer_collections(
             afficher_collections_arbre(session)
         else:
             afficher_collections_plat(session, vide=vide)
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `profil` : aide à la création de profils d'import.
+# ---------------------------------------------------------------------------
+
+profil_app = typer.Typer(
+    help="Créer ou analyser un profil d'import YAML.",
+    no_args_is_help=True,
+)
+app.add_typer(profil_app, name="profil")
+
+
+def _ecrire_profil(contenu: str, sortie: Path, force: bool, vers_stdout: bool) -> None:
+    if vers_stdout:
+        typer.echo(contenu, nl=False)
+        return
+    if sortie.exists() and not force:
+        typer.echo(
+            f"Erreur : {sortie} existe déjà. Utilisez --force pour écraser.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    sortie.parent.mkdir(parents=True, exist_ok=True)
+    sortie.write_text(contenu, encoding="utf-8")
+
+
+@profil_app.command("init")
+def cmd_profil_init(
+    cote: str = typer.Option(..., "--cote", help="Cote de la collection."),
+    titre: str = typer.Option(..., "--titre", help="Titre de la collection."),
+    tableur: str = typer.Option(
+        ...,
+        "--tableur",
+        help="Chemin du tableur (relatif au futur profil ou absolu).",
+    ),
+    granularite: str = typer.Option(
+        "item", "--granularite", help="'item' ou 'fichier'."
+    ),
+    sortie: Path = typer.Option(
+        Path("profil.yaml"),
+        "--sortie",
+        help="Chemin du profil à générer.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Écraser le fichier sortie s'il existe."
+    ),
+    stdout: bool = typer.Option(
+        False, "--stdout", help="Écrire sur la sortie standard au lieu du fichier."
+    ),
+) -> None:
+    """Générer un squelette de profil YAML à compléter manuellement."""
+    if granularite not in ("item", "fichier"):
+        typer.echo(
+            f"Erreur : --granularite doit valoir 'item' ou 'fichier' (reçu : {granularite!r}).",
+            err=True,
+        )
+        raise typer.Exit(2)
+    contenu = generer_squelette(
+        cote_collection=cote,
+        titre_collection=titre,
+        chemin_tableur=tableur,
+        granularite=granularite,  # type: ignore[arg-type]
+    )
+    _ecrire_profil(contenu, sortie, force, stdout)
+    if not stdout:
+        typer.echo(f"✓ Profil créé : {sortie}")
+        typer.echo("Prochaines étapes :")
+        typer.echo(
+            f"  1. Éditez {sortie} pour compléter le mapping (placeholder "
+            '"A_REMPLACER" → nom réel de la colonne cote).'
+        )
+        typer.echo("  2. Lancez un import en dry-run pour vérifier :")
+        typer.echo(f"     archives-tool importer {sortie}")
+
+
+@profil_app.command("analyser")
+def cmd_profil_analyser(
+    chemin_tableur: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Chemin du tableur à analyser.",
+    ),
+    feuille: str = typer.Option(
+        None,
+        "--feuille",
+        help="Feuille Excel à lire (défaut : première feuille).",
+    ),
+    cote: str = typer.Option(
+        None,
+        "--cote",
+        help="Cote de la collection (défaut : 'A_COMPLETER').",
+    ),
+    titre: str = typer.Option(
+        None,
+        "--titre",
+        help="Titre de la collection (défaut : 'À compléter').",
+    ),
+    sortie: Path = typer.Option(
+        Path("profil.yaml"),
+        "--sortie",
+        help="Chemin du profil à générer.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Écraser le fichier sortie s'il existe."
+    ),
+    stdout: bool = typer.Option(
+        False, "--stdout", help="Écrire sur la sortie standard au lieu du fichier."
+    ),
+) -> None:
+    """Analyser un tableur et générer un profil pré-rempli."""
+    try:
+        contenu = analyser_tableur(
+            chemin_tableur,
+            feuille=feuille,
+            cote_collection=cote,
+            titre_collection=titre,
+        )
+    except FileNotFoundError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+    # Compteurs pour le résumé.
+    nb_detectes = contenu.count("  # détecté")
+    nb_meta = contenu.count("\n  metadonnees.")
+    nb_total = nb_detectes + nb_meta
+
+    _ecrire_profil(contenu, sortie, force, stdout)
+    if not stdout:
+        typer.echo(f"✓ Tableur analysé : {chemin_tableur}")
+        typer.echo(f"  {nb_total} colonnes détectées")
+        typer.echo(f"  {nb_detectes} mappées automatiquement vers des champs dédiés")
+        typer.echo(f"  {nb_meta} mappées vers metadonnees.<slug>")
+        typer.echo(f"✓ Profil créé : {sortie}")
+        typer.echo("Prochaines étapes :")
+        typer.echo(f"  1. Ouvrez {sortie} dans votre éditeur.")
+        typer.echo(
+            '  2. Vérifiez les mappings signalés "# détecté" — corrigez '
+            "si l'heuristique a fait une erreur."
+        )
+        typer.echo(
+            "  3. Ajustez les colonnes metadonnees (séparateurs multivaleurs, "
+            "agrégations, suppression des colonnes inutiles)."
+        )
+        typer.echo("  4. Complétez les métadonnées de la collection.")
+        typer.echo("  5. Lancez un import en dry-run :")
+        typer.echo(f"     archives-tool importer {sortie}")
 
 
 def main() -> None:

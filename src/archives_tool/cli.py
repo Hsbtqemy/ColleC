@@ -6,6 +6,10 @@ from pathlib import Path
 
 import typer
 
+from archives_tool.affichage.collections import (
+    afficher_collections_arbre,
+    afficher_collections_plat,
+)
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dc_xml
@@ -303,6 +307,41 @@ def cmd_exporter(
     if strict and rapport.items_incomplets:
         raise typer.Exit(1)
     raise typer.Exit(0)
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `montrer` : commandes de visualisation en lecture seule.
+# ---------------------------------------------------------------------------
+
+montrer = typer.Typer(
+    help="Visualiser collections, items et fichiers en base.",
+    no_args_is_help=True,
+)
+app.add_typer(montrer, name="montrer")
+
+
+@montrer.command("collections")
+def cmd_montrer_collections(
+    recursif: bool = typer.Option(
+        False,
+        "--recursif/--pas-recursif",
+        help="Affichage en arbre plutôt qu'en tableau plat.",
+    ),
+    vide: bool = typer.Option(
+        True,
+        "--vide/--avec-items",
+        help="Inclure les collections sans items (mode plat seulement).",
+    ),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+) -> None:
+    """Lister toutes les collections (plat ou arbre)."""
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        if recursif:
+            afficher_collections_arbre(session)
+        else:
+            afficher_collections_plat(session, vide=vide)
 
 
 def main() -> None:

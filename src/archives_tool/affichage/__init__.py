@@ -1,5 +1,6 @@
-"""Affichage CLI : commandes `archives-tool montrer ...` (Rich)."""
+"""Affichage CLI : commandes `archives-tool montrer ...` (Rich).
 
-from .console import console
-
-__all__ = ["console"]
+Le sous-module `console` exporte l'instance partagée et le helper
+`silencer_pour_tests`. On ne les re-exporte pas ici pour ne pas
+masquer le nom du sous-module dans l'espace de noms du package.
+"""

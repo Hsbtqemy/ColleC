@@ -22,6 +22,15 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+from archives_tool.exporters.mapping_dc import DC, MAPPING_DC
+
+# Inversion URI Dublin Core → champ dédié interne, calculée une fois.
+# On ignore les clés `metadonnees.*` du mapping : on ne reconnaît que
+# les colonnes dédiées d'`Item` (cote, titre, date, ...).
+_DC_INVERSE: dict[str, str] = {
+    uri: champ for champ, uri in MAPPING_DC.items() if "." not in champ
+}
+
 # Détection nom de colonne → champ structurant (heuristique conservatrice).
 # En cas de doute on range plutôt dans metadonnees, qu'on impose au
 # code une fausse détection ennuyeuse à corriger.
@@ -74,22 +83,13 @@ def _detecter_champ_structurant(nom_colonne: str) -> str | None:
     """Renvoie le nom du champ dédié si détecté, ``None`` sinon.
 
     Reconnaît :
-    - les URI Dublin Core (via :data:`MAPPING_DC` inversée) ;
+    - les URI Dublin Core (via :data:`_DC_INVERSE`) ;
     - quelques noms de colonnes usuels (cote, titre, date, ...) ;
     - les colonnes contenant "doi" et "nakala" → ``doi_nakala``.
     """
-    # Import local pour éviter une dépendance circulaire au chargement.
-    from archives_tool.exporters.mapping_dc import DC, MAPPING_DC
-
-    inverse = {
-        uri: champ
-        for champ, uri in MAPPING_DC.items()
-        if "." not in champ  # uniquement les champs dédiés (pas metadonnees.*)
-    }
-
     nom = nom_colonne.strip()
-    if nom.startswith(DC) and nom in inverse:
-        return inverse[nom]
+    if nom.startswith(DC) and nom in _DC_INVERSE:
+        return _DC_INVERSE[nom]
     for pattern, champ in _HEURISTIQUES:
         if pattern.match(nom):
             return champ

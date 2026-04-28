@@ -149,6 +149,21 @@ def test_analyser_tableur_extension_inconnue(tmp_path: Path) -> None:
         analyser_tableur(fichier)
 
 
+def test_analyser_tableur_dedoublonnage_slug(tmp_path: Path) -> None:
+    # Deux noms de colonnes distincts qui produisent le même slug
+    # ("Sujet (FR)" et "Sujet_FR" → "sujet_fr"). Le second doit être
+    # suffixé "_2" au lieu d'être perdu silencieusement.
+    csv = tmp_path / "doublon.csv"
+    csv.write_text(
+        "Cote;Sujet (FR);Sujet_FR\nX1;a;b\n",
+        encoding="utf-8",
+    )
+    yml = analyser_tableur(csv)
+    # Les deux colonnes apparaissent avec des clés metadonnees.* distinctes.
+    assert "metadonnees.sujet_fr:" in yml
+    assert "metadonnees.sujet_fr_2:" in yml
+
+
 def test_analyser_tableur_personnalise_collection(tmp_path: Path) -> None:
     yml = analyser_tableur(
         FIXTURES / "cas_item_simple" / "tableur.csv",

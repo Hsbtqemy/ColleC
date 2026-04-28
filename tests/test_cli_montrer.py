@@ -275,6 +275,58 @@ def test_montrer_fichier_inexistant(base_avec_items: Path) -> None:
     assert "introuvable" in sortie.lower()
 
 
+def test_montrer_statistiques_globales(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        ["montrer", "statistiques", "--db-path", str(base_avec_items)]
+    )
+    assert code == 0
+    assert "Statistiques" in sortie
+    assert "Items" in sortie
+    # 5 (HK) + 4 (FA) = 9 items.
+    assert "9" in sortie
+    # Top 5 collections présent.
+    assert "HK" in sortie
+    assert "FA" in sortie
+
+
+def test_montrer_statistiques_par_collection(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        [
+            "montrer",
+            "statistiques",
+            "--collection",
+            "HK",
+            "--db-path",
+            str(base_avec_items),
+        ]
+    )
+    assert code == 0
+    # 5 items HK, par état (tous brouillon car valeurs_par_defaut).
+    assert "5" in sortie
+    assert "brouillon" in sortie
+
+
+def test_montrer_statistiques_collection_inexistante(base_avec_items: Path) -> None:
+    code, sortie = _invoquer(
+        [
+            "montrer",
+            "statistiques",
+            "--collection",
+            "XXX",
+            "--db-path",
+            str(base_avec_items),
+        ]
+    )
+    assert code == 1
+    assert "introuvable" in sortie.lower()
+
+
+def test_montrer_statistiques_base_vide(base_vide: Path) -> None:
+    code, sortie = _invoquer(["montrer", "statistiques", "--db-path", str(base_vide)])
+    assert code == 0
+    assert "Aucune donnée" in sortie
+
+
 def test_montrer_collections_base_vide(base_vide: Path) -> None:
     code, sortie = _invoquer(["montrer", "collections", "--db-path", str(base_vide)])
     assert code == 0

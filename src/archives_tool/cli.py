@@ -28,6 +28,8 @@ from archives_tool.profils import (
     charger_profil,
     generer_squelette,
 )
+from archives_tool.qa.affichage import afficher_rapport_qa
+from archives_tool.qa.controles import CODES_CONTROLES, controler_tout
 
 app = typer.Typer(
     help="Outil de gestion de collections numérisées.",
@@ -456,6 +458,94 @@ def cmd_montrer_collections(
             afficher_collections_arbre(session)
         else:
             afficher_collections_plat(session, vide=vide)
+
+
+# ---------------------------------------------------------------------------
+# Commande `controler` : contrôles de cohérence base/disque (lecture seule).
+# ---------------------------------------------------------------------------
+
+
+@app.command("controler")
+def cmd_controler(
+    collection: str = typer.Option(
+        None,
+        "--collection",
+        help="Limite les contrôles à une collection (sinon : toutes).",
+    ),
+    recursif: bool = typer.Option(
+        False,
+        "--recursif/--non-recursif",
+        help="Inclure les sous-collections lors d'un filtre par collection.",
+    ),
+    check: list[str] = typer.Option(
+        None,
+        "--check",
+        help=(
+            "Restreindre aux contrôles indiqués (multi). Codes : "
+            f"{', '.join(CODES_CONTROLES)}."
+        ),
+    ),
+    extensions: str = typer.Option(
+        None,
+        "--extensions",
+        help=(
+            "Liste d'extensions (séparées par virgule) pour le contrôle "
+            "des orphelins disque. Défaut : png,jpg,jpeg,tif,tiff,pdf."
+        ),
+    ),
+    limite_details: int = typer.Option(
+        20,
+        "--limite-details",
+        help="Nombre max de lignes affichées par contrôle (0 = illimité).",
+    ),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(
+        Path("config_local.yaml"),
+        "--config",
+        help=(
+            "Config locale (racines). Optionnelle : sans elle, le contrôle "
+            "des orphelins et des fichiers manquants se contente d'avertir."
+        ),
+    ),
+) -> None:
+    """Contrôler la cohérence base ↔ disque (lecture seule)."""
+    # Config locale optionnelle : si elle manque, on continue sans
+    # racines — les contrôles concernés se déclareront non vérifiables.
+    racines: dict[str, Path] = {}
+    try:
+        config = charger_config(config_path)
+        racines = dict(config.racines)
+    except FileNotFoundError:
+        typer.echo(
+            f"Config absente ({config_path}) : contrôles disque ignorés.",
+            err=True,
+        )
+    except Exception as e:
+        typer.echo(f"Config invalide : {e}", err=True)
+        raise typer.Exit(2) from None
+
+    exts: set[str] | None = None
+    if extensions is not None:
+        exts = {e.strip() for e in extensions.split(",") if e.strip()}
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    try:
+        with factory() as session:
+            rapport = controler_tout(
+                session,
+                racines=racines,
+                collection_cote=collection,
+                recursif=recursif,
+                checks=check or None,
+                extensions_orphelins=exts,
+            )
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+    afficher_rapport_qa(rapport, limite_details=limite_details)
+    raise typer.Exit(1 if rapport.nb_anomalies > 0 else 0)
 
 
 # ---------------------------------------------------------------------------

@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from rich.panel import Panel
 from rich.table import Table
 
 from archives_tool.affichage import console as cons
 
-from .rapport import (
-    AnomalieFichierManquant,
-    AnomalieItemVide,
-    AnomalieOrphelinDisque,
-    GroupeDoublons,
-    RapportControle,
-    RapportQa,
-)
+from .rapport import RapportControle, RapportQa
 
 LIMITE_DETAILS_DEFAUT = 20
 
@@ -38,56 +34,27 @@ def _afficher_avertissements(rap: RapportControle) -> None:
         cons.console.print(f"  [avertissement]⚠ {av}[/avertissement]")
 
 
-def _afficher_fichiers_manquants(rap: RapportControle, limite: int) -> None:
+def _afficher_table(
+    rap: RapportControle,
+    limite: int,
+    colonnes: list[str],
+    ligne: Callable[[Any], tuple[str, ...]],
+) -> None:
+    """Rendu commun des contrôles à anomalies tabulaires."""
     cons.console.print(_en_tete_controle(rap))
     _afficher_avertissements(rap)
     if not rap.anomalies:
         return
     table = Table(show_header=True, header_style="sous_titre", expand=False)
-    table.add_column("Item")
-    table.add_column("Racine")
-    table.add_column("Chemin relatif")
+    for nom in colonnes:
+        table.add_column(nom)
     montres = rap.anomalies[:limite] if limite > 0 else rap.anomalies
     for a in montres:
-        assert isinstance(a, AnomalieFichierManquant)
-        table.add_row(a.item_cote, a.racine, a.chemin_relatif)
+        table.add_row(*ligne(a))
     cons.console.print(table)
-    if limite > 0 and len(rap.anomalies) > limite:
-        cons.console.print(f"  [cle]… {len(rap.anomalies) - limite} de plus[/cle]")
-
-
-def _afficher_orphelins(rap: RapportControle, limite: int) -> None:
-    cons.console.print(_en_tete_controle(rap))
-    _afficher_avertissements(rap)
-    if not rap.anomalies:
-        return
-    table = Table(show_header=True, header_style="sous_titre", expand=False)
-    table.add_column("Racine")
-    table.add_column("Chemin relatif")
-    montres = rap.anomalies[:limite] if limite > 0 else rap.anomalies
-    for a in montres:
-        assert isinstance(a, AnomalieOrphelinDisque)
-        table.add_row(a.racine, a.chemin_relatif)
-    cons.console.print(table)
-    if limite > 0 and len(rap.anomalies) > limite:
-        cons.console.print(f"  [cle]… {len(rap.anomalies) - limite} de plus[/cle]")
-
-
-def _afficher_items_vides(rap: RapportControle, limite: int) -> None:
-    cons.console.print(_en_tete_controle(rap))
-    _afficher_avertissements(rap)
-    if not rap.anomalies:
-        return
-    table = Table(show_header=True, header_style="sous_titre", expand=False)
-    table.add_column("Collection")
-    table.add_column("Cote item")
-    montres = rap.anomalies[:limite] if limite > 0 else rap.anomalies
-    for a in montres:
-        assert isinstance(a, AnomalieItemVide)
-        table.add_row(a.collection_cote, a.cote)
-    cons.console.print(table)
-    if limite > 0 and len(rap.anomalies) > limite:
-        cons.console.print(f"  [cle]… {len(rap.anomalies) - limite} de plus[/cle]")
+    reste = len(rap.anomalies) - len(montres)
+    if reste > 0:
+        cons.console.print(f"  [cle]… {reste} de plus[/cle]")
 
 
 def _afficher_doublons(rap: RapportControle, limite: int) -> None:
@@ -97,7 +64,6 @@ def _afficher_doublons(rap: RapportControle, limite: int) -> None:
         return
     montres = rap.anomalies[:limite] if limite > 0 else rap.anomalies
     for groupe in montres:
-        assert isinstance(groupe, GroupeDoublons)
         cons.console.print(
             f"  [cle]hash[/cle] [valeur]{groupe.hash_sha256[:16]}…[/valeur] "
             f"({len(groupe.fichiers)} fichiers)"
@@ -106,16 +72,30 @@ def _afficher_doublons(rap: RapportControle, limite: int) -> None:
             cons.console.print(
                 f"    [cyan]{f.item_cote}[/cyan]  {f.racine}:{f.chemin_relatif}"
             )
-    if limite > 0 and len(rap.anomalies) > limite:
-        cons.console.print(
-            f"  [cle]… {len(rap.anomalies) - limite} groupes de plus[/cle]"
-        )
+    reste = len(rap.anomalies) - len(montres)
+    if reste > 0:
+        cons.console.print(f"  [cle]… {reste} groupes de plus[/cle]")
 
 
-_RENDU = {
-    "fichiers-manquants": _afficher_fichiers_manquants,
-    "orphelins-disque": _afficher_orphelins,
-    "items-vides": _afficher_items_vides,
+_RENDU: dict[str, Callable[[RapportControle, int], None]] = {
+    "fichiers-manquants": lambda rap, lim: _afficher_table(
+        rap,
+        lim,
+        ["Item", "Racine", "Chemin relatif"],
+        lambda a: (a.item_cote, a.racine, a.chemin_relatif),
+    ),
+    "orphelins-disque": lambda rap, lim: _afficher_table(
+        rap,
+        lim,
+        ["Racine", "Chemin relatif"],
+        lambda a: (a.racine, a.chemin_relatif),
+    ),
+    "items-vides": lambda rap, lim: _afficher_table(
+        rap,
+        lim,
+        ["Collection", "Cote item"],
+        lambda a: (a.collection_cote, a.cote),
+    ),
     "doublons": _afficher_doublons,
 }
 

@@ -7,14 +7,14 @@ aucune modification de fichiers sur disque.
 from __future__ import annotations
 
 import time
-import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from archives_tool.files.paths import normaliser_nfc
+from archives_tool.files.paths import chemin_existe_nfc_ou_nfd, normaliser_nfc
 from archives_tool.models import Collection, EtatFichier, Fichier, Item
 
 from .rapport import (
@@ -35,25 +35,6 @@ EXTENSIONS_PAR_DEFAUT: frozenset[str] = frozenset(
     {"png", "jpg", "jpeg", "tif", "tiff", "pdf"}
 )
 
-CODES_CONTROLES: tuple[str, ...] = (
-    "fichiers-manquants",
-    "orphelins-disque",
-    "items-vides",
-    "doublons",
-)
-
-LIBELLES = {
-    "fichiers-manquants": "Fichiers référencés mais absents du disque",
-    "orphelins-disque": "Fichiers sur disque non référencés en base",
-    "items-vides": "Items sans fichier rattaché",
-    "doublons": "Doublons potentiels (même hash SHA-256)",
-}
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _collection_par_cote(session: Session, cote: str) -> Collection:
     col = session.scalar(select(Collection).where(Collection.cote_collection == cote))
@@ -73,7 +54,6 @@ def _ids_arbre(racine: Collection) -> list[int]:
 
 
 def _filtre_ids_collections(stmt, ids_collections: list[int] | None):
-    """Ajoute la jointure et le filtre `Item.collection_id IN (...)` si besoin."""
     if ids_collections is None:
         return stmt
     return stmt.where(Item.collection_id.in_(ids_collections))
@@ -83,11 +63,6 @@ def _normaliser_extensions(extensions: Iterable[str] | None) -> frozenset[str]:
     if extensions is None:
         return EXTENSIONS_PAR_DEFAUT
     return frozenset(e.lower().lstrip(".") for e in extensions)
-
-
-# ---------------------------------------------------------------------------
-# Contrôle 1 — fichiers manquants sur disque
-# ---------------------------------------------------------------------------
 
 
 def controler_fichiers_manquants_disque(
@@ -127,19 +102,9 @@ def controler_fichiers_manquants_disque(
                 racines_inconnues_vues.add(fichier.racine)
             continue
 
-        base = racines[fichier.racine]
-        # `chemin_relatif` est stocké en POSIX/NFC. macOS (HFS+/APFS)
-        # absorbe la différence NFC↔NFD, mais Windows non : on teste
-        # explicitement les deux formes pour qu'un fonds décomposé sur
-        # un disque venu de Mac reste vérifiable depuis Windows.
-        parts = fichier.chemin_relatif.split("/")
-        chemin = base.joinpath(*parts)
-        if not chemin.exists():
-            chemin_nfd = base.joinpath(
-                *(unicodedata.normalize("NFD", p) for p in parts)
-            )
-            if chemin_nfd.exists():
-                continue
+        if not chemin_existe_nfc_ou_nfd(
+            racines[fichier.racine], fichier.chemin_relatif
+        ):
             rap.anomalies.append(
                 AnomalieFichierManquant(
                     fichier_id=fichier.id,
@@ -151,11 +116,6 @@ def controler_fichiers_manquants_disque(
 
     rap.duree_secondes = time.perf_counter() - debut
     return rap
-
-
-# ---------------------------------------------------------------------------
-# Contrôle 2 — fichiers sur disque non référencés
-# ---------------------------------------------------------------------------
 
 
 def controler_orphelins_disque(
@@ -187,8 +147,6 @@ def controler_orphelins_disque(
         rap.duree_secondes = time.perf_counter() - debut
         return rap
 
-    # Périmètre : si une collection est ciblée, on ne scanne que les
-    # racines effectivement utilisées par ses fichiers.
     if ids_collections is not None:
         utilisees = set(
             session.scalars(
@@ -205,8 +163,6 @@ def controler_orphelins_disque(
     else:
         racines_a_scanner = dict(racines)
 
-    # Index des chemins référencés (toutes collections), normalisés NFC
-    # casefold pour Windows/macOS.
     references: set[tuple[str, str]] = set()
     for racine, rel in session.execute(
         select(Fichier.racine, Fichier.chemin_relatif).where(
@@ -223,7 +179,7 @@ def controler_orphelins_disque(
             if not chemin.is_file():
                 continue
             nom = chemin.name
-            if nom.startswith("."):  # fichiers cachés / .DS_Store / Thumbs.db
+            if nom.startswith("."):
                 continue
             ext = chemin.suffix.lstrip(".").lower()
             if ext not in exts:
@@ -242,11 +198,6 @@ def controler_orphelins_disque(
     rap.anomalies.sort(key=lambda a: (a.racine, a.chemin_relatif))
     rap.duree_secondes = time.perf_counter() - debut
     return rap
-
-
-# ---------------------------------------------------------------------------
-# Contrôle 3 — items sans fichier
-# ---------------------------------------------------------------------------
 
 
 def controler_items_sans_fichier(
@@ -283,11 +234,6 @@ def controler_items_sans_fichier(
     return rap
 
 
-# ---------------------------------------------------------------------------
-# Contrôle 4 — doublons par hash
-# ---------------------------------------------------------------------------
-
-
 def controler_doublons_par_hash(
     session: Session,
     *,
@@ -297,6 +243,11 @@ def controler_doublons_par_hash(
 
     Les fichiers dont `hash_sha256 IS NULL` sont remontés en
     avertissement : le contrôle ne peut rien dire sur eux.
+
+    Stratégie en deux temps : on identifie d'abord les hashes
+    dupliqués via un `GROUP BY ... HAVING COUNT > 1`, puis on ne
+    charge en mémoire que les fichiers de ces groupes (en pratique
+    une fraction infime du fonds).
     """
     debut = time.perf_counter()
     rap = RapportControle(
@@ -304,32 +255,44 @@ def controler_doublons_par_hash(
         libelle=LIBELLES["doublons"],
     )
 
-    # Comptage des fichiers sans hash (pour avertissement).
     stmt_null = (
-        select(Fichier.id)
+        select(func.count(Fichier.id))
         .join(Item, Fichier.item_id == Item.id)
         .where(Fichier.hash_sha256.is_(None))
         .where(Fichier.etat == EtatFichier.ACTIF.value)
     )
     stmt_null = _filtre_ids_collections(stmt_null, ids_collections)
-    nb_sans_hash = len(session.execute(stmt_null).all())
+    nb_sans_hash = session.scalar(stmt_null) or 0
     if nb_sans_hash:
         rap.avertissements.append(
             f"{nb_sans_hash} fichier(s) sans hash : doublons non vérifiables."
         )
 
-    # Fichiers avec hash, triés par hash pour grouper.
-    stmt = (
-        select(Fichier, Item.cote)
+    stmt_groupes = (
+        select(Fichier.hash_sha256)
         .join(Item, Fichier.item_id == Item.id)
         .where(Fichier.hash_sha256.is_not(None))
         .where(Fichier.etat == EtatFichier.ACTIF.value)
+        .group_by(Fichier.hash_sha256)
+        .having(func.count(Fichier.id) > 1)
+    )
+    stmt_groupes = _filtre_ids_collections(stmt_groupes, ids_collections)
+    hashes_dup = list(session.scalars(stmt_groupes).all())
+    if not hashes_dup:
+        rap.duree_secondes = time.perf_counter() - debut
+        return rap
+
+    stmt_fichiers = (
+        select(Fichier, Item.cote)
+        .join(Item, Fichier.item_id == Item.id)
+        .where(Fichier.hash_sha256.in_(hashes_dup))
+        .where(Fichier.etat == EtatFichier.ACTIF.value)
         .order_by(Fichier.hash_sha256, Fichier.id)
     )
-    stmt = _filtre_ids_collections(stmt, ids_collections)
+    stmt_fichiers = _filtre_ids_collections(stmt_fichiers, ids_collections)
 
     groupes: dict[str, GroupeDoublons] = {}
-    for fichier, cote_item in session.execute(stmt).all():
+    for fichier, cote_item in session.execute(stmt_fichiers).all():
         h = fichier.hash_sha256
         groupe = groupes.setdefault(h, GroupeDoublons(hash_sha256=h))
         groupe.fichiers.append(
@@ -346,9 +309,47 @@ def controler_doublons_par_hash(
     return rap
 
 
-# ---------------------------------------------------------------------------
-# Orchestrateur
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class _DefControle:
+    """Définition d'un contrôle : code stable, libellé, fonction et
+    arguments supplémentaires acceptés. Source de vérité unique pour
+    `controler_tout` et l'affichage."""
+
+    code: str
+    libelle: str
+    fonction: Callable[..., RapportControle]
+    accepte_racines: bool = False
+    accepte_extensions: bool = False
+
+
+_CONTROLES: tuple[_DefControle, ...] = (
+    _DefControle(
+        "fichiers-manquants",
+        "Fichiers référencés mais absents du disque",
+        controler_fichiers_manquants_disque,
+        accepte_racines=True,
+    ),
+    _DefControle(
+        "orphelins-disque",
+        "Fichiers sur disque non référencés en base",
+        controler_orphelins_disque,
+        accepte_racines=True,
+        accepte_extensions=True,
+    ),
+    _DefControle(
+        "items-vides",
+        "Items sans fichier rattaché",
+        controler_items_sans_fichier,
+    ),
+    _DefControle(
+        "doublons",
+        "Doublons potentiels (même hash SHA-256)",
+        controler_doublons_par_hash,
+    ),
+)
+
+CODES_CONTROLES: tuple[str, ...] = tuple(d.code for d in _CONTROLES)
+LIBELLES: dict[str, str] = {d.code: d.libelle for d in _CONTROLES}
 
 
 def controler_tout(
@@ -366,18 +367,14 @@ def controler_tout(
     """
     debut = time.perf_counter()
 
-    if checks is None:
-        codes = list(CODES_CONTROLES)
-    else:
-        codes = list(checks)
-        inconnus = [c for c in codes if c not in CODES_CONTROLES]
-        if inconnus:
-            raise ValueError(
-                f"Code(s) de contrôle inconnu(s) : {inconnus!r}. "
-                f"Attendu : {list(CODES_CONTROLES)}."
-            )
+    codes_demandes = list(checks) if checks is not None else list(CODES_CONTROLES)
+    inconnus = [c for c in codes_demandes if c not in LIBELLES]
+    if inconnus:
+        raise ValueError(
+            f"Code(s) de contrôle inconnu(s) : {inconnus!r}. "
+            f"Attendu : {list(CODES_CONTROLES)}."
+        )
 
-    # Périmètre.
     ids_collections: list[int] | None = None
     portee = "global"
     if collection_cote is not None:
@@ -386,33 +383,17 @@ def controler_tout(
         portee = f"collection {collection_cote}{' (récursif)' if recursif else ''}"
 
     racines_eff: Mapping[str, Path] = racines or {}
-
     rapport = RapportQa(portee=portee)
 
-    for code in codes:
-        if code == "fichiers-manquants":
-            rapport.controles.append(
-                controler_fichiers_manquants_disque(
-                    session, racines_eff, ids_collections=ids_collections
-                )
-            )
-        elif code == "orphelins-disque":
-            rapport.controles.append(
-                controler_orphelins_disque(
-                    session,
-                    racines_eff,
-                    ids_collections=ids_collections,
-                    extensions=extensions_orphelins,
-                )
-            )
-        elif code == "items-vides":
-            rapport.controles.append(
-                controler_items_sans_fichier(session, ids_collections=ids_collections)
-            )
-        elif code == "doublons":
-            rapport.controles.append(
-                controler_doublons_par_hash(session, ids_collections=ids_collections)
-            )
+    par_code = {d.code: d for d in _CONTROLES}
+    for code in codes_demandes:
+        defc = par_code[code]
+        kwargs: dict = {"ids_collections": ids_collections}
+        if defc.accepte_racines:
+            kwargs = {"racines": racines_eff, **kwargs}
+        if defc.accepte_extensions:
+            kwargs["extensions"] = extensions_orphelins
+        rapport.controles.append(defc.fonction(session, **kwargs))
 
     rapport.duree_secondes = time.perf_counter() - debut
     return rapport

@@ -56,6 +56,20 @@ def resoudre_chemin(
     return base.joinpath(*rel.parts)
 
 
+def chemin_existe_nfc_ou_nfd(base: Path, chemin_relatif: str) -> bool:
+    """Existence du chemin sous `base`, robuste aux différences NFC/NFD.
+
+    Windows et Linux préservent la forme exacte du nom ; macOS (HFS+/
+    APFS) absorbe NFC↔NFD. Un fonds décomposé sur un disque venu de Mac
+    doit rester vérifiable depuis Windows : on teste les deux formes
+    avant de conclure à l'absence.
+    """
+    parts = chemin_relatif.split("/")
+    if base.joinpath(*parts).exists():
+        return True
+    return base.joinpath(*(unicodedata.normalize("NFD", p) for p in parts)).exists()
+
+
 def hash_sha256(chemin: Path, taille_buffer: int = 1 << 16) -> str:
     """SHA-256 d'un fichier, lu par buffers (constant en mémoire)."""
     h = hashlib.sha256()

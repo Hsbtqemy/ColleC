@@ -231,6 +231,22 @@ Commandes : `montrer collections`, `montrer collection COTE`,
 Référence complète dans
 [`docs/commandes_montrer.md`](docs/commandes_montrer.md).
 
+### Contrôles de cohérence
+
+`src/archives_tool/qa/` regroupe les contrôles de cohérence
+base ↔ disque (lecture seule, jamais d'écriture) :
+
+- `controles.py` : quatre fonctions pures session → `RapportControle`
+  (fichiers manquants sur disque, orphelins disque, items sans
+  fichier, doublons par hash) plus un orchestrateur `controler_tout`.
+- `rapport.py` : dataclasses des anomalies et du rapport global.
+- `affichage.py` : rendu Rich par contrôle.
+
+CLI : `archives-tool controler [--collection ...] [--recursif]
+[--check ...] [--extensions ...] [--limite-details N]`. Exit 0
+si aucune anomalie, 1 sinon. Référence complète dans
+[`docs/controles.md`](docs/controles.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -395,12 +411,12 @@ archives-tool/
   non mappées vers URI canoniques).
 - Export JSON-LD avec contextes COAR et Nakala (reporté).
 
-**Contrôles de cohérence de base** :
+**Contrôles de cohérence de base** (fait) :
 
-- Fichiers référencés sans fichier sur disque.
-- Fichiers sur disque sans référence en base.
-- Items sans fichier.
-- Doublons potentiels (même hash).
+- ✅ Fichiers référencés sans fichier sur disque.
+- ✅ Fichiers sur disque sans référence en base.
+- ✅ Items sans fichier.
+- ✅ Doublons potentiels (même hash).
 
 ### V2 — Confort du chantier vivant
 
@@ -716,6 +732,11 @@ uv run archives-tool exporter nakala-csv --collection RDM --etat valide \
 uv run archives-tool profil analyser inventaire.xlsx --sortie mon_profil.yaml
 uv run archives-tool profil init --cote HK --titre "Hara-Kiri" \
     --tableur inventaire.xlsx --sortie squelette.yaml
+
+# Contrôles de cohérence (lecture seule)
+uv run archives-tool controler
+uv run archives-tool controler --collection HK --recursif
+uv run archives-tool controler --check items-vides --check doublons
 
 # Visualisation (lecture seule, Rich)
 uv run archives-tool montrer collections

@@ -318,7 +318,7 @@ Saisie nouvelle     ─┘                                ▲
 
 ## Modèle de données (résumé)
 
-Entités principales — détails dans `docs/schema.md`.
+Entités principales — détails dans [`schema.md`](schema.md).
 
 - **Collection** : id, titre, cote_collection, éditeur, périodicité,
   dates, profil_import_id, métadonnées_communes (JSON).
@@ -358,6 +358,7 @@ Entités principales — détails dans `docs/schema.md`.
 archives-tool/
 ├── CLAUDE.md
 ├── README.md
+├── schema.md                  # Référence du modèle de données
 ├── pyproject.toml
 ├── alembic.ini
 ├── alembic/
@@ -383,10 +384,7 @@ archives-tool/
 ├── tests/
 ├── data/                      # .db et dérivés (gitignoré)
 ├── scripts/
-└── docs/
-    ├── schema.md
-    ├── profils.md
-    └── deploiement.md
+└── docs/                      # Références par module (importer.md, exports.md, …)
 ```
 
 ### Règles de code

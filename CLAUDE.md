@@ -247,6 +247,29 @@ CLI : `archives-tool controler [--collection ...] [--recursif]
 si aucune anomalie, 1 sinon. Référence complète dans
 [`docs/controles.md`](docs/controles.md).
 
+### Renommage transactionnel
+
+`src/archives_tool/renamer/` orchestre le renommage en quatre temps :
+
+- `template.py` : évaluation d'un template Python (`str.format`)
+  avec les variables d'un fichier et de son item.
+- `plan.py` : construction du plan, détection des conflits
+  (collisions intra-batch, externes) et des cycles (résolus, pas
+  bloqués).
+- `execution.py` : exécution en deux phases (`src→tmp`, `tmp→dst`)
+  sur disque et en base, avec rollback compensateur en cas d'erreur
+  mid-batch. La contrainte `UNIQUE(racine, chemin_relatif)` impose
+  ce passage par un nom temporaire pour les cycles.
+- `annulation.py` : retour en arrière d'un batch via son `batch_id`,
+  idempotent.
+- `historique.py` : vue agrégée des batchs `OperationFichier`.
+
+CLI : `archives-tool renommer appliquer --template ... [--collection
+COTE | --item COTE | --fichier-id ID]`, `archives-tool renommer
+annuler --batch-id UUID`, `archives-tool renommer historique`.
+Dry-run par défaut. Référence complète dans
+[`docs/renamer.md`](docs/renamer.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -385,7 +408,7 @@ archives-tool/
 - Création de collection, sous-collection, item, rattachement de
   fichier depuis la CLI.
 - Import depuis profil YAML (voir session dédiée).
-- Renommage transactionnel avec aperçu et journal.
+- ✅ Renommage transactionnel avec aperçu et journal.
 - Résolution des chemins via racines configurables.
 - Génération de dérivés (vignettes, aperçu moyen).
 
@@ -737,6 +760,14 @@ uv run archives-tool profil init --cote HK --titre "Hara-Kiri" \
 uv run archives-tool controler
 uv run archives-tool controler --collection HK --recursif
 uv run archives-tool controler --check items-vides --check doublons
+
+# Renommage transactionnel
+uv run archives-tool renommer appliquer \
+    --template "{cote}-{ordre:02d}.{ext}" --collection HK
+uv run archives-tool renommer appliquer \
+    --template "{cote}.{ext}" --collection HK --no-dry-run --utilisateur "Marie"
+uv run archives-tool renommer annuler --batch-id <UUID> --no-dry-run
+uv run archives-tool renommer historique
 
 # Visualisation (lecture seule, Rich)
 uv run archives-tool montrer collections

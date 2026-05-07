@@ -31,6 +31,7 @@ from archives_tool.profils import (
     charger_profil,
     generer_squelette,
 )
+from archives_tool.demo import peupler_base
 from archives_tool.derivatives import generer_derives, nettoyer_derives
 from archives_tool.derivatives.affichage import (
     afficher_rapport as afficher_rapport_derives,
@@ -972,6 +973,58 @@ def cmd_profil_analyser(
         typer.echo("  4. Complétez les métadonnées de la collection.")
         typer.echo("  5. Lancez un import en dry-run :")
         typer.echo(f"     archives-tool importer {sortie}")
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `demo` : génération d'une base de démonstration.
+# ---------------------------------------------------------------------------
+
+demo = typer.Typer(
+    help="Outils autour de la base de démonstration.",
+    no_args_is_help=True,
+)
+app.add_typer(demo, name="demo")
+
+
+@demo.command("init")
+def cmd_demo_init(
+    sortie: Path = typer.Option(
+        Path("data/demo.db"),
+        "--sortie",
+        help="Chemin du fichier .db à créer.",
+    ),
+    force: bool = typer.Option(False, "--force", help="Écraser un fichier existant."),
+) -> None:
+    """Créer une base SQLite peuplée pour explorer l'interface."""
+    if sortie.exists():
+        if not force:
+            typer.echo(
+                f"Erreur : {sortie} existe déjà. Utilisez --force pour écraser.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        sortie.unlink()
+
+    rapport = peupler_base(sortie)
+    console_mod.console.print(
+        f"[succes]✓[/succes] Base de démonstration créée : "
+        f"[valeur]{rapport.chemin_db}[/valeur]"
+    )
+    console_mod.console.print(
+        f"  {rapport.nb_collections} collections "
+        f"({rapport.nb_collections_racines} racines + "
+        f"{rapport.nb_collections - rapport.nb_collections_racines} sous)"
+    )
+    console_mod.console.print(f"  {rapport.nb_items} items répartis")
+    console_mod.console.print(f"  {rapport.nb_fichiers} fichiers référencés")
+    console_mod.console.print(
+        f"  {rapport.nb_anomalies} points de vigilance synthétiques"
+    )
+    console_mod.console.print(
+        "Pour lancer l'interface sur cette base :\n"
+        f"  ARCHIVES_DB={rapport.chemin_db} "
+        "uv run uvicorn archives_tool.api.main:app --reload"
+    )
 
 
 def main() -> None:

@@ -132,6 +132,11 @@ def generer_derives_pour_fichier(
 
     if not dry_run:
         fichier.derive_genere = True
+        # Persiste les chemins relatifs des dérivés sur le Fichier ;
+        # le service `resoudre_source_image` les lit pour la visionneuse
+        # sans recalculer la convention de nommage.
+        fichier.apercu_chemin = res.derives_crees.get("apercu")
+        fichier.vignette_chemin = res.derives_crees.get("vignette")
         if fichier.largeur_px is None:
             fichier.largeur_px = res.largeur_originale
         if fichier.hauteur_px is None:
@@ -254,6 +259,8 @@ def nettoyer_derives(
                 res.derives_crees[nom_taille] = chemin_rel
         if not dry_run:
             fichier.derive_genere = False
+            fichier.apercu_chemin = None
+            fichier.vignette_chemin = None
         rapport.comptabiliser(res)
 
     if not dry_run and rapport.nb_nettoyes > 0:

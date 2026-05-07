@@ -19,6 +19,7 @@ from .annulation import annuler_batch
 from .execution import executer_plan
 from .plan import construire_plan
 from .rapport import (
+    CodeConflit,
     Conflit,
     OperationRenommage,
     RapportAnnulation,
@@ -34,6 +35,7 @@ __all__ = [
     "construire_plan",
     "evaluer_template",
     "EchecTemplate",
+    "CodeConflit",
     "Conflit",
     "OperationRenommage",
     "RapportAnnulation",

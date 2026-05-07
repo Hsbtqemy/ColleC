@@ -35,6 +35,19 @@ def vers_posix(chemin: Path | str) -> str:
     return normaliser_nfc(brut.replace("\\", "/"))
 
 
+def valider_chemin_relatif(chemin_relatif: str) -> PurePosixPath:
+    """Normalise NFC et rejette les chemins absolus ou contenant `..`.
+
+    Garde-fou unique pour empêcher qu'une valeur en base ne sorte de
+    sa racine. Utilisé par `resoudre_chemin` et tout calcul de cible
+    issu d'un template utilisateur.
+    """
+    rel = PurePosixPath(normaliser_nfc(chemin_relatif))
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"Chemin relatif invalide : {chemin_relatif!r}")
+    return rel
+
+
 def resoudre_chemin(
     racines: Mapping[str, Path],
     racine: str,
@@ -44,16 +57,12 @@ def resoudre_chemin(
 
     Rejette :
     - les racines inconnues (KeyError) ;
-    - les chemins relatifs absolus ou contenant `..` (ValueError),
-      pour empêcher qu'une valeur en base ne sorte de la racine.
+    - les chemins relatifs absolus ou contenant `..` (ValueError).
     """
     if racine not in racines:
         raise KeyError(f"Racine logique inconnue : {racine!r}")
-    base = racines[racine]
-    rel = PurePosixPath(normaliser_nfc(chemin_relatif))
-    if rel.is_absolute() or ".." in rel.parts:
-        raise ValueError(f"Chemin relatif invalide : {chemin_relatif!r}")
-    return base.joinpath(*rel.parts)
+    rel = valider_chemin_relatif(chemin_relatif)
+    return racines[racine].joinpath(*rel.parts)
 
 
 def chemin_existe_nfc_ou_nfd(base: Path, chemin_relatif: str) -> bool:

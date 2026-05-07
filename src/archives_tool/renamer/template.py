@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from archives_tool.files.paths import normaliser_nfc
+from archives_tool.files.paths import normaliser_nfc, valider_chemin_relatif
 from archives_tool.models import Collection, Fichier, Item
 
 
@@ -69,6 +69,8 @@ def evaluer_template(
     rendu = normaliser_nfc(rendu).replace("\\", "/").strip("/")
     if not rendu:
         raise EchecTemplate("Template vide après évaluation.")
-    if ".." in PurePosixPath(rendu).parts:
-        raise EchecTemplate(f"Le template tente de sortir de la racine : {rendu!r}")
+    try:
+        valider_chemin_relatif(rendu)
+    except ValueError as e:
+        raise EchecTemplate(str(e)) from e
     return rendu

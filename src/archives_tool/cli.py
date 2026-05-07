@@ -6,6 +6,9 @@ from pathlib import Path
 
 import typer
 
+from rich.table import Table
+
+import archives_tool.affichage.console as console_mod
 from archives_tool.affichage.collections import (
     afficher_collections_arbre,
     afficher_collections_plat,
@@ -672,10 +675,6 @@ def cmd_renommer_historique(
     db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
 ) -> None:
     """Afficher les derniers batchs de renommage."""
-    from rich.table import Table
-
-    import archives_tool.affichage.console as console_mod
-
     engine = creer_engine(db_path)
     factory = creer_session_factory(engine)
     with factory() as session:

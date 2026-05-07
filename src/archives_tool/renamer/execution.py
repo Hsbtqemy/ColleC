@@ -14,7 +14,9 @@ tolère pas les états intermédiaires) :
 
 En cas d'erreur disque ou base, un *rollback compensateur* rejoue les
 renommages inverses sur les opérations déjà appliquées avant
-`session.rollback()`.
+`session.rollback()`. Les compensations qui échouent à leur tour sont
+remontées dans `rap.erreurs` : sans cela, l'utilisateur ne saurait
+pas que des fichiers sont coincés sous un nom temporaire.
 """
 
 from __future__ import annotations
@@ -25,8 +27,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.files.paths import resoudre_chemin
 from archives_tool.models import (
     Fichier,
     OperationFichier,
@@ -41,14 +45,10 @@ from .rapport import OperationRenommage, RapportExecution, RapportPlan, StatutPl
 class _Mouvement:
     op: OperationRenommage
     fichier: Fichier
-    src: Path  # chemin disque initial
-    tmp: Path  # chemin disque temporaire
-    dst: Path  # chemin disque final
-    tmp_relatif: str  # chemin_relatif POSIX correspondant à tmp
-
-
-def _chemin_absolu(base: Path, chemin_relatif: str) -> Path:
-    return base.joinpath(*chemin_relatif.split("/"))
+    src: Path
+    tmp: Path
+    dst: Path
+    tmp_relatif: str
 
 
 def _operations_a_appliquer(plan: RapportPlan) -> list[OperationRenommage]:
@@ -59,22 +59,29 @@ def _operations_a_appliquer(plan: RapportPlan) -> list[OperationRenommage]:
     ]
 
 
+def _charger_fichiers(session: Session, ids: list[int]) -> dict[int, Fichier]:
+    if not ids:
+        return {}
+    rows = session.scalars(select(Fichier).where(Fichier.id.in_(ids))).all()
+    return {f.id: f for f in rows}
+
+
 def _construire_mouvements(
     a_renommer: list[OperationRenommage],
     racines: Mapping[str, Path],
     session: Session,
 ) -> list[_Mouvement]:
+    fichiers = _charger_fichiers(session, [op.fichier_id for op in a_renommer])
     mouvements: list[_Mouvement] = []
     for op in a_renommer:
-        base = racines[op.racine]
-        src = _chemin_absolu(base, op.chemin_avant)
-        dst = _chemin_absolu(base, op.chemin_apres)
+        src = resoudre_chemin(racines, op.racine, op.chemin_avant)
+        dst = resoudre_chemin(racines, op.racine, op.chemin_apres)
         tmp_nom = f".tmp_rename_{uuid.uuid4().hex[:12]}_{src.name}"
         tmp = src.parent / tmp_nom
         parent_rel = PurePosixPath(op.chemin_avant).parent
         tmp_relatif = (parent_rel / tmp_nom).as_posix().lstrip("/")
 
-        fichier = session.get(Fichier, op.fichier_id)
+        fichier = fichiers.get(op.fichier_id)
         if fichier is None:
             raise RuntimeError(f"Fichier {op.fichier_id} introuvable.")
 
@@ -91,25 +98,33 @@ def _construire_mouvements(
     return mouvements
 
 
-def _compenser(mouvements: list[_Mouvement], phase2_appliquees: int) -> int:
-    """Rejoue les mouvements inverses, du plus récent au plus ancien.
+def _renommer_signaler(src: Path, dst: Path, erreurs: list[str]) -> bool:
+    """Tente un rename et collecte l'erreur dans `erreurs` si elle échoue.
 
-    Retourne le nombre de mouvements compensés. Best-effort : une
-    compensation qui échoue n'interrompt pas les suivantes.
+    Utilisé en phase de compensation : on enchaîne au mieux et on
+    laisse l'utilisateur voir tout ce qui est resté en l'état.
     """
+    try:
+        src.rename(dst)
+        return True
+    except OSError as e:
+        erreurs.append(f"Compensation impossible {src} → {dst} : {e}")
+        return False
+
+
+def _compenser_apres_phase2(
+    mouvements: list[_Mouvement],
+    phase2_appliquees: int,
+    erreurs: list[str],
+) -> int:
+    """Inverse les renommages déjà appliqués en phase 2 puis en phase 1."""
     compensees = 0
     for m in reversed(mouvements[:phase2_appliquees]):
-        try:
-            m.dst.rename(m.tmp)
+        if _renommer_signaler(m.dst, m.tmp, erreurs):
             compensees += 1
-        except OSError:
-            pass
     for m in reversed(mouvements):
-        try:
-            m.tmp.rename(m.src)
+        if _renommer_signaler(m.tmp, m.src, erreurs):
             compensees += 1
-        except OSError:
-            pass
     return compensees
 
 
@@ -146,12 +161,11 @@ def executer_plan(
 
     try:
         mouvements = _construire_mouvements(a_renommer, racines, session)
-    except RuntimeError as e:
+    except (RuntimeError, KeyError, ValueError) as e:
         rap.erreurs.append(str(e))
         rap.duree_secondes = time.perf_counter() - debut
         return rap
 
-    # Phase 1 — disque src→tmp et DB chemin_relatif=tmp.
     phase1_disque_appliquees = 0
     try:
         for m in mouvements:
@@ -161,19 +175,14 @@ def executer_plan(
             m.fichier.nom_fichier = m.tmp.name
         session.flush()
     except Exception as e:
-        # Rollback compensateur phase 1 uniquement.
         for m in reversed(mouvements[:phase1_disque_appliquees]):
-            try:
-                m.tmp.rename(m.src)
-            except OSError:
-                pass
+            _renommer_signaler(m.tmp, m.src, rap.erreurs)
         session.rollback()
-        rap.erreurs.append(f"Échec phase 1 : {e}")
+        rap.erreurs.insert(0, f"Échec phase 1 : {e}")
         rap.operations_compensees = phase1_disque_appliquees
         rap.duree_secondes = time.perf_counter() - debut
         return rap
 
-    # Phase 2 — disque tmp→dst, DB chemin_relatif final, journal.
     phase2_appliquees = 0
     try:
         for m in mouvements:
@@ -197,9 +206,9 @@ def executer_plan(
             )
         session.commit()
     except Exception as e:
-        compensees = _compenser(mouvements, phase2_appliquees)
+        compensees = _compenser_apres_phase2(mouvements, phase2_appliquees, rap.erreurs)
         session.rollback()
-        rap.erreurs.append(f"Échec phase 2 : {e}")
+        rap.erreurs.insert(0, f"Échec phase 2 : {e}")
         rap.operations_compensees = compensees
         rap.duree_secondes = time.perf_counter() - debut
         return rap

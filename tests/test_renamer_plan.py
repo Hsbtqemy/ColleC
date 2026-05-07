@@ -310,3 +310,86 @@ def test_plan_template_invalide_marque_op_bloquee(
 def test_plan_perimetre_vide_leve_erreur(session: Session) -> None:
     with pytest.raises(ValueError, match="périmètre"):
         construire_plan(session, template="{cote}.{ext}", racines={})
+
+
+def test_plan_cycle_longueur_3(session: Session, tmp_path: Path) -> None:
+    """Cycle A→B→C→A : les trois ops sont marquées EN_CYCLE."""
+    racine = tmp_path / "s"
+    racine.mkdir()
+    col = Collection(cote_collection="C", titre="T")
+    session.add(col)
+    session.flush()
+    items = [Item(collection_id=col.id, cote=c) for c in ("ALPHA", "BETA", "GAMMA")]
+    session.add_all(items)
+    session.flush()
+    # Disque + base : ALPHA est sur "GAMMA.png", BETA sur "ALPHA.png",
+    # GAMMA sur "BETA.png". Avec template {cote}.{ext} :
+    #   GAMMA.png (item ALPHA) → ALPHA.png
+    #   ALPHA.png (item BETA) → BETA.png
+    #   BETA.png (item GAMMA) → GAMMA.png
+    for nom in ("ALPHA.png", "BETA.png", "GAMMA.png"):
+        (racine / nom).write_bytes(b"x")
+    session.add_all(
+        [
+            Fichier(
+                item_id=items[0].id,
+                racine="s",
+                chemin_relatif="GAMMA.png",
+                nom_fichier="GAMMA.png",
+                ordre=1,
+            ),
+            Fichier(
+                item_id=items[1].id,
+                racine="s",
+                chemin_relatif="ALPHA.png",
+                nom_fichier="ALPHA.png",
+                ordre=1,
+            ),
+            Fichier(
+                item_id=items[2].id,
+                racine="s",
+                chemin_relatif="BETA.png",
+                nom_fichier="BETA.png",
+                ordre=1,
+            ),
+        ]
+    )
+    session.commit()
+
+    rap = construire_plan(
+        session,
+        template="{cote}.{ext}",
+        racines={"s": racine},
+        collection_cote="C",
+    )
+    assert rap.applicable
+    assert all(op.statut == StatutPlan.EN_CYCLE for op in rap.operations)
+    assert rap.conflits == []
+
+
+def test_detecter_cycles_chaine_dans_cycle() -> None:
+    """Test direct de _detecter_cycles : A→B, B→C, C→B."""
+    from archives_tool.renamer.plan import _detecter_cycles
+    from archives_tool.renamer.rapport import OperationRenommage, StatutPlan
+
+    ops = [
+        OperationRenommage(1, "s", "A", "B", StatutPlan.PRET),
+        OperationRenommage(2, "s", "B", "C", StatutPlan.PRET),
+        OperationRenommage(3, "s", "C", "B", StatutPlan.PRET),
+    ]
+    indices = _detecter_cycles(ops)
+    # Le cycle est {B, C} → ops 1 et 2. L'op 0 (A→B) n'est pas dans
+    # un cycle même si elle vise une cible dans le cycle.
+    assert indices == {1, 2}
+
+
+def test_detecter_cycles_longueur_3() -> None:
+    from archives_tool.renamer.plan import _detecter_cycles
+    from archives_tool.renamer.rapport import OperationRenommage, StatutPlan
+
+    ops = [
+        OperationRenommage(1, "s", "A", "B", StatutPlan.PRET),
+        OperationRenommage(2, "s", "B", "C", StatutPlan.PRET),
+        OperationRenommage(3, "s", "C", "A", StatutPlan.PRET),
+    ]
+    assert _detecter_cycles(ops) == {0, 1, 2}

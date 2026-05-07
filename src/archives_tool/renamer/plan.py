@@ -3,8 +3,16 @@
 Trois familles de problèmes sont identifiées ici :
 - collision intra-batch : plusieurs ops visent la même cible ;
 - collision externe : la cible existe déjà sur disque hors du batch ;
-- cycle : A→B et B→A. Résolu par l'exécuteur via un pivot temporaire,
-  donc seulement *marqué* ici, pas bloqué.
+- cycle de longueur >= 2 (A→B→A, A→B→C→A, ...). Résolu par
+  l'exécuteur via un pivot temporaire, donc seulement *marqué* ici,
+  pas bloqué.
+
+Hypothèse TOCTOU : la vérification de collision externe passe par
+`chemin_existe_nfc_ou_nfd` puis l'exécuteur fait `rename`. Entre les
+deux, un fichier pourrait apparaître sur la cible. L'outil cible un
+usage mono-utilisateur (cf. CLAUDE.md), donc on accepte ce risque ;
+l'exécuteur déclenchera son rollback compensateur si l'erreur disque
+remonte.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from archives_tool.files.paths import chemin_existe_nfc_ou_nfd, normaliser_nfc
 from archives_tool.models import Collection, EtatFichier, Fichier, Item
 
 from .rapport import (
+    CodeConflit,
     Conflit,
     OperationRenommage,
     RapportPlan,
@@ -132,7 +141,13 @@ def construire_plan(
     fichier_ids: list[int] | None = None,
     recursif: bool = False,
 ) -> RapportPlan:
-    """Construit le plan de renommage et signale les conflits."""
+    """Construit le plan de renommage et signale les conflits.
+
+    L'ensemble des fichiers sélectionnés est chargé en mémoire :
+    acceptable jusqu'à quelques dizaines de milliers de lignes
+    (ordre de grandeur du fonds documenté dans CLAUDE.md). Au-delà,
+    streamer par lot.
+    """
     debut = time.perf_counter()
     rap = RapportPlan()
 
@@ -159,7 +174,7 @@ def construire_plan(
             )
             rap.conflits.append(
                 Conflit(
-                    code="template_invalide",
+                    code=CodeConflit.TEMPLATE_INVALIDE,
                     message=f"Fichier {fichier.id} : {e}",
                     fichier_ids=[fichier.id],
                 )
@@ -194,7 +209,7 @@ def construire_plan(
             ids = [operations[i].fichier_id for i in indices]
             rap.conflits.append(
                 Conflit(
-                    code="collision_intra_batch",
+                    code=CodeConflit.COLLISION_INTRA_BATCH,
                     message=(
                         f"{len(indices)} fichiers visent la même cible {racine}:{cible}"
                     ),
@@ -239,7 +254,7 @@ def construire_plan(
         if chemin_existe_nfc_ou_nfd(base, op.chemin_apres):
             rap.conflits.append(
                 Conflit(
-                    code="collision_externe",
+                    code=CodeConflit.COLLISION_EXTERNE,
                     message=(
                         f"Fichier {op.fichier_id} : la cible "
                         f"{op.racine}:{op.chemin_apres} existe déjà sur disque."

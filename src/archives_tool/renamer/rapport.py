@@ -23,11 +23,17 @@ class OperationRenommage:
     raison: str | None = None
 
 
+class CodeConflit(enum.StrEnum):
+    COLLISION_INTRA_BATCH = "collision_intra_batch"
+    COLLISION_EXTERNE = "collision_externe"
+    TEMPLATE_INVALIDE = "template_invalide"
+
+
 @dataclass
 class Conflit:
     """Anomalie détectée à la construction du plan."""
 
-    code: str  # 'collision_intra_batch' | 'collision_externe' | 'template_invalide'
+    code: CodeConflit
     message: str
     fichier_ids: list[int] = field(default_factory=list)
 

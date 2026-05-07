@@ -40,3 +40,18 @@ templates.env.filters["libelle_phase"] = lambda p: (
 )
 templates.env.filters["temps_relatif"] = _temps_relatif
 templates.env.filters["taille_humaine"] = formater_taille_octets
+
+
+def rendre_avec_partial(
+    request,
+    *,
+    page_template: str,
+    partial_template: str,
+    contexte: dict,
+):
+    """Sert le template plein lors d'un accès direct, le partiel lors
+    d'un swap HTMX (en-tête `HX-Request`). Permet une seule URL par
+    onglet, à la fois bookmarkable et fluide.
+    """
+    nom = partial_template if request.headers.get("HX-Request") else page_template
+    return templates.TemplateResponse(request, nom, contexte)

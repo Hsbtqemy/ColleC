@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from archives_tool.api.routes import dashboard, derives
+from archives_tool.api.routes import collection, dashboard, derives, item
 
 RACINE_STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
@@ -19,4 +19,6 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
 app.include_router(dashboard.router)
+app.include_router(collection.router)
+app.include_router(item.router)
 app.include_router(derives.router, prefix="/derives")

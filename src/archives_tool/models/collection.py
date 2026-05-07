@@ -74,6 +74,20 @@ class Collection(Base, TracabiliteMixin):
         Index("ix_collection_parent_id", "parent_id"),
     )
 
+    def ids_descendants(self) -> list[int]:
+        """IDs de cette collection et de toute sa descendance (BFS).
+
+        Source de vérité unique pour les requêtes scopées à un sous-arbre
+        (importer, qa, renamer, derivatives, exporters).
+        """
+        ids = [self.id]
+        a_visiter = list(self.enfants)
+        while a_visiter:
+            n = a_visiter.pop(0)
+            ids.append(n.id)
+            a_visiter.extend(n.enfants)
+        return ids
+
 
 def valider_hierarchie(collection: Collection) -> None:
     """Lève ValueError si la chaîne de parents contient un cycle.

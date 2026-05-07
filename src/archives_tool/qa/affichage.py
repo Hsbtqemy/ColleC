@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from rich.panel import Panel
 from rich.table import Table
 
 from archives_tool.affichage import console as cons
+from archives_tool.affichage.formatters import panel_kv
 
 from .rapport import RapportControle, RapportQa
 
@@ -111,14 +111,14 @@ def afficher_rapport_qa(
     illimité). Les avertissements sont toujours intégralement rendus.
     """
     cons.console.print(
-        Panel(
-            f"[cle]Portée[/cle] : [valeur]{rapport.portee}[/valeur]\n"
-            f"[cle]Contrôles[/cle] : [valeur]{len(rapport.controles)}[/valeur]\n"
-            f"[cle]Anomalies totales[/cle] : "
-            f"[valeur]{rapport.nb_anomalies}[/valeur]\n"
-            f"[cle]Durée[/cle] : [valeur]{rapport.duree_secondes:.2f}s[/valeur]",
-            title="[titre]Contrôles de cohérence[/titre]",
-            expand=False,
+        panel_kv(
+            "Contrôles de cohérence",
+            [
+                ("Portée", rapport.portee),
+                ("Contrôles", str(len(rapport.controles))),
+                ("Anomalies totales", str(rapport.nb_anomalies)),
+                ("Durée", f"{rapport.duree_secondes:.2f}s"),
+            ],
         )
     )
     for ctrl in rapport.controles:

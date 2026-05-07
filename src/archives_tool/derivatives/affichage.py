@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from rich.panel import Panel
 from rich.table import Table
 
 from archives_tool.affichage import console as cons
+from archives_tool.affichage.formatters import panel_kv
 
 from .rapport import RapportDerivation, StatutDerive
 
@@ -13,7 +13,6 @@ LIBELLES = {
     StatutDerive.GENERE: "généré",
     StatutDerive.DEJA_GENERE: "déjà généré",
     StatutDerive.NETTOYE: "nettoyé",
-    StatutDerive.IGNORE: "ignoré",
     StatutDerive.ERREUR: "erreur",
 }
 
@@ -21,7 +20,6 @@ STYLES = {
     StatutDerive.GENERE: "succes",
     StatutDerive.DEJA_GENERE: "cle",
     StatutDerive.NETTOYE: "succes",
-    StatutDerive.IGNORE: "avertissement",
     StatutDerive.ERREUR: "erreur",
 }
 
@@ -29,16 +27,17 @@ STYLES = {
 def afficher_rapport(rapport: RapportDerivation, *, limite: int = 30) -> None:
     mode = "DRY-RUN" if rapport.dry_run else "RÉEL"
     cons.console.print(
-        Panel(
-            f"[cle]Traités[/cle] : [valeur]{rapport.nb_traites}[/valeur]\n"
-            f"[cle]Générés[/cle] : [valeur]{rapport.nb_generes}[/valeur]\n"
-            f"[cle]Déjà générés[/cle] : [valeur]{rapport.nb_deja_generes}[/valeur]\n"
-            f"[cle]Nettoyés[/cle] : [valeur]{rapport.nb_nettoyes}[/valeur]\n"
-            f"[cle]Erreurs[/cle] : [valeur]{rapport.nb_erreurs}[/valeur]\n"
-            f"[cle]Racine cible[/cle] : [valeur]{rapport.racine_cible}[/valeur]\n"
-            f"[cle]Durée[/cle] : [valeur]{rapport.duree_secondes:.2f}s[/valeur]",
-            title=f"[titre]Dérivation {mode}[/titre]",
-            expand=False,
+        panel_kv(
+            f"Dérivation {mode}",
+            [
+                ("Traités", str(rapport.nb_traites)),
+                ("Générés", str(rapport.nb_generes)),
+                ("Déjà générés", str(rapport.nb_deja_generes)),
+                ("Nettoyés", str(rapport.nb_nettoyes)),
+                ("Erreurs", str(rapport.nb_erreurs)),
+                ("Racine cible", rapport.racine_cible),
+                ("Durée", f"{rapport.duree_secondes:.2f}s"),
+            ],
         )
     )
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from rich.panel import Panel
 from rich.table import Table
 
 from archives_tool.affichage import console as cons
+from archives_tool.affichage.formatters import panel_kv
 
 from .rapport import (
     RapportAnnulation,
@@ -30,20 +30,21 @@ STYLES_STATUT = {
 
 
 def afficher_plan(rapport: RapportPlan, *, limite: int = 50) -> None:
+    style_app = "succes" if rapport.applicable else "erreur"
     cons.console.print(
-        Panel(
-            f"[cle]Total opérations[/cle] : "
-            f"[valeur]{len(rapport.operations)}[/valeur]\n"
-            f"[cle]À renommer[/cle] : [valeur]{rapport.nb_renommages}[/valeur]\n"
-            f"[cle]No-op[/cle] : [valeur]{rapport.nb_no_op}[/valeur]\n"
-            f"[cle]Bloqués[/cle] : [valeur]{rapport.nb_bloques}[/valeur]\n"
-            f"[cle]Conflits[/cle] : [valeur]{len(rapport.conflits)}[/valeur]\n"
-            f"[cle]Applicable[/cle] : "
-            f"[{'succes' if rapport.applicable else 'erreur'}]"
-            f"{rapport.applicable}"
-            f"[/{'succes' if rapport.applicable else 'erreur'}]",
-            title="[titre]Plan de renommage[/titre]",
-            expand=False,
+        panel_kv(
+            "Plan de renommage",
+            [
+                ("Total opérations", str(len(rapport.operations))),
+                ("À renommer", str(rapport.nb_renommages)),
+                ("No-op", str(rapport.nb_no_op)),
+                ("Bloqués", str(rapport.nb_bloques)),
+                ("Conflits", str(len(rapport.conflits))),
+                (
+                    "Applicable",
+                    f"[{style_app}]{rapport.applicable}[/{style_app}]",
+                ),
+            ],
         )
     )
 
@@ -79,18 +80,18 @@ def afficher_plan(rapport: RapportPlan, *, limite: int = 50) -> None:
 
 def afficher_execution(rapport: RapportExecution) -> None:
     mode = "DRY-RUN" if rapport.dry_run else "RÉEL"
-    titre = f"[titre]Exécution {mode}[/titre]"
+    titre = f"Exécution {mode}"
     if rapport.batch_id:
-        titre = f"{titre} — batch [valeur]{rapport.batch_id}[/valeur]"
+        titre = f"{titre} — batch {rapport.batch_id}"
     cons.console.print(
-        Panel(
-            f"[cle]Réussies[/cle] : [valeur]{rapport.operations_reussies}[/valeur]\n"
-            f"[cle]Échouées[/cle] : [valeur]{rapport.operations_echouees}[/valeur]\n"
-            f"[cle]Compensées (rollback)[/cle] : "
-            f"[valeur]{rapport.operations_compensees}[/valeur]\n"
-            f"[cle]Durée[/cle] : [valeur]{rapport.duree_secondes:.2f}s[/valeur]",
-            title=titre,
-            expand=False,
+        panel_kv(
+            titre,
+            [
+                ("Réussies", str(rapport.operations_reussies)),
+                ("Échouées", str(rapport.operations_echouees)),
+                ("Compensées (rollback)", str(rapport.operations_compensees)),
+                ("Durée", f"{rapport.duree_secondes:.2f}s"),
+            ],
         )
     )
     for e in rapport.erreurs:
@@ -99,16 +100,17 @@ def afficher_execution(rapport: RapportExecution) -> None:
 
 def afficher_annulation(rapport: RapportAnnulation) -> None:
     mode = "DRY-RUN" if rapport.dry_run else "RÉEL"
-    titre = f"[titre]Annulation {mode}[/titre] — batch [cle]{rapport.batch_id_original}[/cle]"
+    titre = f"Annulation {mode} — batch {rapport.batch_id_original}"
     if rapport.batch_id_annulation:
-        titre += f" → [valeur]{rapport.batch_id_annulation}[/valeur]"
+        titre += f" → {rapport.batch_id_annulation}"
     cons.console.print(
-        Panel(
-            f"[cle]Inversées[/cle] : [valeur]{rapport.operations_inversees}[/valeur]\n"
-            f"[cle]Échouées[/cle] : [valeur]{rapport.operations_echouees}[/valeur]\n"
-            f"[cle]Durée[/cle] : [valeur]{rapport.duree_secondes:.2f}s[/valeur]",
-            title=titre,
-            expand=False,
+        panel_kv(
+            titre,
+            [
+                ("Inversées", str(rapport.operations_inversees)),
+                ("Échouées", str(rapport.operations_echouees)),
+                ("Durée", f"{rapport.duree_secondes:.2f}s"),
+            ],
         )
     )
     for e in rapport.erreurs:

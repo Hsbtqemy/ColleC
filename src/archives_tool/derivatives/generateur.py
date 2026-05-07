@@ -27,14 +27,15 @@ DPI_PDF = 200
 
 
 def _ouvrir_image(chemin: Path) -> Image.Image:
-    """Ouvre un fichier image et retourne un objet Pillow.
+    """Ouvre l'image et libère immédiatement le handle disque.
 
-    Pour les PDF, rend la première page via PyMuPDF. Les autres
-    formats passent directement par Pillow ; les TIFF multi-pages
-    présentent leur première frame par défaut.
+    Pillow garde le fichier ouvert jusqu'à `load()` ; le retour ici
+    fait `load()` puis `copy()` pour garantir qu'aucun lock ne traîne
+    (essentiel sous Windows pour permettre rename/delete ultérieurs).
+    Les PDF passent par PyMuPDF, première page rasterisée.
     """
     if chemin.suffix.lower() == ".pdf":
-        import fitz  # PyMuPDF — import paresseux (gros module).
+        import fitz  # gros module, import paresseux.
 
         with fitz.open(chemin) as doc:
             if doc.page_count == 0:
@@ -42,21 +43,19 @@ def _ouvrir_image(chemin: Path) -> Image.Image:
             page = doc.load_page(0)
             pix = page.get_pixmap(dpi=DPI_PDF)
             return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-    return Image.open(chemin)
+    with Image.open(chemin) as fichier_ouvert:
+        fichier_ouvert.load()
+        return fichier_ouvert.copy()
 
 
 def _convertir_rgb(img: Image.Image) -> Image.Image:
-    """Garantit un mode RGB pour la sauvegarde JPEG.
-
-    RGBA est composé sur fond blanc (préserve l'apparence visuelle
-    plutôt que d'écraser la transparence en noir). Les autres modes
-    (L, P, CMYK, …) passent par `convert('RGB')`.
-    """
+    """RGBA composé sur fond blanc (préserve l'apparence vs écraser
+    la transparence en noir) ; autres modes via `convert('RGB')`."""
     if img.mode == "RGB":
         return img
     if img.mode == "RGBA":
         fond = Image.new("RGB", img.size, (255, 255, 255))
-        fond.paste(img, mask=img.split()[-1])
+        fond.paste(img, mask=img.getchannel("A"))
         return fond
     return img.convert("RGB")
 
@@ -115,14 +114,20 @@ def generer_derives_pour_fichier(
 
     base_cible = racines[racine_cible]
     tailles_a_generer = tailles or TAILLES_PAR_DEFAUT
-    for nom_taille, taille_max in tailles_a_generer.items():
+    # Réduction en cascade du plus grand au plus petit : chaque
+    # thumbnail repart du résultat précédent plutôt que du
+    # full-size, ce qui économise un resample LANCZOS sur les
+    # tailles plus petites (gain réel à partir de ~10 MP en source).
+    courant = img
+    par_taille_decroissante = sorted(tailles_a_generer.items(), key=lambda kv: -kv[1])
+    for nom_taille, taille_max in par_taille_decroissante:
         chemin_rel_cible = chemin_derive(fichier.chemin_relatif, nom_taille)
         chemin_abs = base_cible.joinpath(*chemin_rel_cible.split("/"))
         if not dry_run:
             chemin_abs.parent.mkdir(parents=True, exist_ok=True)
-            copie = img.copy()
-            copie.thumbnail((taille_max, taille_max), Image.Resampling.LANCZOS)
-            copie.save(chemin_abs, "JPEG", quality=QUALITE_JPEG)
+            courant = courant.copy()
+            courant.thumbnail((taille_max, taille_max), Image.Resampling.LANCZOS)
+            courant.save(chemin_abs, "JPEG", quality=QUALITE_JPEG)
         res.derives_crees[nom_taille] = chemin_rel_cible
 
     if not dry_run:
@@ -133,16 +138,6 @@ def generer_derives_pour_fichier(
             fichier.hauteur_px = res.hauteur_originale
 
     return res
-
-
-def _ids_arbre(racine: Collection) -> list[int]:
-    ids = [racine.id]
-    a_visiter = list(racine.enfants)
-    while a_visiter:
-        n = a_visiter.pop(0)
-        ids.append(n.id)
-        a_visiter.extend(n.enfants)
-    return ids
 
 
 def _selectionner_fichiers(
@@ -165,7 +160,7 @@ def _selectionner_fichiers(
         )
         if col is None:
             raise ValueError(f"Collection {collection_cote!r} introuvable.")
-        ids = _ids_arbre(col) if recursif else [col.id]
+        ids = col.ids_descendants() if recursif else [col.id]
         stmt = stmt.join(Item, Fichier.item_id == Item.id).where(
             Item.collection_id.in_(ids)
         )

@@ -37,16 +37,6 @@ from .rapport import (
 from .template import EchecTemplate, evaluer_template
 
 
-def _ids_arbre(racine: Collection) -> list[int]:
-    ids = [racine.id]
-    a_visiter = list(racine.enfants)
-    while a_visiter:
-        n = a_visiter.pop(0)
-        ids.append(n.id)
-        a_visiter.extend(n.enfants)
-    return ids
-
-
 def _selectionner_fichiers(
     session: Session,
     *,
@@ -83,7 +73,7 @@ def _selectionner_fichiers(
         )
         if col is None:
             raise ValueError(f"Collection {collection_cote!r} introuvable.")
-        ids = _ids_arbre(col) if recursif else [col.id]
+        ids = col.ids_descendants() if recursif else [col.id]
         stmt = (
             select(Fichier, Item, Collection)
             .join(Item, Fichier.item_id == Item.id)

@@ -10,7 +10,6 @@ class StatutDerive(enum.StrEnum):
     GENERE = "genere"
     DEJA_GENERE = "deja_genere"
     NETTOYE = "nettoye"
-    IGNORE = "ignore"
     ERREUR = "erreur"
 
 
@@ -31,7 +30,6 @@ class RapportDerivation:
     nb_traites: int = 0
     nb_generes: int = 0
     nb_deja_generes: int = 0
-    nb_ignores: int = 0
     nb_erreurs: int = 0
     nb_nettoyes: int = 0
     resultats: list[ResultatDerive] = field(default_factory=list)
@@ -46,7 +44,5 @@ class RapportDerivation:
             self.nb_deja_generes += 1
         elif resultat.statut == StatutDerive.NETTOYE:
             self.nb_nettoyes += 1
-        elif resultat.statut == StatutDerive.IGNORE:
-            self.nb_ignores += 1
         elif resultat.statut == StatutDerive.ERREUR:
             self.nb_erreurs += 1

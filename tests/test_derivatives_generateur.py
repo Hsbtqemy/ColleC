@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.derivatives.generateur import (
@@ -72,8 +73,6 @@ def test_generation_simple(session: Session, tmp_path: Path) -> None:
         assert max(a.size) == 1200
 
     # Base : derive_genere passé à True, dimensions originales notées.
-    from sqlalchemy import select
-
     f = session.scalar(select(Fichier))
     assert f.derive_genere is True
     assert f.largeur_px == 2000
@@ -122,8 +121,6 @@ def test_dry_run_n_ecrit_rien(session: Session, tmp_path: Path) -> None:
     assert rap.nb_generes == 1
     assert not (cible / "vignette" / "01.jpg").exists()
     # Base inchangée.
-    from sqlalchemy import select
-
     f = session.scalar(select(Fichier))
     assert f.derive_genere is False
 
@@ -267,8 +264,6 @@ def test_nettoyer_supprime_les_derives(session: Session, tmp_path: Path) -> None
     assert rap.nb_nettoyes == 1
     assert not (cible / "vignette" / "01.jpg").exists()
     assert not (cible / "apercu" / "01.jpg").exists()
-
-    from sqlalchemy import select
 
     f = session.scalar(select(Fichier))
     assert f.derive_genere is False

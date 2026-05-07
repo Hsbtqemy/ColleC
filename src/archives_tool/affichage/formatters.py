@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from rich.markup import escape
+from rich.panel import Panel
 
 ABSENT = "—"
 
@@ -68,6 +69,23 @@ def tronquer(texte: str | None, longueur: int = 80) -> str:
     if len(txt) <= longueur:
         return txt
     return txt[: longueur - 1] + "…"
+
+
+def panel_kv(
+    titre: str,
+    paires: list[tuple[str, str]],
+    *,
+    expand: bool = False,
+) -> Panel:
+    """Panneau Rich « clé : valeur » à partir d'une liste de paires.
+
+    Évite la répétition du motif `[cle]X[/cle] : [valeur]Y[/valeur]\\n`
+    dans les rapports (qa, renamer, derivatives, exports).
+    """
+    corps = "\n".join(
+        f"[cle]{cle}[/cle] : [valeur]{valeur}[/valeur]" for cle, valeur in paires
+    )
+    return Panel(corps, title=f"[titre]{titre}[/titre]", expand=expand)
 
 
 def barre_progression(ratio: float, largeur: int = 10) -> str:

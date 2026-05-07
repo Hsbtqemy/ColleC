@@ -14,16 +14,6 @@ from archives_tool.affichage.formatters import (
 from archives_tool.models import Collection, EtatCatalogage, Fichier, Item
 
 
-def _ids_dans_arbre(session: Session, racine: Collection) -> list[int]:
-    ids = [racine.id]
-    a_visiter = list(racine.enfants)
-    while a_visiter:
-        n = a_visiter.pop(0)
-        ids.append(n.id)
-        a_visiter.extend(n.enfants)
-    return ids
-
-
 def afficher_statistiques(session: Session, collection_cote: str | None = None) -> bool:
     from rich.panel import Panel
 
@@ -37,7 +27,7 @@ def afficher_statistiques(session: Session, collection_cote: str | None = None) 
                 f"[erreur]Collection {collection_cote!r} introuvable.[/erreur]"
             )
             return False
-        ids = _ids_dans_arbre(session, col)
+        ids = col.ids_descendants()
         nb_racines = 0
         nb_sous_collections = len(ids) - 1
         clause_item = Item.collection_id.in_(ids)

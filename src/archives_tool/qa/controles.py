@@ -43,16 +43,6 @@ def _collection_par_cote(session: Session, cote: str) -> Collection:
     return col
 
 
-def _ids_arbre(racine: Collection) -> list[int]:
-    ids = [racine.id]
-    a_visiter = list(racine.enfants)
-    while a_visiter:
-        n = a_visiter.pop(0)
-        ids.append(n.id)
-        a_visiter.extend(n.enfants)
-    return ids
-
-
 def _filtre_ids_collections(stmt, ids_collections: list[int] | None):
     if ids_collections is None:
         return stmt
@@ -379,7 +369,7 @@ def controler_tout(
     portee = "global"
     if collection_cote is not None:
         col = _collection_par_cote(session, collection_cote)
-        ids_collections = _ids_arbre(col) if recursif else [col.id]
+        ids_collections = col.ids_descendants() if recursif else [col.id]
         portee = f"collection {collection_cote}{' (récursif)' if recursif else ''}"
 
     racines_eff: Mapping[str, Path] = racines or {}

@@ -49,15 +49,7 @@ def _ids_collections_cibles(session: Session, critere: CritereSelection) -> list
         cible = critere.collection_cote or critere.collection_id
         raise SelectionErreur(f"Collection {cible!r} introuvable en base.")
 
-    ids = [racine.id]
-    if critere.recursif:
-        # Parcours descendant via enfants (parcours en largeur).
-        a_visiter = list(racine.enfants)
-        while a_visiter:
-            enfant = a_visiter.pop(0)
-            ids.append(enfant.id)
-            a_visiter.extend(enfant.enfants)
-    return ids
+    return racine.ids_descendants() if critere.recursif else [racine.id]
 
 
 def selectionner_items(

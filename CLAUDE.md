@@ -123,7 +123,8 @@ code. Si une demande les contredit, signaler avant d'exécuter.
 
 **Frontend :**
 - Jinja2 + HTMX pour les interactions
-- Tailwind CSS pour le style
+- Tailwind CSS compilé via la CLI npm (pas de CDN). `npm install` une
+  fois ; `npm run watch:css` en dev. `output.css` est gitignoré.
 - SortableJS pour les réordonnancements (drag & drop vignettes)
 - OpenSeadragon pour la visionneuse d'images (IIIF-compatible)
 
@@ -290,6 +291,29 @@ CLI : `archives-tool deriver appliquer [--collection|--item|--fichier-id]
 `archives-tool deriver nettoyer ...`. Référence dans
 [`docs/derivatives.md`](docs/derivatives.md).
 
+### Interface web
+
+`src/archives_tool/api/` (FastAPI) et `src/archives_tool/web/`
+(Jinja2 + Tailwind compilé) constituent le socle de l'UI. V0.5 livre
+le tableau de bord en lecture seule.
+
+- `api/main.py` : application FastAPI, mount `/static`, filtres Jinja
+  (libelle_phase, temps_relatif, taille_humaine).
+- `api/deps.py` : session SQL par requête, identité utilisateur,
+  racines, base courante. `ARCHIVES_DB` (variable d'environnement)
+  prime sur la base par défaut.
+- `api/routes/` : un fichier par groupe de routes (`dashboard.py`,
+  `derives.py`).
+- `api/services/` : logique métier pure, sans rendu.
+- `web/templates/` : `base.html`, `components/`, `dashboard.html`.
+- `web/static/css/{input.css,output.css}` : Tailwind compilé via
+  npm (`output.css` gitignoré).
+
+CLI : `archives-tool demo init [--sortie data/demo.db] [--force]` crée
+une base SQLite peuplée pour explorer l'interface (5 collections, ~360
+items, anomalies synthétiques). Référence dans
+[`docs/interface_web.md`](docs/interface_web.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -340,6 +364,13 @@ Entités principales — détails dans [`schema.md`](schema.md).
 
 - **ModificationItem** : journal des modifications de métadonnées.
 
+- **OperationImport** : journal des imports YAML (un par exécution
+  réelle). Lié aux OperationFichier produites pendant l'import.
+
+- **PreferencesAffichage** : ordre des colonnes choisi par utilisateur
+  dans une vue tabulaire. Structure prête pour V0.6 (édition de
+  vues), pas encore alimentée par l'UI.
+
 - **SourceExterne**, **RessourceExterne**, **LienExterneItem** : V2+,
   pour Nakala.
 
@@ -377,8 +408,9 @@ archives-tool/
 │       ├── derivatives/       # Génération vignettes / aperçus
 │       ├── external/          # Connecteurs Nakala, IIIF (V2+)
 │       ├── qa/                # Contrôles de cohérence
-│       ├── api/               # Routes FastAPI
-│       ├── web/               # Templates Jinja2, HTMX, assets
+│       ├── api/               # FastAPI : routes, deps, services
+│       ├── web/               # Templates Jinja2 + assets statiques
+│       ├── demo/              # Génération de la base de démonstration
 │       └── cli.py             # Commandes Typer
 ├── profiles/                  # Profils d'import par collection (YAML)
 ├── tests/
@@ -432,16 +464,16 @@ archives-tool/
 
 **Interface web (FastAPI + HTMX + Tailwind)** :
 
-- Tableau de bord simple (inventaire, alertes).
-- Vue collection avec onglets Sous-collections / Items / Fichiers.
+- ✅ Tableau de bord simple (inventaire, alertes) — V0.5.
+- Vue collection avec onglets Sous-collections / Items / Fichiers — V0.6.
 - Vue item trois zones (fichiers, visionneuse, métadonnées) avec
-  édition.
+  édition — V0.7.
 - Édition structurelle des champs personnalisés d'une collection
-  (créer, renommer, déprécier) depuis l'UI.
-- Édition des vocabulaires contrôlés depuis l'UI.
-- Visionneuse OpenSeadragon.
+  (créer, renommer, déprécier) depuis l'UI — V0.7.
+- Édition des vocabulaires contrôlés depuis l'UI — V0.7.
+- Visionneuse OpenSeadragon — V0.6.
 - Rattachement de fichiers à un item depuis l'UI (ajout depuis
-  disque, copie ou déplacement selon la convention).
+  disque, copie ou déplacement selon la convention) — V0.7.
 
 **Exports canoniques** (fait) :
 
@@ -750,8 +782,14 @@ uv sync
 # Lancer les tests
 uv run pytest
 
-# Lancer l'application en dev
-uv run uvicorn archives_tool.api.main:app --reload
+# Lancer l'application en dev (deux processus)
+npm install                          # une fois pour Tailwind
+npm run watch:css                    # recompile le CSS à chaque édition
+uv run uvicorn archives_tool.api.main:app --reload --port 8000
+
+# Base de démonstration pour explorer l'UI
+uv run archives-tool demo init
+ARCHIVES_DB=data/demo.db uv run uvicorn archives_tool.api.main:app --reload
 
 # CLI
 uv run archives-tool --help

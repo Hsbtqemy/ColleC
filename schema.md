@@ -109,6 +109,20 @@ Progression du catalogage d'un item.
 | `remplace` | Remplacé par une version plus récente, conservé pour historique. |
 | `corbeille` | Supprimé logiquement, restaurable. |
 
+### `PhaseChantier`
+
+Phase courante d'un chantier de catalogage. Pilote l'affichage et
+permettra des filtres « collections en cours » plus tard.
+
+| Valeur | Description |
+|---|---|
+| `numerisation` | Scans en cours de production. |
+| `catalogage` | Saisie initiale des notices. |
+| `revision` | Relecture, vérifications croisées. |
+| `finalisation` | Validation finale, préparation export. |
+| `archivee` | Chantier clos, plus de modifications attendues. |
+| `en_pause` | Travail suspendu, à reprendre plus tard. |
+
 ### `TypePage`
 
 Typologie métier des scans.
@@ -180,6 +194,7 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `metadonnees` | JSON | | Champs étendus spécifiques |
 | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
 | `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |
+| `phase` | TEXT | NOT NULL, DEFAULT `catalogage` | `numerisation`, `catalogage`, `revision`, `finalisation`, `archivee`, `en_pause`. Pilote l'affichage et permettra plus tard des filtres « chantiers en cours ». |
 | `notes_internes` | TEXT | | |
 | `cree_le` | DATETIME | NOT NULL | |
 | `cree_par` | TEXT | | Nom libre copié de la config locale. |
@@ -445,6 +460,29 @@ complète du `RapportImport` pour inspection future.
 
 **Contrainte :** UNIQUE (`batch_id`).
 **Index :** `batch_id`.
+
+---
+
+### `preferences_affichage`
+
+Persiste l'ordre des colonnes choisi par un utilisateur dans une vue
+tabulaire (items, fichiers, sous-collections). Une entrée par
+combinaison (utilisateur, collection, vue). Pas d'utilisation
+effective avant V0.6 ; structure créée pour ne pas avoir à reprendre
+la migration plus tard.
+
+| Colonne | Type | Contraintes | Notes |
+|---|---|---|---|
+| `id` | INTEGER | PK | |
+| `utilisateur` | TEXT | NOT NULL | Nom libre copié de la config locale. |
+| `collection_id` | INTEGER | FK → `collection.id` (CASCADE) | NULL = préférences globales (vue dashboard, toutes collections). |
+| `vue` | TEXT | NOT NULL | `items`, `fichiers`, `sous_collections`, etc. |
+| `colonnes_ordonnees` | JSON | NOT NULL | Liste de noms de colonnes dans l'ordre voulu. |
+| `cree_le` | DATETIME | NOT NULL | |
+| `modifie_le` | DATETIME | | |
+
+**Contrainte :** UNIQUE (`utilisateur`, `collection_id`, `vue`).
+**Index :** `utilisateur`, `collection_id`.
 
 ---
 

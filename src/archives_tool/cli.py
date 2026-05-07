@@ -30,6 +30,17 @@ from archives_tool.profils import (
 )
 from archives_tool.qa.affichage import afficher_rapport_qa
 from archives_tool.qa.controles import CODES_CONTROLES, controler_tout
+from archives_tool.renamer import (
+    annuler_batch,
+    construire_plan,
+    executer_plan,
+)
+from archives_tool.renamer.affichage import (
+    afficher_annulation,
+    afficher_execution,
+    afficher_plan,
+)
+from archives_tool.renamer.historique import lister_batchs
 
 app = typer.Typer(
     help="Outil de gestion de collections numérisées.",
@@ -546,6 +557,163 @@ def cmd_controler(
 
     afficher_rapport_qa(rapport, limite_details=limite_details)
     raise typer.Exit(1 if rapport.nb_anomalies > 0 else 0)
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `renommer` : renommage transactionnel.
+# ---------------------------------------------------------------------------
+
+renommer = typer.Typer(
+    help="Renommer des fichiers, annuler un batch, voir l'historique.",
+    no_args_is_help=True,
+)
+app.add_typer(renommer, name="renommer")
+
+
+@renommer.command("appliquer")
+def cmd_renommer_appliquer(
+    template: str = typer.Option(
+        ...,
+        "--template",
+        help='Template au format Python (ex. "{cote}-{ordre:02d}.{ext}").',
+    ),
+    collection: str = typer.Option(None, "--collection"),
+    item: str = typer.Option(
+        None, "--item", help="Cote de l'item à cibler (alternative à --collection)."
+    ),
+    fichier_id: list[int] = typer.Option(
+        None,
+        "--fichier-id",
+        help="ID(s) de fichier à cibler (option répétable).",
+    ),
+    recursif: bool = typer.Option(
+        False, "--recursif/--non-recursif", help="Inclure les sous-collections."
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Dry-run par défaut : aperçu sans toucher aux fichiers.",
+    ),
+    utilisateur: str = typer.Option(
+        None,
+        "--utilisateur",
+        help="Nom à inscrire en execute_par. Sinon lu dans la config locale.",
+    ),
+    limite: int = typer.Option(
+        50, "--limite", help="Lignes max affichées (0 = illimité)."
+    ),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
+) -> None:
+    """Construire un plan de renommage et l'appliquer (dry-run par défaut)."""
+    config = _charger_config_ou_sortie(config_path)
+    nom = utilisateur if utilisateur is not None else config.utilisateur
+    racines = dict(config.racines)
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    try:
+        with factory() as session:
+            plan = construire_plan(
+                session,
+                template=template,
+                racines=racines,
+                collection_cote=collection,
+                item_cote=item,
+                fichier_ids=list(fichier_id) if fichier_id else None,
+                recursif=recursif,
+            )
+            afficher_plan(plan, limite=limite)
+            if not plan.applicable:
+                raise typer.Exit(1)
+            if plan.nb_renommages == 0:
+                raise typer.Exit(0)
+
+            rap = executer_plan(
+                session,
+                plan,
+                racines=racines,
+                dry_run=dry_run,
+                execute_par=nom,
+            )
+            afficher_execution(rap)
+            raise typer.Exit(1 if rap.erreurs else 0)
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+
+@renommer.command("annuler")
+def cmd_renommer_annuler(
+    batch_id: str = typer.Option(..., "--batch-id", help="UUID du batch à annuler."),
+    dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
+    utilisateur: str = typer.Option(None, "--utilisateur"),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
+) -> None:
+    """Annuler un batch de renommage déjà appliqué."""
+    config = _charger_config_ou_sortie(config_path)
+    nom = utilisateur if utilisateur is not None else config.utilisateur
+    racines = dict(config.racines)
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        rap = annuler_batch(
+            session, batch_id, racines=racines, dry_run=dry_run, execute_par=nom
+        )
+    afficher_annulation(rap)
+    raise typer.Exit(1 if rap.erreurs else 0)
+
+
+@renommer.command("historique")
+def cmd_renommer_historique(
+    limite: int = typer.Option(50, "--limite", help="Nombre de batchs à afficher."),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+) -> None:
+    """Afficher les derniers batchs de renommage."""
+    from rich.table import Table
+
+    import archives_tool.affichage.console as console_mod
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        entrees = lister_batchs(session, limite=limite)
+
+    if not entrees:
+        console_mod.console.print(
+            "[avertissement]Aucun batch dans l'historique.[/avertissement]"
+        )
+        return
+
+    table = Table(show_header=True, header_style="sous_titre", expand=False)
+    table.add_column("Batch")
+    table.add_column("Date")
+    table.add_column("Par")
+    table.add_column("Ops")
+    table.add_column("Types")
+    table.add_column("Annulé")
+    for e in entrees:
+        date_str = (
+            e.execute_le_premier.strftime("%Y-%m-%d %H:%M")
+            if e.execute_le_premier
+            else "—"
+        )
+        annule = (
+            f"[avertissement]oui ({e.annule_par_batch_id[:8]}…)[/avertissement]"
+            if e.annule and e.annule_par_batch_id
+            else ""
+        )
+        table.add_row(
+            e.batch_id,
+            date_str,
+            e.execute_par or "—",
+            str(e.nb_operations),
+            ", ".join(e.types_operations),
+            annule,
+        )
+    console_mod.console.print(table)
 
 
 # ---------------------------------------------------------------------------

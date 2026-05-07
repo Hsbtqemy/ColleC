@@ -10,6 +10,7 @@ Quatre fonctions pures session → dataclasses :
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -29,7 +30,15 @@ from archives_tool.models import (
     OperationImport,
     PhaseChantier,
 )
-from archives_tool.qa.controles import controler_tout
+from archives_tool.qa.controles import CODES_CONTROLES, controler_tout
+
+# Le dashboard re-rend à chaque visite ; le contrôle « orphelins-disque »
+# fait un rglob complet sous chaque racine — trop coûteux pour la
+# homepage. On le laisse à la commande `archives-tool controler` ou
+# à un futur endpoint dédié.
+_CHECKS_DASHBOARD: tuple[str, ...] = tuple(
+    c for c in CODES_CONTROLES if c != "orphelins-disque"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -64,9 +73,17 @@ class CollectionResume:
     modifie_le: datetime | None = None
 
 
+class TypeEvenement(enum.StrEnum):
+    IMPORT = "import"
+    MODIFICATION = "modification"
+    RENOMMAGE = "renommage"
+    DERIVE = "derive"
+    EXPORT = "export"
+
+
 @dataclass
 class EvenementActivite:
-    type: Literal["import", "modification", "renommage", "derive", "export"]
+    type: TypeEvenement
     description: str
     cote_concernee: str | None
     utilisateur: str | None
@@ -237,7 +254,7 @@ def lister_activite_recente(
     ).all():
         evenements.append(
             EvenementActivite(
-                type="import",
+                type=TypeEvenement.IMPORT,
                 description=(
                     f"Import : {op.items_crees} items créés, "
                     f"{op.fichiers_ajoutes} fichiers ajoutés"
@@ -256,7 +273,9 @@ def lister_activite_recente(
         .limit(limite)
     ).all():
         type_evt = (
-            "renommage" if of.type_operation in ("rename", "restore") else "derive"
+            TypeEvenement.RENOMMAGE
+            if of.type_operation in ("rename", "restore")
+            else TypeEvenement.DERIVE
         )
         evenements.append(
             EvenementActivite(
@@ -278,7 +297,7 @@ def lister_activite_recente(
     ).all():
         evenements.append(
             EvenementActivite(
-                type="modification",
+                type=TypeEvenement.MODIFICATION,
                 description=f"Édition champ « {mi.champ} »",
                 cote_concernee=cote_item,
                 utilisateur=mi.modifie_par,
@@ -330,7 +349,7 @@ def lister_points_vigilance(
     sans elles, qa renvoie un avertissement sans anomalie — on filtre
     de la liste.
     """
-    rapport = controler_tout(session, racines=racines or {})
+    rapport = controler_tout(session, racines=racines or {}, checks=_CHECKS_DASHBOARD)
     points: list[PointVigilance] = []
     for ctrl in rapport.controles:
         meta = _LIBELLES_VIGILANCE.get(ctrl.code)

@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy.orm import Session
+import yaml
+from pydantic import ValidationError
+from sqlalchemy.orm import Session, sessionmaker
 
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
@@ -25,10 +28,20 @@ def chemin_base_courant() -> Path:
     return Path(valeur_env) if valeur_env else CHEMIN_DB_DEFAUT
 
 
+@lru_cache(maxsize=4)
+def _factory_pour(chemin: Path) -> sessionmaker[Session]:
+    """Engine + session factory mis en cache par chemin de base.
+
+    Recréer l'engine à chaque requête défait le pool de connexions et
+    relance l'introspection du dialecte. Le cache, borné à 4 entrées,
+    couvre largement le besoin (quelques bases distinctes au plus).
+    """
+    return creer_session_factory(creer_engine(chemin))
+
+
 def get_db() -> Iterator[Session]:
-    """Session SQLAlchemy par requête."""
-    engine = creer_engine(chemin_base_courant())
-    factory = creer_session_factory(engine)
+    """Session SQLAlchemy par requête (engine partagé via cache)."""
+    factory = _factory_pour(chemin_base_courant())
     with factory() as session:
         yield session
 
@@ -37,7 +50,7 @@ def _charger_config() -> ConfigLocale | None:
     chemin = Path(os.environ.get("ARCHIVES_CONFIG", CHEMIN_CONFIG_DEFAUT))
     try:
         return charger_config(chemin)
-    except (FileNotFoundError, Exception):
+    except (FileNotFoundError, yaml.YAMLError, ValidationError, ValueError):
         return None
 
 

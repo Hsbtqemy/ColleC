@@ -834,16 +834,21 @@ profil_app = typer.Typer(
 app.add_typer(profil_app, name="profil")
 
 
+def _refuser_ecrasement(chemin: Path, force: bool) -> None:
+    """Quitte avec un code 1 si `chemin` existe et que `force` est faux."""
+    if chemin.exists() and not force:
+        typer.echo(
+            f"Erreur : {chemin} existe déjà. Utilisez --force pour écraser.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+
 def _ecrire_profil(contenu: str, sortie: Path, force: bool, vers_stdout: bool) -> None:
     if vers_stdout:
         typer.echo(contenu, nl=False)
         return
-    if sortie.exists() and not force:
-        typer.echo(
-            f"Erreur : {sortie} existe déjà. Utilisez --force pour écraser.",
-            err=True,
-        )
-        raise typer.Exit(1)
+    _refuser_ecrasement(sortie, force)
     sortie.parent.mkdir(parents=True, exist_ok=True)
     sortie.write_text(contenu, encoding="utf-8")
 
@@ -996,13 +1001,8 @@ def cmd_demo_init(
     force: bool = typer.Option(False, "--force", help="Écraser un fichier existant."),
 ) -> None:
     """Créer une base SQLite peuplée pour explorer l'interface."""
+    _refuser_ecrasement(sortie, force)
     if sortie.exists():
-        if not force:
-            typer.echo(
-                f"Erreur : {sortie} existe déjà. Utilisez --force pour écraser.",
-                err=True,
-            )
-            raise typer.Exit(1)
         sortie.unlink()
 
     rapport = peupler_base(sortie)

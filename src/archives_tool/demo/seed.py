@@ -33,8 +33,6 @@ from archives_tool.models import (
     TypeOperationFichier,
 )
 
-ALEA = random.Random(42)
-
 
 @dataclass
 class RapportDemo:
@@ -142,6 +140,7 @@ def _creer_collection(
     cote: str,
     titre: str,
     phase: PhaseChantier,
+    alea: random.Random,
     *,
     parent: Collection | None = None,
     editeur: str | None = None,
@@ -154,7 +153,7 @@ def _creer_collection(
         parent=parent,
         cree_par="Marie",
         modifie_par="Marie",
-        modifie_le=datetime.now() - timedelta(days=ALEA.randint(0, 5)),
+        modifie_le=datetime.now() - timedelta(days=alea.randint(0, 5)),
     )
     session.add(col)
     session.flush()
@@ -165,23 +164,24 @@ def _creer_items(
     session: Session,
     collection: Collection,
     titres: list[str],
+    alea: random.Random,
     *,
     nb_min: int = 30,
     nb_max: int = 50,
 ) -> list[Item]:
-    nb = ALEA.randint(nb_min, nb_max)
+    nb = alea.randint(nb_min, nb_max)
     items: list[Item] = []
     for i in range(1, nb + 1):
-        titre_base = ALEA.choice(titres)
+        titre_base = alea.choice(titres)
         item = Item(
             collection_id=collection.id,
             cote=f"{collection.cote_collection}-{i:03d}",
             titre=f"{titre_base} #{i}",
-            annee=ALEA.randint(1890, 1985),
-            etat_catalogage=ALEA.choice(_ETATS_DISTRIBUTION).value,
+            annee=alea.randint(1890, 1985),
+            etat_catalogage=alea.choice(_ETATS_DISTRIBUTION).value,
             cree_par="Marie",
             modifie_par="Marie",
-            modifie_le=datetime.now() - timedelta(hours=ALEA.randint(0, 200)),
+            modifie_le=datetime.now() - timedelta(hours=alea.randint(0, 200)),
         )
         session.add(item)
         items.append(item)
@@ -192,10 +192,11 @@ def _creer_items(
 def _creer_fichiers(
     session: Session,
     item: Item,
+    alea: random.Random,
     *,
     racine: str = "scans_revues",
 ) -> list[Fichier]:
-    nb = ALEA.randint(5, 15)
+    nb = alea.randint(5, 15)
     fichiers: list[Fichier] = []
     for ordre in range(1, nb + 1):
         nom = f"{item.cote}-{ordre:02d}.png"
@@ -206,9 +207,9 @@ def _creer_fichiers(
             nom_fichier=nom,
             ordre=ordre,
             hash_sha256=_hash_factice(f"{item.id}-{ordre}"),
-            taille_octets=ALEA.randint(500_000, 5_000_000),
-            largeur_px=ALEA.randint(1500, 4000),
-            hauteur_px=ALEA.randint(2000, 5000),
+            taille_octets=alea.randint(500_000, 5_000_000),
+            largeur_px=alea.randint(1500, 4000),
+            hauteur_px=alea.randint(2000, 5000),
             format="png",
             ajoute_par="Marie",
         )
@@ -218,13 +219,13 @@ def _creer_fichiers(
     return fichiers
 
 
-def _creer_journaux(session: Session, items: list[Item]) -> None:
+def _creer_journaux(session: Session, items: list[Item], alea: random.Random) -> None:
     """Quelques entrées récentes pour peupler l'activité du dashboard."""
     if not items:
         return
 
     batch_renommage = str(uuid.uuid4())
-    for item in ALEA.sample(items, k=min(3, len(items))):
+    for item in alea.sample(items, k=min(3, len(items))):
         if not item.fichiers:
             continue
         f = item.fichiers[0]
@@ -239,11 +240,11 @@ def _creer_journaux(session: Session, items: list[Item]) -> None:
                 chemin_apres=f.chemin_relatif,
                 statut=StatutOperation.REUSSIE.value,
                 execute_par="Marie",
-                execute_le=datetime.now() - timedelta(hours=ALEA.randint(1, 12)),
+                execute_le=datetime.now() - timedelta(hours=alea.randint(1, 12)),
             )
         )
 
-    for item in ALEA.sample(items, k=min(4, len(items))):
+    for item in alea.sample(items, k=min(4, len(items))):
         session.add(
             ModificationItem(
                 item_id=item.id,
@@ -251,7 +252,7 @@ def _creer_journaux(session: Session, items: list[Item]) -> None:
                 valeur_avant=None,
                 valeur_apres=item.titre,
                 modifie_par="Marie",
-                modifie_le=datetime.now() - timedelta(hours=ALEA.randint(1, 24)),
+                modifie_le=datetime.now() - timedelta(hours=alea.randint(1, 24)),
             )
         )
 
@@ -268,25 +269,23 @@ def _creer_journaux(session: Session, items: list[Item]) -> None:
     )
 
 
-def _injecter_doublons(session: Session, items: list[Item]) -> int:
+def _injecter_doublons(items: list[Item]) -> int:
     """Force deux fichiers à partager un même hash pour le contrôle qa."""
-    if len(items) < 2:
+    if len(items) < 2 or not items[0].fichiers or not items[1].fichiers:
         return 0
-    paires = [
-        (items[0].fichiers, items[1].fichiers)
-        for items_dispos in [items]
-        if items[0].fichiers and items[1].fichiers
-    ]
-    if not paires:
-        return 0
-    f1 = paires[0][0][0]
-    f2 = paires[0][1][0]
-    f2.hash_sha256 = f1.hash_sha256
+    items[1].fichiers[0].hash_sha256 = items[0].fichiers[0].hash_sha256
     return 1
 
 
-def peupler_base(chemin_db: Path) -> RapportDemo:
-    """Construit la base de démonstration (création + remplissage)."""
+def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
+    """Construit la base de démonstration (création + remplissage).
+
+    `seed` permet de rejouer la même base (pour les tests) ou d'en
+    générer une variante. Le RNG est local : appeler deux fois la
+    fonction sur le même seed produit deux bases identiques, alors
+    qu'un RNG module-level ferait dériver l'état entre appels.
+    """
+    alea = random.Random(seed)
     chemin_db.parent.mkdir(parents=True, exist_ok=True)
     engine = creer_engine(chemin_db)
     Base.metadata.create_all(engine)
@@ -304,23 +303,25 @@ def peupler_base(chemin_db: Path) -> RapportDemo:
                 cfg["cote"],
                 cfg["titre"],
                 cfg["phase"],
+                alea,
                 editeur=cfg.get("editeur"),
             )
             racines[col.cote_collection] = col
-            items = _creer_items(session, col, cfg["items_titres"])
+            items = _creer_items(session, col, cfg["items_titres"], alea)
             for item in items:
-                _creer_fichiers(session, item)
+                _creer_fichiers(session, item, alea)
             nb_items_total += len(items)
             nb_fichiers_total += sum(len(it.fichiers) for it in items)
-            if items and items[0].fichiers and len(items) > 1 and items[1].fichiers:
-                anomalies += _injecter_doublons(session, items)
-            _creer_journaux(session, items)
+            anomalies += _injecter_doublons(items)
+            _creer_journaux(session, items, alea)
 
         for cote, titre, phase in _SOUS_COLLECTIONS_FA:
-            sous = _creer_collection(session, cote, titre, phase, parent=racines["FA"])
-            items = _creer_items(session, sous, ["Pièce", "Document", "Notice"])
+            sous = _creer_collection(
+                session, cote, titre, phase, alea, parent=racines["FA"]
+            )
+            items = _creer_items(session, sous, ["Pièce", "Document", "Notice"], alea)
             for item in items:
-                _creer_fichiers(session, item)
+                _creer_fichiers(session, item, alea)
             nb_items_total += len(items)
             nb_fichiers_total += sum(len(it.fichiers) for it in items)
 

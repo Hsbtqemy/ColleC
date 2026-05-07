@@ -20,6 +20,7 @@ from archives_tool.api.services.dashboard import (
     lister_collections_dashboard,
     lister_points_vigilance,
 )
+from archives_tool.api.templating import templates
 
 router = APIRouter()
 
@@ -32,8 +33,6 @@ def dashboard(
     nom_base: str = Depends(get_nom_base),
     racines: dict[str, Path] = Depends(get_racines),
 ) -> HTMLResponse:
-    from archives_tool.api.main import templates  # éviter import circulaire
-
     statistiques = calculer_statistiques_globales(db)
     collections = lister_collections_dashboard(db)
     activite = lister_activite_recente(db)

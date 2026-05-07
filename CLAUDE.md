@@ -294,20 +294,38 @@ CLI : `archives-tool deriver appliquer [--collection|--item|--fichier-id]
 ### Interface web
 
 `src/archives_tool/api/` (FastAPI) et `src/archives_tool/web/`
-(Jinja2 + Tailwind compilé) constituent le socle de l'UI. V0.5 livre
-le tableau de bord en lecture seule.
+(Jinja2 + Tailwind compilé) constituent le socle de l'UI.
+V0.6.0 livre dashboard + vue collection (3 onglets) + vue item
+avec visionneuse OpenSeadragon, en lecture seule.
 
-- `api/main.py` : application FastAPI, mount `/static`, filtres Jinja
-  (libelle_phase, temps_relatif, taille_humaine).
-- `api/deps.py` : session SQL par requête, identité utilisateur,
-  racines, base courante. `ARCHIVES_DB` (variable d'environnement)
-  prime sur la base par défaut.
-- `api/routes/` : un fichier par groupe de routes (`dashboard.py`,
-  `derives.py`).
-- `api/services/` : logique métier pure, sans rendu.
-- `web/templates/` : `base.html`, `components/`, `dashboard.html`.
+- `api/main.py` : application FastAPI, mount `/static`, inclusion
+  des routers.
+- `api/templating.py` : instance Jinja2Templates partagée, filtres
+  (libelle_phase, temps_relatif, taille_humaine), helper
+  `rendre_avec_partial` pour le pattern « même route, deux modes »
+  (full HTML en accès direct, partiel en `HX-Request`).
+- `api/deps.py` : session SQL par requête (engine + sessionmaker
+  cachés via lru_cache), identité utilisateur, racines, base
+  courante. `ARCHIVES_DB` (variable d'environnement) prime sur la
+  base par défaut.
+- `api/routes/` : `dashboard.py`, `collection.py`, `item.py`,
+  `derives.py`.
+- `api/services/` : logique métier pure (`dashboard.py`,
+  `collection.py`, `item.py`, `sources_image.py`).
+- `web/templates/` : `base.html`, `components/` (header, tabs,
+  metric_card, collection_header, collection_row), `pages/` (full
+  HTML pour accès direct), `partials/` (fragment pour swap HTMX).
 - `web/static/css/{input.css,output.css}` : Tailwind compilé via
-  npm (`output.css` gitignoré).
+  npm.
+- `web/static/js/visionneuse.js` : init OpenSeadragon, swap d'image
+  côté client, fallback sur `open-failed`.
+- `web/static/js/vendor/openseadragon/` : bundle vendor copié
+  depuis `node_modules` (gitignoré comme output.css).
+
+**Architecture multi-sources** (`api/services/sources_image.py`) :
+priorité IIIF Nakala > DZI local > aperçu local. Le résultat est
+embarqué en JSON dans la page item, le JS appelle `viewer.open(...)`
+au click sur une vignette.
 
 CLI : `archives-tool demo init [--sortie data/demo.db] [--force]` crée
 une base SQLite peuplée pour explorer l'interface (5 collections, ~360
@@ -465,13 +483,18 @@ archives-tool/
 **Interface web (FastAPI + HTMX + Tailwind)** :
 
 - ✅ Tableau de bord simple (inventaire, alertes) — V0.5.
-- Vue collection avec onglets Sous-collections / Items / Fichiers — V0.6.
-- Vue item trois zones (fichiers, visionneuse, métadonnées) avec
-  édition — V0.7.
+- ✅ Vue collection avec onglets Sous-collections / Items / Fichiers
+  (lecture seule) — V0.6.0.
+- ✅ Vue item trois zones (fichiers, visionneuse, métadonnées) en
+  lecture seule — V0.6.0.
+- ✅ Visionneuse OpenSeadragon (multi-sources : IIIF Nakala > DZI > aperçu local) — V0.6.0.
+- Tri des colonnes des tableaux via HTMX — V0.6.1.
+- Filtre / recherche dans les tableaux — V0.6.1.
+- Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
+- Édition des métadonnées item — V0.7.
 - Édition structurelle des champs personnalisés d'une collection
   (créer, renommer, déprécier) depuis l'UI — V0.7.
 - Édition des vocabulaires contrôlés depuis l'UI — V0.7.
-- Visionneuse OpenSeadragon — V0.6.
 - Rattachement de fichiers à un item depuis l'UI (ajout depuis
   disque, copie ou déplacement selon la convention) — V0.7.
 

@@ -95,11 +95,102 @@ sert `<racine miniatures>/vignette/HK/01.jpg`.
 5. **Inclure le routeur** dans `main.py`
    (`app.include_router(<domaine>.router)`).
 
-## Limites V0.5
+## Vues V0.6.0
+
+### Vue collection — `/collection/{cote}/...`
+
+Trois onglets, une route par onglet. Pattern « même route, deux modes » :
+- accès direct → page complète (bandeau + onglets + contenu) ;
+- accès via HTMX (en-tête `HX-Request`) → uniquement le contenu, prêt
+  à être swappé dans `#tab-content`.
+
+Les liens d'onglets utilisent `hx-get`, `hx-target="#tab-content"`,
+`hx-push-url="true"` : navigation fluide, URL synchronisée et
+bookmarkable, fallback complet si JS désactivé.
+
+| Route                                          | Onglet            |
+| ---------------------------------------------- | ----------------- |
+| `/collection/{cote}` (redirige)                | → /items          |
+| `/collection/{cote}/items`                     | Items             |
+| `/collection/{cote}/sous-collections`          | Sous-collections  |
+| `/collection/{cote}/fichiers`                  | Fichiers          |
+
+### Vue item — `/item/{cote}`
+
+Trois zones côte à côte (`grid-cols-12` : 3/6/3) :
+
+1. **Liste des fichiers** (gauche) — vignettes 40 px + nom monospace,
+   défilement vertical.
+2. **Visionneuse** (centre) — OpenSeadragon, bandeau supérieur avec
+   le nom du fichier actif. Source résolue côté serveur (voir
+   « Architecture multi-sources » ci-dessous).
+3. **Métadonnées** (droite) — DC + métadonnées étendues en JSON.
+
+Paramètres :
+- `?collection=COTE` désambiguïse une cote item non unique ;
+- `?fichier=ID` pré-sélectionne un fichier à l'ouverture.
+
+## Architecture multi-sources de la visionneuse
+
+`api/services/sources_image.py:resoudre_source_image(fichier)` produit
+un objet `SourceImage` avec `primary` et `fallback`, en suivant cette
+priorité :
+
+1. **IIIF Nakala** (`Fichier.iiif_url_nakala`) — pour les items déposés
+   ou importés depuis Nakala. Tile source `iiif`.
+2. **DZI local** (`Fichier.dzi_chemin`) — réservé V2+, jamais rempli
+   en V0.6.
+3. **Aperçu local** (`Fichier.apercu_chemin`) — JPEG 1200 px sous
+   `/derives/`. Tile source `image`.
+
+Le serveur embarque la résolution de tous les fichiers d'un item dans
+un `<script id="sources-fichiers" type="application/json">`.
+`web/static/js/visionneuse.js` :
+
+- instancie OpenSeadragon une fois sans source ;
+- au click sur une vignette, lit la source correspondante et appelle
+  `viewer.open(...)` ;
+- gère l'événement `open-failed` pour basculer sur `fallback` (typique :
+  timeout IIIF Nakala) ;
+- met à jour l'URL via `history.replaceState` (`?fichier=ID`).
+
+## Helper `rendre_avec_partial`
+
+Dans `api/templating.py`. Sert un template plein lors d'un accès
+direct, le partiel sur `HX-Request`. Permet une seule URL par onglet,
+à la fois bookmarkable et fluide :
+
+```python
+return rendre_avec_partial(
+    request,
+    page_template="pages/collection_items.html",
+    partial_template="partials/collection_items.html",
+    contexte=contexte,
+)
+```
+
+## OpenSeadragon
+
+Installé via npm (`openseadragon`). Build vendor :
+
+```bash
+npm install
+npm run vendor:osd     # copie node_modules/openseadragon/build/openseadragon/* vers web/static/js/vendor/openseadragon/
+npm run watch:css
+```
+
+Le bundle vendor (`openseadragon.min.js` + images) est gitignoré comme
+`output.css`. Recompilation à la volée pendant le dev.
+
+## Limites V0.6.0
 
 - Lecture seule : aucune édition possible depuis l'UI.
-- Pas de visionneuse OpenSeadragon (V0.6).
-- Boutons « Rechercher » et « Importer » sont des placeholders.
-- Liens « Tout voir → » et « Lancer un contrôle complet → » pointent
-  vers `#`, vraies cibles en V0.6.
-- Tri des colonnes du tableau pas encore interactif (V0.6 via HTMX).
+- Tri des colonnes du tableau pas encore interactif (V0.6.1).
+- Filtre / recherche : V0.7.
+- Script de résolution Nakala (interrogation API pour remplir
+  `iiif_url_nakala`) : V0.7. En V0.6, le champ est rempli à la main
+  ou laissé null.
+- DZI local : V2+, le champ existe en base mais aucune génération
+  associée.
+- Boutons « Rechercher » et « Importer » du dashboard restent
+  placeholders.

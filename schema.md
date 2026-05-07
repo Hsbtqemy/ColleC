@@ -293,9 +293,13 @@ Un scan ou document rattaché à un item.
 |---|---|---|---|
 | `id` | INTEGER | PK | |
 | `item_id` | INTEGER | FK → `item.id`, NOT NULL | |
-| `racine` | TEXT | NOT NULL | Nom logique de la racine |
-| `chemin_relatif` | TEXT | NOT NULL | POSIX, NFC |
+| `racine` | TEXT | | Nom logique de la racine. NULL si fichier exclusivement référencé via `iiif_url_nakala`. |
+| `chemin_relatif` | TEXT | | POSIX, NFC. NULL si fichier exclusivement Nakala. |
 | `nom_fichier` | TEXT | NOT NULL | Pour recherche rapide |
+| `apercu_chemin` | TEXT | | Chemin relatif sous la racine `miniatures` du JPEG aperçu (1200 px). Rempli par `derivatives`. |
+| `vignette_chemin` | TEXT | | Chemin relatif sous la racine `miniatures` du JPEG vignette (300 px). Rempli par `derivatives`. |
+| `dzi_chemin` | TEXT | | Réservé V2+ : chemin du DZI local (tuiles). Jamais rempli en V0.6. |
+| `iiif_url_nakala` | TEXT | | URL info.json IIIF du fichier déposé sur Nakala. Source primaire pour la visionneuse quand renseigné. |
 | `hash_sha256` | TEXT | | Calculé à l'import, vérifié périodiquement |
 | `taille_octets` | INTEGER | | |
 | `format` | TEXT | | `tiff`, `jpeg`, `pdf`... |
@@ -315,6 +319,8 @@ Un scan ou document rattaché à un item.
 **Contraintes :**
 - UNIQUE (`racine`, `chemin_relatif`) — un fichier n'existe qu'une fois.
 - UNIQUE (`item_id`, `ordre`) — pas de collision d'ordre dans un item.
+- CHECK `chemin_relatif IS NOT NULL OR iiif_url_nakala IS NOT NULL` —
+  un fichier doit avoir au moins une source (locale ou IIIF).
 
 **Index :** `item_id`, `hash_sha256`, `nom_fichier`, `etat`.
 

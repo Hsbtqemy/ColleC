@@ -89,10 +89,10 @@ archives-tool renommer historique --limite 20
 | `collision_intra_batch` | Plusieurs fichiers visent la même cible.                                            | Toutes les ops du groupe `bloque`. |
 | `collision_externe`     | La cible existe déjà sur disque, hors du batch.                                     | Op `bloque`.                     |
 
-Les **cycles** (A→B et B→A) ne sont *pas* des conflits : ils sont
-marqués `en_cycle` et résolus à l'exécution par un nom temporaire
-(`.tmp_rename_<uuid>_…`). Les opérations en `no_op` (cible == source)
-sont ignorées sans bruit.
+Les **cycles** de longueur ≥ 2 (A→B→A, A→B→C→A, etc.) ne sont *pas*
+des conflits : ils sont marqués `en_cycle` et résolus à l'exécution
+par un nom temporaire (`.tmp_rename_<uuid>_…`). Les opérations en
+`no_op` (cible == source) sont ignorées sans bruit.
 
 ## Stratégie d'exécution en deux phases
 
@@ -112,7 +112,10 @@ intermédiaires) :
 Si une erreur survient en phase 2, le **rollback compensateur** rejoue
 les déplacements inverses pour les opérations déjà appliquées avant
 de propager l'erreur. La transaction SQLAlchemy est `rollback`-ée :
-le journal n'est pas persisté sur échec.
+le journal n'est pas persisté sur échec. Si une compensation échoue à
+son tour (cas rare : permission disque, montage perdu), le chemin
+concerné est ajouté à `rapport.erreurs` afin que l'utilisateur puisse
+récupérer manuellement les fichiers laissés sous nom temporaire.
 
 ## Annulation
 

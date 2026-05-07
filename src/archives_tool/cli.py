@@ -31,6 +31,10 @@ from archives_tool.profils import (
     charger_profil,
     generer_squelette,
 )
+from archives_tool.derivatives import generer_derives, nettoyer_derives
+from archives_tool.derivatives.affichage import (
+    afficher_rapport as afficher_rapport_derives,
+)
 from archives_tool.qa.affichage import afficher_rapport_qa
 from archives_tool.qa.controles import CODES_CONTROLES, controler_tout
 from archives_tool.renamer import (
@@ -560,6 +564,109 @@ def cmd_controler(
 
     afficher_rapport_qa(rapport, limite_details=limite_details)
     raise typer.Exit(1 if rapport.nb_anomalies > 0 else 0)
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `deriver` : génération de vignettes et aperçus.
+# ---------------------------------------------------------------------------
+
+deriver = typer.Typer(
+    help="Générer ou nettoyer les dérivés (vignettes, aperçus).",
+    no_args_is_help=True,
+)
+app.add_typer(deriver, name="deriver")
+
+
+def _options_perimetre_deriver(
+    collection: str | None,
+    item: str | None,
+    fichier_id: list[int] | None,
+) -> None:
+    n = sum(x is not None and x != [] for x in (collection, item, fichier_id))
+    if n == 0:
+        typer.echo("Erreur : précisez --collection, --item ou --fichier-id.", err=True)
+        raise typer.Exit(2)
+
+
+@deriver.command("appliquer")
+def cmd_deriver_appliquer(
+    collection: str = typer.Option(None, "--collection"),
+    item: str = typer.Option(None, "--item"),
+    fichier_id: list[int] = typer.Option(None, "--fichier-id"),
+    recursif: bool = typer.Option(False, "--recursif/--non-recursif"),
+    force: bool = typer.Option(
+        False, "--force", help="Régénérer même si derive_genere est déjà True."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run/--no-dry-run"),
+    racine_cible: str = typer.Option(
+        "miniatures",
+        "--racine-cible",
+        help="Racine logique où écrire les dérivés.",
+    ),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
+) -> None:
+    """Générer les dérivés des fichiers ciblés."""
+    _options_perimetre_deriver(collection, item, fichier_id)
+    config = _charger_config_ou_sortie(config_path)
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    try:
+        with factory() as session:
+            rapport = generer_derives(
+                session,
+                racines=dict(config.racines),
+                racine_cible=racine_cible,
+                collection_cote=collection,
+                item_cote=item,
+                fichier_ids=list(fichier_id) if fichier_id else None,
+                recursif=recursif,
+                force=force,
+                dry_run=dry_run,
+            )
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+    afficher_rapport_derives(rapport)
+    raise typer.Exit(1 if rapport.nb_erreurs else 0)
+
+
+@deriver.command("nettoyer")
+def cmd_deriver_nettoyer(
+    collection: str = typer.Option(None, "--collection"),
+    item: str = typer.Option(None, "--item"),
+    fichier_id: list[int] = typer.Option(None, "--fichier-id"),
+    recursif: bool = typer.Option(False, "--recursif/--non-recursif"),
+    dry_run: bool = typer.Option(False, "--dry-run/--no-dry-run"),
+    racine_cible: str = typer.Option("miniatures", "--racine-cible"),
+    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
+) -> None:
+    """Supprimer les dérivés des fichiers ciblés."""
+    _options_perimetre_deriver(collection, item, fichier_id)
+    config = _charger_config_ou_sortie(config_path)
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    try:
+        with factory() as session:
+            rapport = nettoyer_derives(
+                session,
+                racines=dict(config.racines),
+                racine_cible=racine_cible,
+                collection_cote=collection,
+                item_cote=item,
+                fichier_ids=list(fichier_id) if fichier_id else None,
+                recursif=recursif,
+                dry_run=dry_run,
+            )
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+    afficher_rapport_derives(rapport)
 
 
 # ---------------------------------------------------------------------------

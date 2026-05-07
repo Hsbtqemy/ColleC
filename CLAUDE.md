@@ -270,6 +270,26 @@ annuler --batch-id UUID`, `archives-tool renommer historique`.
 Dry-run par défaut. Référence complète dans
 [`docs/renamer.md`](docs/renamer.md).
 
+### Génération de dérivés
+
+`src/archives_tool/derivatives/` produit vignettes et aperçus pour
+les fichiers actifs :
+
+- `chemins.py` : convention de stockage `<racine_cible>/<taille>/<chemin_source>.jpg`.
+- `generateur.py` : Pillow pour les formats raster, PyMuPDF (fitz)
+  pour les PDF (1ère page à 200 dpi). RGBA composé sur fond blanc.
+- `rapport.py` : dataclasses + `StatutDerive` (StrEnum).
+- `affichage.py` : rendu Rich.
+
+Tailles par défaut : vignette 300 px, aperçu 1 200 px (côté long,
+ratio préservé). Idempotent : `derive_genere=True` est ignoré sauf
+`--force`.
+
+CLI : `archives-tool deriver appliquer [--collection|--item|--fichier-id]
+[--recursif] [--force] [--dry-run] [--racine-cible miniatures]`,
+`archives-tool deriver nettoyer ...`. Référence dans
+[`docs/derivatives.md`](docs/derivatives.md).
+
 ### Sources externes (V2+)
 
 Une entité parallèle permet de référencer des ressources consultées dans
@@ -410,7 +430,7 @@ archives-tool/
 - Import depuis profil YAML (voir session dédiée).
 - ✅ Renommage transactionnel avec aperçu et journal.
 - Résolution des chemins via racines configurables.
-- Génération de dérivés (vignettes, aperçu moyen).
+- ✅ Génération de dérivés (vignettes, aperçu moyen).
 
 **Interface web (FastAPI + HTMX + Tailwind)** :
 
@@ -760,6 +780,11 @@ uv run archives-tool profil init --cote HK --titre "Hara-Kiri" \
 uv run archives-tool controler
 uv run archives-tool controler --collection HK --recursif
 uv run archives-tool controler --check items-vides --check doublons
+
+# Génération de dérivés (vignettes + aperçus)
+uv run archives-tool deriver appliquer --collection HK --recursif
+uv run archives-tool deriver appliquer --item HK-1960-01 --force
+uv run archives-tool deriver nettoyer --collection HK
 
 # Renommage transactionnel
 uv run archives-tool renommer appliquer \

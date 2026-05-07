@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}archives-tool{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/output.css') }}">
+</head>
+<body class="bg-white">
+  <div class="max-w-7xl mx-auto px-6 py-8">
+    {% include "components/header.html" %}
+    {% block breadcrumb %}{% endblock %}
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

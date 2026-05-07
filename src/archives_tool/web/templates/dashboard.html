@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Tableau de bord — archives-tool{% endblock %}
+
+{% block content %}
+<section class="mb-10">
+  <div class="flex items-start justify-between mb-1">
+    <h1 class="text-2xl font-medium">Tableau de bord</h1>
+    <div class="flex items-center gap-2">
+      <button class="btn" type="button" disabled aria-label="Rechercher">Rechercher</button>
+      <button class="btn" type="button" disabled aria-label="Importer">
+        Importer <span aria-hidden="true">▾</span>
+      </button>
+    </div>
+  </div>
+  <p class="text-sm text-gray-500">
+    <span class="font-mono">{{ nom_base }}</span>
+    <span aria-hidden="true">·</span>
+    {{ utilisateur }}
+  </p>
+</section>
+
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+  {% with
+    label='Collections',
+    value=statistiques.nb_collections,
+    detail=statistiques.nb_collections_racines ~ ' racines, ' ~ statistiques.nb_sous_collections ~ ' sous-collections'
+  %}
+    {% include "components/metric_card.html" %}
+  {% endwith %}
+  {% with
+    label='Items',
+    value=statistiques.nb_items,
+    detail='+' ~ statistiques.nb_items_recents ~ ' cette semaine'
+  %}
+    {% include "components/metric_card.html" %}
+  {% endwith %}
+  {% with
+    label='Fichiers',
+    value=statistiques.nb_fichiers,
+    detail=(statistiques.volume_octets | taille_humaine)
+  %}
+    {% include "components/metric_card.html" %}
+  {% endwith %}
+  {% with
+    label='Validés',
+    value=('%.0f' | format(statistiques.pourcentage_valides)) ~ '%',
+    detail=statistiques.nb_items_valides ~ ' / ' ~ statistiques.nb_items ~ ' items'
+  %}
+    {% include "components/metric_card.html" %}
+  {% endwith %}
+</section>
+
+<section class="mb-10">
+  <div class="flex items-end justify-between mb-3">
+    <h2 class="text-lg font-medium">Collections</h2>
+    <a href="#" class="text-sm text-gray-500 hover:text-gray-700">Tout voir →</a>
+  </div>
+  <div class="surface-card overflow-hidden">
+    {% if collections %}
+    <table class="w-full">
+      <thead>
+        <tr class="text-xs text-gray-500 uppercase tracking-wide">
+          <th class="px-4 py-2 text-left">Cote</th>
+          <th class="px-4 py-2 text-left">Titre</th>
+          <th class="px-4 py-2 text-right">Items</th>
+          <th class="px-4 py-2 text-right">Fichiers</th>
+          <th class="px-4 py-2 text-left">Avancement</th>
+          <th class="px-4 py-2 text-left">Modifié</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for col in collections %}
+          {% include "components/collection_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="px-4 py-8 text-sm text-gray-500 text-center">
+      Aucune collection. Créez-en une via <span class="font-mono">archives-tool importer</span>.
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="mb-10">
+  <h2 class="text-lg font-medium mb-3">Activité récente</h2>
+  <div class="surface-card p-4">
+    {% if activite %}
+    <ul class="divide-y divide-border-tertiary">
+      {% for evt in activite %}
+      <li class="py-3 first:pt-0 last:pb-0 flex items-start gap-3">
+        <span class="text-gray-400 mt-0.5">·</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm">
+            {{ evt.description }}
+            {% if evt.cote_concernee %}
+              <span class="font-mono text-gray-600">{{ evt.cote_concernee }}</span>
+            {% endif %}
+          </p>
+          <p class="text-xs text-gray-400 mt-0.5">
+            {{ evt.utilisateur or 'inconnu' }}
+            <span aria-hidden="true">·</span>
+            {{ evt.horodatage | temps_relatif }}
+          </p>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 text-center py-4">
+      Aucune activité récente.
+    </p>
+    {% endif %}
+  </div>
+</section>
+
+<section>
+  <div class="flex items-end justify-between mb-3">
+    <h2 class="text-lg font-medium">Points de vigilance</h2>
+    <a href="#" class="text-sm text-gray-500 hover:text-gray-700">
+      Lancer un contrôle complet →
+    </a>
+  </div>
+  <div class="surface-card p-4">
+    {% if vigilance %}
+    <ul class="divide-y divide-border-tertiary">
+      {% for point in vigilance %}
+      <li class="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm">
+            {{ point.titre }}
+            <span class="font-tabular text-gray-500">({{ point.nombre }})</span>
+          </p>
+          <p class="text-xs text-gray-400 mt-0.5">{{ point.detail }}</p>
+        </div>
+        <a href="{{ point.lien_action }}" class="text-sm text-gray-500 hover:text-gray-700 shrink-0">
+          Voir →
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 text-center py-4">
+      Aucun point de vigilance détecté.
+    </p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

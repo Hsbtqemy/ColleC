@@ -18,3 +18,6 @@ config_local.yaml
 .claude/
 .vscode/
 .idea/
+
+node_modules/
+src/archives_tool/web/static/css/output.css

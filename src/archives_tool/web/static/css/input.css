@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-gray-900 antialiased;
+    font-feature-settings: "tnum" on;
+  }
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-sm
+           border border-border-secondary rounded-md
+           bg-white hover:bg-gray-50 transition-colors;
+  }
+  .metric-card {
+    @apply bg-gray-50 rounded-md p-4;
+  }
+  .surface-card {
+    @apply bg-white rounded-lg border border-border-tertiary;
+  }
+}

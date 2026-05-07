@@ -11,6 +11,7 @@ from .collection import Collection, valider_hierarchie
 from .enums import (
     EtatCatalogage,
     EtatFichier,
+    PhaseChantier,
     StatutOperation,
     TypeChamp,
     TypeOperationFichier,
@@ -21,6 +22,7 @@ from .externe import LienExterneItem, RessourceExterne, SourceExterne
 from .fichier import Fichier
 from .item import Item
 from .journal import ModificationItem, OperationFichier, OperationImport
+from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
 
 __all__ = [
@@ -37,11 +39,13 @@ __all__ = [
     "OperationFichier",
     "ModificationItem",
     "OperationImport",
+    "PreferencesAffichage",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",
     "EtatCatalogage",
     "EtatFichier",
+    "PhaseChantier",
     "TypePage",
     "TypeOperationFichier",
     "StatutOperation",

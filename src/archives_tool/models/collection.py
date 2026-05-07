@@ -14,6 +14,7 @@ from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint, 
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from .base import Base, TracabiliteMixin
+from .enums import PhaseChantier
 
 if TYPE_CHECKING:
     from .item import Item
@@ -41,6 +42,10 @@ class Collection(Base, TracabiliteMixin):
     auteur_principal: Mapped[str | None] = mapped_column(Text)
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     notes_internes: Mapped[str | None] = mapped_column(Text)
+
+    phase: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=PhaseChantier.CATALOGAGE.value
+    )
 
     profil_import_id: Mapped[int | None] = mapped_column(ForeignKey("profil_import.id"))
 

@@ -55,6 +55,26 @@ class TypeChamp(enum.StrEnum):
     NOMBRE = "nombre"
 
 
+class PhaseChantier(enum.StrEnum):
+    NUMERISATION = "numerisation"
+    CATALOGAGE = "catalogage"
+    REVISION = "revision"
+    FINALISATION = "finalisation"
+    ARCHIVEE = "archivee"
+    EN_PAUSE = "en_pause"
+
+    @property
+    def libelle(self) -> str:
+        return {
+            "numerisation": "numérisation",
+            "catalogage": "catalogage",
+            "revision": "révision",
+            "finalisation": "finalisation",
+            "archivee": "archivée",
+            "en_pause": "en pause",
+        }[self.value]
+
+
 class TypeRelationExterne(enum.StrEnum):
     MEME_RESSOURCE = "meme_ressource"
     PARTIE_DE = "partie_de"

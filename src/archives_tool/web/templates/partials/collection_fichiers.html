@@ -1,0 +1,51 @@
+{# Tableau des fichiers d'une collection. Variables : `fichiers`. #}
+{% if fichiers %}
+<div class="surface-card overflow-hidden">
+  <table class="w-full">
+    <thead>
+      <tr class="text-xs text-gray-500 uppercase tracking-wide">
+        <th class="px-4 py-2 text-left">Item</th>
+        <th class="px-4 py-2 text-left">Nom</th>
+        <th class="px-4 py-2 text-right">Ordre</th>
+        <th class="px-4 py-2 text-left">Type</th>
+        <th class="px-4 py-2 text-right">Taille</th>
+        <th class="px-4 py-2 text-right">Dimensions</th>
+        <th class="px-4 py-2 text-left">Dérivés</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in fichiers %}
+      <tr class="border-t border-border-tertiary hover:bg-gray-50">
+        <td class="px-4 py-2 font-mono text-sm">
+          <a href="/item/{{ f.item_cote }}" class="text-gray-700 hover:text-gray-900">
+            {{ f.item_cote }}
+          </a>
+        </td>
+        <td class="px-4 py-2 text-sm">{{ f.nom_fichier }}</td>
+        <td class="px-4 py-2 text-right font-tabular text-sm">{{ f.ordre }}</td>
+        <td class="px-4 py-2 text-xs text-gray-500">{{ f.type_page }}</td>
+        <td class="px-4 py-2 text-right font-tabular text-sm">
+          {{ f.taille_octets | taille_humaine }}
+        </td>
+        <td class="px-4 py-2 text-right font-tabular text-xs text-gray-500">
+          {% if f.largeur_px and f.hauteur_px %}
+            {{ f.largeur_px }}×{{ f.hauteur_px }}
+          {% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-2 text-xs">
+          {% if f.derive_genere %}
+            <span class="text-emerald-600">✓ générés</span>
+          {% else %}
+            <span class="text-gray-400">absent</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-sm text-gray-500 text-center py-12">
+  Aucun fichier rattaché à cette collection.
+</p>
+{% endif %}

@@ -1,0 +1,16 @@
+{# Wrapper commun aux trois onglets de la vue collection.
+   Variables : `detail`, `onglet`. Le contenu de l'onglet est défini
+   par le bloc `tab_content`. #}
+{% extends "base.html" %}
+
+{% block title %}{{ detail.cote }} — {{ detail.titre }}{% endblock %}
+
+{% block content %}
+  {% include "components/collection_header.html" %}
+  {% with cote=detail.cote, actif=onglet %}
+    {% include "components/tabs.html" %}
+  {% endwith %}
+  <div id="tab-content">
+    {% block tab_content %}{% endblock %}
+  </div>
+{% endblock %}

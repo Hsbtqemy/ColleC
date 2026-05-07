@@ -1,0 +1,43 @@
+{# Bandeau de la vue collection : breadcrumb + titre + chiffres clés.
+   Attendu : `detail` (CollectionDetail). #}
+<header class="mb-6">
+  {% if detail.parent_cote %}
+    <nav class="text-sm text-gray-500 mb-2">
+      <a href="/collection/{{ detail.parent_cote }}" class="hover:text-gray-700">
+        {{ detail.parent_cote }} · {{ detail.parent_titre }}
+      </a>
+      <span aria-hidden="true">/</span>
+      <span class="text-gray-700 font-mono">{{ detail.cote }}</span>
+    </nav>
+  {% endif %}
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-medium">
+        <span class="font-mono text-gray-700">{{ detail.cote }}</span>
+        <span class="text-gray-300 mx-2" aria-hidden="true">·</span>
+        {{ detail.titre }}
+      </h1>
+      {% if detail.titre_secondaire %}
+        <p class="text-sm text-gray-500 mt-1">{{ detail.titre_secondaire }}</p>
+      {% endif %}
+      <p class="text-xs text-gray-400 mt-2">
+        {{ detail.phase | libelle_phase }}
+        {% if detail.editeur %}<span aria-hidden="true">·</span> {{ detail.editeur }}{% endif %}
+        {% if detail.lieu_edition %}<span aria-hidden="true">·</span> {{ detail.lieu_edition }}{% endif %}
+        {% if detail.date_debut or detail.date_fin %}
+          <span aria-hidden="true">·</span>
+          {{ detail.date_debut or '?' }}–{{ detail.date_fin or '' }}
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex gap-2 text-sm text-gray-500 shrink-0">
+      <span class="font-tabular">{{ detail.nb_items }} items</span>
+      <span aria-hidden="true">·</span>
+      <span class="font-tabular">{{ detail.nb_fichiers }} fichiers</span>
+      {% if detail.nb_sous_collections > 0 %}
+        <span aria-hidden="true">·</span>
+        <span class="font-tabular">{{ detail.nb_sous_collections }} sous-coll.</span>
+      {% endif %}
+    </div>
+  </div>
+</header>

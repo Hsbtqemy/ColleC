@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}{{ detail.cote }} — {{ detail.titre or 'Item' }}{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <nav class="text-sm text-gray-500 mb-2">
+    <a href="/collection/{{ detail.collection_cote }}" class="hover:text-gray-700">
+      {{ detail.collection_cote }} · {{ detail.collection_titre }}
+    </a>
+    <span aria-hidden="true">/</span>
+    <span class="text-gray-700 font-mono">{{ detail.cote }}</span>
+  </nav>
+  <h1 class="text-2xl font-medium">
+    <span class="font-mono text-gray-700">{{ detail.cote }}</span>
+    {% if detail.titre %}
+      <span class="text-gray-300 mx-2" aria-hidden="true">·</span>
+      {{ detail.titre }}
+    {% endif %}
+  </h1>
+  <p class="text-xs text-gray-400 mt-1">
+    {{ detail.collection_phase | libelle_phase }}
+    <span aria-hidden="true">·</span>
+    état : {{ detail.etat.value }}
+  </p>
+</header>
+
+<div class="grid grid-cols-12 gap-4">
+  {# Zone 1 : liste des fichiers #}
+  <aside class="col-span-3 surface-card p-3 max-h-[80vh] overflow-y-auto">
+    <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+      Fichiers ({{ detail.fichiers | length }})
+    </h2>
+    {% if detail.fichiers %}
+    <ul id="liste-fichiers" class="space-y-1">
+      {% for f in detail.fichiers %}
+        <li>
+          <button type="button"
+                  class="w-full text-left px-2 py-1.5 rounded hover:bg-gray-50 flex items-center gap-2"
+                  data-fichier-id="{{ f.id }}"
+                  data-nom-fichier="{{ f.nom_fichier }}">
+            {% if f.source.vignette_url %}
+              <img src="{{ f.source.vignette_url }}"
+                   alt=""
+                   class="w-10 h-10 object-cover rounded shrink-0"
+                   loading="lazy">
+            {% else %}
+              <span class="w-10 h-10 bg-gray-100 rounded shrink-0
+                           flex items-center justify-center text-xs text-gray-400">
+                ?
+              </span>
+            {% endif %}
+            <span class="flex-1 min-w-0">
+              <span class="text-xs font-mono text-gray-700 truncate block">{{ f.nom_fichier }}</span>
+              <span class="text-[10px] text-gray-400">
+                #{{ f.ordre }} · {{ f.type_page }}
+                {%- if f.folio %} · f. {{ f.folio }}{% endif %}
+              </span>
+            </span>
+          </button>
+        </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-xs text-gray-400 py-4 text-center">Aucun fichier rattaché.</p>
+    {% endif %}
+  </aside>
+
+  {# Zone 2 : visionneuse OpenSeadragon #}
+  <section class="col-span-6">
+    <div class="surface-card overflow-hidden flex flex-col h-[80vh]">
+      <div id="visionneuse-bandeau" class="px-3 py-2 border-b border-border-tertiary text-xs text-gray-500 font-mono">
+        Sélectionnez un fichier
+      </div>
+      <div id="visionneuse" class="flex-1 bg-gray-900 relative">
+        <p id="visionneuse-placeholder"
+           class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
+          Cliquez sur un fichier dans la liste de gauche.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {# Zone 3 : métadonnées #}
+  <aside class="col-span-3 surface-card p-4 max-h-[80vh] overflow-y-auto">
+    <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Métadonnées</h2>
+    <dl class="space-y-2 text-sm">
+      {% for label, valeur in [
+        ('Numéro', detail.numero),
+        ('Date', detail.date),
+        ('Année', detail.annee),
+        ('Langue', detail.langue),
+        ('Type COAR', detail.type_coar),
+        ('DOI Nakala', detail.doi_nakala),
+        ('DOI collection', detail.doi_collection_nakala),
+      ] %}
+        {% if valeur %}
+        <div>
+          <dt class="text-xs text-gray-400">{{ label }}</dt>
+          <dd class="text-gray-800 break-words">{{ valeur }}</dd>
+        </div>
+        {% endif %}
+      {% endfor %}
+      {% if detail.description %}
+      <div>
+        <dt class="text-xs text-gray-400">Description</dt>
+        <dd class="text-gray-800 text-xs whitespace-pre-wrap">{{ detail.description }}</dd>
+      </div>
+      {% endif %}
+      {% if detail.metadonnees %}
+      <div>
+        <dt class="text-xs text-gray-400 mb-1">Métadonnées étendues</dt>
+        <dd>
+          <pre class="text-[11px] bg-gray-50 p-2 rounded overflow-x-auto">{{ detail.metadonnees | tojson(indent=2) }}</pre>
+        </dd>
+      </div>
+      {% endif %}
+    </dl>
+  </aside>
+</div>
+
+<script id="sources-fichiers" type="application/json">
+  {{ sources_par_id | tojson }}
+</script>
+<script>
+  window.FICHIER_INITIAL_ID = {{ fichier_initial_id | tojson }};
+</script>
+<script src="{{ url_for('static', path='js/vendor/openseadragon/openseadragon.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/visionneuse.js') }}" defer></script>
+{% endblock %}

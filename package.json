@@ -4,7 +4,11 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./src/archives_tool/web/static/css/input.css -o ./src/archives_tool/web/static/css/output.css",
-    "watch:css": "tailwindcss -i ./src/archives_tool/web/static/css/input.css -o ./src/archives_tool/web/static/css/output.css --watch"
+    "watch:css": "tailwindcss -i ./src/archives_tool/web/static/css/input.css -o ./src/archives_tool/web/static/css/output.css --watch",
+    "vendor:osd": "mkdir -p src/archives_tool/web/static/js/vendor/openseadragon && cp -r node_modules/openseadragon/build/openseadragon/* src/archives_tool/web/static/js/vendor/openseadragon/"
+  },
+  "dependencies": {
+    "openseadragon": "^4.1.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0"

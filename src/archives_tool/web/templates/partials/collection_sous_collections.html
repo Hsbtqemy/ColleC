@@ -1,11 +1,14 @@
-{# Onglet sous-collections. Variables : `sous_collections` (list[SousCollectionResume]).
-   Réutilise tableau_collections : une sous-collection est une collection
-   filtrée sur l'arborescence — même rendu, même schéma. #}
+{# Onglet sous-collections. Variables : `sous_collections` (liste).
+   Réutilise tableau_collections — pas de tri câblé pour cet onglet
+   (faible volume, brief V0.6.1). #}
 {% from 'components/tableau_collections.html' import tableau_collections %}
 {% if sous_collections %}
   {{ tableau_collections({
     'collections': sous_collections,
     'sort': 'cote',
+    'ordre': 'asc',
+    'cible_url': '/collection/' ~ detail.cote ~ '/sous-collections',
+    'id': 'tableau-sous-collections',
   }) }}
 {% else %}
   <p class="text-sm text-gray-500 text-center py-12">

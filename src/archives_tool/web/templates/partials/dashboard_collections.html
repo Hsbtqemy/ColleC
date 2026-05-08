@@ -1,0 +1,19 @@
+{# Tableau des collections du dashboard. Variables : `collections`
+   (Listage[CollectionResume]). HTMX : un click sur un en-tête swap
+   ce partial via outerHTML sur #dashboard-collections. #}
+{% from 'components/tableau_collections.html' import tableau_collections %}
+{% if collections.items %}
+  {{ tableau_collections({
+    'collections': collections.items,
+    'sort': collections.tri,
+    'ordre': collections.ordre,
+    'cible_url': '/',
+    'id': 'dashboard-collections',
+  }) }}
+{% else %}
+  <div id="dashboard-collections" class="surface-card overflow-hidden">
+    <p class="px-4 py-8 text-sm text-gray-500 text-center">
+      Aucune collection. Créez-en une via <span class="font-mono">archives-tool importer</span>.
+    </p>
+  </div>
+{% endif %}

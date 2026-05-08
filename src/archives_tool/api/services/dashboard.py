@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from archives_tool.affichage.formatters import temps_relatif
+from archives_tool.api.services.tri import Listage, Ordre
 from archives_tool.models import (
     Collection,
     EtatCatalogage,
@@ -206,26 +207,48 @@ def _comptes_sous_collections(session: Session) -> dict[int, int]:
     return dict(rows)
 
 
+_TRI_SQL_COLLECTIONS = {
+    "cote": Collection.cote_collection,
+    "titre": Collection.titre,
+    "modifie": Collection.modifie_le,
+}
+
+
 def lister_collections_dashboard(
-    session: Session, limite: int = 10
-) -> list[CollectionResume]:
-    """Collections racines triées par modifie_le DESC (puis cote ASC)."""
+    session: Session,
+    limite: int = 10,
+    *,
+    tri: str | None = None,
+    ordre: Ordre = "desc",
+) -> "Listage[CollectionResume]":
+    """Collections racines triées par tri/ordre, à défaut modifie DESC.
+
+    Tris admis : `cote`, `titre`, `modifie` (colonnes SQL),
+    `items`, `fichiers` (compteurs calculés, tri Python sur la liste).
+    Tout autre tri retombe sur le défaut (`modifie` DESC).
+    """
     fichiers_par_col, etats_par_col = _comptes_par_collection(session)
     sous_col_par_parent = _comptes_sous_collections(session)
 
-    racines = list(
-        session.scalars(
-            select(Collection)
-            .where(Collection.parent_id.is_(None))
-            .order_by(
-                Collection.modifie_le.desc().nulls_last(), Collection.cote_collection
-            )
-            .limit(limite)
-        ).all()
-    )
+    stmt = select(Collection).where(Collection.parent_id.is_(None))
+    tri_calcule = tri in ("items", "fichiers")
+    if tri in _TRI_SQL_COLLECTIONS:
+        cle, sens = tri, ordre if ordre in ("asc", "desc") else "desc"
+        col = _TRI_SQL_COLLECTIONS[cle]
+        stmt = stmt.order_by(col.desc() if sens == "desc" else col.asc()).limit(limite)
+    elif tri_calcule:
+        cle, sens = tri, ordre if ordre in ("asc", "desc") else "desc"
+        # Tri Python sur la liste complète, slice après.
+        stmt = stmt.order_by(Collection.cote_collection)
+    else:
+        cle, sens = "modifie", "desc"
+        stmt = stmt.order_by(
+            Collection.modifie_le.desc().nulls_last(), Collection.cote_collection
+        ).limit(limite)
+    racines = list(session.scalars(stmt).all())
 
     maintenant = datetime.now()
-    return [
+    resumes = [
         CollectionResume(
             id=col.id,
             cote=col.cote_collection,
@@ -242,6 +265,12 @@ def lister_collections_dashboard(
         )
         for col in racines
     ]
+    if tri_calcule:
+        cle_attr = {"items": "nb_items", "fichiers": "nb_fichiers"}[cle]
+        resumes.sort(key=lambda r: getattr(r, cle_attr), reverse=(sens == "desc"))
+        resumes = resumes[:limite]
+
+    return Listage(items=resumes, tri=cle, ordre=sens)
 
 
 # ---------------------------------------------------------------------------

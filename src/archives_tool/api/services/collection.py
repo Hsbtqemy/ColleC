@@ -5,13 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from archives_tool.affichage.formatters import date_incertaine, temps_relatif
 from archives_tool.api.services.dashboard import CollectionResume
+from archives_tool.api.services.tri import Listage, Ordre, appliquer_tri
 from archives_tool.models import (
     Collection,
+    EtatCatalogage,
+    EtatFichier,
     Fichier,
     Item,
     PhaseChantier,
@@ -202,7 +205,82 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
     ]
 
 
-def lister_items(session: Session, cote: str) -> list[ItemResume]:
+_ETATS_ITEM = {e.value for e in EtatCatalogage}
+
+
+def _parse_csv(valeur: str | None) -> list[str]:
+    if not valeur:
+        return []
+    return [v.strip() for v in valeur.split(",") if v.strip()]
+
+
+def appliquer_filtres_items(
+    stmt: Select,
+    *,
+    etat: list[str] | None = None,
+    type_coar: list[str] | None = None,
+    annee_debut: int | None = None,
+    annee_fin: int | None = None,
+    q: str | None = None,
+) -> tuple[Select, dict[str, object]]:
+    """Applique les filtres items sur une SELECT. Whitelist côté Python.
+
+    Retourne `(stmt, filtres_actifs)` — `filtres_actifs` reflète ce qui
+    a effectivement été appliqué (les valeurs non valides sont
+    silencieusement ignorées).
+    """
+    actifs: dict[str, object] = {}
+    if etat:
+        retenus = [e for e in etat if e in _ETATS_ITEM]
+        if retenus:
+            stmt = stmt.where(Item.etat_catalogage.in_(retenus))
+            actifs["etat"] = retenus
+    if type_coar:
+        retenus = [t for t in type_coar if t]
+        if retenus:
+            stmt = stmt.where(Item.type_coar.in_(retenus))
+            actifs["type"] = retenus
+    if annee_debut is not None:
+        stmt = stmt.where(Item.annee >= annee_debut)
+        actifs["annee_debut"] = annee_debut
+    if annee_fin is not None:
+        stmt = stmt.where(Item.annee <= annee_fin)
+        actifs["annee_fin"] = annee_fin
+    if q:
+        terme = f"%{q.strip()}%"
+        if terme != "%%":
+            stmt = stmt.where(Item.titre.ilike(terme))
+            actifs["q"] = q.strip()
+    return stmt, actifs
+
+
+def types_coar_disponibles(session: Session, cote: str) -> list[str]:
+    """Liste distincte des `type_coar` non vides pour une collection."""
+    col = _charger_collection(session, cote)
+    rows = session.execute(
+        select(Item.type_coar)
+        .where(Item.collection_id == col.id)
+        .where(Item.type_coar.is_not(None))
+        .distinct()
+        .order_by(Item.type_coar)
+    ).all()
+    return [r[0] for r in rows if r[0]]
+
+
+def lister_items(
+    session: Session,
+    cote: str,
+    *,
+    tri: str | None = None,
+    ordre: Ordre = "asc",
+    page: int = 1,
+    par_page: int = 50,
+    etat: list[str] | None = None,
+    type_coar: list[str] | None = None,
+    annee_debut: int | None = None,
+    annee_fin: int | None = None,
+    q: str | None = None,
+) -> Listage[ItemResume]:
     col = _charger_collection(session, cote)
     nb_fichiers_subq = (
         select(func.count(Fichier.id))
@@ -210,23 +288,60 @@ def lister_items(session: Session, cote: str) -> list[ItemResume]:
         .correlate(Item)
         .scalar_subquery()
     )
-    rows = session.execute(
-        select(
-            Item.cote,
-            Item.titre,
-            Item.date,
-            Item.annee,
-            Item.etat_catalogage,
-            Item.modifie_par,
-            Item.modifie_le,
-            nb_fichiers_subq.label("nb_fichiers"),
-        )
-        .where(Item.collection_id == col.id)
-        .order_by(Item.cote)
-    ).all()
 
+    base_stmt = select(
+        Item.cote,
+        Item.titre,
+        Item.date,
+        Item.annee,
+        Item.etat_catalogage,
+        Item.modifie_par,
+        Item.modifie_le,
+        nb_fichiers_subq.label("nb_fichiers"),
+    ).where(Item.collection_id == col.id)
+
+    base_stmt, filtres = appliquer_filtres_items(
+        base_stmt,
+        etat=etat,
+        type_coar=type_coar,
+        annee_debut=annee_debut,
+        annee_fin=annee_fin,
+        q=q,
+    )
+
+    mapping_tri = {
+        "cote": Item.cote,
+        "titre": Item.titre,
+        "type": Item.type_coar,
+        "date": Item.date,
+        "etat": Item.etat_catalogage,
+        "fichiers": nb_fichiers_subq,
+        "modifie": Item.modifie_le,
+    }
+    stmt, tri_eff, ordre_eff = appliquer_tri(
+        base_stmt, mapping_tri, tri, ordre, defaut=("cote", "asc")
+    )
+
+    # Le total reflète le filtrage appliqué — la même WHERE clause
+    # appliquée sur un COUNT.
+    count_stmt = select(func.count(Item.id)).where(Item.collection_id == col.id)
+    count_stmt, _ = appliquer_filtres_items(
+        count_stmt,
+        etat=etat,
+        type_coar=type_coar,
+        annee_debut=annee_debut,
+        annee_fin=annee_fin,
+        q=q,
+    )
+    total = session.scalar(count_stmt) or 0
+
+    page_eff = max(1, page)
+    if par_page > 0:
+        stmt = stmt.limit(par_page).offset((page_eff - 1) * par_page)
+
+    rows = session.execute(stmt).all()
     maintenant = datetime.now()
-    return [
+    items = [
         ItemResume(
             cote=row.cote,
             titre=row.titre,
@@ -242,19 +357,134 @@ def lister_items(session: Session, cote: str) -> list[ItemResume]:
         )
         for row in rows
     ]
-
-
-def lister_fichiers(session: Session, cote: str) -> list[FichierResume]:
-    col = _charger_collection(session, cote)
-    rows = list(
-        session.execute(
-            select(Fichier, Item.cote)
-            .join(Item, Fichier.item_id == Item.id)
-            .where(Item.collection_id == col.id)
-            .order_by(Item.cote, Fichier.ordre)
-        ).all()
+    return Listage(
+        items=items,
+        tri=tri_eff,
+        ordre=ordre_eff,
+        page=page_eff,
+        par_page=par_page,
+        total=total,
+        filtres=filtres,
     )
-    return [
+
+
+_ETATS_FICHIER = {e.value for e in EtatFichier}
+
+
+def appliquer_filtres_fichiers(
+    stmt: Select,
+    *,
+    etat: list[str] | None = None,
+    type_page: list[str] | None = None,
+    format: list[str] | None = None,
+    q: str | None = None,
+) -> tuple[Select, dict[str, object]]:
+    """Applique les filtres fichiers sur une SELECT. Whitelist côté Python."""
+    actifs: dict[str, object] = {}
+    if etat:
+        retenus = [e for e in etat if e in _ETATS_FICHIER]
+        if retenus:
+            stmt = stmt.where(Fichier.etat.in_(retenus))
+            actifs["etat"] = retenus
+    if type_page:
+        retenus = [t for t in type_page if t]
+        if retenus:
+            stmt = stmt.where(Fichier.type_page.in_(retenus))
+            actifs["type_page"] = retenus
+    if format:
+        retenus = [f for f in format if f]
+        if retenus:
+            stmt = stmt.where(Fichier.format.in_(retenus))
+            actifs["format"] = retenus
+    if q:
+        terme = f"%{q.strip()}%"
+        if terme != "%%":
+            stmt = stmt.where(Fichier.nom_fichier.ilike(terme))
+            actifs["q"] = q.strip()
+    return stmt, actifs
+
+
+def types_page_disponibles(session: Session, cote: str) -> list[str]:
+    col = _charger_collection(session, cote)
+    rows = session.execute(
+        select(Fichier.type_page)
+        .join(Item, Fichier.item_id == Item.id)
+        .where(Item.collection_id == col.id)
+        .distinct()
+        .order_by(Fichier.type_page)
+    ).all()
+    return [r[0] for r in rows if r[0]]
+
+
+def formats_disponibles(session: Session, cote: str) -> list[str]:
+    col = _charger_collection(session, cote)
+    rows = session.execute(
+        select(Fichier.format)
+        .join(Item, Fichier.item_id == Item.id)
+        .where(Item.collection_id == col.id)
+        .where(Fichier.format.is_not(None))
+        .distinct()
+        .order_by(Fichier.format)
+    ).all()
+    return [r[0] for r in rows if r[0]]
+
+
+def lister_fichiers(
+    session: Session,
+    cote: str,
+    *,
+    tri: str | None = None,
+    ordre: Ordre = "asc",
+    page: int = 1,
+    par_page: int = 50,
+    etat: list[str] | None = None,
+    type_page: list[str] | None = None,
+    format: list[str] | None = None,
+    q: str | None = None,
+) -> Listage[FichierResume]:
+    col = _charger_collection(session, cote)
+    base_stmt = (
+        select(Fichier, Item.cote.label("item_cote"))
+        .join(Item, Fichier.item_id == Item.id)
+        .where(Item.collection_id == col.id)
+    )
+
+    base_stmt, filtres = appliquer_filtres_fichiers(
+        base_stmt, etat=etat, type_page=type_page, format=format, q=q
+    )
+
+    mapping_tri = {
+        "item": Item.cote,
+        "nom": Fichier.nom_fichier,
+        "ordre": Fichier.ordre,
+        "type": Fichier.type_page,
+        "taille": Fichier.taille_octets,
+        "etat": Fichier.etat,
+    }
+    stmt, tri_eff, ordre_eff = appliquer_tri(
+        base_stmt, mapping_tri, tri, ordre, defaut=("item", "asc")
+    )
+    # Tri secondaire stable par (item_cote, ordre) pour les rangées
+    # avec la même valeur de tri principal.
+    if tri_eff != "ordre":
+        stmt = stmt.order_by(Item.cote, Fichier.ordre)
+
+    count_stmt = (
+        select(func.count(Fichier.id))
+        .join(Item, Fichier.item_id == Item.id)
+        .where(Item.collection_id == col.id)
+    )
+    count_stmt, _ = appliquer_filtres_fichiers(
+        count_stmt, etat=etat, type_page=type_page, format=format, q=q
+    )
+    total = session.scalar(count_stmt) or 0
+
+    page_eff = max(1, page)
+    if par_page > 0:
+        stmt = stmt.limit(par_page).offset((page_eff - 1) * par_page)
+
+    rows = list(session.execute(stmt).all())
+    fichiers = [
         FichierResume(
             id=f.id,
             item_cote=item_cote,
@@ -270,3 +500,12 @@ def lister_fichiers(session: Session, cote: str) -> list[FichierResume]:
         )
         for f, item_cote in rows
     ]
+    return Listage(
+        items=fichiers,
+        tri=tri_eff,
+        ordre=ordre_eff,
+        page=page_eff,
+        par_page=par_page,
+        filtres=filtres,
+        total=total,
+    )

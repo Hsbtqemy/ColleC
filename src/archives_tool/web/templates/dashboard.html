@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from 'components/tableau_collections.html' import tableau_collections %}
 
 {% block title %}Tableau de bord — archives-tool{% endblock %}
 
@@ -57,15 +56,7 @@
     <h2 class="text-lg font-medium">Collections</h2>
     <a href="#" class="text-sm text-gray-500 hover:text-gray-700">Tout voir →</a>
   </div>
-  {% if collections %}
-    {{ tableau_collections({'collections': collections, 'sort': 'modifie'}) }}
-  {% else %}
-    <div class="surface-card overflow-hidden">
-      <p class="px-4 py-8 text-sm text-gray-500 text-center">
-        Aucune collection. Créez-en une via <span class="font-mono">archives-tool importer</span>.
-      </p>
-    </div>
-  {% endif %}
+  {% include 'partials/dashboard_collections.html' %}
 </section>
 
 <section class="mb-10">

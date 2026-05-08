@@ -95,16 +95,30 @@ def test_statistiques_base_peuplee(base_peuplee: Session) -> None:
 
 
 def test_lister_collections_avec_repartition(base_peuplee: Session) -> None:
-    resumes = lister_collections_dashboard(base_peuplee)
+    listage = lister_collections_dashboard(base_peuplee)
     # Une seule collection racine.
-    assert len(resumes) == 1
-    res = resumes[0]
+    assert len(listage.items) == 1
+    res = listage.items[0]
     assert res.cote == "P"
     assert res.nb_items == 5
     assert res.nb_fichiers == 5
     assert res.sous_collections == 1
     assert res.repartition == {"valide": 2, "a_verifier": 2, "brouillon": 1}
     assert res.href == "/collection/P"
+
+
+def test_lister_collections_tri_par_cote(base_peuplee: Session) -> None:
+    listage = lister_collections_dashboard(base_peuplee, tri="cote", ordre="asc")
+    assert listage.tri == "cote"
+    assert listage.ordre == "asc"
+
+
+def test_lister_collections_tri_invalide_retombe_par_defaut(
+    base_peuplee: Session,
+) -> None:
+    listage = lister_collections_dashboard(base_peuplee, tri="injection", ordre="???")
+    assert listage.tri == "modifie"
+    assert listage.ordre == "desc"
 
 
 def test_lister_activite_recente_fusion_des_journaux(base_peuplee: Session) -> None:

@@ -1,19 +1,25 @@
-{# Onglet items d'une vue collection. Variables : `items` (list[ItemResume]). #}
+{# Onglet items d'une vue collection. Variables : `items` (Listage[ItemResume]),
+   `cote` (collection courante). #}
 {% from 'components/tableau_items.html' import tableau_items %}
-{% if items %}
+{% if items.items %}
   {{ tableau_items({
     'colonnes': ['cote', 'titre', 'date', 'etat', 'fichiers', 'modifie'],
-    'sort': 'cote',
-    'items': items,
+    'sort': items.tri,
+    'ordre': items.ordre,
+    'cible_url': '/collection/' ~ cote ~ '/items',
+    'id': 'tableau-items',
+    'items': items.items,
     'pagination': {
-      'page': 1, 'per_page': items|length,
-      'total': items|length, 'pages': 1,
+      'page': items.page, 'per_page': items.par_page,
+      'total': items.total, 'pages': items.pages,
     },
     'compteur_filtres': 'aucun',
     'nb_colonnes_actives': 6,
   }) }}
 {% else %}
-  <p class="text-sm text-gray-500 text-center py-12">
-    Aucun item rattaché à cette collection.
-  </p>
+  <div id="tableau-items">
+    <p class="text-sm text-gray-500 text-center py-12">
+      Aucun item rattaché à cette collection.
+    </p>
+  </div>
 {% endif %}

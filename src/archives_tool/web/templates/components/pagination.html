@@ -1,0 +1,59 @@
+{# Pagination réutilisable. Variables :
+   - pagination : objet avec page/per_page/total/pages
+   - cible_url  : base de l'URL HTMX (sans page= courant)
+   - id_wrap    : id du wrapper à swap (sans #)
+#}
+{%- set p = pagination -%}
+{%- set first = (p.page - 1) * p.per_page + 1 -%}
+{%- set last_n = p.page * p.per_page -%}
+{%- set last = last_n if last_n < p.total else p.total -%}
+<div class="flex items-center justify-between border-t"
+     style="border-color:rgba(0,0,0,0.08);padding:10px 14px;">
+  <span class="font-tabular" style="font-size:12px;color:#9ca3af;">
+    {{ first }}–{{ last }} sur {{ '{:,}'.format(p.total)|replace(',', ' ') }}
+  </span>
+  {%- if p.pages > 1 %}
+  <div class="flex items-center" style="gap:2px;" data-pager>
+    {%- if p.page > 1 %}
+      <a href="{{ cible_url|url_page(p.page - 1) }}"
+         hx-get="{{ cible_url|url_page(p.page - 1) }}"
+         hx-target="#{{ id_wrap }}" hx-swap="outerHTML" hx-push-url="true"
+         class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+         style="min-width:26px;height:26px;padding:0 6px;" aria-label="Précédent">
+        <svg width="10" height="10" viewBox="0 0 10 10" style="transform:rotate(90deg);" aria-hidden="true">
+          <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    {%- endif %}
+    {%- for n in pages_visibles(p.page, p.pages) %}
+      {%- if n is string %}
+        <span class="inline-flex items-center justify-center text-gray-400"
+              style="min-width:26px;height:26px;font-size:12px;">…</span>
+      {%- elif n == p.page %}
+        <span class="inline-flex items-center justify-center rounded bg-gray-900 text-white"
+              style="min-width:26px;height:26px;padding:0 6px;font-size:12px;"
+              aria-current="page">{{ n }}</span>
+      {%- else %}
+        <a href="{{ cible_url|url_page(n) }}"
+           hx-get="{{ cible_url|url_page(n) }}"
+           hx-target="#{{ id_wrap }}" hx-swap="outerHTML" hx-push-url="true"
+           class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+           style="min-width:26px;height:26px;padding:0 6px;font-size:12px;">{{ n }}</a>
+      {%- endif %}
+    {%- endfor %}
+    {%- if p.page < p.pages %}
+      <a href="{{ cible_url|url_page(p.page + 1) }}"
+         hx-get="{{ cible_url|url_page(p.page + 1) }}"
+         hx-target="#{{ id_wrap }}" hx-swap="outerHTML" hx-push-url="true"
+         class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+         style="min-width:26px;height:26px;padding:0 6px;" aria-label="Suivant">
+        <svg width="10" height="10" viewBox="0 0 10 10" style="transform:rotate(-90deg);" aria-hidden="true">
+          <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</div>

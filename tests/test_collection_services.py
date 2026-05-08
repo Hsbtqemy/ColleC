@@ -92,14 +92,50 @@ def test_lister_sous_collections(base_avec_arbre: Session) -> None:
 
 
 def test_lister_items_tri_et_compteur(base_avec_arbre: Session) -> None:
-    items = lister_items(base_avec_arbre, "P")
-    assert [i.cote for i in items] == ["P-000", "P-001", "P-002"]
-    assert items[0].nb_fichiers == 1
-    assert items[2].nb_fichiers == 0
+    listage = lister_items(base_avec_arbre, "P")
+    assert listage.tri == "cote"
+    assert listage.ordre == "asc"
+    assert [i.cote for i in listage.items] == ["P-000", "P-001", "P-002"]
+    assert listage.items[0].nb_fichiers == 1
+    assert listage.items[2].nb_fichiers == 0
+    assert listage.total == 3
+    assert listage.pages == 1
+
+
+def test_lister_items_tri_invalide_retombe_par_defaut(
+    base_avec_arbre: Session,
+) -> None:
+    listage = lister_items(base_avec_arbre, "P", tri="injection", ordre="bad")
+    assert listage.tri == "cote"
+    assert listage.ordre == "asc"
+
+
+def test_lister_items_tri_par_etat_desc(base_avec_arbre: Session) -> None:
+    listage = lister_items(base_avec_arbre, "P", tri="etat", ordre="desc")
+    assert listage.tri == "etat"
+    assert listage.ordre == "desc"
+
+
+def test_lister_items_pagination(base_avec_arbre: Session) -> None:
+    page1 = lister_items(base_avec_arbre, "P", page=1, par_page=2)
+    assert len(page1.items) == 2
+    assert page1.total == 3
+    assert page1.pages == 2
+    page2 = lister_items(base_avec_arbre, "P", page=2, par_page=2)
+    assert len(page2.items) == 1
 
 
 def test_lister_fichiers(base_avec_arbre: Session) -> None:
-    fichiers = lister_fichiers(base_avec_arbre, "P")
-    assert len(fichiers) == 2
-    assert fichiers[0].item_cote == "P-000"
-    assert fichiers[0].nom_fichier == "P-000.png"
+    listage = lister_fichiers(base_avec_arbre, "P")
+    assert len(listage.items) == 2
+    assert listage.items[0].item_cote == "P-000"
+    assert listage.items[0].nom_fichier == "P-000.png"
+    assert listage.tri == "item"
+    assert listage.total == 2
+
+
+def test_lister_fichiers_pagination(base_avec_arbre: Session) -> None:
+    page1 = lister_fichiers(base_avec_arbre, "P", page=1, par_page=1)
+    assert len(page1.items) == 1
+    assert page1.total == 2
+    assert page1.pages == 2

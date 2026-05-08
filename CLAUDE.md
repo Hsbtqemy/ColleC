@@ -301,9 +301,10 @@ avec visionneuse OpenSeadragon, en lecture seule.
 - `api/main.py` : application FastAPI, mount `/static`, inclusion
   des routers.
 - `api/templating.py` : instance Jinja2Templates partagée, filtres
-  (libelle_phase, temps_relatif, taille_humaine), helper
-  `rendre_avec_partial` pour le pattern « même route, deux modes »
-  (full HTML en accès direct, partiel en `HX-Request`).
+  (libelle_phase, libelle_etat, temps_relatif, taille_humaine).
+  La route `/collection/{cote}/{onglet}` branche directement sur
+  `HX-Request` pour servir soit le wrapper `pages/collection.html`
+  soit le partiel seul.
 - `api/deps.py` : session SQL par requête (engine + sessionmaker
   cachés via lru_cache), identité utilisateur, racines, base
   courante. `ARCHIVES_DB` (variable d'environnement) prime sur la

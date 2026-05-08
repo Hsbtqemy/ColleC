@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from archives_tool.api.services.sources_image import (
     SourceImage,
@@ -17,6 +17,21 @@ from archives_tool.models import Collection, EtatCatalogage, Item, PhaseChantier
 
 class ItemIntrouvable(LookupError):
     """La cote demandée n'existe dans aucune collection."""
+
+
+# Couples (libellé, attribut) affichés dans la zone métadonnées de
+# la vue item. L'ordre est celui d'affichage. Filtrer sur la valeur
+# se fait au moment du rendu (template ou caller) pour ne pas figer
+# la liste.
+CHAMPS_METADONNEES_AFFICHES: tuple[tuple[str, str], ...] = (
+    ("Numéro", "numero"),
+    ("Date", "date"),
+    ("Année", "annee"),
+    ("Langue", "langue"),
+    ("Type COAR", "type_coar"),
+    ("DOI Nakala", "doi_nakala"),
+    ("DOI collection", "doi_collection_nakala"),
+)
 
 
 @dataclass
@@ -66,6 +81,7 @@ def item_detail(
         select(Item, Collection)
         .join(Collection, Item.collection_id == Collection.id)
         .where(Item.cote == cote)
+        .options(selectinload(Item.fichiers))
     )
     if collection_cote is not None:
         stmt = stmt.where(Collection.cote_collection == collection_cote)
@@ -77,20 +93,19 @@ def item_detail(
 
     item, collection = row
 
-    fichiers_vues: list[FichierVue] = []
-    for f in sorted(item.fichiers, key=lambda x: x.ordre):
-        fichiers_vues.append(
-            FichierVue(
-                id=f.id,
-                nom_fichier=f.nom_fichier,
-                ordre=f.ordre,
-                type_page=f.type_page,
-                folio=f.folio,
-                largeur_px=f.largeur_px,
-                hauteur_px=f.hauteur_px,
-                source=resoudre_source_image(f),
-            )
+    fichiers_vues = [
+        FichierVue(
+            id=f.id,
+            nom_fichier=f.nom_fichier,
+            ordre=f.ordre,
+            type_page=f.type_page,
+            folio=f.folio,
+            largeur_px=f.largeur_px,
+            hauteur_px=f.hauteur_px,
+            source=resoudre_source_image(f),
         )
+        for f in item.fichiers
+    ]
 
     return ItemDetail(
         id=item.id,
@@ -112,3 +127,25 @@ def item_detail(
         metadonnees=item.metadonnees or {},
         fichiers=fichiers_vues,
     )
+
+
+def metadonnees_affichables(detail: ItemDetail) -> list[tuple[str, str]]:
+    """Liste ordonnée (label, valeur) des champs non vides à afficher."""
+    paires: list[tuple[str, str]] = []
+    for label, attribut in CHAMPS_METADONNEES_AFFICHES:
+        valeur = getattr(detail, attribut)
+        if valeur:
+            paires.append((label, str(valeur)))
+    return paires
+
+
+def sources_pour_visionneuse(detail: ItemDetail) -> dict[int, dict[str, dict | None]]:
+    """Map fichier_id → {primary, fallback} embarquée dans la page item.
+
+    La visionneuse JS lit ce blob dans `<script id="sources-fichiers">`
+    et appelle `viewer.open(...)` au click sur une vignette.
+    """
+    return {
+        f.id: {"primary": f.source.primary, "fallback": f.source.fallback}
+        for f in detail.fichiers
+    }

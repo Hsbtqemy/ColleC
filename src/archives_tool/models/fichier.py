@@ -80,6 +80,9 @@ class Fichier(Base):
     __table_args__ = (
         UniqueConstraint("racine", "chemin_relatif", name="uq_fichier_chemin"),
         UniqueConstraint("item_id", "ordre", name="uq_fichier_item_ordre"),
+        # Au moins une source originale doit exister. apercu_chemin
+        # et dzi_chemin sont des dérivés régénérables, ils ne comptent
+        # pas comme source primaire.
         CheckConstraint(
             "chemin_relatif IS NOT NULL OR iiif_url_nakala IS NOT NULL",
             name="ck_fichier_source_au_moins_une",

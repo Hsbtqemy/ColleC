@@ -60,7 +60,9 @@ class Item(Base, TracabiliteMixin):
 
     collection: Mapped[Collection] = relationship(back_populates="items")
     fichiers: Mapped[list[Fichier]] = relationship(
-        back_populates="item", cascade="all, delete-orphan"
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="Fichier.ordre",
     )
     modifications: Mapped[list[ModificationItem]] = relationship(
         back_populates="item", cascade="all, delete-orphan"

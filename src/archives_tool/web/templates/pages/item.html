@@ -4,13 +4,11 @@
 
 {% block content %}
 <header class="mb-6">
-  <nav class="text-sm text-gray-500 mb-2">
-    <a href="/collection/{{ detail.collection_cote }}" class="hover:text-gray-700">
-      {{ detail.collection_cote }} · {{ detail.collection_titre }}
-    </a>
-    <span aria-hidden="true">/</span>
-    <span class="text-gray-700 font-mono">{{ detail.cote }}</span>
-  </nav>
+  {% with parent_href='/collection/' ~ detail.collection_cote,
+          parent_label=detail.collection_cote ~ ' · ' ~ detail.collection_titre,
+          feuille_cote=detail.cote %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
   <h1 class="text-2xl font-medium">
     <span class="font-mono text-gray-700">{{ detail.cote }}</span>
     {% if detail.titre %}
@@ -21,7 +19,7 @@
   <p class="text-xs text-gray-400 mt-1">
     {{ detail.collection_phase | libelle_phase }}
     <span aria-hidden="true">·</span>
-    état : {{ detail.etat.value }}
+    état : {{ detail.etat | libelle_etat }}
   </p>
 </header>
 
@@ -85,21 +83,11 @@
   <aside class="col-span-3 surface-card p-4 max-h-[80vh] overflow-y-auto">
     <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Métadonnées</h2>
     <dl class="space-y-2 text-sm">
-      {% for label, valeur in [
-        ('Numéro', detail.numero),
-        ('Date', detail.date),
-        ('Année', detail.annee),
-        ('Langue', detail.langue),
-        ('Type COAR', detail.type_coar),
-        ('DOI Nakala', detail.doi_nakala),
-        ('DOI collection', detail.doi_collection_nakala),
-      ] %}
-        {% if valeur %}
+      {% for label, valeur in metadonnees_paires %}
         <div>
           <dt class="text-xs text-gray-400">{{ label }}</dt>
           <dd class="text-gray-800 break-words">{{ valeur }}</dd>
         </div>
-        {% endif %}
       {% endfor %}
       {% if detail.description %}
       <div>

@@ -35,14 +35,6 @@ def vue_item(
             status_code=404, detail=f"Item {cote!r} introuvable."
         ) from None
 
-    sources_par_id = {
-        f.id: {
-            "primary": f.source.primary,
-            "fallback": f.source.fallback,
-        }
-        for f in detail.fichiers
-    }
-
     return templates.TemplateResponse(
         request,
         "pages/item.html",
@@ -51,6 +43,7 @@ def vue_item(
             "utilisateur": utilisateur,
             "detail": detail,
             "fichier_initial_id": fichier,
-            "sources_par_id": sources_par_id,
+            "sources_par_id": svc.sources_pour_visionneuse(detail),
+            "metadonnees_paires": svc.metadonnees_affichables(detail),
         },
     )

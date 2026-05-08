@@ -94,10 +94,15 @@ def _charger_collection(session: Session, cote: str) -> Collection:
 def collection_detail(session: Session, cote: str) -> CollectionDetail:
     col = _charger_collection(session, cote)
 
-    nb_items = (
-        session.scalar(select(func.count(Item.id)).where(Item.collection_id == col.id))
-        or 0
-    )
+    repartition: dict[str, int] = {}
+    for etat, n in session.execute(
+        select(Item.etat_catalogage, func.count(Item.id))
+        .where(Item.collection_id == col.id)
+        .group_by(Item.etat_catalogage)
+    ).all():
+        repartition[etat] = n
+    nb_items = sum(repartition.values())
+
     nb_fichiers = (
         session.scalar(
             select(func.count(Fichier.id))
@@ -112,14 +117,6 @@ def collection_detail(session: Session, cote: str) -> CollectionDetail:
         )
         or 0
     )
-
-    repartition: dict[str, int] = {}
-    for etat, n in session.execute(
-        select(Item.etat_catalogage, func.count(Item.id))
-        .where(Item.collection_id == col.id)
-        .group_by(Item.etat_catalogage)
-    ).all():
-        repartition[etat] = n
 
     return CollectionDetail(
         id=col.id,
@@ -190,34 +187,39 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
 
 def lister_items(session: Session, cote: str) -> list[ItemResume]:
     col = _charger_collection(session, cote)
-    items = list(
-        session.scalars(
-            select(Item).where(Item.collection_id == col.id).order_by(Item.cote)
-        ).all()
+    nb_fichiers_subq = (
+        select(func.count(Fichier.id))
+        .where(Fichier.item_id == Item.id)
+        .correlate(Item)
+        .scalar_subquery()
     )
-    if not items:
-        return []
-
-    nb_fichiers_par_item = dict(
-        session.execute(
-            select(Fichier.item_id, func.count(Fichier.id))
-            .where(Fichier.item_id.in_([i.id for i in items]))
-            .group_by(Fichier.item_id)
-        ).all()
-    )
+    rows = session.execute(
+        select(
+            Item.id,
+            Item.cote,
+            Item.titre,
+            Item.date,
+            Item.annee,
+            Item.etat_catalogage,
+            Item.modifie_le,
+            nb_fichiers_subq.label("nb_fichiers"),
+        )
+        .where(Item.collection_id == col.id)
+        .order_by(Item.cote)
+    ).all()
 
     return [
         ItemResume(
-            id=it.id,
-            cote=it.cote,
-            titre=it.titre,
-            date=it.date,
-            annee=it.annee,
-            etat=EtatCatalogage(it.etat_catalogage),
-            nb_fichiers=nb_fichiers_par_item.get(it.id, 0),
-            modifie_le=it.modifie_le,
+            id=row.id,
+            cote=row.cote,
+            titre=row.titre,
+            date=row.date,
+            annee=row.annee,
+            etat=EtatCatalogage(row.etat_catalogage),
+            nb_fichiers=row.nb_fichiers or 0,
+            modifie_le=row.modifie_le,
         )
-        for it in items
+        for row in rows
     ]
 
 

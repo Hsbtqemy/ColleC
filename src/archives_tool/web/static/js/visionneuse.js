@@ -28,35 +28,44 @@
     homeFillsViewer: true,
   });
 
+  // OpenSeadragon attend un string pour IIIF/DZI (résolu via URL),
+  // un objet `{type:"image", url}` pour une image plate.
+  const ADAPTERS = {
+    iiif: (cfg) => cfg.url,
+    dzi: (cfg) => cfg.url,
+    image: (cfg) => ({ type: "image", url: cfg.url }),
+  };
+
   function tileSourceFromConfig(cfg) {
-    if (!cfg) return null;
-    if (cfg.type === "iiif") return cfg.url;
-    if (cfg.type === "image") return { type: "image", url: cfg.url };
-    if (cfg.type === "dzi") return cfg.url;
-    return null;
+    const adapter = cfg && ADAPTERS[cfg.type];
+    return adapter ? adapter(cfg) : null;
   }
 
-  let fichierActifId = null;
-  let fallbackPourFichier = null;
+  // État courant ; reset à chaque `ouvrir()` pour qu'un nouveau click
+  // ne propage pas le fallback d'un fichier précédent ni le suffixe
+  // « (fallback) » dans le bandeau.
+  const etat = { fichierId: null, nom: null, fallback: null };
 
   function ouvrir(fichierId, nom) {
     const cfg = sources[fichierId];
+    const libelle = nom || `Fichier #${fichierId}`;
     if (!cfg || !cfg.primary) {
       bandeau.textContent = "Aucune source d'image disponible.";
       return;
     }
-    fichierActifId = fichierId;
-    fallbackPourFichier = cfg.fallback;
+    etat.fichierId = fichierId;
+    etat.nom = libelle;
+    etat.fallback = cfg.fallback;
     placeholder.style.display = "none";
-    bandeau.textContent = nom || `Fichier #${fichierId}`;
+    bandeau.textContent = libelle;
     viewer.open(tileSourceFromConfig(cfg.primary));
   }
 
-  viewer.addHandler("open-failed", function (event) {
-    if (fallbackPourFichier && fichierActifId !== null) {
-      const fb = fallbackPourFichier;
-      fallbackPourFichier = null; // une seule chance
-      bandeau.textContent += " (fallback)";
+  viewer.addHandler("open-failed", function () {
+    if (etat.fallback && etat.fichierId !== null) {
+      const fb = etat.fallback;
+      etat.fallback = null; // une seule chance
+      bandeau.textContent = `${etat.nom} (fallback)`;
       viewer.open(tileSourceFromConfig(fb));
     } else {
       bandeau.textContent = "Échec du chargement.";

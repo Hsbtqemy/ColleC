@@ -154,20 +154,18 @@ un `<script id="sources-fichiers" type="application/json">`.
   timeout IIIF Nakala) ;
 - met à jour l'URL via `history.replaceState` (`?fichier=ID`).
 
-## Helper `rendre_avec_partial`
+## Pattern « même route, deux modes »
 
-Dans `api/templating.py`. Sert un template plein lors d'un accès
-direct, le partiel sur `HX-Request`. Permet une seule URL par onglet,
-à la fois bookmarkable et fluide :
+La route `/collection/{cote}/{onglet}` branche directement sur
+`HX-Request` :
 
-```python
-return rendre_avec_partial(
-    request,
-    page_template="pages/collection_items.html",
-    partial_template="partials/collection_items.html",
-    contexte=contexte,
-)
-```
+- accès direct : rend `pages/collection.html` (wrapper unique :
+  bandeau + onglets + contenu) en chargeant en plus
+  `collection_detail` pour le bandeau ;
+- accès HTMX : rend `partials/collection_<cle>.html` seul, sans
+  recharger le détail (économie : 4 requêtes d'agrégat par swap).
+
+Une seule URL par onglet, à la fois bookmarkable et fluide.
 
 ## OpenSeadragon
 

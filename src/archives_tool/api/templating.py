@@ -11,8 +11,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
-from archives_tool.affichage.formatters import formater_taille_octets
-from archives_tool.models import PhaseChantier
+from archives_tool.affichage.formatters import LIBELLES_ETAT, formater_taille_octets
+from archives_tool.models import EtatCatalogage, PhaseChantier
 
 RACINE_TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
@@ -34,24 +34,17 @@ def _temps_relatif(dt: datetime | None) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
+def _libelle_etat(etat: EtatCatalogage | str | None) -> str:
+    if etat is None:
+        return "—"
+    code = etat.value if isinstance(etat, EtatCatalogage) else etat
+    return LIBELLES_ETAT.get(code, code)
+
+
 templates = Jinja2Templates(directory=RACINE_TEMPLATES)
 templates.env.filters["libelle_phase"] = lambda p: (
     p.libelle if isinstance(p, PhaseChantier) else "—"
 )
+templates.env.filters["libelle_etat"] = _libelle_etat
 templates.env.filters["temps_relatif"] = _temps_relatif
 templates.env.filters["taille_humaine"] = formater_taille_octets
-
-
-def rendre_avec_partial(
-    request,
-    *,
-    page_template: str,
-    partial_template: str,
-    contexte: dict,
-):
-    """Sert le template plein lors d'un accès direct, le partiel lors
-    d'un swap HTMX (en-tête `HX-Request`). Permet une seule URL par
-    onglet, à la fois bookmarkable et fluide.
-    """
-    nom = partial_template if request.headers.get("HX-Request") else page_template
-    return templates.TemplateResponse(request, nom, contexte)

@@ -25,7 +25,7 @@
           {{ it.date or it.annee or '—' }}
         </td>
         <td class="px-4 py-2 text-right font-tabular text-sm">{{ it.nb_fichiers }}</td>
-        <td class="px-4 py-2 text-xs text-gray-500">{{ it.etat.value }}</td>
+        <td class="px-4 py-2 text-xs text-gray-500">{{ it.etat | libelle_etat }}</td>
         <td class="px-4 py-2 text-xs text-gray-400">
           {{ it.modifie_le | temps_relatif }}
         </td>

@@ -5,11 +5,9 @@ Priorité (du plus précis au plus dégradé) :
 2. DZI local (`Fichier.dzi_chemin`) — réservé V2+, jamais rempli en V0.6 ;
 3. Aperçu local (`Fichier.apercu_chemin`) — JPEG 1200 px sous /derives/.
 
-Le frontend reçoit le résultat sous forme de `dict` que la visionneuse
-passe directement à `viewer.open(source)`. La forme dépend du type :
-- IIIF : `{ "type": "iiif", "@id": "<url info.json>" }` (acceptée
-  nativement par OpenSeadragon comme tileSource string).
-- Image plate : `{ "type": "image", "url": "<url>" }`.
+Le frontend reçoit `{ "type": "iiif"|"dzi"|"image", "url": "<url>" }`.
+La visionneuse JS adapte au format attendu par OpenSeadragon (string
+pour iiif/dzi, objet `{type, url}` pour image plate).
 """
 
 from __future__ import annotations

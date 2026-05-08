@@ -140,6 +140,36 @@ def test_tableau_items(env) -> None:
     assert "FA-001" in out and "Validé" in out
 
 
+def test_tableau_items_date_none_pas_de_litteral(env) -> None:
+    """Une date None doit afficher un placeholder, pas le mot 'None'."""
+    ctx = {
+        "colonnes": ["cote", "date"],
+        "sort": "cote",
+        "items": [
+            {
+                "cote": "X",
+                "href": "/item/X",
+                "titre": "x",
+                "type_chaine": "",
+                "type_label": "",
+                "date": None,
+                "date_incertaine": False,
+                "etat": "valide",
+                "nb_fichiers": 0,
+                "modifie_par": "",
+                "modifie_depuis": "",
+                "meta": {},
+            }
+        ],
+        "pagination": {"page": 1, "per_page": 10, "total": 1, "pages": 1},
+        "compteur_filtres": "aucun",
+        "nb_colonnes_actives": 2,
+    }
+    out = _render_macro(env, "components/tableau_items.html", "tableau_items", ctx)
+    assert "None" not in out
+    assert "—" in out
+
+
 def test_bandeau_item(env) -> None:
     ctx = {
         "breadcrumb": [

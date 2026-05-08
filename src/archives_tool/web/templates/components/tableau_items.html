@@ -50,7 +50,9 @@
     </td>
   {%- elif key == 'date' -%}
     <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      {%- if item.date_incertaine -%}
+      {%- if not item.date -%}
+        <span style="font-size:13px;color:#9ca3af;">—</span>
+      {%- elif item.date_incertaine -%}
         <span style="font-style:italic;color:#6b7280;font-size:13px;">{{ item.date }}</span>
       {%- else -%}
         <span style="font-size:13px;color:#1f1f1f;">{{ item.date }}</span>

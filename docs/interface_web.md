@@ -210,6 +210,64 @@ La route `/collection/{cote}/{onglet}` branche directement sur
 
 Une seule URL par onglet, à la fois bookmarkable et fluide.
 
+## Tri (V0.6.1)
+
+Toutes les en-têtes triables des trois tableaux (collections du
+dashboard, items, fichiers) émettent `hx-get` + `hx-target` +
+`hx-push-url="true"`. Le swap est en `outerHTML` sur le wrapper du
+tableau (`#dashboard-collections`, `#tableau-items`,
+`#tableau-fichiers`), ce qui re-render aussi les en-têtes (chevron
+asc/desc à jour).
+
+**Whitelist par tableau** dans `services/tri.py` :
+
+| Tableau           | Clés admises                                              |
+| ----------------- | --------------------------------------------------------- |
+| `collections`     | `cote`, `titre`, `items`, `fichiers`, `modifie`           |
+| `items`           | `cote`, `titre`, `type`, `date`, `etat`, `fichiers`, `modifie` |
+| `fichiers`        | `item`, `nom`, `ordre`, `type`, `taille`, `etat`          |
+
+Toute valeur hors whitelist retombe sur le tri par défaut, sans
+erreur — pas de SQL injection possible (jamais d'`order_by`
+construit depuis la chaîne client).
+
+Helper Jinja `url_tri` : compose l'URL avec inversion d'ordre si la
+colonne cliquée est déjà active, ou `asc` sinon. Reset systématique
+de `page=1` (un nouveau tri repagine).
+
+## Pagination (V0.6.1)
+
+Composant `components/pagination.html` réutilisable, alimenté par un
+`Listage[T]` (services/tri.py) avec `page`, `par_page`, `total`,
+`pages`. Pages visibles compactées via `pages_visibles(courante,
+total)` exposé en global Jinja : `[1, …, cur-1, cur, cur+1, …, N]`.
+
+Pagination active sur les onglets `items` (50/page) et `fichiers`
+(50/page). Le tableau de fichiers couvre le cas Aínsa
+(~12 845 fichiers, ~257 pages).
+
+## Filtres (V0.6.1)
+
+Drawer latéral droit `components/panneau_filtres.html`, ouvert via
+le bouton « Filtrer » présent dans la barre d'actions de chaque
+tableau filtrable. Form GET natif submit la page avec les filtres
+en query string : bookmarkable, lisible, pas d'état JS à
+synchroniser.
+
+**Items** : `etat` (multi), `type` (COAR multi, options DISTINCT
+sur la collection), `annee_debut`/`annee_fin`, `q` (LIKE titre).
+
+**Fichiers** : `etat` (multi), `type_page` (multi), `format`
+(multi), `q` (LIKE nom_fichier).
+
+Validation par whitelist côté Python : valeurs inconnues
+silencieusement ignorées (pas de 400). Le COUNT(*) de la pagination
+applique les mêmes filtres pour rester cohérent.
+
+Toggle JS minimal (`static/js/panneau_filtres.js`, ~30 lignes) :
+ouvre sur clic `[data-action="filter"]`, ferme sur croix / Escape.
+Pas de framework introduit.
+
 ## OpenSeadragon
 
 Installé via npm (`openseadragon`). Build vendor :
@@ -223,11 +281,16 @@ npm run watch:css
 Le bundle vendor (`openseadragon.min.js` + images) est gitignoré comme
 `output.css`. Recompilation à la volée pendant le dev.
 
-## Limites V0.6.0
+## Limites V0.6.1
 
 - Lecture seule : aucune édition possible depuis l'UI.
-- Tri des colonnes du tableau pas encore interactif (V0.6.1).
-- Filtre / recherche : V0.7.
+- Panneau de configuration des colonnes pas encore branché —
+  `PreferencesAffichage` migrée mais pas alimentée. V0.6.2.
+- Pas de filtres avancés (dates EDTF, ranges sur tailles, etc.).
+- Pas de filtres sur les champs personnalisés des items (variabilité
+  par collection trop grande pour V0.6).
+- Tri / filtres sur le tableau de sous-collections : pas câblé
+  (faible volume, V2+ si besoin).
 - Script de résolution Nakala (interrogation API pour remplir
   `iiif_url_nakala`) : V0.7. En V0.6, le champ est rempli à la main
   ou laissé null.

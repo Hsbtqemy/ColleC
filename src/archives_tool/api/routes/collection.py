@@ -64,19 +64,26 @@ def vue_collection(
             partial = "partials/collection_items.html"
             cle = "items"
             listing = svc.lister_items(
-                db, cote,
-                tri=tri, ordre=ordre, page=page,
+                db,
+                cote,
+                tri=tri,
+                ordre=ordre,
+                page=page,
                 etat=_csv(etat),
                 type_coar=_csv(type),
-                annee_debut=annee_debut, annee_fin=annee_fin,
+                annee_debut=annee_debut,
+                annee_fin=annee_fin,
                 q=q,
             )
         elif onglet == "fichiers":
             partial = "partials/collection_fichiers.html"
             cle = "fichiers"
             listing = svc.lister_fichiers(
-                db, cote,
-                tri=tri, ordre=ordre, page=page,
+                db,
+                cote,
+                tri=tri,
+                ordre=ordre,
+                page=page,
                 etat=_csv(etat),
                 type_page=_csv(type_page),
                 format=_csv(format),

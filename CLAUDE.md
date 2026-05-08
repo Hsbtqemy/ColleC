@@ -313,13 +313,24 @@ avec visionneuse OpenSeadragon, en lecture seule.
   `derives.py`.
 - `api/services/` : logique métier pure (`dashboard.py`,
   `collection.py`, `item.py`, `sources_image.py`).
-- `web/templates/` : `base.html`, `components/` (header, tabs,
-  metric_card, collection_header, collection_row), `pages/` (full
-  HTML pour accès direct), `partials/` (fragment pour swap HTMX).
+- `web/templates/components/` : 10 composants Claude Design
+  (badge_etat, avancement, cellule_modifie, phase_chantier,
+  cartouche_metadonnees, panneau_colonnes, tableau_collections,
+  tableau_items, bandeau_item, panneau_fichiers) + composants
+  antérieurs (header, tabs, metric_card, breadcrumb,
+  collection_header). Le bundle handoff est la **référence visuelle
+  de vérité** ; détails dans [`docs/composants_ui.md`](docs/composants_ui.md).
+- `web/templates/{base.html,pages/,partials/}` : layout commun, pages
+  pleines pour accès direct, partiels pour swap HTMX.
 - `web/static/css/{input.css,output.css}` : Tailwind compilé via
-  npm.
-- `web/static/js/visionneuse.js` : init OpenSeadragon, swap d'image
-  côté client, fallback sur `open-failed`.
+  npm. Tokens étendus du bundle : `state-info/warn/ok/err`,
+  `seg-brouillon/a-verifier/verifie/valide/a-corriger`,
+  `border-{tertiary,secondary,primary}` (opacité du noir).
+- `web/static/js/visionneuse.js` : init OpenSeadragon, écoute les
+  clicks dans `[data-panneau-fichiers]` sur `[data-fichier-id]`,
+  fallback sur `open-failed`.
+- `web/static/js/panneau_fichiers.js` : bascule `data-state`
+  collapsed/hover/pinned (panneau gauche escamotable de la vue item).
 - `web/static/js/vendor/openseadragon/` : bundle vendor copié
   depuis `node_modules` (gitignoré comme output.css).
 

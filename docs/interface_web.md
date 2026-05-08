@@ -55,17 +55,47 @@ dans les routes ou les templates.
 ## Conventions templates
 
 - `base.html` : layout commun (header, contenu).
-- `components/` : fragments réutilisables (`metric_card.html`,
-  `collection_row.html`, `header.html`).
+- `components/` : fragments réutilisables (voir « Bibliothèque de
+  composants » ci-dessous).
 - `dashboard.html` : page complète, étend `base.html`.
 
-Filtres Jinja exposés par `main.py` :
+Filtres Jinja exposés par `templating.py` :
 
 | Filtre              | Effet                                           |
 | ------------------- | ----------------------------------------------- |
 | `libelle_phase`     | `PhaseChantier` → libellé français lisible.     |
+| `libelle_etat`      | `EtatCatalogage` → libellé (« vérifié », …).    |
 | `temps_relatif`     | `datetime` → « il y a 3h » approximatif.        |
 | `taille_humaine`    | octets → « 4.2 MB » via `formater_taille_octets`.|
+
+## Bibliothèque de composants
+
+Les dix composants Jinja2 de [`docs/composants_ui.md`](composants_ui.md)
+sont la **référence visuelle de vérité** (validés en design). Aucune
+réinterprétation : si une décision de markup ou de classe Tailwind
+semble inhabituelle, elle est intentionnelle.
+
+| Macro                  | Fichier                                        | Usage                                  |
+| ---------------------- | ---------------------------------------------- | -------------------------------------- |
+| `badge_etat`           | `components/badge_etat.html`                   | Badge état item ou fichier             |
+| `avancement_compact`   | `components/avancement.html`                   | Stack chart 6 px (dashboard)           |
+| `avancement_detaille`  | `components/avancement.html`                   | Stack chart 8 px + légende (collection)|
+| `cellule_modifie`      | `components/cellule_modifie.html`              | Cellule « Marie · il y a 2h »          |
+| `phase_chantier`       | `components/phase_chantier.html`               | Sous-titre phase                       |
+| `cartouche_*`          | `components/cartouche_metadonnees.html`        | Cartouche style Zotero                 |
+| `panneau_colonnes`     | `components/panneau_colonnes.html`             | Drawer config colonnes (V0.7+)         |
+| `tableau_collections`  | `components/tableau_collections.html`          | Dashboard, sous-collections            |
+| `tableau_items`        | `components/tableau_items.html`                | Onglet items d'une collection          |
+| `bandeau_item`         | `components/bandeau_item.html`                 | En-tête vue item                       |
+| `panneau_fichiers`     | `components/panneau_fichiers.html`             | Panneau gauche escamotable             |
+
+Composants existants antérieurs (`header.html`, `breadcrumb.html`,
+`metric_card.html`, `collection_header.html`, `tabs.html`,
+`collection_row.html`) sont conservés. `collection_row.html` n'est
+plus référencé après le refactor V0.6.0.1 mais reste disponible.
+
+Schémas attendus, exemples d'usage et détails des hooks `data-…` :
+voir [`docs/composants_ui.md`](composants_ui.md).
 
 ## Service des dérivés
 
@@ -117,18 +147,31 @@ bookmarkable, fallback complet si JS désactivé.
 
 ### Vue item — `/item/{cote}`
 
-Trois zones côte à côte (`grid-cols-12` : 3/6/3) :
+Bandeau au-dessus (`bandeau_item`) puis trois zones horizontales :
 
-1. **Liste des fichiers** (gauche) — vignettes 40 px + nom monospace,
-   défilement vertical.
-2. **Visionneuse** (centre) — OpenSeadragon, bandeau supérieur avec
-   le nom du fichier actif. Source résolue côté serveur (voir
-   « Architecture multi-sources » ci-dessous).
-3. **Métadonnées** (droite) — DC + métadonnées étendues en JSON.
+1. **Panneau fichiers escamotable** (gauche, `panneau_fichiers`) —
+   trois états : `collapsed` (32 px, label vertical), `hover`
+   (220 px en overlay, déclenché par survol après 250 ms),
+   `pinned` (220 px qui pousse le layout, déclenché par clic).
+2. **Cartouche métadonnées** (largeur fixe 460 px, `cartouche_*`) —
+   sections Identification / Identifiants externes / Champs
+   personnalisés / Description.
+3. **Visionneuse** (flex-1, à droite) — OpenSeadragon, bandeau
+   supérieur avec le nom du fichier actif. Source résolue côté
+   serveur (voir « Architecture multi-sources » ci-dessous).
+
+L'ordre est validé en design — les métadonnées sont à gauche de la
+visionneuse, pas à droite.
 
 Paramètres :
 - `?collection=COTE` désambiguïse une cote item non unique ;
 - `?fichier=ID` pré-sélectionne un fichier à l'ouverture.
+
+JS associé :
+- `web/static/js/visionneuse.js` — pilote OpenSeadragon, écoute les
+  clicks sur `[data-fichier-id]` dans `[data-panneau-fichiers]`.
+- `web/static/js/panneau_fichiers.js` — bascule `data-state`
+  collapsed/hover/pinned du panneau gauche.
 
 ## Architecture multi-sources de la visionneuse
 

@@ -1,0 +1,58 @@
+{# ---------------------------------------------------------------------------
+   avancement.html — Stack chart d'avancement (deux variantes)
+   ---------------------------------------------------------------------------
+   Macros :
+     avancement_compact(rep)   → variante 2 : stack chart 6 px, tooltips natifs
+     avancement_detaille(rep)  → variante 1 : stack chart 8 px + légende
+
+   `rep` est un dict avec les clés brouillon, a_verifier, verifie, valide,
+   a_corriger. Les valeurs absentes valent 0.
+   --------------------------------------------------------------------------- #}
+
+{%- set _SEG = [
+  ('brouillon',  '#D3D1C7', 'brouillon'),
+  ('a_verifier', '#FAC775', 'à vérifier'),
+  ('verifie',    '#B5D4F4', 'vérifié'),
+  ('valide',     '#97C459', 'validé'),
+  ('a_corriger', '#F0997B', 'à corriger'),
+] -%}
+
+{%- macro _stack(rep, height) -%}
+  {%- set total = (rep.brouillon|d(0)) + (rep.a_verifier|d(0)) + (rep.verifie|d(0)) + (rep.valide|d(0)) + (rep.a_corriger|d(0)) -%}
+  {%- set radius = 4 if height >= 8 else 3 -%}
+  {%- if total == 0 -%}
+    <div class="bg-gray-100" style="height:{{ height }}px;border-radius:{{ radius }}px;"></div>
+  {%- else -%}
+    <div class="flex overflow-hidden bg-gray-100"
+         style="height:{{ height }}px;gap:1px;border-radius:{{ radius }}px;">
+    {%- for key, color, label in _SEG -%}
+      {%- set n = rep[key]|d(0) -%}
+      {%- if n -%}
+        <div title="{{ label|capitalize }} · {{ '{:,}'.format(n)|replace(',', ' ') }}"
+             style="width:{{ (n / total * 100)|round(3) }}%;background:{{ color }};height:100%;"></div>
+      {%- endif -%}
+    {%- endfor -%}
+    </div>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro avancement_compact(rep) -%}
+  {{ _stack(rep, 6) }}
+{%- endmacro %}
+
+{% macro avancement_detaille(rep) -%}
+  <div class="space-y-2">
+    {{ _stack(rep, 8) }}
+    <ul class="flex flex-wrap items-center" style="gap:4px 16px;">
+    {%- for key, color, label in _SEG -%}
+      {%- set n = rep[key]|d(0) -%}
+      <li class="flex items-center gap-1.5" style="font-size:12px;">
+        <span aria-hidden="true"
+              style="width:8px;height:8px;border-radius:2px;background:{{ color }};flex:0 0 8px;"></span>
+        <span class="font-tabular text-gray-800">{{ '{:,}'.format(n)|replace(',', ' ') }}</span>
+        <span class="text-gray-500">{{ label }}</span>
+      </li>
+    {%- endfor -%}
+    </ul>
+  </div>
+{%- endmacro %}

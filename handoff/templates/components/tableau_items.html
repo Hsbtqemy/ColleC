@@ -1,0 +1,190 @@
+{# ---------------------------------------------------------------------------
+   tableau_items.html — tableau d'items (vue collection, onglet items)
+   ---------------------------------------------------------------------------
+   Plus dense que tableau_collections (padding vertical 12 px). Colonnes
+   configurables. La macro reçoit `ctx.colonnes` = liste de clés actives,
+   dans l'ordre. Les colonnes connues sont rendues nativement, les
+   colonnes inconnues (métadonnées de la collection) tombent sur
+   `item.meta[key]` en texte libre.
+
+   ctx = {
+     items: [{cote, href, titre, type_chaine, type_label,
+              date, date_incertaine, etat, nb_fichiers,
+              modifie_par, modifie_depuis, meta: {…}}],
+     colonnes: ['cote','titre','type','date','etat','fichiers','modifie'],
+     sort: 'cote',
+     pagination: {page, per_page, total, pages},
+     compteur_filtres: 'aucun' or '3 actifs',
+     nb_colonnes_actives: 7,
+   }
+   --------------------------------------------------------------------------- #}
+
+{% from 'components/badge_etat.html' import badge_etat %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+
+{%- set _COLS = {
+  'cote':     {'label': 'Cote',    'align': 'left'},
+  'titre':    {'label': 'Titre',   'align': 'left'},
+  'type':     {'label': 'Type',    'align': 'left'},
+  'date':     {'label': 'Date',    'align': 'left'},
+  'etat':     {'label': 'État',    'align': 'left'},
+  'fichiers': {'label': 'Fich.',   'align': 'right'},
+  'modifie':  {'label': 'Modifié', 'align': 'right'},
+} -%}
+
+{%- macro _cell(key, item) -%}
+  {%- if key == 'cote' -%}
+    <td style="padding:12px 12px;vertical-align:top;">
+      <a href="{{ item.href }}" class="font-mono hover:underline" style="font-size:13px;color:#1f1f1f;">{{ item.cote }}</a>
+    </td>
+  {%- elif key == 'titre' -%}
+    <td style="padding:12px 12px;vertical-align:top;">
+      <div style="font-size:13px;color:#1f1f1f;line-height:1.45;">{{ item.titre }}</div>
+      {%- if item.type_chaine %}
+        <div style="font-size:12px;color:#9ca3af;margin-top:2px;">{{ item.type_chaine }}</div>
+      {%- endif %}
+    </td>
+  {%- elif key == 'type' -%}
+    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
+      <span style="font-size:12px;color:#6b7280;">{{ item.type_label }}</span>
+    </td>
+  {%- elif key == 'date' -%}
+    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
+      {%- if item.date_incertaine -%}
+        <span style="font-style:italic;color:#6b7280;font-size:13px;">{{ item.date }}</span>
+      {%- else -%}
+        <span style="font-size:13px;color:#1f1f1f;">{{ item.date }}</span>
+      {%- endif -%}
+    </td>
+  {%- elif key == 'etat' -%}
+    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
+      {{ badge_etat(item.etat) }}
+    </td>
+  {%- elif key == 'fichiers' -%}
+    <td class="font-tabular" style="padding:12px 12px;vertical-align:top;text-align:right;">
+      <span style="font-size:13px;color:#1f1f1f;">{{ item.nb_fichiers }}</span>
+    </td>
+  {%- elif key == 'modifie' -%}
+    <td style="padding:12px 12px;vertical-align:top;text-align:right;white-space:nowrap;">
+      {{ cellule_modifie(item.modifie_par, item.modifie_depuis) }}
+    </td>
+  {%- else -%}
+    {# Métadonnée custom #}
+    <td style="padding:12px 12px;vertical-align:top;font-size:13px;color:#1f1f1f;">
+      {{ (item.meta or {}).get(key, '') }}
+    </td>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro tableau_items(ctx) -%}
+<div data-tableau-items>
+
+  {# Barre d'actions #}
+  <div class="flex items-center justify-between" style="margin-bottom:10px;">
+    <div class="flex items-center gap-2" style="font-size:12px;color:#6b7280;">
+      <span class="font-tabular text-gray-800">{{ '{:,}'.format(ctx.pagination.total)|replace(',', ' ') }}</span>
+      items
+      <span aria-hidden="true">·</span>
+      <span>filtres : {{ ctx.compteur_filtres or 'aucun' }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+              style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);"
+              data-action="filter">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 3 h8 M3.5 6 h5 M5 9 h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>Filtrer
+      </button>
+      <button type="button" class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+              style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);"
+              data-action="columns">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <rect x="1.5" y="2" width="9" height="2" fill="none" stroke="currentColor" stroke-width="1"/>
+          <rect x="1.5" y="5" width="9" height="2" fill="none" stroke="currentColor" stroke-width="1"/>
+          <rect x="1.5" y="8" width="9" height="2" fill="none" stroke="currentColor" stroke-width="1"/>
+        </svg>Colonnes
+        <span class="font-tabular text-gray-500" style="margin-left:2px;">· {{ ctx.nb_colonnes_actives }}</span>
+      </button>
+      <button type="button" class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+              style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);"
+              data-action="export">Exporter</button>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
+    <table class="w-full" style="border-collapse:separate;border-spacing:0;">
+      <thead>
+        <tr class="bg-gray-50">
+          {%- for k in ctx.colonnes %}
+            {%- set meta = _COLS.get(k, {'label': k, 'align':'left'}) -%}
+            {%- set active = ctx.sort == k -%}
+            <th class="border-b cursor-pointer hover:text-gray-900"
+                style="border-color:rgba(0,0,0,0.08);padding:8px 12px;font-size:12px;font-weight:500;
+                       color:{{ '#1f1f1f' if active else '#6b7280' }};
+                       text-align:{{ meta.align }};white-space:nowrap;"
+                data-sort-key="{{ k }}">
+              <span class="inline-flex items-center gap-1">
+                {{ meta.label }}
+                {%- if active %}
+                  <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
+                          stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                {%- endif %}
+              </span>
+            </th>
+          {%- endfor %}
+        </tr>
+      </thead>
+      <tbody>
+      {%- for it in ctx.items %}
+        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors"
+            style="border-color:rgba(0,0,0,0.08);">
+          {%- for k in ctx.colonnes %}{{ _cell(k, it) }}{% endfor %}
+        </tr>
+      {%- endfor %}
+      </tbody>
+    </table>
+
+    {# Pagination #}
+    {%- set p = ctx.pagination -%}
+    {%- set first = (p.page - 1) * p.per_page + 1 -%}
+    {%- set last = [p.page * p.per_page, p.total]|min -%}
+    <div class="flex items-center justify-between border-t"
+         style="border-color:rgba(0,0,0,0.08);padding:10px 14px;">
+      <span class="font-tabular" style="font-size:12px;color:#9ca3af;">
+        {{ first }}–{{ last }} sur {{ '{:,}'.format(p.total)|replace(',', ' ') }}
+      </span>
+      <div class="flex items-center" style="gap:2px;" data-pager>
+        <button type="button" class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+                style="min-width:26px;height:26px;padding:0 6px;" data-page="prev" aria-label="Précédent">
+          <svg width="10" height="10" viewBox="0 0 10 10" style="transform:rotate(90deg);" aria-hidden="true">
+            <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        {%- for n in [1, 2, 3] %}
+          {%- set active = p.page == n -%}
+          <button type="button" data-page="{{ n }}"
+                  class="inline-flex items-center justify-center rounded {{ 'bg-gray-900 text-white' if active else 'text-gray-600 hover:bg-gray-100' }}"
+                  style="min-width:26px;height:26px;padding:0 6px;font-size:12px;">{{ n }}</button>
+        {%- endfor %}
+        {%- if p.pages > 4 %}
+          <span class="inline-flex items-center justify-center text-gray-400"
+                style="min-width:26px;height:26px;font-size:12px;">…</span>
+          <button type="button" data-page="{{ p.pages }}"
+                  class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+                  style="min-width:26px;height:26px;padding:0 6px;font-size:12px;">{{ p.pages }}</button>
+        {%- endif %}
+        <button type="button" class="inline-flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+                style="min-width:26px;height:26px;padding:0 6px;" data-page="next" aria-label="Suivant">
+          <svg width="10" height="10" viewBox="0 0 10 10" style="transform:rotate(-90deg);" aria-hidden="true">
+            <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

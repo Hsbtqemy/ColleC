@@ -1,0 +1,134 @@
+{# ---------------------------------------------------------------------------
+   cartouche_metadonnees.html — bloc métadonnées style Zotero
+   ---------------------------------------------------------------------------
+   Composé de plusieurs macros :
+
+     cartouche(item)
+       → entrée principale ; rend toutes les sections d'un item.
+       Attendu : `item` expose
+         .identification = [(label, render_macro_call_str)] ou un dict structuré
+         .identifiants_externes / .champs_personnalises / .description ...
+       En pratique on appellera plutôt les macros de section directement
+       depuis le template de page `pages/item.html` pour garder la main sur
+       les valeurs spéciales.
+
+     section(titre, info=None, default_open=True)            (block)
+     ligne(label)                                            (block)
+     valeur_mono(text)                                       (helper)
+     valeur_doi(href, text)                                  (helper)
+     valeur_url(href)                                        (helper)
+     valeur_date_incertaine(text)                            (helper)
+     valeur_non_renseigne()                                  (helper)
+     liste_auteurs(valeurs)                                  (helper)
+     tags_sujets(valeurs)                                    (helper)
+
+   L'édition inline (v0.7) cible `[data-edit-field]` sur chaque conteneur
+   de valeur — déjà posé dans le markup.
+   --------------------------------------------------------------------------- #}
+
+{%- macro section(titre, info=None, default_open=True, anchor=None) -%}
+<section class="border-t first:border-t-0" style="border-color: rgba(0,0,0,0.08);"
+         data-section{% if anchor %} id="meta-{{ anchor }}"{% endif %}>
+  <details {% if default_open %}open{% endif %}>
+    <summary class="flex items-center justify-between cursor-pointer select-none hover:bg-gray-100 transition-colors"
+             style="padding:8px 14px;background:#f9fafb;list-style:none;">
+      <span class="flex items-center gap-2">
+        <svg class="meta-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="#6b7280" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span style="font-size:12px;font-weight:500;color:#374151;">{{ titre }}</span>
+      </span>
+      {%- if info %}
+        <span style="font-size:11px;color:#9ca3af;">{{ info }}</span>
+      {%- endif %}
+    </summary>
+    <div data-section-body>
+      {{ caller() }}
+    </div>
+  </details>
+</section>
+{%- endmacro %}
+
+{%- macro ligne(label, field=None) -%}
+<div class="flex border-t first:border-t-0"
+     style="border-color: rgba(0,0,0,0.08);padding:6px 14px;font-size:13px;line-height:20px;"
+     {% if field %}data-edit-field="{{ field }}"{% endif %}>
+  <div class="break-words" style="width:150px;flex:0 0 150px;color:#6b7280;padding-right:12px;">{{ label }}</div>
+  <div class="flex-1 min-w-0 break-words" style="color:#1f1f1f;" data-value>
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}
+
+{%- macro valeur_mono(text) -%}
+  <span class="font-mono" style="font-size:12px;">{{ text }}</span>
+{%- endmacro %}
+
+{%- macro valeur_doi(href, text=None) -%}
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">
+    {{ text or href }}
+  </a>
+{%- endmacro %}
+
+{%- macro valeur_url(href) -%}
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ href }}</a>
+{%- endmacro %}
+
+{%- macro valeur_date_incertaine(text) -%}
+  <span style="font-style:italic;color:#6b7280;">{{ text }}</span>
+{%- endmacro %}
+
+{%- macro valeur_non_renseigne() -%}
+  <span style="font-style:italic;color:#9ca3af;">non renseigné</span>
+{%- endmacro %}
+
+{%- macro liste_auteurs(valeurs) -%}
+<div class="space-y-1" data-multi="auteurs">
+  {%- for v in valeurs %}
+  <div class="flex items-center justify-between gap-2 group" data-entry>
+    <span>{{ v }}</span>
+    <button type="button" aria-label="Retirer"
+            class="opacity-40 group-hover:opacity-100 transition-opacity hover:text-gray-800"
+            style="font-size:14px;line-height:1;color:#9ca3af;padding:0 4px;"
+            data-action="remove">−</button>
+  </div>
+  {%- endfor %}
+  <button type="button" class="text-left hover:text-gray-800"
+          style="font-size:12px;color:#6b7280;padding-top:2px;" data-action="add">+ Ajouter</button>
+</div>
+{%- endmacro %}
+
+{%- macro tags_sujets(valeurs) -%}
+<div class="flex flex-wrap items-center" style="gap:4px;" data-multi="sujets">
+  {%- for v in valeurs %}
+  <span class="inline-flex items-center bg-gray-100 hover:bg-gray-200 transition-colors"
+        style="padding:1px 9px;border-radius:9999px;font-size:12px;" data-entry>{{ v }}</span>
+  {%- endfor %}
+  <button type="button" aria-label="Ajouter"
+          class="inline-flex items-center justify-center bg-white hover:bg-gray-50"
+          style="width:22px;height:22px;border-radius:9999px;font-size:12px;color:#6b7280;
+                 border:1px solid rgba(0,0,0,0.16);" data-action="add">+</button>
+</div>
+{%- endmacro %}
+
+{# Conteneur prêt-à-l'emploi : enveloppe qui empile les sections.
+   Usage typique :
+     {% call cartouche_wrapper() %}
+       {% call section("Identification", info="DC qualifié") %}
+         {% call ligne("Cote", field="cote") %}{{ valeur_mono(item.cote) }}{% endcall %}
+         …
+       {% endcall %}
+     {% endcall %}
+#}
+{%- macro cartouche_wrapper() -%}
+<div class="bg-white rounded-lg overflow-hidden"
+     style="border:1px solid rgba(0,0,0,0.08);">
+  <style>
+    [data-section] details[open] .meta-chevron { transform: rotate(90deg); transition: transform .15s; }
+    [data-section] .meta-chevron { transition: transform .15s; }
+    [data-section] summary::-webkit-details-marker { display:none; }
+  </style>
+  {{ caller() }}
+</div>
+{%- endmacro %}

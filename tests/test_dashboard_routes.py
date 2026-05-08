@@ -63,3 +63,16 @@ def test_dashboard_affiche_nom_base(base_demo: Path) -> None:
     client = TestClient(app)
     resp = client.get("/")
     assert "demo.db" in resp.text
+
+
+def test_dashboard_menu_importer_present(base_demo: Path) -> None:
+    """Le menu déroulant Importer est rendu (V0.7) avec ses 4 entrées."""
+    client = TestClient(app)
+    resp = client.get("/")
+    assert "data-menu-importer" in resp.text
+    assert 'href="/collections/nouvelle"' in resp.text
+    assert 'href="/import"' in resp.text
+    # Les deux entrées V0.8 sont visibles mais désactivées.
+    assert "Ajouter des items" in resp.text
+    assert "Ajouter des fichiers" in resp.text
+    assert 'aria-disabled="true"' in resp.text

@@ -14,5 +14,7 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script src="{{ url_for('static', path='js/menu_importer.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

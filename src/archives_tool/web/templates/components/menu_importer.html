@@ -1,0 +1,69 @@
+{# Menu déroulant « Importer » du dashboard.
+
+   Toggle JS minimal (`menu_importer.js`) : click sur le bouton ouvre
+   le menu, click ailleurs / Escape ferme. Les deux entrées V0.8+
+   sont visibles mais non cliquables (span avec title).
+
+   Pas de variables — le composant est statique. #}
+<div class="relative" data-menu-importer>
+  <button type="button"
+          class="btn"
+          data-menu-toggle
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-label="Importer">
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M6 2 V10 M2 6 H10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>
+    Importer
+    <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
+            stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+
+  <div data-menu-panel hidden role="menu"
+       class="absolute right-0 mt-1 z-30 bg-white rounded-md"
+       style="min-width:280px;border:1px solid rgba(0,0,0,0.16);box-shadow:0 4px 12px rgba(0,0,0,0.06);">
+
+    <a href="/collections/nouvelle"
+       role="menuitem"
+       class="flex items-center gap-2 hover:bg-gray-50"
+       style="padding:8px 14px;font-size:13px;color:#1f1f1f;">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <rect x="1.5" y="2" width="11" height="9" fill="none" stroke="#6b7280" stroke-width="1" rx="1.5"/>
+        <path d="M7 5 V9 M5 7 H9" stroke="#6b7280" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+      Nouvelle collection vide
+    </a>
+
+    <a href="/import"
+       role="menuitem"
+       class="flex items-center gap-2 hover:bg-gray-50"
+       style="padding:8px 14px;font-size:13px;color:#1f1f1f;">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <path d="M2 11 H12 M7 2 V8 M4 5 L7 8 L10 5" fill="none" stroke="#6b7280"
+              stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Importer une collection depuis un tableur
+    </a>
+
+    <hr style="border:none;border-top:1px solid rgba(0,0,0,0.08);margin:0;">
+
+    <span role="menuitem" aria-disabled="true"
+          title="Disponible dans une prochaine version"
+          class="flex items-center gap-2 cursor-not-allowed"
+          style="padding:8px 14px;font-size:13px;color:#9ca3af;">
+      Ajouter des items à une collection
+      <span style="margin-left:auto;font-size:11px;font-style:italic;">bientôt</span>
+    </span>
+
+    <span role="menuitem" aria-disabled="true"
+          title="Disponible dans une prochaine version"
+          class="flex items-center gap-2 cursor-not-allowed"
+          style="padding:8px 14px;font-size:13px;color:#9ca3af;">
+      Ajouter des fichiers à un item
+      <span style="margin-left:auto;font-size:11px;font-style:italic;">bientôt</span>
+    </span>
+  </div>
+</div>

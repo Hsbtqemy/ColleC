@@ -103,6 +103,7 @@
         <li>
           <a href="{{ f.href }}"
              class="w-full text-left flex items-center gap-2 hover:bg-gray-50 {{ 'bg-blue-50/60' if f.courant else '' }}"
+             {% if f.id is defined %}data-fichier-id="{{ f.id }}" data-nom-fichier="{{ f.nom }}"{% endif %}
              style="padding:5px 10px;">
             <span class="bg-gray-100 rounded shrink-0 inline-flex items-center justify-center"
                   style="width:36px;height:48px;border:1px solid rgba(0,0,0,0.08);">

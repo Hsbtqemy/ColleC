@@ -1,13 +1,24 @@
-"""Vue item : détail + liste des fichiers avec sources d'image résolues."""
+"""Vue item : détail + liste des fichiers avec sources d'image résolues.
+
+Schémas exposés :
+- `ItemDetail` agrège les champs de l'item ET de la collection parente
+  pour alimenter directement les composants Claude Design (bandeau_item,
+  panneau_fichiers, cartouche_metadonnees).
+- Les helpers `bandeau_ctx`, `panneau_ctx`, `breadcrumb_ctx` produisent
+  les dicts attendus par les macros — pas de logique métier dans la
+  route ni dans le template.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.api.services.sources_image import (
     SourceImage,
     resoudre_source_image,
@@ -19,10 +30,9 @@ class ItemIntrouvable(LookupError):
     """La cote demandée n'existe dans aucune collection."""
 
 
-# Couples (libellé, attribut) affichés dans la zone métadonnées de
-# la vue item. L'ordre est celui d'affichage. Filtrer sur la valeur
-# se fait au moment du rendu (template ou caller) pour ne pas figer
-# la liste.
+# Couples (libellé, attribut) pour l'affichage tabulaire fallback.
+# Le cartouche Zotero les compose à la main dans le template ; cette
+# liste reste exposée pour les usages CLI ou export simple.
 CHAMPS_METADONNEES_AFFICHES: tuple[tuple[str, str], ...] = (
     ("Numéro", "numero"),
     ("Date", "date"),
@@ -64,6 +74,8 @@ class ItemDetail:
     doi_nakala: str | None
     doi_collection_nakala: str | None
     etat: EtatCatalogage
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
     metadonnees: dict[str, Any] = field(default_factory=dict)
     fichiers: list[FichierVue] = field(default_factory=list)
 
@@ -124,6 +136,8 @@ def item_detail(
         doi_nakala=item.doi_nakala,
         doi_collection_nakala=item.doi_collection_nakala,
         etat=EtatCatalogage(item.etat_catalogage),
+        modifie_par=item.modifie_par,
+        modifie_le=item.modifie_le,
         metadonnees=item.metadonnees or {},
         fichiers=fichiers_vues,
     )
@@ -148,4 +162,93 @@ def sources_pour_visionneuse(detail: ItemDetail) -> dict[int, dict[str, dict | N
     return {
         f.id: {"primary": f.source.primary, "fallback": f.source.fallback}
         for f in detail.fichiers
+    }
+
+
+# ---------------------------------------------------------------------------
+# Adaptateurs vers les schémas du bundle handoff (composants Claude Design)
+# ---------------------------------------------------------------------------
+
+
+def breadcrumb_ctx(detail: ItemDetail) -> list[dict[str, Any]]:
+    """Fil d'Ariane attendu par bandeau_item : [{label, href, mono?}]."""
+    return [
+        {"label": "Tableau de bord", "href": "/"},
+        {
+            "label": detail.collection_cote,
+            "href": f"/collection/{detail.collection_cote}",
+            "mono": True,
+        },
+    ]
+
+
+def bandeau_ctx(detail: ItemDetail, *, cote_precedent: str | None = None,
+                cote_suivant: str | None = None) -> dict[str, Any]:
+    """Dict consommé par bandeau_item du bundle.
+
+    Les URLs précédent / suivant / vue fichiers sont des placeholders
+    V0.6 — la navigation séquentielle entre items et la vue fichiers
+    plein écran arrivent en V0.7.
+    """
+    # TODO V0.7 : calcul de précédent/suivant par cote dans la
+    # collection ; vue fichiers dédiée plein écran.
+    url_collection = f"/collection/{detail.collection_cote}"
+    return {
+        "cote": detail.cote,
+        "titre": detail.titre or detail.cote,
+        "etat": detail.etat.value,
+        "nb_fichiers": len(detail.fichiers),
+        "phase": detail.collection_phase.libelle,
+        "modifie_par": detail.modifie_par,
+        "modifie_depuis": temps_relatif(detail.modifie_le),
+        "url_vue_fichiers": url_collection + "/fichiers",
+        "url_precedent": (
+            f"/item/{cote_precedent}?collection={detail.collection_cote}"
+            if cote_precedent else "#"
+        ),
+        "url_suivant": (
+            f"/item/{cote_suivant}?collection={detail.collection_cote}"
+            if cote_suivant else "#"
+        ),
+    }
+
+
+_LIBELLES_TYPE_PAGE = {
+    "page": "page",
+    "couverture": "couverture",
+    "supplement": "supplément",
+}
+
+
+def panneau_ctx(
+    detail: ItemDetail,
+    *,
+    fichier_initial_id: int | None = None,
+    etat: str = "collapsed",
+) -> dict[str, Any]:
+    """Dict consommé par panneau_fichiers du bundle.
+
+    `etat` est l'état d'affichage initial ('collapsed' ou 'pinned').
+    `fichier_initial_id` marque le fichier courant pour le surlignage.
+    """
+    fichiers = []
+    for f in detail.fichiers:
+        fichiers.append(
+            {
+                "id": f.id,  # exposé pour le câblage data-fichier-id de visionneuse.js
+                "ordre": f.ordre,
+                "nom": f.nom_fichier,
+                "type": _LIBELLES_TYPE_PAGE.get(f.type_page, f.type_page),
+                "vignette_url": f.source.vignette_url,
+                "courant": f.id == fichier_initial_id,
+                "href": f"?fichier={f.id}",
+            }
+        )
+    # TODO V0.7 : url_ajout pointant vers le formulaire d'ajout.
+    return {
+        "etat": etat,
+        "nb_fichiers": len(detail.fichiers),
+        "fichiers": fichiers,
+        "url_vue_fichiers": f"/collection/{detail.collection_cote}/fichiers",
+        "url_ajout": "#",
     }

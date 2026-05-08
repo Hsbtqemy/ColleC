@@ -1,110 +1,91 @@
 {% extends "base.html" %}
+{% from 'components/bandeau_item.html' import bandeau_item %}
+{% from 'components/panneau_fichiers.html' import panneau_fichiers %}
+{% from 'components/cartouche_metadonnees.html' import
+   cartouche_wrapper, section, ligne,
+   valeur_mono, valeur_doi, valeur_date_incertaine, valeur_non_renseigne %}
 
 {% block title %}{{ detail.cote }} — {{ detail.titre or 'Item' }}{% endblock %}
 
 {% block content %}
-<header class="mb-6">
-  {% with parent_href='/collection/' ~ detail.collection_cote,
-          parent_label=detail.collection_cote ~ ' · ' ~ detail.collection_titre,
-          feuille_cote=detail.cote %}
-    {% include "components/breadcrumb.html" %}
-  {% endwith %}
-  <h1 class="text-2xl font-medium">
-    <span class="font-mono text-gray-700">{{ detail.cote }}</span>
-    {% if detail.titre %}
-      <span class="text-gray-300 mx-2" aria-hidden="true">·</span>
-      {{ detail.titre }}
-    {% endif %}
-  </h1>
-  <p class="text-xs text-gray-400 mt-1">
-    {{ detail.collection_phase | libelle_phase }}
-    <span aria-hidden="true">·</span>
-    état : {{ detail.etat | libelle_etat }}
-  </p>
-</header>
+{{ bandeau_item({'breadcrumb': breadcrumb, 'item': bandeau}) }}
 
-<div class="grid grid-cols-12 gap-4">
-  {# Zone 1 : liste des fichiers #}
-  <aside class="col-span-3 surface-card p-3 max-h-[80vh] overflow-y-auto">
-    <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-      Fichiers ({{ detail.fichiers | length }})
-    </h2>
-    {% if detail.fichiers %}
-    <ul id="liste-fichiers" class="space-y-1">
-      {% for f in detail.fichiers %}
-        <li>
-          <button type="button"
-                  class="w-full text-left px-2 py-1.5 rounded hover:bg-gray-50 flex items-center gap-2"
-                  data-fichier-id="{{ f.id }}"
-                  data-nom-fichier="{{ f.nom_fichier }}">
-            {% if f.source.vignette_url %}
-              <img src="{{ f.source.vignette_url }}"
-                   alt=""
-                   class="w-10 h-10 object-cover rounded shrink-0"
-                   loading="lazy">
-            {% else %}
-              <span class="w-10 h-10 bg-gray-100 rounded shrink-0
-                           flex items-center justify-center text-xs text-gray-400">
-                ?
-              </span>
-            {% endif %}
-            <span class="flex-1 min-w-0">
-              <span class="text-xs font-mono text-gray-700 truncate block">{{ f.nom_fichier }}</span>
-              <span class="text-[10px] text-gray-400">
-                #{{ f.ordre }} · {{ f.type_page }}
-                {%- if f.folio %} · f. {{ f.folio }}{% endif %}
-              </span>
-            </span>
-          </button>
-        </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="text-xs text-gray-400 py-4 text-center">Aucun fichier rattaché.</p>
-    {% endif %}
+{# Layout : [panneau fichiers escamotable] [cartouche 460 px] [visionneuse flex-1] #}
+<div class="flex" style="height:calc(100vh - 200px); min-height:560px;">
+
+  {{ panneau_fichiers(panneau) }}
+
+  {# Cartouche métadonnées — largeur fixe 460 px, scrollable #}
+  <aside class="overflow-y-auto" style="width:460px;flex:0 0 460px;border-right:1px solid rgba(0,0,0,0.08);background:#fff;">
+    <div style="padding:14px 14px 80px;">
+      {% call cartouche_wrapper() %}
+
+        {% call section("Identification", info="DC qualifié") %}
+          {% call ligne("Cote", field="cote") %}{{ valeur_mono(detail.cote) }}{% endcall %}
+          {% call ligne("Titre", field="titre") %}
+            {% if detail.titre %}{{ detail.titre }}{% else %}{{ valeur_non_renseigne() }}{% endif %}
+          {% endcall %}
+          {% if detail.numero %}
+            {% call ligne("Numéro", field="numero") %}{{ detail.numero }}{% endcall %}
+          {% endif %}
+          {% call ligne("Date", field="date") %}
+            {% if detail.date %}
+              {% if detail.date_incertaine %}{{ valeur_date_incertaine(detail.date) }}
+              {% else %}{{ detail.date }}{% endif %}
+            {% elif detail.annee %}{{ detail.annee }}
+            {% else %}{{ valeur_non_renseigne() }}{% endif %}
+          {% endcall %}
+          {% if detail.langue %}
+            {% call ligne("Langue", field="langue") %}{{ detail.langue }}{% endcall %}
+          {% endif %}
+          {% if detail.type_coar %}
+            {% call ligne("Type COAR", field="type_coar") %}{{ valeur_mono(detail.type_coar) }}{% endcall %}
+          {% endif %}
+        {% endcall %}
+
+        {% call section("Identifiants externes", info="Nakala") %}
+          {% call ligne("DOI Nakala", field="doi_nakala") %}
+            {% if detail.doi_nakala %}{{ valeur_doi('https://doi.org/' ~ detail.doi_nakala, detail.doi_nakala) }}
+            {% else %}{{ valeur_non_renseigne() }}{% endif %}
+          {% endcall %}
+          {% call ligne("DOI collection", field="doi_collection_nakala") %}
+            {% if detail.doi_collection_nakala %}{{ valeur_doi('https://doi.org/' ~ detail.doi_collection_nakala, detail.doi_collection_nakala) }}
+            {% else %}{{ valeur_non_renseigne() }}{% endif %}
+          {% endcall %}
+        {% endcall %}
+
+        {% if detail.metadonnees %}
+        {% call section("Champs personnalisés", default_open=false) %}
+          {% for cle, valeur in detail.metadonnees.items() %}
+            {% call ligne(cle, field='meta.' ~ cle) %}{{ valeur }}{% endcall %}
+          {% endfor %}
+        {% endcall %}
+        {% endif %}
+
+        {% if detail.description %}
+        {% call section("Description") %}
+          <div style="padding:8px 14px;font-size:13px;color:#1f1f1f;line-height:1.55;white-space:pre-wrap;">
+            {{ detail.description }}
+          </div>
+        {% endcall %}
+        {% endif %}
+
+      {% endcall %}
+    </div>
   </aside>
 
-  {# Zone 2 : visionneuse OpenSeadragon #}
-  <section class="col-span-6">
-    <div class="surface-card overflow-hidden flex flex-col h-[80vh]">
-      <div id="visionneuse-bandeau" class="px-3 py-2 border-b border-border-tertiary text-xs text-gray-500 font-mono">
-        Sélectionnez un fichier
-      </div>
-      <div id="visionneuse" class="flex-1 bg-gray-900 relative">
-        <p id="visionneuse-placeholder"
-           class="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
-          Cliquez sur un fichier dans la liste de gauche.
-        </p>
-      </div>
+  {# Visionneuse OpenSeadragon — flex-1, à droite #}
+  <section class="flex-1 flex flex-col bg-white" style="border-right:1px solid rgba(0,0,0,0.08);">
+    <div id="visionneuse-bandeau" class="border-b" style="padding:8px 14px;border-color:rgba(0,0,0,0.08);font-size:12px;color:#6b7280;font-family:ui-monospace,monospace;">
+      Sélectionnez un fichier
+    </div>
+    <div id="visionneuse" class="flex-1 relative" style="background:#1f1f1f;">
+      <p id="visionneuse-placeholder"
+         class="absolute inset-0 flex items-center justify-center text-sm" style="color:#9ca3af;">
+        Cliquez sur un fichier dans le panneau de gauche.
+      </p>
     </div>
   </section>
-
-  {# Zone 3 : métadonnées #}
-  <aside class="col-span-3 surface-card p-4 max-h-[80vh] overflow-y-auto">
-    <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Métadonnées</h2>
-    <dl class="space-y-2 text-sm">
-      {% for label, valeur in metadonnees_paires %}
-        <div>
-          <dt class="text-xs text-gray-400">{{ label }}</dt>
-          <dd class="text-gray-800 break-words">{{ valeur }}</dd>
-        </div>
-      {% endfor %}
-      {% if detail.description %}
-      <div>
-        <dt class="text-xs text-gray-400">Description</dt>
-        <dd class="text-gray-800 text-xs whitespace-pre-wrap">{{ detail.description }}</dd>
-      </div>
-      {% endif %}
-      {% if detail.metadonnees %}
-      <div>
-        <dt class="text-xs text-gray-400 mb-1">Métadonnées étendues</dt>
-        <dd>
-          <pre class="text-[11px] bg-gray-50 p-2 rounded overflow-x-auto">{{ detail.metadonnees | tojson(indent=2) }}</pre>
-        </dd>
-      </div>
-      {% endif %}
-    </dl>
-  </aside>
 </div>
 
 <script id="sources-fichiers" type="application/json">
@@ -115,4 +96,5 @@
 </script>
 <script src="{{ url_for('static', path='js/vendor/openseadragon/openseadragon.min.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/visionneuse.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/panneau_fichiers.js') }}" defer></script>
 {% endblock %}

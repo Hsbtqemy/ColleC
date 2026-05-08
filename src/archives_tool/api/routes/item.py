@@ -44,6 +44,10 @@ def vue_item(
             "detail": detail,
             "fichier_initial_id": fichier,
             "sources_par_id": svc.sources_pour_visionneuse(detail),
-            "metadonnees_paires": svc.metadonnees_affichables(detail),
+            "bandeau": svc.bandeau_ctx(detail),
+            "breadcrumb": svc.breadcrumb_ctx(detail),
+            "panneau": svc.panneau_ctx(
+                detail, fichier_initial_id=fichier, etat="collapsed"
+            ),
         },
     )

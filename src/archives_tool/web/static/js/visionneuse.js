@@ -4,16 +4,17 @@
 // <script id="sources-fichiers" type="application/json"> sous la
 // forme { "<fichier_id>": { primary: {type,url}, fallback: {...} } }.
 // La visionneuse est instanciée une fois (sans source) ; un click
-// sur une vignette appelle viewer.open(source) avec fallback sur
-// l'événement open-failed (typique : timeout IIIF Nakala).
+// sur une vignette du panneau_fichiers appelle viewer.open(source)
+// avec fallback sur l'événement open-failed (typique : timeout
+// IIIF Nakala).
 
 (function () {
   const sourcesNode = document.getElementById("sources-fichiers");
-  const liste = document.getElementById("liste-fichiers");
+  const panneau = document.querySelector("[data-panneau-fichiers]");
   const conteneur = document.getElementById("visionneuse");
   const placeholder = document.getElementById("visionneuse-placeholder");
   const bandeau = document.getElementById("visionneuse-bandeau");
-  if (!sourcesNode || !liste || !conteneur || typeof OpenSeadragon === "undefined") {
+  if (!sourcesNode || !panneau || !conteneur || typeof OpenSeadragon === "undefined") {
     return;
   }
 
@@ -41,9 +42,6 @@
     return adapter ? adapter(cfg) : null;
   }
 
-  // État courant ; reset à chaque `ouvrir()` pour qu'un nouveau click
-  // ne propage pas le fallback d'un fichier précédent ni le suffixe
-  // « (fallback) » dans le bandeau.
   const etat = { fichierId: null, nom: null, fallback: null };
 
   function ouvrir(fichierId, nom) {
@@ -72,26 +70,26 @@
     }
   });
 
-  liste.addEventListener("click", function (event) {
-    const bouton = event.target.closest("button[data-fichier-id]");
-    if (!bouton) return;
-    const id = bouton.dataset.fichierId;
-    const nom = bouton.dataset.nomFichier;
-    document.querySelectorAll("#liste-fichiers button").forEach((b) =>
-      b.classList.remove("bg-gray-100")
+  panneau.addEventListener("click", function (event) {
+    const cible = event.target.closest("[data-fichier-id]");
+    if (!cible) return;
+    event.preventDefault(); // évite la navigation vers ?fichier=X
+    const id = cible.dataset.fichierId;
+    const nom = cible.dataset.nomFichier;
+    panneau.querySelectorAll("[data-fichier-id]").forEach((el) =>
+      el.classList.remove("bg-blue-50/60")
     );
-    bouton.classList.add("bg-gray-100");
+    cible.classList.add("bg-blue-50/60");
     ouvrir(id, nom);
-    // URL bookmarkable sans full reload.
     const url = new URL(window.location.href);
     url.searchParams.set("fichier", id);
     history.replaceState(null, "", url.toString());
   });
 
   if (window.FICHIER_INITIAL_ID) {
-    const bouton = liste.querySelector(
-      `button[data-fichier-id="${window.FICHIER_INITIAL_ID}"]`
+    const cible = panneau.querySelector(
+      `[data-fichier-id="${window.FICHIER_INITIAL_ID}"]`
     );
-    if (bouton) bouton.click();
+    if (cible) cible.click();
   }
 })();

@@ -1,0 +1,93 @@
+{# Drawer de filtrage latéral droit. Conçu pour les onglets `items`
+   et `fichiers` d'une collection. Submit par form GET → recharge la
+   page avec les filtres en query string (bookmarkable + lisible).
+
+   Variables :
+   - cible_url : URL de soumission (sans params filtres)
+   - filtres_actifs : dict des filtres effectivement appliqués
+   - sections : liste de blocs de filtres, chacun :
+       {'titre': str, 'type': 'multi'|'range'|'text', 'champ': str,
+        'options': list[str] (pour multi), 'valeur': pré-remplie}
+#}
+<aside id="panneau-filtres" data-ouvert="false"
+       style="position:fixed;top:0;right:0;height:100vh;width:360px;background:#fff;
+              border-left:1px solid rgba(0,0,0,0.16);box-shadow:-2px 0 8px rgba(0,0,0,0.04);
+              z-index:50;display:flex;flex-direction:column;transform:translateX(100%);
+              transition:transform .2s ease;">
+
+  <style>
+    #panneau-filtres[data-ouvert="true"] { transform: translateX(0); }
+  </style>
+
+  <header class="border-b" style="border-color:rgba(0,0,0,0.08);padding:14px 18px;">
+    <div class="flex items-center justify-between" style="margin-bottom:4px;">
+      <h3 style="font-size:14px;font-weight:500;color:#1f1f1f;">Filtres</h3>
+      <button type="button" data-panneau-filtres-fermer aria-label="Fermer"
+              class="hover:text-gray-800" style="font-size:18px;color:#6b7280;line-height:1;padding:0 4px;">×</button>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;">
+      <a href="{{ cible_url }}" class="hover:text-gray-800">Tout effacer</a>
+    </p>
+  </header>
+
+  <form id="panneau-filtres-form" method="get" action="{{ cible_url }}"
+        class="flex-1 overflow-y-auto"
+        style="padding:14px 18px;">
+
+    {%- for s in sections %}
+      <fieldset style="margin-bottom:18px;border:0;padding:0;">
+        <legend style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;
+                       text-transform:uppercase;margin-bottom:8px;">{{ s.titre }}</legend>
+
+        {%- if s.type == 'multi' %}
+          {%- set valeurs = s.valeur or [] %}
+          <div class="space-y-1">
+            {%- for opt in s.options %}
+              <label class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded"
+                     style="padding:4px 6px;font-size:13px;color:#1f1f1f;">
+                <input type="checkbox" name="{{ s.champ }}" value="{{ opt }}"
+                       {% if opt in valeurs %}checked{% endif %}
+                       data-panneau-filtres-multi>
+                {{ s.libelles[opt] if s.libelles is defined and opt in s.libelles else opt }}
+              </label>
+            {%- endfor %}
+          </div>
+
+        {%- elif s.type == 'range_annee' %}
+          <div class="flex items-center gap-2">
+            <input type="number" name="annee_debut" placeholder="De"
+                   value="{{ s.valeur_debut or '' }}"
+                   class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
+                   style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
+            <span style="color:#9ca3af;">→</span>
+            <input type="number" name="annee_fin" placeholder="À"
+                   value="{{ s.valeur_fin or '' }}"
+                   class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
+                   style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
+          </div>
+
+        {%- elif s.type == 'text' %}
+          <input type="text" name="{{ s.champ }}"
+                 value="{{ s.valeur or '' }}"
+                 placeholder="{{ s.placeholder or '' }}"
+                 class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
+                 style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
+        {%- endif %}
+      </fieldset>
+    {%- endfor %}
+  </form>
+
+  <div class="border-t flex items-center justify-end gap-2"
+       style="border-color:rgba(0,0,0,0.08);padding:10px 18px;">
+    <button type="button" data-panneau-filtres-fermer
+            class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+            style="padding:4px 10px;font-size:12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      Annuler
+    </button>
+    <button type="submit" form="panneau-filtres-form" data-panneau-filtres-appliquer
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:4px 10px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+      Appliquer
+    </button>
+  </div>
+</aside>

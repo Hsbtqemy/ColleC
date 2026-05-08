@@ -34,6 +34,22 @@
 } -%}
 
 <div id="tableau-fichiers">
+  <div class="flex items-center justify-between" style="margin-bottom:10px;">
+    <div class="flex items-center gap-2" style="font-size:12px;color:#6b7280;">
+      <span class="font-tabular text-gray-800">{{ '{:,}'.format(fichiers.total)|replace(',', ' ') }}</span>
+      fichiers
+      <span aria-hidden="true">·</span>
+      <span>filtres : {% if fichiers.nb_filtres_actifs > 0 %}{{ fichiers.nb_filtres_actifs }} actifs{% else %}aucun{% endif %}</span>
+    </div>
+    <button type="button" data-action="filter"
+            class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+            style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+        <path d="M2 3 h8 M3.5 6 h5 M5 9 h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>Filtrer
+      {% if fichiers.nb_filtres_actifs > 0 %}<span class="font-tabular text-gray-500" style="margin-left:2px;">· {{ fichiers.nb_filtres_actifs }}</span>{% endif %}
+    </button>
+  </div>
   {% if fichiers.items %}
   <div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
     <table class="w-full" style="border-collapse:separate;border-spacing:0;">

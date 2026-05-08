@@ -139,3 +139,29 @@ def test_lister_fichiers_pagination(base_avec_arbre: Session) -> None:
     assert len(page1.items) == 1
     assert page1.total == 2
     assert page1.pages == 2
+
+
+def test_filtres_items_par_etat(base_avec_arbre: Session) -> None:
+    listage = lister_items(base_avec_arbre, "P", etat=["valide"])
+    assert {i.etat for i in listage.items} == {"valide"}
+    assert listage.filtres["etat"] == ["valide"]
+    assert listage.nb_filtres_actifs == 1
+
+
+def test_filtres_items_etat_inconnu_ignore(base_avec_arbre: Session) -> None:
+    listage = lister_items(base_avec_arbre, "P", etat=["nimporte_quoi"])
+    # L'état inconnu est silencieusement ignoré : aucun filtre appliqué.
+    assert "etat" not in listage.filtres
+    assert listage.total == 3
+
+
+def test_filtres_items_recherche_titre(base_avec_arbre: Session) -> None:
+    listage = lister_items(base_avec_arbre, "P", q="Item 1")
+    assert all("Item 1" in (i.titre or "") for i in listage.items)
+
+
+def test_filtres_fichiers_par_q(base_avec_arbre: Session) -> None:
+    from archives_tool.api.services.collection import lister_fichiers as lf
+
+    listage = lf(base_avec_arbre, "P", q="P-000")
+    assert all("P-000" in f.nom_fichier for f in listage.items)

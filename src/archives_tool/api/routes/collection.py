@@ -96,6 +96,17 @@ def vue_collection(
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, partial, contexte)
 
+    if onglet == "items":
+        contexte["sections_filtres"] = svc.sections_filtres_items(
+            db, cote, listing.filtres
+        )
+        contexte["filtres_cible_url"] = f"/collection/{cote}/items"
+    elif onglet == "fichiers":
+        contexte["sections_filtres"] = svc.sections_filtres_fichiers(
+            db, cote, listing.filtres
+        )
+        contexte["filtres_cible_url"] = f"/collection/{cote}/fichiers"
+
     contexte.update(
         nom_base=nom_base,
         utilisateur=utilisateur,

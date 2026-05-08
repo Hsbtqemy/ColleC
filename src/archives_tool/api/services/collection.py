@@ -416,6 +416,93 @@ def types_page_disponibles(session: Session, cote: str) -> list[str]:
     return [r[0] for r in rows if r[0]]
 
 
+_LIBELLES_ETAT_ITEM = {
+    "brouillon": "brouillon",
+    "a_verifier": "à vérifier",
+    "verifie": "vérifié",
+    "valide": "validé",
+    "a_corriger": "à corriger",
+}
+_LIBELLES_ETAT_FICHIER = {
+    "actif": "actif",
+    "remplace": "remplacé",
+    "corbeille": "corbeille",
+}
+
+
+def sections_filtres_items(
+    session: Session, cote: str, filtres: dict[str, object]
+) -> list[dict]:
+    """Sections du panneau de filtres pour l'onglet items."""
+    return [
+        {
+            "titre": "État",
+            "type": "multi",
+            "champ": "etat",
+            "options": list(_LIBELLES_ETAT_ITEM.keys()),
+            "libelles": _LIBELLES_ETAT_ITEM,
+            "valeur": filtres.get("etat") or [],
+        },
+        {
+            "titre": "Type",
+            "type": "multi",
+            "champ": "type",
+            "options": types_coar_disponibles(session, cote),
+            "valeur": filtres.get("type") or [],
+        },
+        {
+            "titre": "Période",
+            "type": "range_annee",
+            "valeur_debut": filtres.get("annee_debut"),
+            "valeur_fin": filtres.get("annee_fin"),
+        },
+        {
+            "titre": "Recherche dans le titre",
+            "type": "text",
+            "champ": "q",
+            "placeholder": "mots du titre…",
+            "valeur": filtres.get("q") or "",
+        },
+    ]
+
+
+def sections_filtres_fichiers(
+    session: Session, cote: str, filtres: dict[str, object]
+) -> list[dict]:
+    """Sections du panneau de filtres pour l'onglet fichiers."""
+    return [
+        {
+            "titre": "État",
+            "type": "multi",
+            "champ": "etat",
+            "options": list(_LIBELLES_ETAT_FICHIER.keys()),
+            "libelles": _LIBELLES_ETAT_FICHIER,
+            "valeur": filtres.get("etat") or [],
+        },
+        {
+            "titre": "Type de page",
+            "type": "multi",
+            "champ": "type_page",
+            "options": types_page_disponibles(session, cote),
+            "valeur": filtres.get("type_page") or [],
+        },
+        {
+            "titre": "Format",
+            "type": "multi",
+            "champ": "format",
+            "options": formats_disponibles(session, cote),
+            "valeur": filtres.get("format") or [],
+        },
+        {
+            "titre": "Recherche dans le nom",
+            "type": "text",
+            "champ": "q",
+            "placeholder": "nom de fichier…",
+            "valeur": filtres.get("q") or "",
+        },
+    ]
+
+
 def formats_disponibles(session: Session, cote: str) -> list[str]:
     col = _charger_collection(session, cote)
     rows = session.execute(

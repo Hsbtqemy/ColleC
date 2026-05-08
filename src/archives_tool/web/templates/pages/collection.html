@@ -14,4 +14,11 @@
   <div id="tab-content">
     {% include partial_template %}
   </div>
+
+  {% if sections_filtres is defined %}
+    {% with cible_url=filtres_cible_url, sections=sections_filtres %}
+      {% include "components/panneau_filtres.html" %}
+    {% endwith %}
+    <script src="{{ url_for('static', path='js/panneau_filtres.js') }}" defer></script>
+  {% endif %}
 {% endblock %}

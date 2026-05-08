@@ -1,7 +1,8 @@
 {# Onglet items d'une vue collection. Variables : `items` (Listage[ItemResume]),
    `cote` (collection courante). #}
 {% from 'components/tableau_items.html' import tableau_items %}
-{% if items.items %}
+{% set nb_f = items.nb_filtres_actifs %}
+{% if items.items or nb_f > 0 %}
   {{ tableau_items({
     'colonnes': ['cote', 'titre', 'date', 'etat', 'fichiers', 'modifie'],
     'sort': items.tri,
@@ -13,7 +14,7 @@
       'page': items.page, 'per_page': items.par_page,
       'total': items.total, 'pages': items.pages,
     },
-    'compteur_filtres': 'aucun',
+    'compteur_filtres': (nb_f|string ~ ' actifs') if nb_f > 0 else 'aucun',
     'nb_colonnes_actives': 6,
   }) }}
 {% else %}

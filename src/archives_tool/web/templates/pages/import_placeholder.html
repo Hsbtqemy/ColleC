@@ -1,0 +1,69 @@
+{# Placeholder /import (V0.7-alpha). Sera remplacé par l'assistant
+   complet sur les sessions suivantes (upload → mappings → fichiers
+   → aperçu → exécution). #}
+{% extends "base.html" %}
+
+{% block title %}Importer une collection — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  <nav class="text-sm text-gray-500 mb-2">
+    <a href="/" class="hover:text-gray-700">Tableau de bord</a>
+    <span aria-hidden="true">/</span>
+    <span class="text-gray-700">Importer une collection</span>
+  </nav>
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
+    Importer une collection depuis un tableur
+  </h1>
+
+  <div class="bg-white rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:32px;">
+
+    <div class="flex items-start gap-4" style="margin-bottom:18px;">
+      <span aria-hidden="true" style="font-size:28px;line-height:1;">🚧</span>
+      <div>
+        <h2 style="font-size:15px;font-weight:500;color:#1f1f1f;margin-bottom:6px;">
+          Cette fonctionnalité est en cours de construction.
+        </h2>
+        <p style="font-size:13px;color:#6b7280;line-height:1.5;">
+          L'assistant d'import depuis l'interface web sera disponible
+          prochainement. Il vous permettra d'importer un tableur Excel
+          ou CSV en quelques clics, sans connaissance YAML.
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:24px;padding-top:18px;border-top:1px solid rgba(0,0,0,0.08);">
+      <p style="font-size:12px;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;font-weight:500;margin-bottom:10px;">
+        En attendant, en ligne de commande
+      </p>
+      <pre class="font-mono"
+           style="background:#f9fafb;border:1px solid rgba(0,0,0,0.06);
+                  border-radius:4px;padding:12px 14px;font-size:12px;
+                  color:#374151;line-height:1.6;overflow-x:auto;
+                  white-space:pre-wrap;">archives-tool profil analyser /chemin/vers/votre.xlsx \
+    --cote XX --titre "Ma collection" --sortie xx.yaml
+archives-tool importer xx.yaml --no-dry-run</pre>
+      <p style="font-size:12px;color:#9ca3af;margin-top:10px;">
+        Voir la documentation :
+        <a href="https://github.com/Hsbtqemy/ColleC/blob/main/docs/profils_creation.md"
+           class="font-mono hover:underline"
+           style="color:#378ADD;">docs/profils_creation.md</a>
+      </p>
+    </div>
+  </div>
+
+  <div style="margin-top:18px;">
+    <a href="/" class="inline-flex items-center gap-1.5 hover:bg-gray-50 rounded"
+       style="padding:6px 12px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      <svg width="11" height="11" viewBox="0 0 10 10" style="transform:rotate(90deg);" aria-hidden="true">
+        <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Retour au tableau de bord
+    </a>
+  </div>
+</div>
+{% endblock %}

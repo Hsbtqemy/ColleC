@@ -12,6 +12,7 @@ from archives_tool.api.routes import (
     collections,
     dashboard,
     derives,
+    import_assistant,
     item,
     preferences,
 )
@@ -29,5 +30,6 @@ app.include_router(dashboard.router)
 app.include_router(collections.router)
 app.include_router(collection.router)
 app.include_router(item.router)
+app.include_router(import_assistant.router)
 app.include_router(preferences.router)
 app.include_router(derives.router, prefix="/derives")

@@ -1,5 +1,7 @@
-{# Bandeau de la vue collection : breadcrumb + titre + chiffres clés.
+{# Bandeau de la vue collection : breadcrumb + titre + chiffres clés
+   + avancement détaillé (composant Claude Design).
    Attendu : `detail` (CollectionDetail). #}
+{% from 'components/avancement.html' import avancement_detaille %}
 <header class="mb-6">
   {% if detail.parent_cote %}
     {% with parent_href='/collection/' ~ detail.parent_cote,
@@ -38,4 +40,9 @@
       {% endif %}
     </div>
   </div>
+  {% if detail.repartition_etats %}
+    <div class="mt-4">
+      {{ avancement_detaille(detail.repartition_etats) }}
+    </div>
+  {% endif %}
 </header>

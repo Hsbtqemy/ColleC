@@ -1,41 +1,19 @@
-{# Tableau des items d'une collection. Variables : `items` (list[ItemResume]). #}
+{# Onglet items d'une vue collection. Variables : `items` (list[ItemResume]). #}
+{% from 'components/tableau_items.html' import tableau_items %}
 {% if items %}
-<div class="surface-card overflow-hidden">
-  <table class="w-full">
-    <thead>
-      <tr class="text-xs text-gray-500 uppercase tracking-wide">
-        <th class="px-4 py-2 text-left">Cote</th>
-        <th class="px-4 py-2 text-left">Titre</th>
-        <th class="px-4 py-2 text-left">Date</th>
-        <th class="px-4 py-2 text-right">Fichiers</th>
-        <th class="px-4 py-2 text-left">État</th>
-        <th class="px-4 py-2 text-left">Modifié</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for it in items %}
-      <tr class="border-t border-border-tertiary hover:bg-gray-50">
-        <td class="px-4 py-2 font-mono text-sm">
-          <a href="/item/{{ it.cote }}" class="text-gray-700 hover:text-gray-900">
-            {{ it.cote }}
-          </a>
-        </td>
-        <td class="px-4 py-2 text-sm">{{ it.titre or '—' }}</td>
-        <td class="px-4 py-2 text-sm text-gray-500">
-          {{ it.date or it.annee or '—' }}
-        </td>
-        <td class="px-4 py-2 text-right font-tabular text-sm">{{ it.nb_fichiers }}</td>
-        <td class="px-4 py-2 text-xs text-gray-500">{{ it.etat | libelle_etat }}</td>
-        <td class="px-4 py-2 text-xs text-gray-400">
-          {{ it.modifie_le | temps_relatif }}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+  {{ tableau_items({
+    'colonnes': ['cote', 'titre', 'date', 'etat', 'fichiers', 'modifie'],
+    'sort': 'cote',
+    'items': items,
+    'pagination': {
+      'page': 1, 'per_page': items|length,
+      'total': items|length, 'pages': 1,
+    },
+    'compteur_filtres': 'aucun',
+    'nb_colonnes_actives': 6,
+  }) }}
 {% else %}
-<p class="text-sm text-gray-500 text-center py-12">
-  Aucun item rattaché à cette collection.
-</p>
+  <p class="text-sm text-gray-500 text-center py-12">
+    Aucun item rattaché à cette collection.
+  </p>
 {% endif %}

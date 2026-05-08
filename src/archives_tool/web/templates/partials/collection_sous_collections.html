@@ -1,35 +1,14 @@
-{# Tableau des sous-collections. Variables : `sous_collections`. #}
+{# Onglet sous-collections. Variables : `sous_collections` (list[SousCollectionResume]).
+   Réutilise tableau_collections : une sous-collection est une collection
+   filtrée sur l'arborescence — même rendu, même schéma. #}
+{% from 'components/tableau_collections.html' import tableau_collections %}
 {% if sous_collections %}
-<div class="surface-card overflow-hidden">
-  <table class="w-full">
-    <thead>
-      <tr class="text-xs text-gray-500 uppercase tracking-wide">
-        <th class="px-4 py-2 text-left">Cote</th>
-        <th class="px-4 py-2 text-left">Titre</th>
-        <th class="px-4 py-2 text-left">Phase</th>
-        <th class="px-4 py-2 text-right">Items</th>
-        <th class="px-4 py-2 text-right">Fichiers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for sc in sous_collections %}
-      <tr class="border-t border-border-tertiary hover:bg-gray-50">
-        <td class="px-4 py-2 font-mono text-sm">
-          <a href="/collection/{{ sc.cote }}" class="text-gray-700 hover:text-gray-900">
-            {{ sc.cote }}
-          </a>
-        </td>
-        <td class="px-4 py-2 text-sm">{{ sc.titre }}</td>
-        <td class="px-4 py-2 text-xs text-gray-500">{{ sc.phase | libelle_phase }}</td>
-        <td class="px-4 py-2 text-right font-tabular text-sm">{{ sc.nb_items }}</td>
-        <td class="px-4 py-2 text-right font-tabular text-sm">{{ sc.nb_fichiers }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+  {{ tableau_collections({
+    'collections': sous_collections,
+    'sort': 'cote',
+  }) }}
 {% else %}
-<p class="text-sm text-gray-500 text-center py-12">
-  Aucune sous-collection.
-</p>
+  <p class="text-sm text-gray-500 text-center py-12">
+    Aucune sous-collection.
+  </p>
 {% endif %}

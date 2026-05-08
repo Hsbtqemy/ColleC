@@ -1,21 +1,26 @@
-{# Tableau des fichiers d'une collection. Variables : `fichiers`. #}
+{# Onglet fichiers d'une collection. Variables : `fichiers` (list[FichierResume]).
+   Pas de composant tableau dédié dans le bundle pour les fichiers — on garde
+   le markup ad hoc et on insère badge_etat (kind='fichier') sur la colonne
+   État. #}
+{% from 'components/badge_etat.html' import badge_etat %}
 {% if fichiers %}
-<div class="surface-card overflow-hidden">
-  <table class="w-full">
+<div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
+  <table class="w-full" style="border-collapse:separate;border-spacing:0;">
     <thead>
-      <tr class="text-xs text-gray-500 uppercase tracking-wide">
+      <tr class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
         <th class="px-4 py-2 text-left">Item</th>
         <th class="px-4 py-2 text-left">Nom</th>
         <th class="px-4 py-2 text-right">Ordre</th>
         <th class="px-4 py-2 text-left">Type</th>
         <th class="px-4 py-2 text-right">Taille</th>
         <th class="px-4 py-2 text-right">Dimensions</th>
+        <th class="px-4 py-2 text-left">État</th>
         <th class="px-4 py-2 text-left">Dérivés</th>
       </tr>
     </thead>
     <tbody>
       {% for f in fichiers %}
-      <tr class="border-t border-border-tertiary hover:bg-gray-50">
+      <tr class="border-t hover:bg-gray-50/60" style="border-color:rgba(0,0,0,0.08);">
         <td class="px-4 py-2 font-mono text-sm">
           <a href="/item/{{ f.item_cote }}" class="text-gray-700 hover:text-gray-900">
             {{ f.item_cote }}
@@ -32,11 +37,12 @@
             {{ f.largeur_px }}×{{ f.hauteur_px }}
           {% else %}—{% endif %}
         </td>
+        <td class="px-4 py-2 text-xs">{{ badge_etat(f.etat, kind='fichier') }}</td>
         <td class="px-4 py-2 text-xs">
           {% if f.derive_genere %}
-            <span class="text-emerald-600">✓ générés</span>
+            <span class="text-gray-700">générés</span>
           {% else %}
-            <span class="text-gray-400">absent</span>
+            <span class="text-gray-400">absents</span>
           {% endif %}
         </td>
       </tr>

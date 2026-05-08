@@ -13,17 +13,19 @@ absente.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from archives_tool.models import Item, PreferencesAffichage
 
-Vue = Literal["items", "fichiers", "sous_collections"]
+# V0.6.3 — seul `items` est câblé. Les autres vues seront ajoutées
+# avec leur propre persistance V0.7+ ; on n'élargit pas le Literal
+# tant qu'aucun chemin de code ne les consomme.
+Vue = Literal["items"]
 
 
 # ---------------------------------------------------------------------------
@@ -40,15 +42,6 @@ class ColonneDisponible:
     categorie: Literal["dediee", "metadonnee"]
     type_donnee: Literal["texte", "entier", "date", "etat", "liste", "calcule"]
     obligatoire: bool = False  # True pour `cote` — non décochable
-
-    def to_dict(self) -> dict:
-        return {
-            "nom": self.nom,
-            "label": self.label,
-            "categorie": self.categorie,
-            "type_donnee": self.type_donnee,
-            "obligatoire": self.obligatoire,
-        }
 
 
 COLONNES_DEFAUT_ITEMS: tuple[str, ...] = (
@@ -204,28 +197,23 @@ def champs_metadonnees_disponibles(
 ) -> list[ColonneDisponible]:
     """Champs JSON `metadonnees` présents dans les items, par fréquence.
 
-    Approche Python : itère sur les `metadonnees` de chaque item de la
-    collection. Acceptable jusqu'à quelques milliers d'items
-    (≤ ~5000 items × N champs ≈ ms). Au-delà, basculer sur
-    SQLite JSON1 (`json_each`) — laissé en suivant pour Aínsa-scale.
+    Compte par clé non vide (les valeurs `None` ou `""` ne reflètent
+    pas un champ « rempli »). Approche Python : acceptable jusqu'à
+    quelques milliers d'items (~5000 × N champs ≈ ms). Au-delà,
+    basculer sur SQLite JSON1 (`json_each`) — différé pour Aínsa-scale.
     """
-    # On ne charge que la colonne metadonnees (TEXT ou JSON), pas les
-    # autres champs Item pour économiser sur les grosses collections.
+    # `Item.metadonnees` est de type SQLAlchemy `JSON` : auto-décodé
+    # en dict à la lecture (jamais de chaîne brute à parser ici).
     rows = db.execute(
         select(Item.metadonnees).where(Item.collection_id == collection_id)
     ).all()
     compteurs: dict[str, int] = {}
     for (md,) in rows:
-        if md is None:
-            continue
-        if isinstance(md, str):
-            try:
-                md = json.loads(md)
-            except json.JSONDecodeError:
-                continue
         if not isinstance(md, dict):
             continue
-        for cle in md.keys():
+        for cle, valeur in md.items():
+            if valeur in (None, ""):
+                continue
             compteurs[cle] = compteurs.get(cle, 0) + 1
     plus_frequents = sorted(compteurs.items(), key=lambda kv: (-kv[1], kv[0]))[:limite]
     return [
@@ -240,12 +228,26 @@ def champs_metadonnees_disponibles(
 
 
 def colonnes_disponibles_items(
-    db: Session, collection_id: int
+    db: Session,
+    collection_id: int,
+    *,
+    avec_metadonnees: bool = True,
 ) -> dict[str, list[ColonneDisponible]]:
-    """`{'dediees': [...], 'metadonnees': [...]}` pour le panneau."""
+    """`{'dediees': [...], 'metadonnees': [...]}` pour le panneau.
+
+    `avec_metadonnees=False` court-circuite le scan de `Item.metadonnees`
+    quand on sait que les préférences en cours ne contiennent que des
+    colonnes dédiées (cas par défaut). Le panneau de configuration
+    a, lui, toujours besoin de la liste complète pour proposer les
+    métadonnées disponibles.
+    """
     return {
         "dediees": list(COLONNES_DEDIEES_ITEMS),
-        "metadonnees": champs_metadonnees_disponibles(db, collection_id),
+        "metadonnees": (
+            champs_metadonnees_disponibles(db, collection_id)
+            if avec_metadonnees
+            else []
+        ),
     }
 
 
@@ -278,13 +280,3 @@ def resoudre_colonnes_actives(
 def metas_valides_pour(disponibles: dict[str, list[ColonneDisponible]]) -> set[str]:
     """Set des noms de champs métadonnées valides pour la collection."""
     return {c.nom for c in disponibles.get("metadonnees", [])}
-
-
-def nb_items_collection(db: Session, collection_id: int) -> int:
-    """Helper utilitaire — sera utile pour les bench/log."""
-    return (
-        db.scalar(
-            select(func.count(Item.id)).where(Item.collection_id == collection_id)
-        )
-        or 0
-    )

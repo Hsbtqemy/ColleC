@@ -14,6 +14,7 @@ from archives_tool.affichage.formatters import (
     temps_relatif,
 )
 from archives_tool.api.services.dashboard import CollectionResume
+from archives_tool.api.services.preferences import COLONNES_DEDIEES_ITEMS
 from archives_tool.api.services.tri import Listage, Ordre, appliquer_tri
 from archives_tool.models import (
     Collection,
@@ -217,6 +218,13 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
     ]
 
 
+# Source unique de vérité pour les noms de colonnes dédiées :
+# `services/preferences.COLONNES_DEDIEES_ITEMS`. Si une colonne y
+# est ajoutée, le set ci-dessous reste à jour et `lister_items` ne
+# tente pas de la chercher comme métadonnée.
+_DEDIEES_NOMS: frozenset[str] = frozenset(c.nom for c in COLONNES_DEDIEES_ITEMS)
+
+
 _ETATS_ITEM = {e.value for e in EtatCatalogage}
 
 
@@ -343,25 +351,8 @@ def lister_items(
         .scalar_subquery()
     )
 
-    # Charge `metadonnees` (JSON) seulement si au moins une colonne
-    # métadonnée est demandée — sinon on évite la désérialisation par
-    # ligne sur les grosses collections.
     colonnes_set = set(colonnes or ())
-    _DEDIEES = {
-        "cote",
-        "titre",
-        "type",
-        "date",
-        "annee",
-        "langue",
-        "etat",
-        "description",
-        "doi_nakala",
-        "doi_collection_nakala",
-        "fichiers",
-        "modifie",
-    }
-    charger_metadonnees = bool(colonnes_set - _DEDIEES)
+    cles_metas = colonnes_set - _DEDIEES_NOMS
 
     selects = [
         Item.cote,
@@ -378,7 +369,10 @@ def lister_items(
         Item.modifie_le,
         nb_fichiers_subq.label("nb_fichiers"),
     ]
-    if charger_metadonnees:
+    if cles_metas:
+        # Charge `metadonnees` (JSON) seulement si au moins une colonne
+        # métadonnée est demandée — économise la désérialisation par
+        # ligne sur les grosses collections.
         selects.append(Item.metadonnees)
     base_stmt = select(*selects).where(Item.collection_id == col.id)
 
@@ -423,11 +417,10 @@ def lister_items(
 
     rows = session.execute(stmt).all()
     maintenant = datetime.now()
-    cles_metas = colonnes_set - _DEDIEES
     items: list[ItemResume] = []
     for row in rows:
         meta: dict[str, str] = {}
-        if charger_metadonnees and cles_metas:
+        if cles_metas:
             md = row.metadonnees
             if isinstance(md, dict):
                 for cle in cles_metas:

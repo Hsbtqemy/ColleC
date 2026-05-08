@@ -69,10 +69,17 @@ def _re_render_tableau(
     db: Session,
     utilisateur: str,
     col: Collection,
+    *,
+    disponibles: dict | None = None,
 ) -> HTMLResponse:
-    """Rend le partial du tableau items mis à jour, avec HX-Trigger."""
+    """Rend le partial du tableau items mis à jour, avec HX-Trigger.
+
+    `disponibles` peut être passé pour réutiliser le calcul fait en amont
+    par la route POST (évite un second scan de `Item.metadonnees`).
+    """
     prefs = svc.lire_preferences_colonnes(db, utilisateur, col.id, "items")
-    disponibles = svc.colonnes_disponibles_items(db, col.id)
+    if disponibles is None:
+        disponibles = svc.colonnes_disponibles_items(db, col.id)
     actives = svc.resoudre_colonnes_actives(prefs.colonnes_ordonnees, disponibles)
     listing = svc_collection.lister_items(
         db, col.cote_collection, colonnes=[c.nom for c in actives]
@@ -95,25 +102,25 @@ def _re_render_tableau(
 def sauvegarder_panneau_colonnes(
     request: Request,
     collection_id: int,
-    colonnes: list[str] = Form(default=[]),
+    colonnes: list[str] | None = Form(default=None),
     db: Session = Depends(get_db),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
     col = _charger_collection_par_id(db, collection_id)
-    metas = svc.metas_valides_pour(svc.colonnes_disponibles_items(db, collection_id))
+    disponibles = svc.colonnes_disponibles_items(db, collection_id)
     try:
         svc.sauvegarder_preferences_colonnes(
             db,
             utilisateur,
             collection_id,
             "items",
-            colonnes,
-            metas_valides=metas,
+            colonnes or [],
+            metas_valides=svc.metas_valides_pour(disponibles),
         )
     except ValueError as e:
         # Liste totalement invalide après filtrage.
         raise HTTPException(status_code=400, detail=str(e)) from None
-    return _re_render_tableau(request, db, utilisateur, col)
+    return _re_render_tableau(request, db, utilisateur, col, disponibles=disponibles)
 
 
 @router.post(

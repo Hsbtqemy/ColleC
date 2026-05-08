@@ -110,14 +110,12 @@ def test_sauvegarder_dedoublonne(
     assert prefs.colonnes_ordonnees == ["cote", "titre", "etat"]
 
 
-def test_sauvegarder_liste_vide_apres_filtrage_leve(
+def test_sauvegarder_garde_cote_meme_si_inputs_invalides(
     session: Session, collection_simple: Collection
 ) -> None:
-    # Si toutes les valeurs sont rejetées, la fonction injecte
-    # néanmoins `cote` avant le check de vide. La liste finale
-    # contient au moins `cote`. Pour vraiment tester ValueError,
-    # on doit s'assurer que `cote` est aussi rejetée — impossible
-    # par le contrat, donc le test couvre le path "cote injectée".
+    """Quand toutes les valeurs sont rejetées, `cote` est réinjectée
+    avant le check de vide. La liste finale contient au moins `cote`.
+    """
     sauvegarder_preferences_colonnes(
         session,
         "marie",
@@ -127,6 +125,13 @@ def test_sauvegarder_liste_vide_apres_filtrage_leve(
     )
     prefs = lire_preferences_colonnes(session, "marie", collection_simple.id)
     assert prefs.colonnes_ordonnees == ["cote"]
+
+
+# Note : `sauvegarder_preferences_colonnes` lève ValueError si la liste
+# est vide après filtrage, mais `cote` est toujours réinjectée — donc
+# en pratique la liste contient au moins `cote` et ce path n'est pas
+# atteignable depuis l'API publique. Le `raise` reste comme garde-fou
+# défensif si quelqu'un retire `cote` des dédiées.
 
 
 def test_reinitialiser_supprime_la_ligne(

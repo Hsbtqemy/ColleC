@@ -66,19 +66,23 @@ def vue_collection(
         if onglet == "items":
             partial = "partials/collection_items.html"
             cle = "items"
-            # Préférences de colonnes : on a besoin de l'id collection.
-            try:
-                col_pour_prefs = svc._charger_collection(db, cote)
-            except svc.CollectionIntrouvable:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Collection {cote!r} introuvable.",
-                ) from None
+            # Le service `_charger_collection` lèvera `CollectionIntrouvable`
+            # si la cote n'existe pas — capturé par l'except plus bas, qui
+            # mappe en 404. Pas de try imbriqué.
+            col_pour_prefs = svc._charger_collection(db, cote)
             collection_id_items = col_pour_prefs.id
             prefs = svc_prefs.lire_preferences_colonnes(
                 db, utilisateur, col_pour_prefs.id, "items"
             )
-            disponibles = svc_prefs.colonnes_disponibles_items(db, col_pour_prefs.id)
+            # Économise le scan de `Item.metadonnees` quand les
+            # préférences ne contiennent que des colonnes dédiées
+            # (cas par défaut, le plus fréquent).
+            besoin_metas = any(
+                c not in svc_prefs._DEDIEES_PAR_NOM for c in prefs.colonnes_ordonnees
+            )
+            disponibles = svc_prefs.colonnes_disponibles_items(
+                db, col_pour_prefs.id, avec_metadonnees=besoin_metas
+            )
             colonnes_actives_items = svc_prefs.resoudre_colonnes_actives(
                 prefs.colonnes_ordonnees, disponibles
             )

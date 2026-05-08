@@ -16,6 +16,7 @@ from archives_tool.api.main import app
 from archives_tool.api.services.collections_creation import (
     FormulaireCollection,
     creer_collection,
+    lire_collection_par_cote,
     valider_formulaire,
 )
 from archives_tool.demo import peupler_base
@@ -207,16 +208,14 @@ def test_post_creation_complete(base_demo: Path) -> None:
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    # Vérifie que tous les champs sont persistés.
+    # Vérifie que tous les champs sont persistés via le helper public
+    # (`lire_collection_par_cote`) et le client de test, sans toucher
+    # aux internes du module deps.
     from archives_tool.api.deps import _factory_pour, chemin_base_courant
 
     factory = _factory_pour(chemin_base_courant())
     with factory() as session:
-        from sqlalchemy import select
-
-        col = session.scalar(
-            select(Collection).where(Collection.cote_collection == "FULL")
-        )
+        col = lire_collection_par_cote(session, "FULL")
         assert col is not None
         assert col.titre == "Complète"
         assert col.description == "Desc publique"

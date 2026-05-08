@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
 from archives_tool.api.services import collections_creation as svc
 from archives_tool.api.templating import templates
+from archives_tool.models import PhaseChantier
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ def formulaire_nouvelle_collection(
             "utilisateur": utilisateur,
             "formulaire": svc.FormulaireCollection(),
             "erreurs": {},
+            "phases": list(PhaseChantier),
         },
     )
 
@@ -84,8 +86,11 @@ def creer_collection_post(
                 "utilisateur": utilisateur,
                 "formulaire": formulaire,
                 "erreurs": res.erreurs,
+                "phases": list(PhaseChantier),
             },
             status_code=400,
         )
-    col = svc.creer_collection(db, formulaire, cree_par=utilisateur)
+    col = svc.creer_collection(
+        db, formulaire, cree_par=utilisateur, parent=res.parent_resolu
+    )
     return RedirectResponse(url=f"/collection/{col.cote_collection}", status_code=303)

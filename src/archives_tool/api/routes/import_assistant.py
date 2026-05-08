@@ -8,23 +8,17 @@ l'utilisateur vers la CLI en attendant.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from archives_tool.api.deps import get_nom_base, get_utilisateur_courant
 from archives_tool.api.templating import templates
 
 router = APIRouter()
 
 
 @router.get("/import", response_class=HTMLResponse)
-def page_import(
-    request: Request,
-    nom_base: str = Depends(get_nom_base),
-    utilisateur: str = Depends(get_utilisateur_courant),
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "pages/import_placeholder.html",
-        {"nom_base": nom_base, "utilisateur": utilisateur},
-    )
+def page_import(request: Request) -> HTMLResponse:
+    """Placeholder V0.7 — la page complète de l'assistant arrivera
+    par étapes. Pas de deps utilisateur/base : la page ne les rend pas.
+    """
+    return templates.TemplateResponse(request, "pages/import_placeholder.html", {})

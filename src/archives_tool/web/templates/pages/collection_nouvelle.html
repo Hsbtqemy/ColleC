@@ -122,14 +122,9 @@
               class="w-full"
               style="padding:6px 10px;font-size:13px;
                      border:1px solid rgba(0,0,0,0.16);border-radius:4px;background:#fff;">
-        {% for p in [('numerisation','numérisation'),
-                     ('catalogage','catalogage'),
-                     ('revision','révision'),
-                     ('finalisation','finalisation'),
-                     ('archivee','archivée'),
-                     ('en_pause','en pause')] %}
-          <option value="{{ p[0] }}" {% if formulaire.phase == p[0] %}selected{% endif %}>
-            {{ p[1] }}
+        {% for p in phases %}
+          <option value="{{ p.value }}" {% if formulaire.phase == p.value %}selected{% endif %}>
+            {{ p | libelle_phase }}
           </option>
         {% endfor %}
       </select>

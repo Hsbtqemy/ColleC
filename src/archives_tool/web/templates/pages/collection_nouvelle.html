@@ -1,0 +1,167 @@
+{# Page « Nouvelle collection vide » (V0.7).
+   Variables : `formulaire` (FormulaireCollection), `erreurs` (dict champ→msg).
+   Au POST, en cas d'erreurs, la page est re-rendue avec status 400 et
+   les valeurs saisies préservées. En cas de succès, redirection vers
+   `/collection/{cote}` (303 See Other). #}
+{% extends "base.html" %}
+
+{% block title %}Nouvelle collection — archives-tool{% endblock %}
+
+{% macro champ(nom, label, valeur, type='text', placeholder='', help_text='', mono=false) %}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-{{ nom }}"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      {{ label }}
+    </label>
+    <input id="champ-{{ nom }}" type="{{ type }}" name="{{ nom }}"
+           value="{{ valeur }}"
+           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+           {% if mono %}class="font-mono"{% endif %}
+           class="w-full {% if mono %}font-mono{% endif %}"
+           style="padding:6px 10px;font-size:13px;
+                  border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                  border-radius:4px;background:#fff;">
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro textarea(nom, label, valeur, placeholder='', help_text='') %}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-{{ nom }}"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      {{ label }}
+    </label>
+    <textarea id="champ-{{ nom }}" name="{{ nom }}" rows="3"
+              {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+              class="w-full"
+              style="padding:6px 10px;font-size:13px;
+                     border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                     border-radius:4px;background:#fff;resize:vertical;">{{ valeur }}</textarea>
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+<header class="mb-8">
+  <nav class="text-sm text-gray-500 mb-2">
+    <a href="/" class="hover:text-gray-700">Tableau de bord</a>
+    <span aria-hidden="true">/</span>
+    <span class="text-gray-700">Nouvelle collection</span>
+  </nav>
+  <h1 class="text-2xl font-medium">Nouvelle collection vide</h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Crée une collection sans items. Vous pourrez l'alimenter ensuite via
+    l'<a href="/import" class="hover:text-gray-700 underline">assistant
+    d'import</a> ou la CLI.
+  </p>
+</header>
+
+<form method="post" action="/collections" style="max-width:680px;">
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identification (obligatoire)
+    </h2>
+    {{ champ('cote', 'Cote',
+             formulaire.cote,
+             placeholder='RDM, FA-AA, ainsa-correspondance…',
+             help_text='Caractères autorisés : lettres, chiffres, tiret, souligné. Pas d’espaces.',
+             mono=true) }}
+    {{ champ('titre', 'Titre',
+             formulaire.titre,
+             placeholder='Revue des Deux Mondes') }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Métadonnées de base (optionnel)
+    </h2>
+    {{ textarea('description', 'Description publique',
+                formulaire.description,
+                help_text='Destinée aux exports Dublin Core et aux consultations externes.') }}
+    {{ textarea('description_interne', 'Description interne',
+                formulaire.description_interne,
+                help_text='Pour l’équipe — non exportée. Conventions, choix de catalogage, etc.') }}
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('editeur', 'Éditeur', formulaire.editeur) }}
+      {{ champ('lieu_edition', 'Lieu d’édition', formulaire.lieu_edition) }}
+    </div>
+    {{ champ('auteur_principal', 'Responsable scientifique',
+             formulaire.auteur_principal) }}
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('date_debut', 'Date début',
+               formulaire.date_debut,
+               placeholder='1955, vers 1960…',
+               help_text='EDTF accepté.') }}
+      {{ champ('date_fin', 'Date fin',
+               formulaire.date_fin,
+               placeholder='2019, sans date…') }}
+    </div>
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Configuration
+    </h2>
+    <div style="margin-bottom:14px;">
+      <label for="champ-phase"
+             style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Phase de chantier
+      </label>
+      <select id="champ-phase" name="phase"
+              class="w-full"
+              style="padding:6px 10px;font-size:13px;
+                     border:1px solid rgba(0,0,0,0.16);border-radius:4px;background:#fff;">
+        {% for p in [('numerisation','numérisation'),
+                     ('catalogage','catalogage'),
+                     ('revision','révision'),
+                     ('finalisation','finalisation'),
+                     ('archivee','archivée'),
+                     ('en_pause','en pause')] %}
+          <option value="{{ p[0] }}" {% if formulaire.phase == p[0] %}selected{% endif %}>
+            {{ p[1] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    {{ champ('parent_cote', 'Collection parente (optionnel)',
+             formulaire.parent_cote,
+             placeholder='cote d’une collection existante',
+             help_text='Pour créer une sous-collection. Laisser vide pour une racine.',
+             mono=true) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identifiants externes (optionnel)
+    </h2>
+    {{ champ('doi_nakala', 'DOI Nakala',
+             formulaire.doi_nakala,
+             placeholder='10.34847/nkl.xxxxxxxx',
+             mono=true) }}
+  </section>
+
+  <div class="flex items-center justify-end gap-2"
+       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+    <a href="/" class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      Annuler
+    </a>
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+      Créer la collection
+    </button>
+  </div>
+</form>
+{% endblock %}

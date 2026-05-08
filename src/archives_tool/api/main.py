@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from archives_tool.api.routes import (
     collection,
+    collections,
     dashboard,
     derives,
     item,
@@ -25,6 +26,7 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
 app.include_router(dashboard.router)
+app.include_router(collections.router)
 app.include_router(collection.router)
 app.include_router(item.router)
 app.include_router(preferences.router)

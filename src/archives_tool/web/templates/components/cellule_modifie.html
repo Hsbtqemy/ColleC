@@ -1,0 +1,16 @@
+{# cellule_modifie.html — combinaison nom + temps relatif dans une cellule.
+   Le nom porte la couleur primaire (13 px), le séparateur · et le temps
+   relatif passent en couleur secondaire (12 px). Aligné à droite par défaut
+   via la cellule de tableau parente (text-right). #}
+
+{% macro cellule_modifie(par, depuis) -%}
+  {%- if par -%}
+    <span class="inline-flex items-baseline gap-1.5">
+      <span style="font-size:13px;color:#1f1f1f;">{{ par }}</span>
+      <span aria-hidden="true" style="font-size:12px;color:#9ca3af;">·</span>
+      <span style="font-size:12px;color:#6b7280;">{{ depuis }}</span>
+    </span>
+  {%- else -%}
+    <span class="text-gray-400" style="font-size:13px;">—</span>
+  {%- endif -%}
+{%- endmacro %}

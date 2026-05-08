@@ -1,0 +1,135 @@
+{# ---------------------------------------------------------------------------
+   panneau_colonnes.html — drawer/modal de configuration des colonnes
+   ---------------------------------------------------------------------------
+   Markup statique. Drag-and-drop, recherche, persistance : à câbler par
+   Claude Code (HTMX + petit JS). Les hooks sont déjà posés :
+
+     [data-cols-search]          → input de filtrage
+     [data-cols-active]          → liste réordonnable
+     [data-cols-available]       → liste plate (colonnes dédiées)
+     [data-cols-meta]            → liste plate (métadonnées de la collection)
+     [data-action="reset"]       → bouton Réinitialiser
+     [data-action="apply"]       → bouton Appliquer
+     [data-action="cancel"]      → bouton Annuler
+     [data-col][data-col-key=…]  → ligne de colonne (active ou disponible)
+     [data-handle]               → poignée drag (ligne active uniquement)
+
+   Paramètres :
+     ctx = {
+       collection_cote: 'FA-AA-00',
+       actives:    [{key, label, note}],     # ordre = ordre d'affichage
+       available_dedicated: [{key, label}],
+       available_meta:      [{key, label}],
+     }
+   --------------------------------------------------------------------------- #}
+
+{% macro panneau_colonnes(ctx) -%}
+{%- set total = ctx.actives|length + ctx.available_dedicated|length + ctx.available_meta|length -%}
+<aside class="bg-white rounded-lg flex flex-col"
+       style="width:480px;height:100%;border:1px solid rgba(0,0,0,0.08);"
+       data-cols-panel>
+
+  {# Header #}
+  <div class="border-b" style="border-color:rgba(0,0,0,0.08);padding:14px 18px;">
+    <div class="flex items-center justify-between" style="margin-bottom:4px;">
+      <h3 style="font-size:14px;font-weight:500;color:#1f1f1f;">Colonnes du tableau</h3>
+      <button type="button" class="hover:text-gray-800" style="font-size:12px;color:#6b7280;"
+              data-action="reset">Réinitialiser</button>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;">
+      <span class="font-tabular text-gray-700">{{ ctx.actives|length }}</span> actives sur
+      <span class="font-tabular">{{ total }}</span> disponibles
+    </p>
+  </div>
+
+  {# Recherche #}
+  <div class="border-b" style="border-color:rgba(0,0,0,0.08);padding:10px 18px;">
+    <div class="relative">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"
+           class="absolute" style="left:8px;top:50%;transform:translateY(-50%);">
+        <circle cx="5" cy="5" r="3.5" fill="none" stroke="#9ca3af" stroke-width="1.2"/>
+        <path d="M7.5 7.5 L10.5 10.5" stroke="#9ca3af" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+      <input type="text" placeholder="Filtrer les colonnes…" data-cols-search
+             class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
+             style="padding:5px 8px 5px 26px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
+    </div>
+  </div>
+
+  {# Body #}
+  <div class="flex-1 overflow-y-auto" style="padding:4px 0;">
+
+    <div style="padding:12px 18px 4px;">
+      <h4 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">Actives</h4>
+    </div>
+    <ul data-cols-active>
+      {%- for col in ctx.actives %}
+      <li class="flex items-center gap-3 hover:bg-gray-50"
+          style="padding:6px 18px;" data-col data-col-key="{{ col.key }}">
+        <span class="cursor-grab opacity-60 hover:opacity-100" data-handle aria-label="Réordonner">
+          <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+            <circle cx="2.5" cy="2"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="2"  r="1" fill="#9ca3af"/>
+            <circle cx="2.5" cy="7"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="7"  r="1" fill="#9ca3af"/>
+            <circle cx="2.5" cy="12" r="1" fill="#9ca3af"/><circle cx="7.5" cy="12" r="1" fill="#9ca3af"/>
+          </svg>
+        </span>
+        <span class="inline-flex items-center justify-center"
+              style="width:14px;height:14px;border-radius:3px;background:#378ADD;">
+          <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
+            <path d="M1.5 4.5 L3.5 6.5 L7.5 2" fill="none" stroke="white"
+                  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="flex-1" style="font-size:13px;color:#1f1f1f;">{{ col.label }}</span>
+        {%- if col.note %}<span style="font-size:11px;color:#9ca3af;">{{ col.note }}</span>{% endif %}
+      </li>
+      {%- endfor %}
+    </ul>
+
+    <div style="padding:14px 18px 4px;">
+      <h4 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">Disponibles · colonnes dédiées</h4>
+    </div>
+    <ul data-cols-available>
+      {%- for col in ctx.available_dedicated %}
+      <li class="flex items-center gap-3 hover:bg-gray-50"
+          style="padding:5px 18px 5px 36px;" data-col data-col-key="{{ col.key }}">
+        <span class="inline-block bg-white"
+              style="width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,0.16);"></span>
+        <span style="font-size:13px;color:#6b7280;">{{ col.label }}</span>
+      </li>
+      {%- endfor %}
+    </ul>
+
+    <div style="padding:14px 18px 4px;">
+      <h4 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">Disponibles · métadonnées</h4>
+      <p style="font-size:11px;color:#9ca3af;margin-top:2px;">
+        propres à la collection <span class="font-mono text-gray-700">{{ ctx.collection_cote }}</span>
+      </p>
+    </div>
+    <ul data-cols-meta style="padding-bottom:6px;">
+      {%- for col in ctx.available_meta %}
+      <li class="flex items-center gap-3 hover:bg-gray-50"
+          style="padding:5px 18px 5px 36px;" data-col data-col-key="{{ col.key }}">
+        <span class="inline-block bg-white"
+              style="width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,0.16);"></span>
+        <span style="font-size:13px;color:#6b7280;">{{ col.label }}</span>
+      </li>
+      {%- endfor %}
+    </ul>
+  </div>
+
+  {# Footer #}
+  <div class="border-t flex items-center justify-between gap-3"
+       style="border-color:rgba(0,0,0,0.08);padding:10px 18px;">
+    <p style="font-size:11px;color:#9ca3af;">Préférences sauvegardées par collection</p>
+    <div class="flex items-center gap-2">
+      <button type="button" data-action="cancel"
+              class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+              style="padding:4px 10px;font-size:12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">Annuler</button>
+      <button type="button" data-action="apply"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:4px 10px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">Appliquer</button>
+    </div>
+  </div>
+</aside>
+{%- endmacro %}

@@ -1,0 +1,9 @@
+{# phase_chantier.html — sous-titre texte simple (pas de badge).
+   Vocabulaire : numérisation, catalogage, révision, finalisation,
+   archivée, en pause. #}
+
+{% macro phase_chantier(phase) -%}
+  {%- if phase -%}
+    <span style="font-size:12px;color:#9ca3af;">{{ phase }}</span>
+  {%- endif -%}
+{%- endmacro %}

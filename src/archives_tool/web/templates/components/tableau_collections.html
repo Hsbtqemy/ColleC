@@ -1,0 +1,93 @@
+{# ---------------------------------------------------------------------------
+   tableau_collections.html — tableau du dashboard
+   ---------------------------------------------------------------------------
+   Aéré (padding vertical 16 px). Six colonnes fixes :
+     Cote · Titre · Items · Fichiers · Avancement · Modifié
+
+   Tri HTMX (préfix `data-sort-…`) : à câbler côté Claude Code.
+
+   Paramètres :
+     ctx = {
+       collections: [{cote, titre, phase, sous_collections,
+                      nb_items, nb_fichiers, repartition, modifie_par,
+                      modifie_depuis, href}],
+       sort: 'modifie',         # clé de tri active
+     }
+   --------------------------------------------------------------------------- #}
+
+{% from 'components/avancement.html' import avancement_compact %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/phase_chantier.html' import phase_chantier %}
+
+{%- macro _th(key, label, sort, align='left', sortable=true) -%}
+  {%- set active = sort == key -%}
+  <th class="border-b {{ 'cursor-pointer hover:text-gray-900' if sortable else '' }}"
+      style="border-color:rgba(0,0,0,0.08);padding:10px 14px;font-size:12px;font-weight:500;
+             color:{{ '#1f1f1f' if active else '#6b7280' }};text-align:{{ align }};white-space:nowrap;"
+      {% if sortable %}data-sort-key="{{ key }}"{% endif %}>
+    <span class="inline-flex items-center gap-1">
+      {{ label }}
+      {%- if active and sortable %}
+        <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
+                stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      {%- endif %}
+    </span>
+  </th>
+{%- endmacro %}
+
+{% macro tableau_collections(ctx) -%}
+<div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
+  <table class="w-full" style="border-collapse:separate;border-spacing:0;">
+    <thead>
+      <tr class="bg-gray-50">
+        {{ _th('cote', 'Cote', ctx.sort) }}
+        {{ _th('titre', 'Titre', ctx.sort) }}
+        {{ _th('items', 'Items', ctx.sort, 'right') }}
+        {{ _th('fichiers', 'Fichiers', ctx.sort, 'right') }}
+        {{ _th('avancement', 'Avancement', ctx.sort, 'left', false) }}
+        {{ _th('modifie', 'Modifié', ctx.sort, 'right') }}
+      </tr>
+    </thead>
+    <tbody>
+    {%- for c in ctx.collections %}
+      <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors"
+          style="border-color:rgba(0,0,0,0.08);">
+        <td style="padding:16px 14px;vertical-align:top;">
+          <a href="{{ c.href }}" class="inline-flex items-center gap-2 hover:underline">
+            <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M1 3.5 a1 1 0 0 1 1 -1 h3.2 l1.3 1.3 H12 a1 1 0 0 1 1 1 v6.7 a1 1 0 0 1 -1 1 H2 a1 1 0 0 1 -1 -1 z"
+                    fill="none" stroke="#6b7280" stroke-width="1" stroke-linejoin="round"/>
+            </svg>
+            <span class="font-mono" style="font-size:13px;color:#1f1f1f;">{{ c.cote }}</span>
+          </a>
+        </td>
+        <td style="padding:16px 14px;vertical-align:top;">
+          <div style="font-size:13px;color:#1f1f1f;line-height:1.4;">{{ c.titre }}</div>
+          <div style="font-size:12px;color:#9ca3af;margin-top:2px;">
+            {{ phase_chantier(c.phase) }}
+            {%- if c.sous_collections and c.sous_collections > 0 %}
+              <span aria-hidden="true" style="margin:0 6px;">·</span>
+              {{ c.sous_collections }} sous-collection{{ 's' if c.sous_collections > 1 else '' }}
+            {%- endif %}
+          </div>
+        </td>
+        <td class="font-tabular" style="padding:16px 14px;vertical-align:top;text-align:right;">
+          <span style="font-size:13px;color:#1f1f1f;">{{ '{:,}'.format(c.nb_items)|replace(',', ' ') }}</span>
+        </td>
+        <td class="font-tabular" style="padding:16px 14px;vertical-align:top;text-align:right;">
+          <span style="font-size:13px;color:#1f1f1f;">{{ '{:,}'.format(c.nb_fichiers)|replace(',', ' ') }}</span>
+        </td>
+        <td style="padding:16px 14px;vertical-align:top;min-width:180px;">
+          {{ avancement_compact(c.repartition) }}
+        </td>
+        <td style="padding:16px 14px;vertical-align:top;text-align:right;white-space:nowrap;">
+          {{ cellule_modifie(c.modifie_par, c.modifie_depuis) }}
+        </td>
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}

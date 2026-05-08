@@ -1,0 +1,44 @@
+{# ---------------------------------------------------------------------------
+   badge_etat.html — Badge d'état avec point coloré
+   --------------------------------------------------------------------------
+   Fond gris neutre uniforme (bg-gray-100), point 6×6 px porteur de la
+   sémantique. Ne JAMAIS colorer le fond.
+
+   Paramètres :
+     etat  — clé d'état (str)
+     kind  — "item" (défaut) ou "fichier"
+
+   États item    : brouillon, a_verifier, verifie, valide, a_corriger
+   États fichier : actif, remplace, corbeille
+   --------------------------------------------------------------------------- #}
+
+{%- set _ETATS = {
+  'item': {
+    'brouillon':  {'label': 'Brouillon',  'dot': '#888780'},
+    'a_verifier': {'label': 'À vérifier', 'dot': '#BA7517'},
+    'verifie':    {'label': 'Vérifié',    'dot': '#378ADD'},
+    'valide':     {'label': 'Validé',     'dot': '#639922'},
+    'a_corriger': {'label': 'À corriger', 'dot': '#E24B4A'},
+  },
+  'fichier': {
+    'actif':     {'label': 'Actif',     'dot': '#639922'},
+    'remplace':  {'label': 'Remplacé',  'dot': '#888780'},
+    'corbeille': {'label': 'Corbeille', 'dot': '#E24B4A'},
+  }
+} -%}
+
+{% macro badge_etat(etat, kind='item') -%}
+  {%- set m = _ETATS[kind][etat] -%}
+  <span class="inline-flex items-center gap-1.5 rounded bg-gray-100 text-gray-800"
+        style="padding:2px 10px;font-size:12px;line-height:16px;">
+    <span aria-hidden="true"
+          style="width:6px;height:6px;border-radius:9999px;background:{{ m.dot }};flex:0 0 6px;"></span>
+    {{ m.label }}
+  </span>
+{%- endmacro %}
+
+{# Usage:
+   {% from 'components/badge_etat.html' import badge_etat %}
+   {{ badge_etat(item.etat) }}
+   {{ badge_etat(fichier.etat, kind='fichier') }}
+#}

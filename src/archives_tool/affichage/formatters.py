@@ -49,6 +49,28 @@ def formater_etat(etat: str | None) -> str:
     return f"[etat.{etat}]{escape(libelle)}[/etat.{etat}]"
 
 
+def temps_relatif(dt: datetime | None) -> str:
+    """`datetime` → « il y a 3h » approximatif. None → tiret.
+
+    Utilisé à la fois comme filtre Jinja (`temps_relatif`) et par les
+    services qui pré-formatent un `modifie_depuis` pour les composants
+    Claude Design (qui attendent une chaîne déjà rendue).
+    """
+    if dt is None:
+        return ABSENT
+    delta = datetime.now() - dt
+    secondes = int(delta.total_seconds())
+    if secondes < 60:
+        return "à l'instant"
+    if secondes < 3600:
+        return f"il y a {secondes // 60} min"
+    if secondes < 86400:
+        return f"il y a {secondes // 3600} h"
+    if secondes < 86400 * 7:
+        return f"il y a {secondes // 86400} j"
+    return dt.strftime("%Y-%m-%d")
+
+
 def formater_taille_octets(n: int | None) -> str:
     """Affichage humain (KB, MB, GB) avec une décimale."""
     if n is None:

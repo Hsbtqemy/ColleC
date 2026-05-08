@@ -102,8 +102,9 @@ def test_lister_collections_avec_repartition(base_peuplee: Session) -> None:
     assert res.cote == "P"
     assert res.nb_items == 5
     assert res.nb_fichiers == 5
-    assert res.nb_sous_collections == 1
-    assert res.repartition_etats == {"valide": 2, "a_verifier": 2, "brouillon": 1}
+    assert res.sous_collections == 1
+    assert res.repartition == {"valide": 2, "a_verifier": 2, "brouillon": 1}
+    assert res.href == "/collection/P"
 
 
 def test_lister_activite_recente_fusion_des_journaux(base_peuplee: Session) -> None:

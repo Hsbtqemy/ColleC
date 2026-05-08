@@ -20,6 +20,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.models import (
     Collection,
     EtatCatalogage,
@@ -61,16 +62,25 @@ class StatistiquesGlobales:
 
 @dataclass
 class CollectionResume:
+    """Schéma aligné sur le composant `tableau_collections` du bundle.
+
+    `modifie_depuis` est le rendu pré-calculé de `modifie_le` (le composant
+    attend une chaîne déjà formatée — pas de filtre Jinja appliqué côté
+    template).
+    """
+
     id: int
     cote: str
     titre: str
     phase: PhaseChantier
-    nb_sous_collections: int = 0
+    href: str = ""
+    sous_collections: int = 0
     nb_items: int = 0
     nb_fichiers: int = 0
-    repartition_etats: dict[str, int] = field(default_factory=dict)
+    repartition: dict[str, int] = field(default_factory=dict)
     modifie_par: str | None = None
     modifie_le: datetime | None = None
+    modifie_depuis: str = ""
 
 
 class TypeEvenement(enum.StrEnum):
@@ -225,12 +235,14 @@ def lister_collections_dashboard(
                 cote=col.cote_collection,
                 titre=col.titre,
                 phase=PhaseChantier(col.phase),
-                nb_sous_collections=sous_col_par_parent.get(col.id, 0),
+                href=f"/collection/{col.cote_collection}",
+                sous_collections=sous_col_par_parent.get(col.id, 0),
                 nb_items=items_par_col.get(col.id, 0),
                 nb_fichiers=fichiers_par_col.get(col.id, 0),
-                repartition_etats=etats_par_col.get(col.id, {}),
+                repartition=etats_par_col.get(col.id, {}),
                 modifie_par=col.modifie_par,
                 modifie_le=col.modifie_le,
+                modifie_depuis=temps_relatif(col.modifie_le),
             )
         )
     return resumes

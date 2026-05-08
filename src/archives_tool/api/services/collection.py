@@ -8,23 +8,14 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from archives_tool.affichage.formatters import temps_relatif
+from archives_tool.affichage.formatters import date_incertaine, temps_relatif
+from archives_tool.api.services.dashboard import CollectionResume
 from archives_tool.models import (
     Collection,
     Fichier,
     Item,
     PhaseChantier,
 )
-
-# Marqueurs courants des dates incertaines en archives. Détection
-# heuristique avant un parser EDTF complet (V2+).
-_MARQUEURS_DATE_INCERTAINE = ("?", "vers", "c.", "ca.", "s.d.")
-
-
-def _date_incertaine(date: str | None) -> bool:
-    if not date:
-        return False
-    return any(m in date.lower() for m in _MARQUEURS_DATE_INCERTAINE)
 
 
 class CollectionIntrouvable(LookupError):
@@ -56,27 +47,11 @@ class CollectionDetail:
     repartition_etats: dict[str, int] = field(default_factory=dict)
 
 
-@dataclass
-class SousCollectionResume:
-    """Schéma aligné sur tableau_collections (composant Claude Design).
+# Les sous-collections du même onglet sont rendues par le même
+# composant `tableau_collections` que les collections racines du
+# dashboard ; elles partagent donc le schéma `CollectionResume`.
 
-    Hérite des champs nécessaires au composant : `href`, `repartition`,
-    `modifie_depuis`. La clé bundle est `sous_collections` (nombre
-    d'enfants directs) — ici 0 par défaut sauf cas multi-niveaux.
-    """
-
-    id: int
-    cote: str
-    titre: str
-    phase: PhaseChantier
-    href: str = ""
-    sous_collections: int = 0
-    nb_items: int = 0
-    nb_fichiers: int = 0
-    repartition: dict[str, int] = field(default_factory=dict)
-    modifie_par: str | None = None
-    modifie_le: datetime | None = None
-    modifie_depuis: str = ""
+SousCollectionResume = CollectionResume
 
 
 @dataclass
@@ -192,13 +167,6 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
         return []
 
     ids = [e.id for e in enfants]
-    items_par_col = dict(
-        session.execute(
-            select(Item.collection_id, func.count(Item.id))
-            .where(Item.collection_id.in_(ids))
-            .group_by(Item.collection_id)
-        ).all()
-    )
     fichiers_par_col = dict(
         session.execute(
             select(Item.collection_id, func.count(Fichier.id))
@@ -215,6 +183,7 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
     ).all():
         repartition_par_col.setdefault(col_id, {})[etat] = n
 
+    maintenant = datetime.now()
     return [
         SousCollectionResume(
             id=e.id,
@@ -222,12 +191,12 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
             titre=e.titre,
             phase=PhaseChantier(e.phase),
             href=f"/collection/{e.cote_collection}",
-            nb_items=items_par_col.get(e.id, 0),
+            nb_items=sum(repartition_par_col.get(e.id, {}).values()),
             nb_fichiers=fichiers_par_col.get(e.id, 0),
             repartition=repartition_par_col.get(e.id, {}),
             modifie_par=e.modifie_par,
             modifie_le=e.modifie_le,
-            modifie_depuis=temps_relatif(e.modifie_le),
+            modifie_depuis=temps_relatif(e.modifie_le, maintenant=maintenant),
         )
         for e in enfants
     ]
@@ -256,6 +225,7 @@ def lister_items(session: Session, cote: str) -> list[ItemResume]:
         .order_by(Item.cote)
     ).all()
 
+    maintenant = datetime.now()
     return [
         ItemResume(
             cote=row.cote,
@@ -265,10 +235,10 @@ def lister_items(session: Session, cote: str) -> list[ItemResume]:
             etat=row.etat_catalogage,
             nb_fichiers=row.nb_fichiers or 0,
             href=f"/item/{row.cote}?collection={cote}",
-            date_incertaine=_date_incertaine(row.date),
+            date_incertaine=date_incertaine(row.date),
             modifie_par=row.modifie_par,
             modifie_le=row.modifie_le,
-            modifie_depuis=temps_relatif(row.modifie_le),
+            modifie_depuis=temps_relatif(row.modifie_le, maintenant=maintenant),
         )
         for row in rows
     ]

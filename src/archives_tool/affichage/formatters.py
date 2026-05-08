@@ -49,16 +49,35 @@ def formater_etat(etat: str | None) -> str:
     return f"[etat.{etat}]{escape(libelle)}[/etat.{etat}]"
 
 
-def temps_relatif(dt: datetime | None) -> str:
+_MARQUEURS_DATE_INCERTAINE = ("?", "vers", "c.", "ca.", "s.d.")
+
+
+def date_incertaine(date: str | None) -> bool:
+    """Heuristique pré-EDTF : True si la chaîne porte un marqueur d'incertitude.
+
+    Reconnu : '?' (suffixe ou inline), 'vers', 'c.' / 'ca.' (circa),
+    's.d.' (sine dato). Insensible à la casse. À remplacer par un parser
+    EDTF complet (V2+).
+    """
+    if not date:
+        return False
+    return any(m in date.lower() for m in _MARQUEURS_DATE_INCERTAINE)
+
+
+def temps_relatif(dt: datetime | None, *, maintenant: datetime | None = None) -> str:
     """`datetime` → « il y a 3h » approximatif. None → tiret.
 
     Utilisé à la fois comme filtre Jinja (`temps_relatif`) et par les
     services qui pré-formatent un `modifie_depuis` pour les composants
     Claude Design (qui attendent une chaîne déjà rendue).
+
+    `maintenant` permet de passer une référence temporelle commune
+    quand on formate plusieurs lignes : économise N appels système
+    `datetime.now()` dans une boucle de service.
     """
     if dt is None:
         return ABSENT
-    delta = datetime.now() - dt
+    delta = (maintenant or datetime.now()) - dt
     secondes = int(delta.total_seconds())
     if secondes < 60:
         return "à l'instant"

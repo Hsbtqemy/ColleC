@@ -173,16 +173,13 @@ def calculer_statistiques_globales(session: Session) -> StatistiquesGlobales:
 
 def _comptes_par_collection(
     session: Session,
-) -> tuple[dict[int, int], dict[int, int], dict[int, dict[str, int]]]:
-    """Trois agrégations en trois requêtes : items, fichiers, états.
+) -> tuple[dict[int, int], dict[int, dict[str, int]]]:
+    """Deux agrégations : fichiers, répartition des états par collection.
 
-    Évite la N+1 d'une boucle qui interrogerait la base par collection.
+    Le compte d'items est dérivable de `sum(repartition[col_id].values())`,
+    inutile de le requêter séparément. Évite la N+1 d'une boucle qui
+    interrogerait la base par collection.
     """
-    items = dict(
-        session.execute(
-            select(Item.collection_id, func.count(Item.id)).group_by(Item.collection_id)
-        ).all()
-    )
     fichiers = dict(
         session.execute(
             select(Item.collection_id, func.count(Fichier.id))
@@ -197,7 +194,7 @@ def _comptes_par_collection(
         )
     ).all():
         repartition.setdefault(col_id, {})[etat] = n
-    return items, fichiers, repartition
+    return fichiers, repartition
 
 
 def _comptes_sous_collections(session: Session) -> dict[int, int]:
@@ -213,7 +210,7 @@ def lister_collections_dashboard(
     session: Session, limite: int = 10
 ) -> list[CollectionResume]:
     """Collections racines triées par modifie_le DESC (puis cote ASC)."""
-    items_par_col, fichiers_par_col, etats_par_col = _comptes_par_collection(session)
+    fichiers_par_col, etats_par_col = _comptes_par_collection(session)
     sous_col_par_parent = _comptes_sous_collections(session)
 
     racines = list(
@@ -227,25 +224,24 @@ def lister_collections_dashboard(
         ).all()
     )
 
-    resumes: list[CollectionResume] = []
-    for col in racines:
-        resumes.append(
-            CollectionResume(
-                id=col.id,
-                cote=col.cote_collection,
-                titre=col.titre,
-                phase=PhaseChantier(col.phase),
-                href=f"/collection/{col.cote_collection}",
-                sous_collections=sous_col_par_parent.get(col.id, 0),
-                nb_items=items_par_col.get(col.id, 0),
-                nb_fichiers=fichiers_par_col.get(col.id, 0),
-                repartition=etats_par_col.get(col.id, {}),
-                modifie_par=col.modifie_par,
-                modifie_le=col.modifie_le,
-                modifie_depuis=temps_relatif(col.modifie_le),
-            )
+    maintenant = datetime.now()
+    return [
+        CollectionResume(
+            id=col.id,
+            cote=col.cote_collection,
+            titre=col.titre,
+            phase=PhaseChantier(col.phase),
+            href=f"/collection/{col.cote_collection}",
+            sous_collections=sous_col_par_parent.get(col.id, 0),
+            nb_items=sum(etats_par_col.get(col.id, {}).values()),
+            nb_fichiers=fichiers_par_col.get(col.id, 0),
+            repartition=etats_par_col.get(col.id, {}),
+            modifie_par=col.modifie_par,
+            modifie_le=col.modifie_le,
+            modifie_depuis=temps_relatif(col.modifie_le, maintenant=maintenant),
         )
-    return resumes
+        for col in racines
+    ]
 
 
 # ---------------------------------------------------------------------------

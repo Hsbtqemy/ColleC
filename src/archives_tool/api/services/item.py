@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from archives_tool.affichage.formatters import temps_relatif
+from archives_tool.affichage.formatters import date_incertaine, temps_relatif
 from archives_tool.api.services.sources_image import (
     SourceImage,
     resoudre_source_image,
@@ -28,20 +28,6 @@ from archives_tool.models import Collection, EtatCatalogage, Item, PhaseChantier
 
 class ItemIntrouvable(LookupError):
     """La cote demandée n'existe dans aucune collection."""
-
-
-# Couples (libellé, attribut) pour l'affichage tabulaire fallback.
-# Le cartouche Zotero les compose à la main dans le template ; cette
-# liste reste exposée pour les usages CLI ou export simple.
-CHAMPS_METADONNEES_AFFICHES: tuple[tuple[str, str], ...] = (
-    ("Numéro", "numero"),
-    ("Date", "date"),
-    ("Année", "annee"),
-    ("Langue", "langue"),
-    ("Type COAR", "type_coar"),
-    ("DOI Nakala", "doi_nakala"),
-    ("DOI collection", "doi_collection_nakala"),
-)
 
 
 @dataclass
@@ -66,6 +52,7 @@ class ItemDetail:
     titre: str | None
     numero: str | None
     date: str | None
+    date_incertaine: bool
     annee: int | None
     langue: str | None
     type_coar: str | None
@@ -128,6 +115,7 @@ def item_detail(
         titre=item.titre,
         numero=item.numero,
         date=item.date,
+        date_incertaine=date_incertaine(item.date),
         annee=item.annee,
         langue=item.langue,
         type_coar=item.type_coar,
@@ -141,16 +129,6 @@ def item_detail(
         metadonnees=item.metadonnees or {},
         fichiers=fichiers_vues,
     )
-
-
-def metadonnees_affichables(detail: ItemDetail) -> list[tuple[str, str]]:
-    """Liste ordonnée (label, valeur) des champs non vides à afficher."""
-    paires: list[tuple[str, str]] = []
-    for label, attribut in CHAMPS_METADONNEES_AFFICHES:
-        valeur = getattr(detail, attribut)
-        if valeur:
-            paires.append((label, str(valeur)))
-    return paires
 
 
 def sources_pour_visionneuse(detail: ItemDetail) -> dict[int, dict[str, dict | None]]:
@@ -182,21 +160,13 @@ def breadcrumb_ctx(detail: ItemDetail) -> list[dict[str, Any]]:
     ]
 
 
-def bandeau_ctx(
-    detail: ItemDetail,
-    *,
-    cote_precedent: str | None = None,
-    cote_suivant: str | None = None,
-) -> dict[str, Any]:
+def bandeau_ctx(detail: ItemDetail) -> dict[str, Any]:
     """Dict consommé par bandeau_item du bundle.
 
     Les URLs précédent / suivant / vue fichiers sont des placeholders
-    V0.6 — la navigation séquentielle entre items et la vue fichiers
+    en V0.6 — la navigation séquentielle entre items et la vue fichiers
     plein écran arrivent en V0.7.
     """
-    # TODO V0.7 : calcul de précédent/suivant par cote dans la
-    # collection ; vue fichiers dédiée plein écran.
-    url_collection = f"/collection/{detail.collection_cote}"
     return {
         "cote": detail.cote,
         "titre": detail.titre or detail.cote,
@@ -205,17 +175,9 @@ def bandeau_ctx(
         "phase": detail.collection_phase.libelle,
         "modifie_par": detail.modifie_par,
         "modifie_depuis": temps_relatif(detail.modifie_le),
-        "url_vue_fichiers": url_collection + "/fichiers",
-        "url_precedent": (
-            f"/item/{cote_precedent}?collection={detail.collection_cote}"
-            if cote_precedent
-            else "#"
-        ),
-        "url_suivant": (
-            f"/item/{cote_suivant}?collection={detail.collection_cote}"
-            if cote_suivant
-            else "#"
-        ),
+        "url_vue_fichiers": f"/collection/{detail.collection_cote}/fichiers",
+        "url_precedent": "#",
+        "url_suivant": "#",
     }
 
 

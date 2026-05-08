@@ -15,6 +15,7 @@
   let timer;
   panel.addEventListener("mouseenter", function () {
     if (panel.dataset.state === "pinned") return;
+    clearTimeout(timer); // évite un timer orphelin si re-entry rapide
     timer = setTimeout(function () {
       panel.dataset.state = "hover";
     }, 250);

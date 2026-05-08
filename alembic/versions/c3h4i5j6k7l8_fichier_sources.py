@@ -45,12 +45,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     with op.batch_alter_table("fichier") as batch_op:
         batch_op.drop_constraint("ck_fichier_source_au_moins_une", type_="check")
-        batch_op.alter_column(
-            "chemin_relatif", existing_type=sa.Text(), nullable=False
-        )
-        batch_op.alter_column(
-            "racine", existing_type=sa.String(100), nullable=False
-        )
+        batch_op.alter_column("chemin_relatif", existing_type=sa.Text(), nullable=False)
+        batch_op.alter_column("racine", existing_type=sa.String(100), nullable=False)
         batch_op.drop_column("iiif_url_nakala")
         batch_op.drop_column("dzi_chemin")
         batch_op.drop_column("vignette_chemin")

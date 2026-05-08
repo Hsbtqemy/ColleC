@@ -182,8 +182,12 @@ def breadcrumb_ctx(detail: ItemDetail) -> list[dict[str, Any]]:
     ]
 
 
-def bandeau_ctx(detail: ItemDetail, *, cote_precedent: str | None = None,
-                cote_suivant: str | None = None) -> dict[str, Any]:
+def bandeau_ctx(
+    detail: ItemDetail,
+    *,
+    cote_precedent: str | None = None,
+    cote_suivant: str | None = None,
+) -> dict[str, Any]:
     """Dict consommé par bandeau_item du bundle.
 
     Les URLs précédent / suivant / vue fichiers sont des placeholders
@@ -204,11 +208,13 @@ def bandeau_ctx(detail: ItemDetail, *, cote_precedent: str | None = None,
         "url_vue_fichiers": url_collection + "/fichiers",
         "url_precedent": (
             f"/item/{cote_precedent}?collection={detail.collection_cote}"
-            if cote_precedent else "#"
+            if cote_precedent
+            else "#"
         ),
         "url_suivant": (
             f"/item/{cote_suivant}?collection={detail.collection_cote}"
-            if cote_suivant else "#"
+            if cote_suivant
+            else "#"
         ),
     }
 

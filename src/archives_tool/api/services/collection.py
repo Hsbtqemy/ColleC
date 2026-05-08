@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.models import (
     Collection,
-    EtatFichier,
     Fichier,
     Item,
     PhaseChantier,

@@ -57,9 +57,7 @@ def test_avancement_detaille_avec_legende(env) -> None:
 
 
 def test_avancement_total_zero(env) -> None:
-    out = _render_macro(
-        env, "components/avancement.html", "avancement_compact", {}
-    )
+    out = _render_macro(env, "components/avancement.html", "avancement_compact", {})
     # Pas de segment, juste la barre vide.
     assert "bg-gray-100" in out
 

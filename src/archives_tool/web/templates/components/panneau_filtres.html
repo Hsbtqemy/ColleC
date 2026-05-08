@@ -56,12 +56,14 @@
         {%- elif s.type == 'range_annee' %}
           <div class="flex items-center gap-2">
             <input type="number" name="annee_debut" placeholder="De"
-                   value="{{ s.valeur_debut or '' }}"
+                   min="1000" max="2100" step="1"
+                   value="{{ s.valeur_debut if s.valeur_debut is not none else '' }}"
                    class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
                    style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
             <span style="color:#9ca3af;">→</span>
             <input type="number" name="annee_fin" placeholder="À"
-                   value="{{ s.valeur_fin or '' }}"
+                   min="1000" max="2100" step="1"
+                   value="{{ s.valeur_fin if s.valeur_fin is not none else '' }}"
                    class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
                    style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
           </div>

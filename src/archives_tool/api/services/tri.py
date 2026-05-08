@@ -71,4 +71,8 @@ class Listage(Generic[U]):
 
     @property
     def nb_filtres_actifs(self) -> int:
-        return sum(1 for v in self.filtres.values() if v)
+        # `filtres` ne contient que les clés effectivement appliquées
+        # par les helpers `appliquer_filtres_*` (ils n'y inscrivent rien
+        # quand le filtre est ignoré). Compter sur la clé évite de
+        # sous-estimer pour `annee_debut=0` (falsy mais filtre actif).
+        return len(self.filtres)

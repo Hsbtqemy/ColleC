@@ -8,7 +8,11 @@ from datetime import datetime
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from archives_tool.affichage.formatters import date_incertaine, temps_relatif
+from archives_tool.affichage.formatters import (
+    LIBELLES_ETAT,
+    date_incertaine,
+    temps_relatif,
+)
 from archives_tool.api.services.dashboard import CollectionResume
 from archives_tool.api.services.tri import Listage, Ordre, appliquer_tri
 from archives_tool.models import (
@@ -208,10 +212,42 @@ def lister_sous_collections(session: Session, cote: str) -> list[SousCollectionR
 _ETATS_ITEM = {e.value for e in EtatCatalogage}
 
 
-def _parse_csv(valeur: str | None) -> list[str]:
-    if not valeur:
-        return []
-    return [v.strip() for v in valeur.split(",") if v.strip()]
+def _filtre_multi(
+    stmt: Select,
+    colonne,
+    valeurs: list[str] | None,
+    *,
+    whitelist: set[str] | None = None,
+) -> tuple[Select, list[str] | None]:
+    """Applique un filtre `IN` sur `colonne` après whitelist.
+
+    Retourne `(stmt, retenus)` — `retenus` est la liste effectivement
+    appliquée, `None` si aucun filtre. Si `whitelist` est fourni, les
+    valeurs hors whitelist sont silencieusement écartées.
+    """
+    if not valeurs:
+        return stmt, None
+    if whitelist is not None:
+        retenus = [v for v in valeurs if v in whitelist]
+    else:
+        retenus = [v for v in valeurs if v]
+    if not retenus:
+        return stmt, None
+    return stmt.where(colonne.in_(retenus)), retenus
+
+
+def _filtre_ilike(
+    stmt: Select,
+    colonne,
+    q: str | None,
+) -> tuple[Select, str | None]:
+    """Applique un `ILIKE %q%` sur `colonne`. Retourne `(stmt, terme_retenu)`."""
+    if not q:
+        return stmt, None
+    terme = q.strip()
+    if not terme:
+        return stmt, None
+    return stmt.where(colonne.ilike(f"%{terme}%")), terme
 
 
 def appliquer_filtres_items(
@@ -230,41 +266,50 @@ def appliquer_filtres_items(
     silencieusement ignorées).
     """
     actifs: dict[str, object] = {}
-    if etat:
-        retenus = [e for e in etat if e in _ETATS_ITEM]
-        if retenus:
-            stmt = stmt.where(Item.etat_catalogage.in_(retenus))
-            actifs["etat"] = retenus
-    if type_coar:
-        retenus = [t for t in type_coar if t]
-        if retenus:
-            stmt = stmt.where(Item.type_coar.in_(retenus))
-            actifs["type"] = retenus
+    stmt, retenus = _filtre_multi(
+        stmt, Item.etat_catalogage, etat, whitelist=_ETATS_ITEM
+    )
+    if retenus is not None:
+        actifs["etat"] = retenus
+    stmt, retenus = _filtre_multi(stmt, Item.type_coar, type_coar)
+    if retenus is not None:
+        actifs["type"] = retenus
     if annee_debut is not None:
         stmt = stmt.where(Item.annee >= annee_debut)
         actifs["annee_debut"] = annee_debut
     if annee_fin is not None:
         stmt = stmt.where(Item.annee <= annee_fin)
         actifs["annee_fin"] = annee_fin
-    if q:
-        terme = f"%{q.strip()}%"
-        if terme != "%%":
-            stmt = stmt.where(Item.titre.ilike(terme))
-            actifs["q"] = q.strip()
+    stmt, terme = _filtre_ilike(stmt, Item.titre, q)
+    if terme is not None:
+        actifs["q"] = terme
     return stmt, actifs
 
 
-def types_coar_disponibles(session: Session, cote: str) -> list[str]:
-    """Liste distincte des `type_coar` non vides pour une collection."""
-    col = _charger_collection(session, cote)
-    rows = session.execute(
-        select(Item.type_coar)
-        .where(Item.collection_id == col.id)
-        .where(Item.type_coar.is_not(None))
-        .distinct()
-        .order_by(Item.type_coar)
-    ).all()
+def _valeurs_distinctes(
+    session: Session,
+    colonne,
+    *,
+    where_clauses: list,
+) -> list[str]:
+    """Liste distincte non vide d'une colonne, sous une série de WHERE.
+
+    Trie alphabétiquement, ignore None et chaînes vides côté Python.
+    """
+    stmt = select(colonne).distinct().order_by(colonne)
+    for clause in where_clauses:
+        stmt = stmt.where(clause)
+    rows = session.execute(stmt).all()
     return [r[0] for r in rows if r[0]]
+
+
+def types_coar_disponibles(session: Session, cote: str) -> list[str]:
+    col = _charger_collection(session, cote)
+    return _valeurs_distinctes(
+        session,
+        Item.type_coar,
+        where_clauses=[Item.collection_id == col.id, Item.type_coar.is_not(None)],
+    )
 
 
 def lister_items(
@@ -381,52 +426,42 @@ def appliquer_filtres_fichiers(
 ) -> tuple[Select, dict[str, object]]:
     """Applique les filtres fichiers sur une SELECT. Whitelist côté Python."""
     actifs: dict[str, object] = {}
-    if etat:
-        retenus = [e for e in etat if e in _ETATS_FICHIER]
-        if retenus:
-            stmt = stmt.where(Fichier.etat.in_(retenus))
-            actifs["etat"] = retenus
-    if type_page:
-        retenus = [t for t in type_page if t]
-        if retenus:
-            stmt = stmt.where(Fichier.type_page.in_(retenus))
-            actifs["type_page"] = retenus
-    if format:
-        retenus = [f for f in format if f]
-        if retenus:
-            stmt = stmt.where(Fichier.format.in_(retenus))
-            actifs["format"] = retenus
-    if q:
-        terme = f"%{q.strip()}%"
-        if terme != "%%":
-            stmt = stmt.where(Fichier.nom_fichier.ilike(terme))
-            actifs["q"] = q.strip()
+    stmt, retenus = _filtre_multi(stmt, Fichier.etat, etat, whitelist=_ETATS_FICHIER)
+    if retenus is not None:
+        actifs["etat"] = retenus
+    stmt, retenus = _filtre_multi(stmt, Fichier.type_page, type_page)
+    if retenus is not None:
+        actifs["type_page"] = retenus
+    stmt, retenus = _filtre_multi(stmt, Fichier.format, format)
+    if retenus is not None:
+        actifs["format"] = retenus
+    stmt, terme = _filtre_ilike(stmt, Fichier.nom_fichier, q)
+    if terme is not None:
+        actifs["q"] = terme
     return stmt, actifs
 
 
 def types_page_disponibles(session: Session, cote: str) -> list[str]:
     col = _charger_collection(session, cote)
-    rows = session.execute(
-        select(Fichier.type_page)
-        .join(Item, Fichier.item_id == Item.id)
-        .where(Item.collection_id == col.id)
-        .distinct()
-        .order_by(Fichier.type_page)
-    ).all()
-    return [r[0] for r in rows if r[0]]
+    # type_page est non-nullable mais on peut filtrer côté Python via
+    # _valeurs_distinctes. Le JOIN se fait via une sous-requête.
+    return _valeurs_distinctes(
+        session,
+        Fichier.type_page,
+        where_clauses=[
+            Fichier.item_id.in_(select(Item.id).where(Item.collection_id == col.id)),
+        ],
+    )
 
 
+# Libellés des états — réutilisent le mapping centralisé `LIBELLES_ETAT`
+# de `affichage.formatters`. Subset filtré par enum pour éviter la
+# duplication du dict.
 _LIBELLES_ETAT_ITEM = {
-    "brouillon": "brouillon",
-    "a_verifier": "à vérifier",
-    "verifie": "vérifié",
-    "valide": "validé",
-    "a_corriger": "à corriger",
+    e.value: LIBELLES_ETAT[e.value] for e in EtatCatalogage if e.value in LIBELLES_ETAT
 }
 _LIBELLES_ETAT_FICHIER = {
-    "actif": "actif",
-    "remplace": "remplacé",
-    "corbeille": "corbeille",
+    e.value: LIBELLES_ETAT[e.value] for e in EtatFichier if e.value in LIBELLES_ETAT
 }
 
 
@@ -505,15 +540,14 @@ def sections_filtres_fichiers(
 
 def formats_disponibles(session: Session, cote: str) -> list[str]:
     col = _charger_collection(session, cote)
-    rows = session.execute(
-        select(Fichier.format)
-        .join(Item, Fichier.item_id == Item.id)
-        .where(Item.collection_id == col.id)
-        .where(Fichier.format.is_not(None))
-        .distinct()
-        .order_by(Fichier.format)
-    ).all()
-    return [r[0] for r in rows if r[0]]
+    return _valeurs_distinctes(
+        session,
+        Fichier.format,
+        where_clauses=[
+            Fichier.item_id.in_(select(Item.id).where(Item.collection_id == col.id)),
+            Fichier.format.is_not(None),
+        ],
+    )
 
 
 def lister_fichiers(

@@ -7,6 +7,7 @@ besoin de `templates.TemplateResponse`.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi.templating import Jinja2Templates
 
@@ -30,23 +31,20 @@ def _libelle_etat(etat: EtatCatalogage | str | None) -> str:
 def _url_avec(base: str, **params: object) -> str:
     """Compose une URL avec les params donnés (remplace les existants).
 
-    Préserve les autres params de la base. Une page paginée passant à
-    une nouvelle valeur de `tri` doit aussi reset `page` — gérer côté
-    appelant en passant `page=1` explicitement.
+    Préserve les autres params de la base. URL-encode proprement les
+    valeurs (q='tom&jerry' → q=tom%26jerry, pas de corruption).
+
+    Une page paginée passant à une nouvelle valeur de `tri` doit aussi
+    reset `page` — gérer côté appelant en passant `page=1` explicitement.
     """
-    if "?" in base:
-        racine, query = base.split("?", 1)
-        keep = [
-            p
-            for p in query.split("&")
-            if p and "=" in p and p.split("=", 1)[0] not in params
-        ]
-    else:
-        racine, keep = base, []
-    add = [f"{k}={v}" for k, v in params.items()]
-    if not (keep or add):
-        return racine
-    return f"{racine}?{'&'.join(keep + add)}"
+    parts = urlsplit(base)
+    existants = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=False)
+        if k not in params
+    ]
+    nouveaux = [(k, str(v)) for k, v in params.items()]
+    return urlunsplit(parts._replace(query=urlencode(existants + nouveaux)))
 
 
 def _url_tri(base: str, key: str, current_tri: str, current_ordre: str) -> str:

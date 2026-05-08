@@ -21,4 +21,13 @@
     {% endwith %}
     <script src="{{ url_for('static', path='js/panneau_filtres.js') }}" defer></script>
   {% endif %}
+
+  {% if onglet == "items" %}
+    {# Sortable.js (CDN) pour le drag-drop des colonnes — chargé seulement
+       sur l'onglet items où la modale colonnes peut être ouverte. #}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"
+            integrity="sha512-X4Vx/eQfZ1eytrl+X/cF9Gi3BzL3UbhkwqxwBusjRTV4/91iUZxz/OfH9DBhECbFEx5gOIQfVkQbKVhQpcW5sw=="
+            crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+    <script src="{{ url_for('static', path='js/panneau_colonnes.js') }}" defer></script>
+  {% endif %}
 {% endblock %}

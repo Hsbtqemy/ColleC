@@ -1,10 +1,15 @@
-{# Onglet items d'une vue collection. Variables : `items` (Listage[ItemResume]),
-   `cote` (collection courante). #}
+{# Onglet items. Variables :
+   - items : Listage[ItemResume]
+   - cote : cote de la collection courante
+   - colonnes_actives : list[ColonneDisponible] dans l'ordre voulu
+     (par défaut, les 7 colonnes de COLONNES_DEFAUT_ITEMS).
+#}
 {% from 'components/tableau_items.html' import tableau_items %}
 {% set nb_f = items.nb_filtres_actifs %}
+{% set noms_cols = colonnes_actives|map(attribute='nom')|list %}
 {% if items.items or nb_f > 0 %}
   {{ tableau_items({
-    'colonnes': ['cote', 'titre', 'date', 'etat', 'fichiers', 'modifie'],
+    'colonnes': noms_cols,
     'sort': items.tri,
     'ordre': items.ordre,
     'cible_url': '/collection/' ~ cote ~ '/items',
@@ -15,7 +20,8 @@
       'total': items.total, 'pages': items.pages,
     },
     'compteur_filtres': (nb_f|string ~ ' actifs') if nb_f > 0 else 'aucun',
-    'nb_colonnes_actives': 6,
+    'nb_colonnes_actives': noms_cols|length,
+    'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
   }) }}
 {% else %}
   <div id="tableau-items">

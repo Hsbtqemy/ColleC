@@ -504,8 +504,9 @@ archives-tool/
 - ✅ Filtre / recherche dans les tableaux items + fichiers (drawer
   latéral, query string) — V0.6.1.
 - ✅ Pagination du tableau de fichiers (50/page par défaut) — V0.6.1.
-- Sélection persistée des colonnes du tableau d'items via le panneau
-  Colonnes du bundle (drag-drop, `PreferencesAffichage`) — V0.6.2.
+- ✅ Sélection persistée des colonnes du tableau d'items via le panneau
+  Colonnes du bundle (drag-drop Sortable.js, `PreferencesAffichage`,
+  champs métadonnées dynamiques par collection) — V0.6.3.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition des métadonnées item — V0.7.
 - Édition structurelle des champs personnalisés d'une collection

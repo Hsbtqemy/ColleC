@@ -1,0 +1,36 @@
+{# Ligne d'une colonne active dans le panneau. Variables : col, decochable.
+   Émet un input hidden `name="colonnes"` avec la valeur du nom — le JS
+   met à jour l'ordre via Sortable, le retire au clic sur −, le restaure
+   sur ré-ouverture par récupération depuis le DOM au submit. #}
+<li class="flex items-center gap-3 hover:bg-gray-50"
+    style="padding:6px 18px;"
+    data-col data-col-key="{{ col.nom }}"
+    data-col-categorie="{{ col.categorie }}"
+    data-col-label="{{ col.label }}">
+  <input type="hidden" name="colonnes" value="{{ col.nom }}">
+  <span class="cursor-grab opacity-60 hover:opacity-100" data-handle aria-label="Réordonner">
+    <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
+      <circle cx="2.5" cy="2"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="2"  r="1" fill="#9ca3af"/>
+      <circle cx="2.5" cy="7"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="7"  r="1" fill="#9ca3af"/>
+      <circle cx="2.5" cy="12" r="1" fill="#9ca3af"/><circle cx="7.5" cy="12" r="1" fill="#9ca3af"/>
+    </svg>
+  </span>
+  <span class="inline-flex items-center justify-center"
+        style="width:14px;height:14px;border-radius:3px;background:#378ADD;">
+    <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
+      <path d="M1.5 4.5 L3.5 6.5 L7.5 2" fill="none" stroke="white"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </span>
+  <span class="flex-1" style="font-size:13px;color:#1f1f1f;">{{ col.label }}</span>
+  {% if col.categorie == 'metadonnee' %}
+    <span style="font-size:11px;color:#9ca3af;">métadonnée</span>
+  {% elif col.obligatoire %}
+    <span style="font-size:11px;color:#9ca3af;">obligatoire</span>
+  {% endif %}
+  {% if decochable %}
+  <button type="button" data-retirer aria-label="Retirer"
+          class="opacity-40 hover:opacity-100 hover:text-gray-800"
+          style="font-size:14px;line-height:1;color:#9ca3af;padding:0 4px;">−</button>
+  {% endif %}
+</li>

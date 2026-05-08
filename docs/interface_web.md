@@ -281,11 +281,54 @@ npm run watch:css
 Le bundle vendor (`openseadragon.min.js` + images) est gitignoré comme
 `output.css`. Recompilation à la volée pendant le dev.
 
-## Limites V0.6.1
+## Sélection des colonnes du tableau d'items (V0.6.3)
 
-- Lecture seule : aucune édition possible depuis l'UI.
-- Panneau de configuration des colonnes pas encore branché —
-  `PreferencesAffichage` migrée mais pas alimentée. V0.6.2.
+Module `services/preferences.py` :
+- `lire_preferences_colonnes(db, utilisateur, collection_id, vue)` :
+  retourne les préférences sauvegardées ou les défauts
+  (`COLONNES_DEFAUT_ITEMS`).
+- `sauvegarder_preferences_colonnes(...)` : upsert dans
+  `PreferencesAffichage`. Validation par whitelist : dédiées
+  (`COLONNES_DEDIEES_ITEMS`) + métadonnées disponibles pour la
+  collection. `cote` est obligatoire — réinjectée si absente.
+  Dédoublonnage en préservant l'ordre.
+- `reinitialiser_preferences_colonnes(...)` : supprime la ligne ;
+  le prochain `lire` retombe sur les défauts.
+
+**Champs métadonnées dynamiques** :
+`champs_metadonnees_disponibles(db, collection_id, limite=50)` parcourt
+les `Item.metadonnees` (JSON) de la collection et retourne les clés
+les plus fréquentes. Approche Python — acceptable jusqu'à quelques
+milliers d'items. Bascule SQLite JSON1 (`json_each`) à prévoir au-delà.
+
+**Endpoints** (router `routes/preferences.py`) :
+
+| Méthode + URL                                            | Effet                       |
+| -------------------------------------------------------- | --------------------------- |
+| GET  `/preferences/colonnes/items/{collection_id}`       | Modale (form HTMX)          |
+| POST `/preferences/colonnes/items/{collection_id}`       | Sauvegarde + tableau swap   |
+| POST `/preferences/colonnes/items/{collection_id}/reset` | Reset défauts + tableau swap|
+
+Le POST émet `HX-Trigger: panneau-colonnes-ferme` que le JS écoute
+pour fermer la modale après save réussi.
+
+**Stack JS** : Sortable.js (CDN cdnjs, hash SRI verrouillé) pour le
+drag-drop. `web/static/js/panneau_colonnes.js` câble l'instanciation,
+les boutons `−` (retirer une colonne active), le clic sur disponibles
+(ajouter), Escape, overlay click. Pas de framework introduit, ~120
+lignes JS.
+
+**Pour ajouter une colonne dédiée** : étendre
+`COLONNES_DEDIEES_ITEMS` dans `services/preferences.py`, ajouter un
+elif dans la macro `_cell` de `components/tableau_items.html` (rendu
+spécifique au type), et — si la colonne nécessite un champ pas
+encore projeté — ajouter le champ Item à la SELECT de `lister_items`.
+
+## Limites V0.6.3
+
+- Lecture seule : aucune édition possible depuis l'UI (V0.7).
+- Panneau de colonnes uniquement sur le tableau d'items
+  (fichiers / sous-collections : V0.7+ si besoin).
 - Pas de filtres avancés (dates EDTF, ranges sur tailles, etc.).
 - Pas de filtres sur les champs personnalisés des items (variabilité
   par collection trop grande pour V0.6).

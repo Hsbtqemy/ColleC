@@ -66,9 +66,12 @@ class ItemResume:
     """Schéma aligné sur tableau_items (composant Claude Design).
 
     `etat` est une chaîne (clé d'EtatCatalogage) car badge_etat
-    s'attend à `'valide'` etc., pas à l'enum. `type_chaine`/`type_label`
-    et `meta` restent vides V0.6 — l'extraction du type COAR et des
-    champs personnalisés viendra V0.7.
+    s'attend à `'valide'` etc., pas à l'enum.
+
+    Les champs optionnels (langue, description, doi_*, etc.) ne sont
+    chargés que si la colonne associée est demandée — sinon ils
+    restent à leur défaut. `meta` contient les valeurs des champs
+    métadonnées sélectionnés.
     """
 
     cote: str
@@ -80,6 +83,11 @@ class ItemResume:
     href: str = ""
     type_chaine: str = ""
     type_label: str = ""
+    type_coar: str | None = None
+    langue: str | None = None
+    description: str | None = None
+    doi_nakala: str | None = None
+    doi_collection_nakala: str | None = None
     date_incertaine: bool = False
     modifie_par: str | None = None
     modifie_le: datetime | None = None
@@ -325,6 +333,7 @@ def lister_items(
     annee_debut: int | None = None,
     annee_fin: int | None = None,
     q: str | None = None,
+    colonnes: list[str] | None = None,
 ) -> Listage[ItemResume]:
     col = _charger_collection(session, cote)
     nb_fichiers_subq = (
@@ -334,16 +343,44 @@ def lister_items(
         .scalar_subquery()
     )
 
-    base_stmt = select(
+    # Charge `metadonnees` (JSON) seulement si au moins une colonne
+    # métadonnée est demandée — sinon on évite la désérialisation par
+    # ligne sur les grosses collections.
+    colonnes_set = set(colonnes or ())
+    _DEDIEES = {
+        "cote",
+        "titre",
+        "type",
+        "date",
+        "annee",
+        "langue",
+        "etat",
+        "description",
+        "doi_nakala",
+        "doi_collection_nakala",
+        "fichiers",
+        "modifie",
+    }
+    charger_metadonnees = bool(colonnes_set - _DEDIEES)
+
+    selects = [
         Item.cote,
         Item.titre,
         Item.date,
         Item.annee,
         Item.etat_catalogage,
+        Item.type_coar,
+        Item.langue,
+        Item.description,
+        Item.doi_nakala,
+        Item.doi_collection_nakala,
         Item.modifie_par,
         Item.modifie_le,
         nb_fichiers_subq.label("nb_fichiers"),
-    ).where(Item.collection_id == col.id)
+    ]
+    if charger_metadonnees:
+        selects.append(Item.metadonnees)
+    base_stmt = select(*selects).where(Item.collection_id == col.id)
 
     base_stmt, filtres = appliquer_filtres_items(
         base_stmt,
@@ -386,22 +423,42 @@ def lister_items(
 
     rows = session.execute(stmt).all()
     maintenant = datetime.now()
-    items = [
-        ItemResume(
-            cote=row.cote,
-            titre=row.titre,
-            date=row.date,
-            annee=row.annee,
-            etat=row.etat_catalogage,
-            nb_fichiers=row.nb_fichiers or 0,
-            href=f"/item/{row.cote}?collection={cote}",
-            date_incertaine=date_incertaine(row.date),
-            modifie_par=row.modifie_par,
-            modifie_le=row.modifie_le,
-            modifie_depuis=temps_relatif(row.modifie_le, maintenant=maintenant),
+    cles_metas = colonnes_set - _DEDIEES
+    items: list[ItemResume] = []
+    for row in rows:
+        meta: dict[str, str] = {}
+        if charger_metadonnees and cles_metas:
+            md = row.metadonnees
+            if isinstance(md, dict):
+                for cle in cles_metas:
+                    valeur = md.get(cle)
+                    if valeur is not None:
+                        meta[cle] = (
+                            ", ".join(str(v) for v in valeur)
+                            if isinstance(valeur, list)
+                            else str(valeur)
+                        )
+        items.append(
+            ItemResume(
+                cote=row.cote,
+                titre=row.titre,
+                date=row.date,
+                annee=row.annee,
+                etat=row.etat_catalogage,
+                nb_fichiers=row.nb_fichiers or 0,
+                href=f"/item/{row.cote}?collection={cote}",
+                type_coar=row.type_coar,
+                langue=row.langue,
+                description=row.description,
+                doi_nakala=row.doi_nakala,
+                doi_collection_nakala=row.doi_collection_nakala,
+                date_incertaine=date_incertaine(row.date),
+                modifie_par=row.modifie_par,
+                modifie_le=row.modifie_le,
+                modifie_depuis=temps_relatif(row.modifie_le, maintenant=maintenant),
+                meta=meta,
+            )
         )
-        for row in rows
-    ]
     return Listage(
         items=items,
         tri=tri_eff,

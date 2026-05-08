@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
 from archives_tool.api.services import collection as svc
+from archives_tool.api.services import preferences as svc_prefs
 from archives_tool.api.templating import templates
 
 router = APIRouter()
@@ -59,10 +60,28 @@ def vue_collection(
     utilisateur: str = Depends(get_utilisateur_courant),
     nom_base: str = Depends(get_nom_base),
 ) -> HTMLResponse:
+    colonnes_actives_items: list = []
+    collection_id_items: int | None = None
     try:
         if onglet == "items":
             partial = "partials/collection_items.html"
             cle = "items"
+            # Préférences de colonnes : on a besoin de l'id collection.
+            try:
+                col_pour_prefs = svc._charger_collection(db, cote)
+            except svc.CollectionIntrouvable:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Collection {cote!r} introuvable.",
+                ) from None
+            collection_id_items = col_pour_prefs.id
+            prefs = svc_prefs.lire_preferences_colonnes(
+                db, utilisateur, col_pour_prefs.id, "items"
+            )
+            disponibles = svc_prefs.colonnes_disponibles_items(db, col_pour_prefs.id)
+            colonnes_actives_items = svc_prefs.resoudre_colonnes_actives(
+                prefs.colonnes_ordonnees, disponibles
+            )
             listing = svc.lister_items(
                 db,
                 cote,
@@ -74,6 +93,7 @@ def vue_collection(
                 annee_debut=annee_debut,
                 annee_fin=annee_fin,
                 q=q,
+                colonnes=[c.nom for c in colonnes_actives_items],
             )
         elif onglet == "fichiers":
             partial = "partials/collection_fichiers.html"
@@ -99,6 +119,9 @@ def vue_collection(
         ) from None
 
     contexte: dict = {cle: listing, "cote": cote}
+    if onglet == "items":
+        contexte["colonnes_actives"] = colonnes_actives_items
+        contexte["collection_id"] = collection_id_items
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, partial, contexte)

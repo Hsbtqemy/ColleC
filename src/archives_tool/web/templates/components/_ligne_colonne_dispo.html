@@ -1,0 +1,17 @@
+{# Ligne d'une colonne disponible (non active). Variables : col.
+   Click sur la ligne → JS la déplace dans la liste Actives (le `+`
+   apparaît au hover comme indice). #}
+<li class="flex items-center gap-3 hover:bg-gray-50 cursor-pointer"
+    style="padding:5px 18px 5px 36px;"
+    data-col data-col-key="{{ col.nom }}"
+    data-col-categorie="{{ col.categorie }}"
+    data-col-label="{{ col.label }}"
+    data-col-obligatoire="{{ '1' if col.obligatoire else '0' }}"
+    data-ajouter>
+  <span class="inline-block bg-white"
+        style="width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,0.16);"></span>
+  <span style="font-size:13px;color:#6b7280;">{{ col.label }}</span>
+  {% if col.categorie == 'metadonnee' %}
+    <span style="font-size:11px;color:#9ca3af;margin-left:auto;">métadonnée</span>
+  {% endif %}
+</li>

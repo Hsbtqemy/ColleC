@@ -24,6 +24,7 @@ from .item import Item
 from .journal import ModificationItem, OperationFichier, OperationImport
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
+from .session_import import SessionImport
 
 __all__ = [
     "Base",
@@ -40,6 +41,7 @@ __all__ = [
     "ModificationItem",
     "OperationImport",
     "PreferencesAffichage",
+    "SessionImport",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",

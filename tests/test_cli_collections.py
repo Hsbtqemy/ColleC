@@ -94,6 +94,8 @@ def test_creer_libre_fonds_inexistant(tmp_path: Path) -> None:
 
 
 def test_creer_libre_phase_invalide(tmp_path: Path) -> None:
+    """Une phase hors enum est rejetée par Typer (exit 2 = bad usage)
+    avec le message d'aide énumérant les valeurs acceptées."""
     db = _base_avec_fonds(tmp_path)
     result = runner.invoke(
         app,
@@ -110,7 +112,7 @@ def test_creer_libre_phase_invalide(tmp_path: Path) -> None:
             str(db),
         ],
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "phase" in result.output.lower()
 
 

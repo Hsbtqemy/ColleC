@@ -60,11 +60,10 @@ from archives_tool.importers.resolveur_fichiers import (
 from archives_tool.importers.transformateur import ItemPrepare, transformer_ligne
 from archives_tool.models import (
     Collection,
+    EtatCatalogage,
     Fichier,
     Item,
     OperationImport,
-    PhaseChantier,
-    TypeCollection,
 )
 from archives_tool.profils.schema import (
     CollectionMiroirProfil,
@@ -83,8 +82,11 @@ class RapportImport:
     miroir_id: int | None = None
     miroir_personnalisee: bool = False
     items_crees: int = 0
-    items_inchanges: int = 0  # conservé pour compat ; toujours 0 en gamma.1
-    items_mis_a_jour: int = 0  # idem
+    # Champs réservés à la sémantique réimport (V0.9.x post-gamma.1) ;
+    # actuellement 0 mais persistés dans OperationImport pour cohérence
+    # de schéma à long terme.
+    items_inchanges: int = 0
+    items_mis_a_jour: int = 0
     fichiers_ajoutes: int = 0
     fichiers_deja_connus: int = 0
     fichiers_orphelins: list[str] = field(default_factory=list)
@@ -93,43 +95,24 @@ class RapportImport:
     erreurs: list[str] = field(default_factory=list)
     duree_secondes: float = 0.0
 
-    @property
-    def collection_id(self) -> int | None:
-        """Alias rétro-compatible : la « collection cible » est la miroir."""
-        return self.miroir_id
-
-    @property
-    def collection_creee(self) -> bool:
-        """La miroir est créée en même temps que le fonds."""
-        return self.fonds_cree
-
 
 def _formulaire_fonds_depuis_profil(prof: FondsProfil) -> FormulaireFonds:
-    """Convertit la section `fonds:` d'un profil en `FormulaireFonds`.
-    Les champs non renseignés (None) deviennent chaîne vide — le service
-    les normalisera en None côté ORM via `chaine_ou_none`."""
-    return FormulaireFonds(
-        cote=prof.cote,
-        titre=prof.titre,
-        description=prof.description or "",
-        description_publique=prof.description_publique or "",
-        description_interne=prof.description_interne or "",
-        personnalite_associee=prof.personnalite_associee or "",
-        responsable_archives=prof.responsable_archives or "",
-        editeur=prof.editeur or "",
-        lieu_edition=prof.lieu_edition or "",
-        periodicite=prof.periodicite or "",
-        issn=prof.issn or "",
-        date_debut=prof.date_debut or "",
-        date_fin=prof.date_fin or "",
-    )
+    """Convertit `FondsProfil` (None pour absent) en `FormulaireFonds`
+    (chaîne vide pour absent). Les deux modèles ont les mêmes 13 champs ;
+    on s'appuie sur model_dump pour rester cohérent en cas d'évolution."""
+    data = {k: (v if v is not None else "") for k, v in prof.model_dump().items()}
+    return FormulaireFonds.model_validate(data)
 
 
 def _appliquer_overrides_miroir(
     base: FormulaireCollection, overrides: CollectionMiroirProfil
 ) -> FormulaireCollection:
     """Applique les champs renseignés du profil sur le formulaire de base.
-    Renvoie un nouveau formulaire (Pydantic immutable côté pratique)."""
+
+    `model_validate` re-déclenche les validateurs de `FormulaireCollection`
+    (notamment celui de `phase` qui rejette les valeurs hors enum) — pas
+    besoin de pré-valider côté importer.
+    """
     data = base.model_dump()
     for nom, val in overrides.model_dump().items():
         if val is None:
@@ -138,31 +121,13 @@ def _appliquer_overrides_miroir(
     return FormulaireCollection.model_validate(data)
 
 
-def _phase_valide(phase: str | None) -> str | None:
-    """Valide la phase si renseignée. Retourne None si phase non
-    fournie ; lève ValueError si phase inconnue."""
-    if phase is None:
-        return None
-    valides = {p.value for p in PhaseChantier}
-    if phase not in valides:
-        raise ValueError(
-            f"Phase inconnue dans le profil : {phase!r}. "
-            f"Valides : {sorted(valides)}"
-        )
-    return phase
-
-
 def _personnaliser_miroir(
     db: Session,
     miroir: Collection,
     overrides: CollectionMiroirProfil,
     modifie_par: str | None,
 ) -> None:
-    """Applique les overrides du profil sur la miroir auto-créée."""
     base = formulaire_depuis_collection(miroir)
-    # `phase` est validée tôt pour produire une erreur lisible plutôt
-    # qu'une CHECK constraint SQLite obscure.
-    _phase_valide(overrides.phase)
     nouveau = _appliquer_overrides_miroir(base, overrides)
     modifier_collection(db, miroir.id, nouveau, modifie_par=modifie_par)
 
@@ -205,7 +170,7 @@ def _construire_formulaire_item(
         annee=_int_ou_none(champs.get("annee")),
         numero=champs.get("numero") or "",
         numero_tri=_int_ou_none(champs.get("numero_tri")),
-        etat_catalogage=champs.get("etat_catalogage") or "brouillon",
+        etat_catalogage=champs.get("etat_catalogage") or EtatCatalogage.BROUILLON.value,
         metadonnees=metadonnees,
         doi_nakala=champs.get("doi_nakala") or "",
         doi_collection_nakala=champs.get("doi_collection_nakala") or "",
@@ -369,13 +334,14 @@ def _executer_dry_run(
     rapport.fonds_cote = profil.fonds.cote
     rapport.fonds_cree = True
     rapport.miroir_personnalisee = profil.collection_miroir is not None
-    _phase_valide(profil.collection_miroir.phase if profil.collection_miroir else None)
 
     for prep, fichiers in items_et_fichiers:
         try:
             # fonds_id factice : la validation Pydantic ne le vérifie
             # pas plus loin (le service ferait l'existence check).
-            _construire_formulaire_item(prep, fonds_id=1, valeurs_par_defaut=profil.valeurs_par_defaut)
+            _construire_formulaire_item(
+                prep, fonds_id=1, valeurs_par_defaut=profil.valeurs_par_defaut
+            )
         except ValueError as e:
             rapport.erreurs.append(f"Item {prep.cote}: {e}")
             continue
@@ -403,14 +369,7 @@ def _executer_reel(
     rapport.fonds_cote = fonds.cote
     rapport.fonds_cree = True
 
-    miroir = next(
-        (
-            c
-            for c in fonds.collections
-            if c.type_collection == TypeCollection.MIROIR.value
-        ),
-        None,
-    )
+    miroir = fonds.collection_miroir
     if miroir is None:
         # Anomalie : `creer_fonds` doit toujours créer la miroir.
         rapport.erreurs.append(
@@ -438,13 +397,10 @@ def _executer_reel(
         try:
             item = creer_item(session, formulaire_item, cree_par=cree_par)
         except ItemInvalide as e:
-            rapport.erreurs.append(
-                f"Item {prep.cote} invalide : {e.erreurs}"
-            )
+            rapport.erreurs.append(f"Item {prep.cote} invalide : {e.erreurs}")
             continue
         rapport.items_crees += 1
         _ecrire_fichiers(item, fichiers, session, rapport)
-    session.flush()
 
 
 def importer(

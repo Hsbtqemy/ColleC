@@ -17,6 +17,19 @@ from archives_tool.affichage.collections import (
 from archives_tool.affichage.fichiers import afficher_fiche_fichier
 from archives_tool.affichage.items import afficher_fiche_item
 from archives_tool.affichage.statistiques import afficher_statistiques
+from archives_tool.api.services.collections import (
+    CollectionIntrouvable,
+    CollectionInvalide,
+    FormulaireCollection,
+    OperationCollectionInterdite,
+    creer_collection_libre,
+    lire_collection_par_cote,
+    supprimer_collection_libre,
+)
+from archives_tool.api.services.fonds import (
+    FondsIntrouvable,
+    lire_fonds_par_cote,
+)
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dc_xml
@@ -25,6 +38,7 @@ from archives_tool.exporters.nakala import exporter_nakala_csv
 from archives_tool.exporters.rapport import RapportExport
 from archives_tool.exporters.selection import CritereSelection, SelectionErreur
 from archives_tool.importers.ecrivain import RapportImport, importer as importer_profil
+from archives_tool.models import Collection, Fonds, PhaseChantier, TypeCollection
 from archives_tool.profils import (
     ProfilInvalide,
     ProfilObsoleteV1,
@@ -1042,14 +1056,34 @@ collections_app = typer.Typer(
 app.add_typer(collections_app, name="collections")
 
 
-def _ouvrir_session(db_path: Path):
-    """Crée une session sur une base SQLite existante."""
+def _ouvrir_session_existante(db_path: Path):
+    """Ouvre une session sur une base SQLite **existante** (Exit 2 si
+    le fichier est absent). Les commandes `collections` exigent une
+    base déjà créée — pas d'auto-création ici (différent de
+    `archives-tool importer` qui peut créer la base à la volée)."""
     if not db_path.is_file():
         typer.echo(f"Erreur : base introuvable ({db_path}).", err=True)
         raise typer.Exit(2)
     engine = creer_engine(db_path)
     factory = creer_session_factory(engine)
     return factory()
+
+
+def _resoudre_fonds_ou_sortie(session, cote: str | None) -> Fonds | None:
+    """Résout `--fonds COTE` en `Fonds` (ou None si cote absente).
+    Sortie code 1 + message stderr si la cote est inconnue."""
+    if cote is None:
+        return None
+    try:
+        return lire_fonds_par_cote(session, cote)
+    except FondsIntrouvable:
+        typer.echo(f"Erreur : fonds {cote!r} introuvable.", err=True)
+        raise typer.Exit(1) from None
+
+
+_DB_PATH_OPTION = typer.Option(
+    Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
+)
 
 
 @collections_app.command("creer-libre")
@@ -1070,53 +1104,26 @@ def cmd_collections_creer_libre(
         "--description-publique",
         help="Description publique (exports DC / Nakala).",
     ),
-    phase: str = typer.Option(
-        "catalogage",
+    phase: PhaseChantier = typer.Option(
+        PhaseChantier.CATALOGAGE,
         "--phase",
-        help="Phase de chantier (numerisation/catalogage/revision/finalisation/archivee/en_pause).",
+        help="Phase de chantier.",
     ),
-    db_path: Path = typer.Option(
-        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
-    ),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Créer une collection libre, transversale (sans --fonds) ou
     rattachée (avec --fonds COTE).
     """
-    from archives_tool.api.services.collections import (
-        CollectionInvalide,
-        FormulaireCollection,
-        creer_collection_libre,
-    )
-    from archives_tool.api.services.fonds import (
-        FondsIntrouvable,
-        lire_fonds_par_cote,
-    )
-    from archives_tool.models import PhaseChantier
-
-    if phase not in {p.value for p in PhaseChantier}:
-        typer.echo(
-            f"Erreur : phase {phase!r} invalide. "
-            f"Valides : {sorted(p.value for p in PhaseChantier)}",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    with _ouvrir_session(db_path) as session:
-        fonds_id: int | None = None
-        if fonds:
-            try:
-                fonds_obj = lire_fonds_par_cote(session, fonds)
-            except FondsIntrouvable:
-                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
-                raise typer.Exit(1) from None
-            fonds_id = fonds_obj.id
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        fonds_id = fonds_obj.id if fonds_obj else None
 
         formulaire = FormulaireCollection(
             cote=cote,
             titre=titre,
             description=description or "",
             description_publique=description_publique or "",
-            phase=phase,
+            phase=phase.value,
             fonds_id=fonds_id,
         )
         try:
@@ -1145,31 +1152,19 @@ def cmd_collections_lister(
         "-t",
         help="N'afficher que les collections transversales (sans fonds).",
     ),
-    db_path: Path = typer.Option(
-        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
-    ),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Lister les collections (toutes, par fonds, ou transversales)."""
     from sqlalchemy import select as sa_select
 
-    from archives_tool.api.services.fonds import (
-        FondsIntrouvable,
-        lire_fonds_par_cote,
-    )
-    from archives_tool.models import Collection, Fonds, TypeCollection
-
-    with _ouvrir_session(db_path) as session:
+    with _ouvrir_session_existante(db_path) as session:
         stmt = sa_select(Collection, Fonds.cote.label("fonds_cote")).join(
             Fonds, Fonds.id == Collection.fonds_id, isouter=True
         )
         if transversales:
             stmt = stmt.where(Collection.fonds_id.is_(None))
         elif fonds:
-            try:
-                fonds_obj = lire_fonds_par_cote(session, fonds)
-            except FondsIntrouvable:
-                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
-                raise typer.Exit(1) from None
+            fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
             stmt = stmt.where(Collection.fonds_id == fonds_obj.id)
         stmt = stmt.order_by(Collection.cote)
 
@@ -1202,33 +1197,13 @@ def cmd_collections_supprimer(
     confirme: bool = typer.Option(
         False, "--yes", "-y", help="Sauter la confirmation interactive."
     ),
-    db_path: Path = typer.Option(
-        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
-    ),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Supprimer une collection libre. Refuse les miroirs (gérées par
     leur fonds parent — utiliser `archives-tool fonds supprimer`)."""
-    from archives_tool.api.services.collections import (
-        CollectionIntrouvable,
-        OperationCollectionInterdite,
-        lire_collection_par_cote,
-        supprimer_collection_libre,
-    )
-    from archives_tool.api.services.fonds import (
-        FondsIntrouvable,
-        lire_fonds_par_cote,
-    )
-    from archives_tool.models import TypeCollection
-
-    with _ouvrir_session(db_path) as session:
-        fonds_id: int | None = None
-        if fonds:
-            try:
-                fonds_obj = lire_fonds_par_cote(session, fonds)
-            except FondsIntrouvable:
-                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
-                raise typer.Exit(1) from None
-            fonds_id = fonds_obj.id
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        fonds_id = fonds_obj.id if fonds_obj else None
 
         try:
             col = lire_collection_par_cote(session, cote, fonds_id=fonds_id)

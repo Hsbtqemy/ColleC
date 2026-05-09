@@ -19,6 +19,8 @@ from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from archives_tool.models.enums import PhaseChantier
+
 TypeTransformation = Literal["slug", "upper", "lower", "strip", "strip_accents"]
 """Transformations applicables à une valeur mappée.
 
@@ -77,7 +79,10 @@ class CollectionMiroirProfil(_ProfilBase):
     description: str | None = None
     description_publique: str | None = None
     description_interne: str | None = None
-    phase: str | None = None
+    # Typer en `PhaseChantier` plutôt que `str` : Pydantic rejette
+    # automatiquement les valeurs hors enum à la validation YAML, avec
+    # un message qui liste les phases acceptées.
+    phase: PhaseChantier | None = None
     doi_nakala: str | None = None
     doi_collection_nakala_parent: str | None = None
     personnalite_associee: str | None = None

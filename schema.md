@@ -170,6 +170,15 @@ applicativement contre cette liste).
 | `indexation` | Indexation |
 | `catalogage` | Catalogage |
 
+### `TypeCollection`
+
+Distingue les deux espèces de collections (V0.9.0-alpha).
+
+| Valeur | Description |
+|---|---|
+| `miroir` | Collection créée automatiquement avec un fonds, regroupe par défaut tous ses items. Toujours rattachée à un fonds (CHECK constraint). |
+| `libre` | Collection créée manuellement. Rattachée à un fonds (`fonds_id` non NULL) ou transversale (`fonds_id IS NULL`). |
+
 ---
 
 ## Tables
@@ -184,73 +193,95 @@ contrainte d'unicité : l'information est uniquement informative.
 
 ---
 
-### `collection`
+### `fonds` (V0.9.0-alpha)
 
-Représente une revue, un fonds, un ensemble catalographique.
+Le **corpus brut** : matériel issu d'une source identifiée (un don,
+un fonds éditorial, une numérisation), interne à l'outil. Nakala ne
+connaît pas cette notion. Chaque fonds porte exactement une
+**collection miroir** créée automatiquement à sa création.
 
 | Colonne | Type | Contraintes | Notes |
 |---|---|---|---|
 | `id` | INTEGER | PK | |
-| `cote_collection` | TEXT | UNIQUE, NOT NULL | Ex. `RDM` |
-| `titre` | TEXT | NOT NULL | |
-| `titre_secondaire` | TEXT | | Sous-titre, ancien titre |
-| `editeur` | TEXT | | |
-| `lieu_edition` | TEXT | | |
-| `periodicite` | TEXT | | Libre : « trimestriel », « mensuel »... |
-| `date_debut` | TEXT | | Format EDTF |
-| `date_fin` | TEXT | | Format EDTF, NULL si en cours |
-| `issn` | TEXT | | |
-| `doi_nakala` | TEXT | UNIQUE | DOI d'une collection publiée sur Nakala. Unique pour détecter les doubles imports. |
-| `description` | TEXT | | Description publique/catalographique. |
-| `description_interne` | TEXT | | Description usage équipe : choix de chantier, conventions, points d'attention. |
-| `personnalite_associee` | TEXT | | Personnalité, mouvement ou institution autour duquel s'organise la collection (V0.7.x). Texte libre. |
-| `responsable_archives` | TEXT | | Personne ou institution responsable de la constitution de la collection. Renommé depuis `auteur_principal` (V0.7.x). |
-| `metadonnees` | JSON | | Champs étendus spécifiques |
-| `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
-| `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |
-| `phase` | TEXT | NOT NULL, DEFAULT `catalogage` | `numerisation`, `catalogage`, `revision`, `finalisation`, `archivee`, `en_pause`. Pilote l'affichage et permettra plus tard des filtres « chantiers en cours ». |
-| `notes_internes` | TEXT | | |
-| `cree_le` | DATETIME | NOT NULL | |
-| `cree_par` | TEXT | | Nom libre copié de la config locale. |
-| `modifie_le` | DATETIME | | |
-| `modifie_par` | TEXT | | Idem. |
-| `version` | INTEGER | NOT NULL, DEFAULT 1 | |
+| `cote` | VARCHAR(64) | UNIQUE, NOT NULL | Ex. `HK`, `FA`, `CONC-1789`. |
+| `titre` | VARCHAR(500) | NOT NULL | |
+| `description` | TEXT | | Description courte (interne ou publique selon usage). |
+| `description_publique` | TEXT | | Réservée à l'export Nakala. |
+| `description_interne` | TEXT | | Notes équipe, conventions de chantier. |
+| `personnalite_associee` | VARCHAR(255) | | Personne/mouvement/institution autour de qui s'organise le fonds. |
+| `responsable_archives` | VARCHAR(255) | | Personne ou institution responsable de la constitution. |
+| `editeur` | VARCHAR(255) | | Champs périodique : présents si le fonds ressemble à une revue. |
+| `lieu_edition` | VARCHAR(255) | | |
+| `periodicite` | VARCHAR(64) | | |
+| `issn` | VARCHAR(32) | | |
+| `date_debut` | VARCHAR(64) | | EDTF tolérant. |
+| `date_fin` | VARCHAR(64) | | |
+| `cree_le` / `cree_par` / `modifie_le` / `modifie_par` / `version` | TracabiliteMixin | | |
 
-**Index :** `cote_collection`, `titre`, `doi_nakala`, `parent_id`.
+**Index :** `cote`, `titre`.
 
-#### Hiérarchie de collections
-
-Les collections peuvent être imbriquées via `parent_id`
-(auto-référence sur `collection.id`). Règles :
-
-- **Racine** : `parent_id = NULL`.
-- **Cote unique globale** : la hiérarchie ne remplace pas l'unicité
-  de `cote_collection`. Une série garde sa propre cote, différente
-  de celle du fonds.
-- **Attachement libre des items** : un item peut être rattaché à
-  n'importe quel niveau de l'arbre, pas seulement aux feuilles.
-- **Pas d'héritage automatique** des métadonnées parent → enfant.
-  Chaque collection est autonome (principe d'autonomie des items
-  étendu aux collections).
-- **Anti-cycle** validé au niveau applicatif (listener SQLAlchemy
-  `before_flush`) ; SQLite ne supporte pas les CHECK récursifs.
-- **Cascade de suppression** : supprimer une collection supprime
-  ses enfants et les items des enfants (`cascade="all, delete-orphan"`
-  sur les deux relations).
-- **Pas de limite de profondeur** dans le schéma. 2–3 niveaux
-  attendus en pratique.
+**Cascade :** supprimer un fonds supprime ses items et sa collection
+miroir ; les collections libres rattachées passent à transversales
+(`fonds_id = NULL` via FK `ON DELETE SET NULL`).
 
 ---
 
-### `item`
+### `collection` (refondue V0.9.0-alpha)
 
-L'unité principale de catalogage : un numéro, un volume, une unité.
+Un **classement publiable** : sélection d'items pour une présentation,
+un thème, un export Nakala. Distingué du fonds par
+`type_collection`.
 
 | Colonne | Type | Contraintes | Notes |
 |---|---|---|---|
 | `id` | INTEGER | PK | |
-| `collection_id` | INTEGER | FK → `collection.id`, NOT NULL | |
-| `cote` | TEXT | NOT NULL | Unique dans la collection |
+| `cote` | VARCHAR(64) | NOT NULL | **Plus globalement unique** ; unique par fonds via `(fonds_id, cote)`. |
+| `titre` | VARCHAR(500) | NOT NULL | |
+| `type_collection` | VARCHAR(20) | NOT NULL, DEFAULT `libre` | `miroir` ou `libre` (cf. `TypeCollection`). |
+| `fonds_id` | INTEGER | FK → `fonds.id` ON DELETE SET NULL | NULL pour une collection libre transversale. |
+| `phase` | VARCHAR(20) | NOT NULL, DEFAULT `catalogage` | |
+| `description` / `description_publique` / `description_interne` | TEXT | | |
+| `personnalite_associee` / `responsable_archives` | VARCHAR(255) | | |
+| `editeur` / `lieu_edition` / `periodicite` / `issn` | varchars | | Champs périodique conservés (si la collection ressemble à une revue, par exemple une miroir d'un fonds-revue). |
+| `date_debut` / `date_fin` | VARCHAR(50) | | |
+| `doi_nakala` | TEXT | UNIQUE | DOI de la collection sur Nakala. |
+| `doi_collection_nakala_parent` | VARCHAR(128) | | Rattachement à une collection Nakala parente (sans contrainte d'unicité). |
+| `metadonnees` / `notes_internes` | JSON / TEXT | | |
+| `profil_import_id` | INTEGER | FK → `profil_import.id` | |
+| `cree_le` / `cree_par` / `modifie_le` / `modifie_par` / `version` | TracabiliteMixin | | |
+
+**Index :**
+- `(fonds_id, cote)` UNIQUE : cote unique par fonds.
+- `cote`, `titre`, `fonds_id`, `doi_nakala`.
+
+**CHECK constraint :** `(type_collection = 'libre') OR (fonds_id IS NOT NULL)` —
+une miroir doit toujours pointer vers son fonds.
+
+#### Invariants
+
+1. Tout fonds a exactement une collection MIROIR (création au service `fonds`).
+2. Une collection MIROIR a toujours `fonds_id` non NULL (CHECK).
+3. Une collection LIBRE peut être rattachée (`fonds_id` non NULL) ou transversale (`fonds_id IS NULL`).
+4. Tout item a `fonds_id` non NULL.
+5. À la création d'un Fonds : la miroir est créée avec la même cote et le même titre.
+6. À l'ajout d'un Item dans un fonds : il est ajouté à la miroir (à charger côté service `items` — V0.9.0-alpha.1).
+7. Un item peut être retiré manuellement de sa miroir sans être supprimé du fonds.
+8. Suppression d'un Fonds : items + miroir supprimés, libres rattachées passent transversales.
+9. Une cote de fonds peut coïncider avec la cote d'une collection libre (cas de la miroir).
+
+---
+
+### `item` (refondu V0.9.0-alpha)
+
+L'unité principale de catalogage : un numéro, un volume, un document.
+Appartient à exactement un fonds (FK obligatoire) et peut figurer
+dans 0..N collections via la junction `item_collection`.
+
+| Colonne | Type | Contraintes | Notes |
+|---|---|---|---|
+| `id` | INTEGER | PK | |
+| `fonds_id` | INTEGER | FK → `fonds.id` ON DELETE CASCADE, NOT NULL | Le matériel d'origine. |
+| `cote` | VARCHAR(128) | NOT NULL | Unique par fonds via `(fonds_id, cote)`. Plus globalement unique. |
 | `numero` | TEXT | | Peut être `47`, `47-48`, `iv`, etc. |
 | `numero_tri` | INTEGER | | Pour tri numérique fiable |
 | `titre` | TEXT | | Titre propre du numéro si pertinent |
@@ -271,13 +302,26 @@ L'unité principale de catalogage : un numéro, un volume, une unité.
 | `version` | INTEGER | NOT NULL, DEFAULT 1 | |
 
 **Contraintes :**
-- UNIQUE (`collection_id`, `cote`)
+- UNIQUE (`fonds_id`, `cote`)
 - UNIQUE (`doi_nakala`)
 - CHECK sur `etat_catalogage` (valeurs enum)
 
-**Index :** `collection_id`, `cote`, `annee`, `etat_catalogage`,
-`doi_nakala`, `doi_collection_nakala`,
-index plein texte FTS5 sur `titre` + `description` + `metadonnees`.
+**Index :** `fonds_id`, `annee`, `etat_catalogage`, `doi_nakala`,
+`doi_collection_nakala`. (FTS5 prévu mais à reconstruire en
+V0.9.0-gamma sur la nouvelle forme.)
+
+#### `item_collection` (V0.9.0-alpha)
+
+Liaison N-N entre `item` et `collection`. Un item est typiquement
+dans la miroir de son fonds et, optionnellement, dans des collections
+libres (rattachées au même fonds ou transversales).
+
+| Colonne | Type | Contraintes |
+|---|---|---|
+| `item_id` | INTEGER | PK, FK → `item.id` ON DELETE CASCADE |
+| `collection_id` | INTEGER | PK, FK → `collection.id` ON DELETE CASCADE |
+| `ajoute_le` | DATETIME | NOT NULL, server_default=now() |
+| `ajoute_par` | VARCHAR(255) | |
 
 **Note sur `metadonnees` JSON :** structure recommandée :
 ```json
@@ -530,6 +574,17 @@ plusieurs rôles ; le stockage se fait en JSON.
 Les filtres SQL natifs sur les rôles ne sont pas possibles avec le
 stockage JSON ; c'est accepté pour V0.8.0 — pas de besoin de
 recherche transverse pour l'instant.
+
+### `collaborateur_fonds` (V0.9.0-alpha)
+
+Analogue de `collaborateur_collection` mais rattaché au fonds. C'est
+l'usage **par défaut** pour les contributeurs d'un corpus ; les
+collaborateurs propres à une collection particulière restent dans
+`collaborateur_collection`.
+
+Mêmes colonnes que `collaborateur_collection` (nom, roles JSON,
+periode, notes, cree_le, modifie_le) avec FK `fonds_id` → `fonds.id`
+ON DELETE CASCADE. Index sur `fonds_id`.
 
 ---
 

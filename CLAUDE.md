@@ -370,15 +370,54 @@ Saisie nouvelle     ─┘                                ▲
 
 ---
 
+## Concepts (V0.9.0-alpha)
+
+Le modèle distingue **trois entités** qui étaient confondues
+auparavant :
+
+- **Fonds** — le **corpus brut**, le matériel d'origine. Existe
+  avant le travail d'archivage. Nakala ne connaît pas cette notion :
+  c'est interne à l'outil.
+- **Collection** — un **classement publiable**. Sélection d'items
+  pour une présentation, un thème, un export Nakala. Deux espèces :
+  - **Miroir** : créée automatiquement avec un fonds, regroupe par
+    défaut tous ses items. Toujours rattachée à un fonds (CHECK).
+  - **Libre** : créée manuellement. Peut être rattachée à un fonds
+    ou rester transversale (`fonds_id IS NULL`) — par exemple
+    « Témoignages d'exil » qui pioche dans plusieurs fonds.
+- **Item** — une unité de matériel. Appartient à exactement un fonds
+  (sa source) et figure dans 0..N collections via la junction
+  `item_collection` (la miroir + 0..N libres).
+
+Conséquences :
+
+- La cote n'est plus globalement unique — elle l'est **par fonds**
+  pour les items, et **par fonds** pour les collections. Une cote
+  de fonds peut volontairement coïncider avec celle de sa miroir.
+- Plus de `Collection.parent_id` (la hiérarchie technique avait été
+  introduite pour de mauvaises raisons : Nakala est plat).
+- Un même item peut figurer dans plusieurs collections (ex. un même
+  film dans « Cinéma » et « Œuvres »).
+
 ## Modèle de données (résumé)
 
 Entités principales — détails dans [`schema.md`](schema.md).
 
-- **Collection** : id, titre, cote_collection, éditeur, périodicité,
-  dates, profil_import_id, métadonnées_communes (JSON).
+- **Fonds** (V0.9.0-alpha) : id, cote unique, titre, descriptions,
+  champs revue (éditeur, périodicité, ISSN), responsable archives,
+  collaborateurs.
 
-- **Item** : id, collection_id, numéro, date (EDTF), cote, type_coar,
-  état_catalogage, métadonnées (JSON), version, traçabilité.
+- **Collection** (refondue V0.9.0-alpha) : id, cote (unique par
+  fonds), titre, type_collection (miroir/libre), fonds_id (NULL pour
+  transversale), phase, descriptions, DOI Nakala, etc.
+
+- **Item** (refondu V0.9.0-alpha) : id, fonds_id (obligatoire), cote
+  (unique par fonds), titre, date EDTF, type_coar, état_catalogage,
+  métadonnées JSON, traçabilité. Multi-appartenance via
+  `item_collection`.
+
+- **ItemCollection** : junction N-N (item_id, collection_id, ajoute_le,
+  ajoute_par).
 
 - **Fichier** : id, item_id, racine (nom logique), chemin_relatif, hash,
   ordre, type_page, folio, état, largeur, hauteur, format.
@@ -398,14 +437,14 @@ Entités principales — détails dans [`schema.md`](schema.md).
   réelle). Lié aux OperationFichier produites pendant l'import.
 
 - **PreferencesAffichage** : ordre des colonnes choisi par utilisateur
-  dans une vue tabulaire. Structure prête pour V0.6 (édition de
-  vues), pas encore alimentée par l'UI.
+  dans une vue tabulaire.
 
-- **CollaborateurCollection** : personnes ayant contribué à la
-  constitution d'une collection (V0.8.0). Nom libre + un ou
-  plusieurs rôles dans le vocabulaire fermé `RoleCollaborateur`
-  (numerisation, transcription, indexation, catalogage). Cascade
-  ON DELETE depuis Collection.
+- **CollaborateurFonds** (V0.9.0-alpha) : personnes ayant contribué
+  à un fonds. Usage par défaut.
+- **CollaborateurCollection** (V0.8.0) : personnes attachées à une
+  collection particulière. Cas spécifiques.
+  Vocabulaire commun : `RoleCollaborateur` (numerisation,
+  transcription, indexation, catalogage).
 
 - **SourceExterne**, **RessourceExterne**, **LienExterneItem** : V2+,
   pour Nakala.
@@ -521,8 +560,12 @@ archives-tool/
 - ✅ Section Collaborateurs sur la page de modification (vocabulaire
   fermé numérisation/transcription/indexation/catalogage, multi-rôles
   par personne, affichage groupé par rôle, formulaire HTMX) — V0.8.0.
+- ✅ Refonte modèle Fonds / Collection (miroir + libre) / Item
+  (multi-appartenance) — V0.9.0-alpha. UI/CLI dégradés, services
+  Collection/Item à refondre, demo seeder + importers v2 + exporters
+  / qa / renamer / derivatives à adapter en V0.9.0-alpha.1, beta, gamma.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
-- Édition des métadonnées item — V0.8.1 (décalé depuis V0.7).
+- Édition des métadonnées item — V0.9.1 (après refonte service Item).
 - Édition structurelle des champs personnalisés d'une collection
   (créer, renommer, déprécier) depuis l'UI — V0.7.
 - Édition des vocabulaires contrôlés depuis l'UI — V0.7.

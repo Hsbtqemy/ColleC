@@ -401,6 +401,12 @@ Entités principales — détails dans [`schema.md`](schema.md).
   dans une vue tabulaire. Structure prête pour V0.6 (édition de
   vues), pas encore alimentée par l'UI.
 
+- **CollaborateurCollection** : personnes ayant contribué à la
+  constitution d'une collection (V0.8.0). Nom libre + un ou
+  plusieurs rôles dans le vocabulaire fermé `RoleCollaborateur`
+  (numerisation, transcription, indexation, catalogage). Cascade
+  ON DELETE depuis Collection.
+
 - **SourceExterne**, **RessourceExterne**, **LienExterneItem** : V2+,
   pour Nakala.
 
@@ -512,8 +518,11 @@ archives-tool/
 - ✅ Page de modification de collection + empty state proactif sur
   collection vide + boutons « Modifier » / « Importer dans cette
   collection » sur le bandeau — V0.7.x.
+- ✅ Section Collaborateurs sur la page de modification (vocabulaire
+  fermé numérisation/transcription/indexation/catalogage, multi-rôles
+  par personne, affichage groupé par rôle, formulaire HTMX) — V0.8.0.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
-- Édition des métadonnées item — V0.8 (décalé depuis V0.7).
+- Édition des métadonnées item — V0.8.1 (décalé depuis V0.7).
 - Édition structurelle des champs personnalisés d'une collection
   (créer, renommer, déprécier) depuis l'UI — V0.7.
 - Édition des vocabulaires contrôlés depuis l'UI — V0.7.

@@ -80,9 +80,7 @@ def _depuis_modele(c: CollaborateurCollection) -> CollaborateurResume:
     )
 
 
-def lister_collaborateurs(
-    db: Session, collection_id: int
-) -> list[CollaborateurResume]:
+def lister_collaborateurs(db: Session, collection_id: int) -> list[CollaborateurResume]:
     """Tous les collaborateurs d'une collection, ordre stable cree_le."""
     rows = db.scalars(
         select(CollaborateurCollection)

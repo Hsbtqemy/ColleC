@@ -20,7 +20,11 @@ from archives_tool.api.deps import get_db
 from archives_tool.api.services import collaborateurs as svc
 from archives_tool.api.services import collections_creation as svc_cc
 from archives_tool.api.templating import templates
-from archives_tool.models import CollaborateurCollection, LIBELLES_ROLE, RoleCollaborateur
+from archives_tool.models import (
+    CollaborateurCollection,
+    LIBELLES_ROLE,
+    RoleCollaborateur,
+)
 
 router = APIRouter()
 
@@ -76,9 +80,7 @@ def _reponse_section(
     )
 
 
-@router.get(
-    "/collection/{cote}/collaborateurs", response_class=HTMLResponse
-)
+@router.get("/collection/{cote}/collaborateurs", response_class=HTMLResponse)
 def section_collaborateurs(
     request: Request, cote: str, db: Session = Depends(get_db)
 ) -> HTMLResponse:
@@ -87,9 +89,7 @@ def section_collaborateurs(
     return _reponse_section(request, db, cote, col.id)
 
 
-@router.get(
-    "/collection/{cote}/collaborateurs/nouveau", response_class=HTMLResponse
-)
+@router.get("/collection/{cote}/collaborateurs/nouveau", response_class=HTMLResponse)
 def formulaire_nouveau(
     request: Request, cote: str, db: Session = Depends(get_db)
 ) -> HTMLResponse:
@@ -98,9 +98,7 @@ def formulaire_nouveau(
     return templates.TemplateResponse(
         request,
         "partials/_formulaire_collaborateur.html",
-        _contexte_formulaire(
-            cote, svc.FormulaireCollaborateur(), {}, "ajouter", None
-        ),
+        _contexte_formulaire(cote, svc.FormulaireCollaborateur(), {}, "ajouter", None),
     )
 
 
@@ -130,9 +128,7 @@ def formulaire_modifier(
     )
 
 
-@router.post(
-    "/collection/{cote}/collaborateurs", response_class=HTMLResponse
-)
+@router.post("/collection/{cote}/collaborateurs", response_class=HTMLResponse)
 def ajouter(
     request: Request,
     cote: str,

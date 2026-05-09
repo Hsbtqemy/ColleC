@@ -139,9 +139,7 @@ def _valider_communs(
         existant = db.scalar(
             select(Collection).where(Collection.doi_nakala == formulaire.doi_nakala)
         )
-        if existant is not None and (
-            existante is None or existant.id != existante.id
-        ):
+        if existant is not None and (existante is None or existant.id != existante.id):
             res.erreurs["doi_nakala"] = (
                 f"Le DOI Nakala est déjà associé à la collection "
                 f"{existant.cote_collection!r}."

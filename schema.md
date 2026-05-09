@@ -157,6 +157,19 @@ Typologie métier des scans.
 | `echouee` |
 | `annulee` | Revenue à l'état antérieur. |
 
+### `RoleCollaborateur`
+
+Vocabulaire fermé des rôles techniques d'un collaborateur de
+collection. Toute extension demande une migration (l'enum est validée
+applicativement contre cette liste).
+
+| Valeur | Libellé |
+|---|---|
+| `numerisation` | Numérisation |
+| `transcription` | Transcription |
+| `indexation` | Indexation |
+| `catalogage` | Catalogage |
+
 ---
 
 ## Tables
@@ -490,6 +503,33 @@ la migration plus tard.
 
 **Contrainte :** UNIQUE (`utilisateur`, `collection_id`, `vue`).
 **Index :** `utilisateur`, `collection_id`.
+
+---
+
+### `collaborateur_collection`
+
+Personnes ayant contribué techniquement à la constitution d'une
+collection (numérisation, transcription, indexation, catalogage).
+Pas de FK utilisateur — le nom est texte libre, identique au modèle
+d'audit `cree_par` / `modifie_par`. Une personne peut porter
+plusieurs rôles ; le stockage se fait en JSON.
+
+| Colonne | Type | Contraintes | Notes |
+|---|---|---|---|
+| `id` | INTEGER | PK | |
+| `collection_id` | INTEGER | FK → `collection.id` (CASCADE) | Indexé. |
+| `nom` | VARCHAR(255) | NOT NULL | Texte libre. |
+| `roles` | JSON | NOT NULL | Liste de valeurs `RoleCollaborateur` (chaînes). Au moins un rôle, validation applicative. |
+| `periode` | VARCHAR(64) | NULL | EDTF tolérant (« 2022 », « 2022-2023 »). |
+| `notes` | TEXT | NULL | Texte libre. |
+| `cree_le` | DATETIME | NOT NULL | |
+| `modifie_le` | DATETIME | NOT NULL | Mise à jour automatique. |
+
+**Index :** `collection_id`.
+
+Les filtres SQL natifs sur les rôles ne sont pas possibles avec le
+stockage JSON ; c'est accepté pour V0.8.0 — pas de besoin de
+recherche transverse pour l'instant.
 
 ---
 

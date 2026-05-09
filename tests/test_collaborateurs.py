@@ -314,9 +314,7 @@ def test_post_ajout_nom_vide_renvoie_formulaire(base_demo: Path) -> None:
 
 def test_post_ajout_sans_role_renvoie_formulaire(base_demo: Path) -> None:
     client = TestClient(app)
-    resp = client.post(
-        "/collection/HK/collaborateurs", data={"nom": "Marie"}
-    )
+    resp = client.post("/collection/HK/collaborateurs", data={"nom": "Marie"})
     assert resp.status_code == 400
     assert "rôle" in resp.text.lower()
 
@@ -344,11 +342,7 @@ def test_modifier_pre_remplissage(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as session:
         col = session.query(Collection).filter_by(cote_collection="HK").one()
-        c = (
-            session.query(CollaborateurCollection)
-            .filter_by(collection_id=col.id)
-            .one()
-        )
+        c = session.query(CollaborateurCollection).filter_by(collection_id=col.id).one()
         cid = c.id
 
     resp = client.get(f"/collection/HK/collaborateurs/{cid}/modifier")

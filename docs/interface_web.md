@@ -362,6 +362,50 @@ Pages équipées : dashboard (implicite, racine sans breadcrumb),
 collection (3 onglets), nouvelle collection, modifier, import
 placeholder, vue item (via `bandeau_item`).
 
+## Collaborateurs (V0.8.0)
+
+La page de modification d'une collection inclut une section
+Collaborateurs sous le formulaire principal. Elle est en dehors du
+`<form>` parent : ses actions sont sauvegardées indépendamment via
+HTMX (un texte explicatif l'indique sous le titre de section).
+
+**Vocabulaire** : enum fermée `RoleCollaborateur` (numérisation,
+transcription, indexation, catalogage). Une personne peut porter
+plusieurs rôles ; elle apparaît alors dans plusieurs groupes —
+l'affichage est groupé par rôle, pas par personne.
+
+**Routes** (toutes sous `/collection/{cote}/collaborateurs/...`) :
+- `GET .../collaborateurs` : section complète (cible du swap après
+  ajout/modif/suppression).
+- `GET .../collaborateurs/nouveau` : fragment formulaire vide.
+- `GET .../collaborateurs/{id}/modifier` : fragment formulaire
+  pré-rempli (rôles existants pré-cochés).
+- `POST .../collaborateurs` : ajoute, retourne la section.
+- `POST .../collaborateurs/{id}` : modifie, retourne la section.
+- `POST .../collaborateurs/{id}/supprimer` : supprime
+  (`hx-confirm` natif), retourne la section.
+
+Le routeur `collaborateurs` est enregistré **avant** `collection`
+dans `api/main.py` car ses URLs partagent le préfixe
+`/collection/{cote}/...` : sinon `/collection/{cote}/{onglet}` (avec
+`onglet` typé `Literal["items", "sous-collections", "fichiers"]`)
+matche d'abord et retourne 422.
+
+**Anti-confused-deputy** : chaque POST sur un id donné vérifie que
+le collaborateur appartient à la collection identifiée par `cote`
+(404 sinon). Sans cette vérification, un POST sur
+`/collection/HK/collaborateurs/{id_dans_FA}` muterait un
+collaborateur d'une autre collection.
+
+**Stockage des rôles** : JSON sur `CollaborateurCollection.roles`
+(liste de chaînes). Pas de filtre SQL natif transverse possible —
+acceptable pour V0.8.0, à revoir si une recherche « toutes
+collections où Marie a fait de la numérisation » devient utile.
+
+**HTMX** : la lib est chargée via CDN (unpkg + SRI) sur la page
+`collection_modifier.html` uniquement. Le reste de l'app n'utilise
+HTMX qu'au niveau serveur (header `HX-Request`).
+
 ## Empty states
 
 - Collection sans item ET sans sous-collection : grosse boîte

@@ -150,6 +150,30 @@ def _appliquer_formulaire(item: Item, formulaire: FormulaireItem) -> None:
         setattr(item, nom, chaine_ou_none(getattr(formulaire, nom)))
 
 
+def formulaire_depuis_item(item: Item) -> FormulaireItem:
+    """Pré-remplit un formulaire d'édition depuis un item ORM.
+
+    `metadonnees` est défaut-é à dict vide pour ne jamais avoir None
+    (le modèle accepte None mais le formulaire attend un dict)."""
+    return FormulaireItem(
+        cote=item.cote,
+        titre=item.titre or "",
+        fonds_id=item.fonds_id,
+        description=item.description or "",
+        notes_internes=item.notes_internes or "",
+        type_coar=item.type_coar or "",
+        langue=item.langue or "",
+        date=item.date or "",
+        annee=item.annee,
+        numero=item.numero or "",
+        numero_tri=item.numero_tri,
+        etat_catalogage=item.etat_catalogage,
+        metadonnees=dict(item.metadonnees) if item.metadonnees else {},
+        doi_nakala=item.doi_nakala or "",
+        doi_collection_nakala=item.doi_collection_nakala or "",
+    )
+
+
 def lire_item(db: Session, item_id: int) -> Item:
     item = db.get(Item, item_id)
     if item is None:

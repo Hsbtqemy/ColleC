@@ -1,12 +1,15 @@
-"""Composition des vues : dashboard, page fonds, page collection.
+"""Composition des vues : dashboard, page fonds, page collection, page item.
 
-Trois fonctions publiques :
+Quatre fonctions publiques :
 - `composer_dashboard(db)` : `DashboardResume` (tous les fonds + transversales).
 - `composer_page_fonds(db, cote)` : `FondsDetail` (un fonds, ses
   collections, items récents, collaborateurs groupés).
 - `composer_page_collection(db, cote, fonds_id=None)` :
   `CollectionDetail` (une collection, ses items paginés, le fonds
   parent ou les fonds représentés si transversale).
+- `composer_page_item(db, cote, fonds_id, fichier_courant_pos=1)` :
+  `ItemDetail` (un item, ses fichiers, collections d'appartenance,
+  fichier sélectionné dans la visionneuse).
 
 Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 """
@@ -16,16 +19,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from archives_tool.api.services.collaborateurs_fonds import (
     CollaborateurFondsResume,
     lister_collaborateurs_fonds_par_role,
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
-from archives_tool.api.services.items import ItemResume
+from archives_tool.api.services.items import ItemIntrouvable, ItemResume
 from archives_tool.models import (
     Collection,
+    Fichier,
     Fonds,
     Item,
     ItemCollection,
@@ -362,4 +366,149 @@ def composer_page_collection(
         nb_items=nb_items,
         fonds_parent=fonds_parent,
         fonds_representes=fonds_representes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Page item (lecture)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FichierResume:
+    """Vue figée d'un fichier pour la page item — détache du modèle ORM."""
+
+    id: int
+    nom_fichier: str
+    extension: str  # minuscules, sans le point
+    type_page: str
+    ordre: int
+    taille_octets: int | None
+    largeur_px: int | None
+    hauteur_px: int | None
+    format: str | None
+
+    @property
+    def dimensions(self) -> str | None:
+        if self.largeur_px and self.hauteur_px:
+            return f"{self.largeur_px}×{self.hauteur_px}"
+        return None
+
+
+@dataclass(frozen=True)
+class CollectionAppartenance:
+    cote: str
+    titre: str
+    type_collection: str  # miroir / libre
+    fonds_id: int | None  # None si transversale
+    fonds_cote: str | None  # cote du fonds parent (None si transversale)
+
+    @property
+    def est_miroir(self) -> bool:
+        return self.type_collection == TypeCollection.MIROIR.value
+
+    @property
+    def est_transversale(self) -> bool:
+        return self.fonds_id is None
+
+
+@dataclass(frozen=True)
+class ItemDetail:
+    item: Item  # ORM (le template lit ses champs métadonnées)
+    fonds: Fonds
+    fichiers: tuple[FichierResume, ...]
+    fichier_courant: FichierResume | None
+    position_courante: int  # 1-indexed
+    nb_fichiers: int
+    collections: tuple[CollectionAppartenance, ...]
+
+
+def _extension(nom_fichier: str) -> str:
+    if "." in nom_fichier:
+        return nom_fichier.rsplit(".", 1)[1].lower()
+    return ""
+
+
+def _resume_fichier(f: Fichier) -> FichierResume:
+    return FichierResume(
+        id=f.id,
+        nom_fichier=f.nom_fichier,
+        extension=_extension(f.nom_fichier),
+        type_page=f.type_page,
+        ordre=f.ordre,
+        taille_octets=f.taille_octets,
+        largeur_px=f.largeur_px,
+        hauteur_px=f.hauteur_px,
+        format=f.format,
+    )
+
+
+def composer_page_item(
+    db: Session,
+    cote: str,
+    fonds_id: int,
+    *,
+    fichier_courant_pos: int = 1,
+) -> ItemDetail:
+    """Charge un item avec ses fichiers, collections d'appartenance et
+    fichier courant. Lève `ItemIntrouvable` si la cote n'existe pas
+    dans le fonds donné.
+
+    Eager loading sur les fichiers (one-to-many ordonné). Les
+    collections d'appartenance sont chargées via une requête JOIN
+    distincte qui inclut la cote du fonds parent (None si transversale)
+    — utile pour afficher les liens vers les bons fonds.
+    """
+    item = db.scalar(
+        select(Item)
+        .options(selectinload(Item.fichiers))
+        .where(Item.cote == cote, Item.fonds_id == fonds_id)
+    )
+    if item is None:
+        raise ItemIntrouvable(f"cote={cote!r} dans le fonds {fonds_id}")
+
+    fonds = db.get(Fonds, fonds_id)
+    assert fonds is not None  # garanti par la FK
+
+    fichiers = tuple(_resume_fichier(f) for f in item.fichiers)
+    nb_fichiers = len(fichiers)
+    pos = max(1, min(fichier_courant_pos, nb_fichiers)) if nb_fichiers else 1
+    fichier_courant = fichiers[pos - 1] if nb_fichiers else None
+
+    rows = db.execute(
+        select(
+            Collection.cote,
+            Collection.titre,
+            Collection.type_collection,
+            Collection.fonds_id,
+            Fonds.cote.label("fonds_cote"),
+        )
+        .join(ItemCollection, ItemCollection.collection_id == Collection.id)
+        .outerjoin(Fonds, Fonds.id == Collection.fonds_id)
+        .where(ItemCollection.item_id == item.id)
+        # Miroir d'abord, puis libres par titre.
+        .order_by(
+            (Collection.type_collection != TypeCollection.MIROIR.value),
+            Collection.titre,
+        )
+    ).all()
+    collections = tuple(
+        CollectionAppartenance(
+            cote=cote_c,
+            titre=titre,
+            type_collection=type_c,
+            fonds_id=fonds_id_c,
+            fonds_cote=fonds_cote,
+        )
+        for cote_c, titre, type_c, fonds_id_c, fonds_cote in rows
+    )
+
+    return ItemDetail(
+        item=item,
+        fonds=fonds,
+        fichiers=fichiers,
+        fichier_courant=fichier_courant,
+        position_courante=pos,
+        nb_fichiers=nb_fichiers,
+        collections=collections,
     )

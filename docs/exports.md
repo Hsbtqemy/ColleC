@@ -1,145 +1,173 @@
 # Exports
 
-L'outil sort ses données en trois formats canoniques, plus un export
-de travail libre.
+L'outil produit trois formats d'export, tous **par collection** (au
+sens Nakala : miroir, libre rattachée, ou transversale). On n'exporte
+pas un fonds directement : si l'on veut tous ses items, on exporte sa
+miroir.
 
-## Les quatre formats
+## Granularité d'export
 
-| Format | Cas d'usage | Granularité supportée | Configurabilité |
-|---|---|---|---|
-| `xlsx` | Inventaire, consultation, vérification. | item, fichier | Colonnes personnalisables. |
-| `csv` | Idem, interop tableur. | item, fichier | Colonnes personnalisables. |
-| `dc-xml` | Archivage bibliothéconomique, OAI-PMH. | item | Mode agrégé ou un fichier par item. |
-| `nakala-csv` | Dépôt Nakala. | item uniquement | Licence et statut paramétrables. |
+L'unité d'export est **la collection**. Selon son type :
 
-## Pipeline
+- **Collection miroir d'un fonds** : exporte tous les items du fonds
+  qui figurent dans la miroir (par défaut tous, sauf retraits explicites).
+- **Collection libre rattachée** : exporte les items sélectionnés.
+  Tous viennent du même fonds parent (cohérence attendue, non garantie
+  techniquement).
+- **Collection libre transversale** : exporte les items, qui peuvent
+  provenir de plusieurs fonds. Le contexte de chaque item garde le
+  fonds d'origine.
+
+L'exporter charge le contexte d'export complet via
+[`composer_export`](../src/archives_tool/exporters/_commun.py)
+(une seule requête principale avec `selectinload(items.fichiers)` +
+JOIN fonds). Pas de N+1.
+
+## Les trois formats
+
+| Format        | Cas d'usage                       | Sortie |
+|---------------|-----------------------------------|--------|
+| `dublin-core` | Archivage bibliothéconomique, OAI-PMH. | XML, un fichier agrégé. |
+| `nakala`      | Dépôt bulk Nakala.                | CSV `;`, UTF-8 BOM. |
+| `xlsx`        | Catalogage manuel, vérification.  | xlsx Excel/LibreOffice. |
+
+Tous incluent les **métadonnées de la collection en tête** : cote,
+titre, type, fonds parent (rattachée) ou fonds représentés
+(transversale), DOI Nakala si renseigné.
+
+## Modules
 
 ```
-┌───────────────┐   ┌──────────────┐   ┌────────────────┐
-│  selection.py │ → │  mapping_dc  │ → │  {format}.py   │
-│  (streaming)  │   │  extraire_    │   │  + rapport     │
-│               │   │  valeur, DC   │   │  pré-export    │
-└───────────────┘   └──────────────┘   └────────────────┘
+src/archives_tool/exporters/
+├── _commun.py      # composer_export(db, collection)
+├── mapping_dc.py   # champs internes → URI DC Terms (table partagée)
+├── rapport.py      # RapportExport + verifier_pre_export()
+├── dublin_core.py  # XML
+├── excel.py        # xlsx
+└── nakala.py       # CSV bulk Nakala
 ```
 
-Modules sous `src/archives_tool/exporters/` :
-
-- [`selection.py`](../src/archives_tool/exporters/selection.py) —
-  `CritereSelection` (collection, récursif, états, granularité),
-  `selectionner_items()` / `selectionner_fichiers()` en streaming
-  (`yield_per=200` côté SQLAlchemy).
-- [`mapping_dc.py`](../src/archives_tool/exporters/mapping_dc.py) —
-  correspondance champs internes → URI Dublin Core Terms. Source de
-  vérité évolutive.
-- [`rapport.py`](../src/archives_tool/exporters/rapport.py) —
-  `RapportExport` + `verifier_pre_export()` (items incomplets,
-  type_coar non URI, langue non ISO 639-3).
-- [`excel.py`](../src/archives_tool/exporters/excel.py) — xlsx et csv.
-- [`dublin_core.py`](../src/archives_tool/exporters/dublin_core.py) —
-  XML, deux modes.
-- [`nakala.py`](../src/archives_tool/exporters/nakala.py) — CSV Nakala
-  avec ses colonnes propres.
-
-## Granularité item vs fichier
-
-- **Item** (défaut) : une ligne par item, métadonnées de catalogage.
-- **Fichier** : une ligne par Fichier rattaché, utile pour le
-  rapprochement avec un partage ou un dépôt multi-pages. Les colonnes
-  préfixées `item.xxx` viennent de l'Item, `fichier.xxx` du Fichier.
-
-`nakala-csv` est toujours en granularité item (une « donnée » Nakala
-= un item, multi-fichiers gérés séparément à l'upload).
+`_commun.py` centralise le chargement (items + fichiers + fonds
+d'origine, eager loading). `mapping_dc.py` reste la source de vérité
+pour le mapping vers Dublin Core (réutilisé par DC et Nakala).
+`rapport.py` détecte les items incomplets (champs obligatoires
+manquants, type_coar non URI, langue non ISO 639-3).
 
 ## Champs obligatoires par format
 
-| Format | Obligatoires |
-|---|---|
-| `xlsx` / `csv` | aucun |
-| `dc-xml` | `cote`, `titre` |
-| `nakala-csv` | `titre`, `date`, `type_coar`, créateur (via `metadonnees.createurs` ou `metadonnees.auteurs`) |
+| Format        | Champs obligatoires sur les items |
+|---------------|------------------------------------|
+| `dublin-core` | `cote`, `titre` |
+| `nakala`      | `titre`, `date`, `type_coar`, créateur (`metadonnees.createurs` ou `.auteurs`) |
+| `xlsx`        | aucun |
 
-## Rapport de pré-export
+Les items qui manquent un champ obligatoire apparaissent dans
+`RapportExport.items_incomplets`. L'export n'est pas bloqué — c'est à
+l'utilisateur d'arbitrer.
 
-Produit par tous les exporters (même quand le fichier est écrit).
-Champs :
+## Rapport d'export
+
+Produit par tous les exporters et affiché par le CLI :
 
 | Champ | Sens |
 |---|---|
-| `format` | xlsx / csv / dc_xml / nakala_csv |
+| `format` | `dc_xml` / `nakala_csv` / `xlsx` |
 | `nb_items_selectionnes` | |
-| `nb_fichiers_selectionnes` | (si granularité fichier) |
-| `items_incomplets` | Liste de `(cote, [champs_manquants])` |
-| `valeurs_non_mappees` | `(champ, valeur)` — type_coar hors URI, langue hors ISO 639-3 |
-| `avertissements` | Ex. slugification d'une cote |
-| `chemin_sortie` | |
+| `nb_fichiers_selectionnes` | total des fichiers liés aux items |
+| `items_incomplets` | `[(cote, [champs_manquants]), …]` |
+| `valeurs_non_mappees` | `[(champ, valeur), …]` — type_coar hors URI COAR, langue hors ISO 639-3 |
+| `avertissements` | Liste libre |
+| `chemin_sortie` | Chemin du fichier produit |
 | `duree_secondes` | |
 
-Mode `--dry-run` : produit le rapport sans écrire le fichier. Utile
-pour vérifier la couverture avant un export long.
+`--verbose` détaille les `items_incomplets` ligne par ligne.
 
-Mode `--strict` : exit 1 si `items_incomplets` non vide. À utiliser
-dans un script qui demande une qualité garantie (ex. export Nakala
-pré-publication).
+## Format Dublin Core (XML)
 
-## Exemples CLI
+Racine `<collection cote="…">` avec :
+
+- une `<notice role="collection">` de tête : cote, titre,
+  description(s), DOI Nakala, et un ou plusieurs `dc:source` listant
+  le ou les fonds représentés (utile pour les transversales) ;
+- une `<notice>` par item, avec ses champs DC mappés via `MAPPING_DC`.
+
+Préfixe XML : `dc:` ↔ `http://purl.org/dc/terms/`. Encodage UTF-8.
+Indentation propre. Échappement automatique via
+`xml.etree.ElementTree`.
+
+## Format Nakala (CSV)
+
+Colonnes inspirées du format d'import Nakala standard (DC + prédicats
+`http://nakala.fr/terms#`). Séparateur `;`, encodage UTF-8 BOM.
+
+Particularités :
+
+- `Linked in collection` se rabat sur le DOI Nakala de la collection
+  (`Collection.doi_nakala`) si l'item n'a pas son propre
+  `Item.doi_collection_nakala` — utile quand on dépose une collection
+  d'un coup.
+- `fonds_cote` est ajoutée comme colonne informative — précieuse pour
+  les transversales où chaque ligne peut venir d'un fonds différent.
+- Licence et statut sont pris dans `metadonnees.licence` /
+  `metadonnees.statut_nakala` si renseignés, sinon des défauts CLI
+  (`CC-BY-NC-ND-4.0` / `pending`).
+- Les colonnes `IsDescribedBy` / `IsIdenticalTo` / `IsDerivedFrom` /
+  `IsPublishedIn` sont présentes mais laissées vides pour l'instant.
+
+## Format xlsx
+
+Une feuille avec :
+
+- lignes 1-4 : bandeau métadonnées (titre, cote, type, fonds parent
+  ou fonds représentés) ;
+- ligne 6 : entêtes (Cote, Titre, Fonds, État, Date, Année, Type,
+  Langue, Description, Notes internes, DOI Nakala, Nb fichiers) ;
+- ligne 7+ : un item par ligne.
+
+Le titre de feuille est dérivé du titre de la collection, tronqué à
+31 caractères (limite Excel) avec retrait des caractères interdits
+(`[]:*?/\`).
+
+## CLI
 
 ```bash
-# Inventaire Excel d'une collection.
-uv run archives-tool exporter xlsx \
-    --collection RDM --sortie inventaire.xlsx
+# Dublin Core d'une miroir.
+uv run archives-tool exporter dublin-core HK --fonds HK \
+    --sortie hk_dc.xml
 
-# Inventaire en CSV avec colonnes choisies.
-uv run archives-tool exporter csv \
-    --collection RDM --sortie min.csv \
-    --colonnes "cote,titre,metadonnees.auteurs"
+# Nakala d'une libre rattachée, avec licence personnalisée.
+uv run archives-tool exporter nakala HK-FAVORIS --fonds HK \
+    --licence "CC-BY-4.0" --statut publié
 
-# Granularité fichier (rapprochement disque).
-uv run archives-tool exporter xlsx \
-    --collection RDM --granularite fichier --sortie fichiers.xlsx
+# xlsx d'une transversale (pas de --fonds car cote unique).
+uv run archives-tool exporter xlsx TEMOIG
 
-# Dublin Core agrégé, collection et ses sous-collections.
-uv run archives-tool exporter dc-xml \
-    --collection FA --recursif --sortie fa.xml
-
-# Un fichier XML par item.
-uv run archives-tool exporter dc-xml \
-    --collection FA --mode un-fichier-par-item --sortie dc_par_item/
-
-# Nakala CSV, items validés seulement, dry-run pour vérifier.
-uv run archives-tool exporter nakala-csv \
-    --collection RDM --etat valide --sortie depot.csv --dry-run --verbose
-
-# Export Nakala strict (échoue si items incomplets).
-uv run archives-tool exporter nakala-csv \
-    --collection RDM --etat valide --sortie depot.csv \
-    --licence "CC-BY-4.0" --strict
+# Sortie par défaut dans le cwd : <cote>_dc.xml / <cote>_nakala.csv /
+# <cote>.xlsx — pas besoin de --sortie pour un export ad-hoc.
+uv run archives-tool exporter dublin-core HK --fonds HK
 ```
 
-## Limitations V1
-
-- **Licence Nakala par défaut** : `CC-BY-NC-ND-4.0`. Override via
-  `--licence` OU via un champ `metadonnees.licence` /
-  `metadonnees.rights` sur l'item (priorité item > option CLI >
-  défaut).
-- **Type COAR non validé** contre la liste officielle. Le rapport
-  signale les valeurs hors `http://purl.org/coar/resource_type/`,
-  mais n'empêche pas l'export.
-- **Export Nakala** : les colonnes `IsDescribedBy` / `IsIdenticalTo` /
-  `IsDerivedFrom` / `IsPublishedIn` sont présentes mais laissées
-  vides. À peupler par un mapping explicite quand le besoin sera
-  stabilisé.
-- **Mapping DC évolutif** : `MAPPING_DC` dans
-  [`mapping_dc.py`](../src/archives_tool/exporters/mapping_dc.py) est
-  la source de vérité. Pour ajouter un champ récurrent (ex.
-  `metadonnees.orcid` → `dc:creator`), éditer le dict et ajouter un
-  test.
-- **Pas de JSON-LD** : prévu pour une session ultérieure (contextes
-  COAR et Nakala).
-- **Pas de dépôt automatique vers Nakala** via API : hors scope V1.
+`--fonds COTE` désambiguïse quand une cote de collection est partagée
+entre plusieurs fonds (cohérent avec les routes web).
 
 ## Reproductibilité
 
 Les exports sont déterministes : deux appels successifs sur les mêmes
-données produisent des fichiers identiques. Tri alphabétique appliqué
-sur les items (par cote), sur les fichiers d'un item (par ordre), et
-sur les listes de valeurs (auteurs, sujets) avant sérialisation.
+données produisent des fichiers identiques. Items triés par
+`(fonds.cote, item.cote)`, fichiers d'un item par `ordre`, et listes
+de valeurs (auteurs, sujets) triées alphabétiquement avant
+sérialisation.
+
+## Limitations V1
+
+- **Pas de JSON-LD** : prévu pour une session ultérieure (contextes
+  COAR et Nakala).
+- **Type COAR non validé** contre la liste officielle. Le rapport
+  signale les valeurs hors `http://purl.org/coar/resource_type/`.
+- **Mapping DC évolutif** : `MAPPING_DC` est la source de vérité. Pour
+  ajouter un champ récurrent (ex. `metadonnees.orcid` → `dc:creator`),
+  éditer le dict et ajouter un test.
+- **Pas de dépôt automatique vers Nakala** via API : hors scope V1.
+- **Date EDTF** : Item.date est exporté littéralement (pas de
+  conversion EDTF → ISO 8601). Si l'item a `1969?`, c'est cette
+  chaîne qui sort. À évaluer en V2 selon les retours utilisateur.

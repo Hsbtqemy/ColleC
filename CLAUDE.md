@@ -225,19 +225,26 @@ sans passer par le navigateur :
 
 ### Exports canoniques
 
-`src/archives_tool/exporters/` regroupe les trois formats canoniques
-(xlsx/csv, Dublin Core XML, CSV Nakala) plus les utilitaires communs :
+`src/archives_tool/exporters/` regroupe les trois formats d'export
+de la V0.9.0-gamma.2. **L'unité d'export est la collection** (miroir,
+libre rattachée, transversale) — on n'exporte pas un fonds directement,
+on exporte sa miroir si on veut tout.
 
-- `selection.py` : `CritereSelection` + streaming via yield_per.
+- `_commun.py` : `composer_export(db, collection)` charge items +
+  fichiers + fonds d'origine en une seule requête (selectinload + JOIN).
 - `mapping_dc.py` : source de vérité des correspondances champs
   internes → URI Dublin Core Terms.
-- `rapport.py` : rapport de pré-export (items incomplets, valeurs
-  non canoniques).
-- `excel.py`, `dublin_core.py`, `nakala.py` : producteurs par format.
+- `rapport.py` : `RapportExport` (items incomplets, valeurs non
+  canoniques type_coar/langue, durée).
+- `dublin_core.py` (XML), `excel.py` (xlsx), `nakala.py` (CSV bulk) :
+  signature uniforme `(session, collection, sortie) → RapportExport`.
 
-CLI : `archives-tool exporter <format> --collection ... --sortie ...`.
-Dry-run et mode strict disponibles. Référence complète dans
-[`docs/exports.md`](docs/exports.md).
+CLI : `archives-tool exporter {dublin-core,nakala,xlsx} COTE
+[--fonds COTE] [--sortie ...]`. Le `--fonds` désambiguïse une cote
+partagée. Pour les transversales, chaque ligne Nakala/xlsx indique
+son fonds d'origine via la colonne `fonds_cote` ; en DC, les fonds
+représentés sont listés en `dc:source` dans la notice de tête.
+Référence complète : [`docs/exports.md`](docs/exports.md).
 
 ### Affichage CLI
 
@@ -624,8 +631,16 @@ archives-tool/
   garantissent les invariants 1, 5, 6). Nouvelle CLI
   `archives-tool collections {creer-libre,lister,supprimer}`
   (pendant CLI de l'UI V0.9.0-beta.2.1). — V0.9.0-gamma.1.
-- Adaptation CLI exporter / controler / montrer / renommer / deriver
-  + qa / renamer / derivatives — V0.9.0-gamma.2 à V0.9.0-gamma.4.
+- ✅ Exporters refondus (Dublin Core XML, Nakala CSV, xlsx).
+  Granularité = la collection (miroir, libre rattachée, transversale).
+  Helper partagé `composer_export(db, collection)` charge items +
+  fichiers + fonds d'origine en une requête. Notice de tête pour la
+  collection (titre, cote, DOI, fonds représentés via `dc:source`).
+  Pour les transversales, chaque ligne Nakala/xlsx indique son fonds
+  d'origine. CLI : `archives-tool exporter {dublin-core,nakala,xlsx}
+  COTE [--fonds X] [--sortie ...]`. — V0.9.0-gamma.2.
+- Adaptation CLI controler / montrer / renommer / deriver
+  + qa / renamer / derivatives — V0.9.0-gamma.3 à V0.9.0-gamma.4.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
@@ -960,11 +975,10 @@ uv run archives-tool importer profils/ma_collection.yaml
 uv run archives-tool importer profils/ma_collection.yaml \
     --no-dry-run --utilisateur "Marie" --verbose
 
-# Exports canoniques
-uv run archives-tool exporter xlsx --collection RDM --sortie inventaire.xlsx
-uv run archives-tool exporter dc-xml --collection FA --recursif --sortie fa.xml
-uv run archives-tool exporter nakala-csv --collection RDM --etat valide \
-    --sortie depot.csv --licence "CC-BY-4.0" --strict
+# Exports (par collection : miroir, libre rattachée, transversale)
+uv run archives-tool exporter dublin-core HK --fonds HK --sortie hk_dc.xml
+uv run archives-tool exporter nakala FA-OEUVRES --fonds FA --licence "CC-BY-4.0"
+uv run archives-tool exporter xlsx TEMOIG  # transversale, --fonds inutile
 
 # Aide à la création d'un profil d'import
 uv run archives-tool profil analyser inventaire.xlsx --sortie mon_profil.yaml

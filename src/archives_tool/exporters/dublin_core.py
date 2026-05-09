@@ -1,4 +1,4 @@
-"""Export Dublin Core XML d'une collection (V0.9.0-gamma.2).
+"""Export Dublin Core XML d'une collection.
 
 Format : un fichier XML avec une racine `<collection>` qui contient :
 - une `<notice>` de tête pour la collection elle-même (cote, titre,
@@ -110,8 +110,8 @@ def exporter_dublin_core(
 ) -> RapportExport:
     """Exporte une collection en Dublin Core XML (fichier agrégé).
 
-    `chemin_sortie` est un fichier (pas un dossier — le mode
-    « un fichier par item » a été retiré en V0.9.0-gamma.2).
+    `chemin_sortie` est un fichier (pas un dossier — l'API n'expose
+    qu'un seul mode, agrégé).
     """
     debut = time.monotonic()
     export = composer_export(session, collection)

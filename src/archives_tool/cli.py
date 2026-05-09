@@ -238,31 +238,8 @@ def cmd_importer(
 # ---------------------------------------------------------------------------
 
 
-def _afficher_rapport_export(rapport: RapportExport, verbose: bool) -> None:
-    typer.echo(
-        f"Export {rapport.format} — {rapport.nb_items_selectionnes} items, "
-        f"{rapport.nb_fichiers_selectionnes} fichiers — "
-        f"{rapport.duree_secondes:.2f}s"
-    )
-    if rapport.chemin_sortie:
-        typer.echo(f"  Sortie : {rapport.chemin_sortie}")
-    if rapport.items_incomplets:
-        typer.echo(f"  Items incomplets : {len(rapport.items_incomplets)}", err=True)
-        if verbose:
-            for cote, manques in rapport.items_incomplets:
-                typer.echo(f"    - {cote} : manque {', '.join(manques)}", err=True)
-    if rapport.valeurs_non_mappees and verbose:
-        typer.echo("  Valeurs non canoniques :")
-        for champ, valeur in rapport.valeurs_non_mappees:
-            typer.echo(f"    - {champ} = {valeur!r}")
-    if rapport.avertissements and verbose:
-        typer.echo("  Avertissements :")
-        for a in rapport.avertissements:
-            typer.echo(f"    - {a}")
-
-
 # ---------------------------------------------------------------------------
-# Sous-groupe `exporter` : Dublin Core / Nakala / xlsx (V0.9.0-gamma.2).
+# Sous-groupe `exporter` : Dublin Core / Nakala / xlsx.
 # Granularité = la collection (miroir, libre rattachée, transversale).
 # ---------------------------------------------------------------------------
 
@@ -288,12 +265,9 @@ def _resoudre_collection_pour_export(
         raise typer.Exit(1) from None
 
 
-def _afficher_rapport_export_simple(rapport: RapportExport, verbose: bool) -> None:
-    """Variante simplifiée du rapport d'export pour V0.9.0-gamma.2.
-
-    Plus court que `_afficher_rapport_export` (sans dry-run, strict,
-    etc. qui ont disparu de l'API). On garde le détail des items
-    incomplets en mode verbose pour aider l'utilisateur à corriger."""
+def _afficher_rapport_export(rapport: RapportExport, verbose: bool) -> None:
+    """Affiche le résumé d'un export sur stdout (incomplets sur stderr).
+    `verbose=True` détaille les items incomplets ligne par ligne."""
     typer.echo(
         f"Export {rapport.format} — {rapport.nb_items_selectionnes} items, "
         f"{rapport.nb_fichiers_selectionnes} fichiers — "
@@ -333,7 +307,7 @@ def cmd_exporter_dublin_core(
     with _ouvrir_session_existante(db_path) as session:
         collection = _resoudre_collection_pour_export(session, cote, fonds)
         rapport = exporter_dublin_core(session, collection, chemin)
-    _afficher_rapport_export_simple(rapport, verbose)
+    _afficher_rapport_export(rapport, verbose)
 
 
 @exporter_app.command("nakala")
@@ -369,7 +343,7 @@ def cmd_exporter_nakala(
             licence_defaut=licence,
             statut_defaut=statut,
         )
-    _afficher_rapport_export_simple(rapport, verbose)
+    _afficher_rapport_export(rapport, verbose)
 
 
 @exporter_app.command("xlsx")
@@ -395,7 +369,7 @@ def cmd_exporter_xlsx(
     with _ouvrir_session_existante(db_path) as session:
         collection = _resoudre_collection_pour_export(session, cote, fonds)
         rapport = exporter_excel(session, collection, chemin)
-    _afficher_rapport_export_simple(rapport, verbose)
+    _afficher_rapport_export(rapport, verbose)
 
 
 # ---------------------------------------------------------------------------

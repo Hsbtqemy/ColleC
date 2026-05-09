@@ -1,4 +1,4 @@
-"""Export xlsx d'une collection (V0.9.0-gamma.2).
+"""Export xlsx d'une collection.
 
 Une feuille avec :
 - métadonnées de la collection en haut (cote, titre, type, fonds
@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from archives_tool.exporters._commun import composer_export
 from archives_tool.exporters.mapping_dc import extraire_valeur
 from archives_tool.exporters.rapport import RapportExport
-from archives_tool.models import Collection, TypeCollection
+from archives_tool.models import Collection
 
 # Colonnes affichées par item, dans l'ordre. Adaptées au workflow
 # de catalogage : cote/titre/contexte d'abord, puis état et dates,
@@ -73,12 +73,12 @@ def exporter_excel(
     ws = wb.active
     ws.title = _slug_feuille(collection.titre)
 
-    # Bandeau métadonnées de collection (lignes 1-4).
-    type_libelle = (
-        "miroir"
-        if collection.type_collection == TypeCollection.MIROIR.value
-        else ("transversale" if collection.fonds_id is None else "libre")
-    )
+    if export.est_miroir:
+        type_libelle = "miroir"
+    elif export.est_transversale:
+        type_libelle = "transversale"
+    else:
+        type_libelle = "libre"
     ws["A1"] = f"Collection : {collection.titre}"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Cote : {collection.cote}"
@@ -89,19 +89,17 @@ def exporter_excel(
         cotes = ", ".join(f.cote for f in export.fonds_representes)
         ws["A4"] = f"Fonds représentés : {cotes}"
 
-    # Entêtes (ligne 6).
     en_tete_row = 6
     for col_idx, (_, libelle) in enumerate(_COLONNES, start=1):
         cell = ws.cell(row=en_tete_row, column=col_idx, value=libelle)
         cell.font = Font(bold=True)
 
-    # Items (ligne 7+).
     for row_offset, ipe in enumerate(export.items, start=1):
         item = ipe.item
         row = en_tete_row + row_offset
         for col_idx, (champ, _) in enumerate(_COLONNES, start=1):
             if champ == "fonds_cote":
-                valeur = ipe.fonds_cote
+                valeur = ipe.fonds.cote
             elif champ == "nb_fichiers":
                 valeur = len(item.fichiers)
             else:

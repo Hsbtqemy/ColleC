@@ -4,9 +4,9 @@ Centralise la logique de chargement « contexte d'export d'une
 collection » : items + leur fonds d'origine + leurs fichiers, dans
 un objet immuable consommé par les trois formats.
 
-Sémantique d'export (V0.9.0-gamma.2) : on exporte **une collection**
-au sens Nakala (miroir, libre rattachée, ou transversale). Le fonds
-n'est jamais l'unité d'export — on exporte sa miroir si on veut tout.
+Sémantique d'export : on exporte **une collection** au sens Nakala
+(miroir, libre rattachée, ou transversale). Le fonds n'est jamais
+l'unité d'export — on exporte sa miroir si on veut tout.
 """
 
 from __future__ import annotations
@@ -30,19 +30,12 @@ class ItemPourExport:
     """Vue figée d'un item dans le contexte d'un export.
 
     Inclut le fonds d'origine pour les transversales (où chaque item
-    peut venir d'un fonds différent).
+    peut venir d'un fonds différent). Accès direct via `ipe.fonds.cote`,
+    `ipe.fonds.titre` etc. — pas de property d'indirection.
     """
 
     item: Item
     fonds: Fonds
-
-    @property
-    def fonds_cote(self) -> str:
-        return self.fonds.cote
-
-    @property
-    def fonds_titre(self) -> str:
-        return self.fonds.titre
 
 
 @dataclass(frozen=True)
@@ -72,15 +65,15 @@ class CollectionPourExport:
 def composer_export(db: Session, collection: Collection) -> CollectionPourExport:
     """Charge le contexte d'export d'une collection.
 
-    Une seule requête principale qui ramène les items + leurs fichiers
-    + leur fonds. Les fonds représentés (utile pour les transversales)
-    sont déduits côté Python — pas de second JOIN.
+    Une seule requête principale (Item + JOIN ItemCollection + JOIN
+    Fonds pour le tri) plus deux SELECT IN(...) émis par selectinload
+    pour `fichiers` et `fonds` — pas de N+1.
 
     Items triés par (fonds.cote, item.cote) : pour les rattachées
     c'est un tri par cote item ; pour les transversales, regroupe par
     fonds dans la sortie, ce qui est plus lisible.
     """
-    rows = list(
+    items_orm = list(
         db.scalars(
             select(Item)
             .options(selectinload(Item.fichiers), selectinload(Item.fonds))
@@ -90,23 +83,25 @@ def composer_export(db: Session, collection: Collection) -> CollectionPourExport
             .order_by(Fonds.cote, Item.cote)
         ).all()
     )
-
-    items_export = tuple(ItemPourExport(item=it, fonds=it.fonds) for it in rows)
+    items_export = tuple(ItemPourExport(item=it, fonds=it.fonds) for it in items_orm)
 
     fonds_parent: Fonds | None = None
     fonds_representes: tuple[Fonds, ...] = ()
 
     if collection.fonds_id is not None:
-        fonds_parent = db.get(Fonds, collection.fonds_id)
+        # Pour une rattachée non vide, le fonds est déjà chargé via
+        # selectinload(Item.fonds). On évite un db.get supplémentaire ;
+        # le fallback couvre le cas (rare) d'une rattachée sans items.
+        fonds_parent = (
+            items_export[0].fonds
+            if items_export
+            else db.get(Fonds, collection.fonds_id)
+        )
     else:
-        # Transversale : déduit l'ensemble des fonds représentés depuis
-        # les items déjà chargés. Préserve l'ordre alphabétique de cote.
         seen: dict[int, Fonds] = {}
         for ipe in items_export:
             seen.setdefault(ipe.fonds.id, ipe.fonds)
-        fonds_representes = tuple(
-            sorted(seen.values(), key=lambda f: f.cote)
-        )
+        fonds_representes = tuple(sorted(seen.values(), key=lambda f: f.cote))
 
     return CollectionPourExport(
         collection=collection,

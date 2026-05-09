@@ -6,15 +6,25 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    creer_collection_libre,
+    lire_collection_par_cote,
+)
 from archives_tool.api.services.fonds import (
     FormulaireFonds,
     creer_fonds,
+    lire_fonds_par_cote,
+)
+from archives_tool.api.services.items import (
+    FormulaireItem,
+    creer_item,
 )
 from archives_tool.db import creer_engine, creer_session_factory
-from archives_tool.models import Base, Fonds
+from archives_tool.models import Base, Fonds, Item, ItemCollection
 
 # V0.9.0-alpha : la refonte Fonds / Collection / Item invalide la
 # plupart des tests existants (ancien `Collection.parent_id`,
@@ -83,20 +93,6 @@ def session_avec_export(session: Session) -> Session:
     FA : 2 items (FA-001, FA-002).
     TRANSV : transversale avec HK-001 + FA-001.
     """
-    from sqlalchemy import select
-
-    from archives_tool.api.services.collections import (
-        FormulaireCollection,
-        creer_collection_libre,
-        lire_collection_par_cote,
-    )
-    from archives_tool.api.services.fonds import lire_fonds_par_cote
-    from archives_tool.api.services.items import (
-        FormulaireItem,
-        creer_item,
-    )
-    from archives_tool.models import Item, ItemCollection
-
     creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
     creer_fonds(session, FormulaireFonds(cote="FA", titre="Fonds Aínsa"))
     fonds_hk_obj = lire_fonds_par_cote(session, "HK")

@@ -1,4 +1,4 @@
-"""Export CSV de dépôt Nakala d'une collection (V0.9.0-gamma.2).
+"""Export CSV de dépôt Nakala d'une collection.
 
 Format CSV avec colonnes inspirées du format d'import Nakala
 standard (DC + prédicats Nakala). Séparateur ``;``, UTF-8 avec BOM
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from archives_tool.exporters._commun import composer_export
+from archives_tool.exporters._commun import ItemPourExport, composer_export
 from archives_tool.exporters.mapping_dc import (
     DC,
     extraire_valeur,
@@ -68,13 +68,14 @@ def _joindre(valeur: object) -> str:
 
 
 def _ligne_nakala(
-    item: Item,
-    fonds_cote: str,
+    ipe: ItemPourExport,
     doi_collection: str | None,
     licence_defaut: str,
     statut_defaut: str,
 ) -> dict[str, str]:
-    """Projette un Item vers un dict colonne → valeur pour le CSV Nakala."""
+    """Projette un `ItemPourExport` vers un dict colonne → valeur pour le
+    CSV Nakala."""
+    item = ipe.item
     meta = item.metadonnees or {}
     titre = item.titre or ""
     createur = _joindre(meta.get("createurs") or meta.get("auteurs"))
@@ -106,7 +107,7 @@ def _ligne_nakala(
         f"{DC}publisher": _joindre(meta.get("editeur") or meta.get("publisher")),
         f"{DC}type": type_coar,
         f"{DC}rights": licence,
-        "fonds_cote": fonds_cote,
+        "fonds_cote": ipe.fonds.cote,
         "IsDescribedBy": "",
         "IsIdenticalTo": "",
         "IsDerivedFrom": "",
@@ -165,8 +166,7 @@ def exporter_nakala_csv(
         for ipe in export.items:
             writer.writerow(
                 _ligne_nakala(
-                    ipe.item,
-                    ipe.fonds_cote,
+                    ipe,
                     collection.doi_nakala,
                     licence_defaut,
                     statut_defaut,

@@ -61,7 +61,6 @@ from archives_tool.importers.transformateur import ItemPrepare, transformer_lign
 from archives_tool.models import (
     Collection,
     Fichier,
-    Fonds,
     Item,
     OperationImport,
     PhaseChantier,

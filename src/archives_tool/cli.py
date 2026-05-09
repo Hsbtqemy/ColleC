@@ -83,7 +83,7 @@ def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
     if rapport.fonds_cote:
         verbe = "créé" if rapport.fonds_cree else "existant"
         suffixe = (
-            f" + miroir personnalisée" if rapport.miroir_personnalisee else ""
+            " + miroir personnalisée" if rapport.miroir_personnalisee else ""
         )
         typer.echo(f"  Fonds {rapport.fonds_cote} ({verbe}){suffixe}")
     typer.echo(f"  Items créés : {rapport.items_crees}")

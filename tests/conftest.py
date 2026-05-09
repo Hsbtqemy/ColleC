@@ -41,7 +41,6 @@ collect_ignore = [
     "test_export_dc.py",
     "test_export_excel.py",
     "test_export_nakala.py",
-    "test_importer.py",
     "test_mapping_dc.py",
     "test_preferences.py",
     "test_profils_generateur.py",

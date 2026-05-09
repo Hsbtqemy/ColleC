@@ -299,50 +299,53 @@ V0.6.0 livre dashboard + vue collection (3 onglets) + vue item
 avec visionneuse OpenSeadragon, en lecture seule.
 
 - `api/main.py` : application FastAPI, mount `/static`, inclusion
-  des routers.
+  du router `dashboard` (unique depuis V0.9.0-beta : il porte
+  dashboard, fonds, collection, item, collaborateurs).
 - `api/templating.py` : instance Jinja2Templates partagée, filtres
-  (libelle_phase, libelle_etat, temps_relatif, taille_humaine).
-  La route `/collection/{cote}/{onglet}` branche directement sur
-  `HX-Request` pour servir soit le wrapper `pages/collection.html`
-  soit le partiel seul.
+  (libelle_phase, libelle_etat, libelle_role, temps_relatif,
+  taille_humaine, url_tri, url_page).
 - `api/deps.py` : session SQL par requête (engine + sessionmaker
   cachés via lru_cache), identité utilisateur, racines, base
   courante. `ARCHIVES_DB` (variable d'environnement) prime sur la
   base par défaut.
-- `api/routes/` : `dashboard.py`, `collection.py`, `item.py`,
-  `derives.py`.
-- `api/services/` : logique métier pure (`dashboard.py`,
-  `collection.py`, `item.py`, `sources_image.py`).
-- `web/templates/components/` : 10 composants Claude Design
-  (badge_etat, avancement, cellule_modifie, phase_chantier,
-  cartouche_metadonnees, panneau_colonnes, tableau_collections,
-  tableau_items, bandeau_item, panneau_fichiers) + composants
-  antérieurs (header, tabs, metric_card, breadcrumb,
-  collection_header). Le bundle handoff est la **référence visuelle
-  de vérité** ; détails dans [`docs/composants_ui.md`](docs/composants_ui.md).
+- `api/routes/dashboard.py` : routes web — `/`, `/fonds/{cote}[/modifier]`,
+  `/collection/{cote}[/modifier|/items|/items/picker|/items/{id}/retirer]`,
+  `/item/{cote}[/modifier|/fichiers/{id}]`, `/fonds/{cote}/collaborateurs/...`.
+- `api/services/` : logique métier pure (`dashboard.py` pour
+  `composer_dashboard / composer_page_fonds / composer_page_collection /
+  composer_page_item`, `fonds.py`, `collections.py`, `items.py`,
+  `collaborateurs_fonds.py`, `tri.py` (`Listage[T]`),
+  `sources_image.py` pour la résolution Nakala/IIIF V0.7+).
+- `web/templates/components/` : composants partagés (badge_etat,
+  avancement, cellule_modifie, phase_chantier, panneau_colonnes,
+  tableau_collections, tableau_items, header, tabs, metric_card,
+  breadcrumb, collection_header, _champ_form). Le bundle handoff est
+  la **référence visuelle de vérité** ; détails dans
+  [`docs/composants_ui.md`](docs/composants_ui.md).
 - `web/templates/{base.html,pages/,partials/}` : layout commun, pages
   pleines pour accès direct, partiels pour swap HTMX.
 - `web/static/css/{input.css,output.css}` : Tailwind compilé via
   npm. Tokens étendus du bundle : `state-info/warn/ok/err`,
   `seg-brouillon/a-verifier/verifie/valide/a-corriger`,
   `border-{tertiary,secondary,primary}` (opacité du noir).
-- `web/static/js/visionneuse.js` : init OpenSeadragon, écoute les
-  clicks dans `[data-panneau-fichiers]` sur `[data-fichier-id]`,
-  fallback sur `open-failed`.
-- `web/static/js/panneau_fichiers.js` : bascule `data-state`
-  collapsed/hover/pinned (panneau gauche escamotable de la vue item).
-- `web/static/js/vendor/openseadragon/` : bundle vendor copié
-  depuis `node_modules` (gitignoré comme output.css).
+- `web/static/js/vendor/openseadragon/` : bundle vendor conservé
+  pour la visionneuse riche V2 (la V0.9.0-beta.3 utilise un `<img>`
+  simple avec navigation par query string).
 
-**Architecture multi-sources** (`api/services/sources_image.py`) :
-priorité IIIF Nakala > DZI local > aperçu local. Le résultat est
-embarqué en JSON dans la page item, le JS appelle `viewer.open(...)`
-au click sur une vignette.
+**Visionneuse (V0.9.0-beta.3)** : `<img>` direct pour les formats
+raster supportés nativement (PNG, JPEG, GIF, WebP, SVG) ; message
++ lien de téléchargement pour TIFF, PDF, autres. Navigation
+Précédent/Suivant via `?fichier_courant=N` (1-indexé, clampé).
+L'endpoint `/item/{cote}/fichiers/{id}?fonds=COTE` sert le binaire
+via `FileResponse`, après avoir vérifié l'appartenance
+fichier→item→fonds (anti-confused-deputy). Sur la base demo où
+les chemins sont fictifs, retourne 404 propre. Le pipeline IIIF
+Nakala / OpenSeadragon est prévu pour V2 via `sources_image.py`.
 
 CLI : `archives-tool demo init [--sortie data/demo.db] [--force]` crée
-une base SQLite peuplée pour explorer l'interface (5 collections, ~360
-items, anomalies synthétiques). Référence dans
-[`docs/interface_web.md`](docs/interface_web.md).
+une base SQLite peuplée pour explorer l'interface (5 fonds, ~333
+items, ~1300 fichiers, 1 transversale, collaborateurs). Référence
+dans [`docs/interface_web.md`](docs/interface_web.md).
 
 ### Sources externes (V2+)
 
@@ -581,12 +584,19 @@ archives-tool/
   lecture + item picker pour ajouter (multi-id idempotent) +
   bouton retrait par ligne (idempotent, permis sur miroir) —
   V0.9.0-beta.2.1.
+- ✅ Page item refondue : bandeau métadonnées, collections
+  d'appartenance avec badge miroir/libre/transversale, visionneuse
+  navigable (Précédent/Suivant + ?fichier_courant=N bookmarkable,
+  `<img>` pour PNG/JPG/GIF/WebP/SVG, fallback message + lien pour
+  TIFF/PDF), tableau de fichiers cliquable, édition complète
+  (PRG, cote+fonds_id verrouillés/silent override), endpoint
+  `/item/{cote}/fichiers/{id}?fonds=COTE` (anti-confused-deputy,
+  404 si fichier absent du disque) — V0.9.0-beta.3.
 - Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
-- Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver
   + qa / renamer / derivatives — V0.9.0-gamma.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
-- Édition des métadonnées item — V0.9.1 (après refonte service Item).
+- Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
   (créer, renommer, déprécier) depuis l'UI — V0.7.
 - Édition des vocabulaires contrôlés depuis l'UI — V0.7.

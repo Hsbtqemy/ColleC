@@ -11,7 +11,9 @@ from archives_tool.api.main import app
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-from archives_tool.models import Base
+from archives_tool.models import Base, CollaborateurFonds, Fonds
+from sqlalchemy import select as sa_select
+
 from _helpers import texte_visible as _texte_visible
 
 
@@ -360,10 +362,6 @@ def test_supprimer_collaborateur_fonds(
 ) -> None:
     """Supprime un collaborateur seedé : redirige et la page ne le
     montre plus."""
-    # Récupérer l'id d'un collaborateur HK directement en DB.
-    from archives_tool.models import CollaborateurFonds, Fonds
-    from sqlalchemy import select as sa_select
-
     engine = creer_engine(base_demo_path)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -392,9 +390,6 @@ def test_collaborateur_fonds_anti_confused_deputy(
     client_demo: TestClient, base_demo_path: Path
 ) -> None:
     """Un collaborateur de FA ne peut pas être supprimé via /fonds/HK/."""
-    from archives_tool.models import CollaborateurFonds, Fonds
-    from sqlalchemy import select as sa_select
-
     engine = creer_engine(base_demo_path)
     factory = creer_session_factory(engine)
     with factory() as s:

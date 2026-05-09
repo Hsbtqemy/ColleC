@@ -42,6 +42,14 @@ class CollectionResume:
     nb_items: int
     fonds_id: int | None  # None pour transversale
 
+    @property
+    def est_miroir(self) -> bool:
+        return self.type_collection == TypeCollection.MIROIR.value
+
+    @property
+    def est_transversale(self) -> bool:
+        return self.fonds_id is None
+
 
 @dataclass(frozen=True)
 class FondsRepresente:
@@ -192,6 +200,14 @@ class FondsDetail:
     items_recents: tuple[ItemResume, ...]
     collaborateurs_par_role: dict[RoleCollaborateur, list[CollaborateurFondsResume]]
 
+    @property
+    def miroir_resume(self) -> CollectionResume | None:
+        """Référence directe à la miroir, sans dépendre de l'ordre du tri."""
+        for c in self.collections_resume:
+            if c.est_miroir:
+                return c
+        return None
+
 
 def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
     """Charge un fonds + ses collections + 10 items les plus récents
@@ -292,6 +308,18 @@ class CollectionDetail:
     nb_items: int
     fonds_parent: Fonds | None  # None pour transversale
     fonds_representes: tuple[FondsRepresente, ...]  # vide si rattachée à un fonds
+
+    @property
+    def est_miroir(self) -> bool:
+        return self.collection.type_collection == TypeCollection.MIROIR.value
+
+    @property
+    def est_transversale(self) -> bool:
+        return self.collection.fonds_id is None
+
+    @property
+    def est_libre_rattachee(self) -> bool:
+        return not self.est_miroir and not self.est_transversale
 
 
 def composer_page_collection(

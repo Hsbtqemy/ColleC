@@ -146,12 +146,7 @@ def formulaire_modifier_fonds(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    try:
-        fonds = lire_fonds_par_cote(db, cote)
-    except FondsIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail=f"Fonds {cote!r} introuvable."
-        ) from e
+    fonds = _charger_fonds_ou_404(db, cote)
     formulaire = formulaire_depuis_fonds(fonds)
     return templates.TemplateResponse(
         request,
@@ -176,12 +171,7 @@ def soumettre_modification_fonds(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
-    try:
-        fonds = lire_fonds_par_cote(db, cote)
-    except FondsIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail=f"Fonds {cote!r} introuvable."
-        ) from e
+    fonds = _charger_fonds_ou_404(db, cote)
     # La cote est verrouillée : on impose la valeur du chemin.
     formulaire.cote = fonds.cote
     try:
@@ -316,41 +306,53 @@ def _collaborateur_fonds_appartenant(
     return c
 
 
+def _re_rendre_fonds_avec_erreurs_collab(
+    request: Request,
+    db: Session,
+    cote: str,
+    formulaire: FormulaireCollaborateurFonds,
+    erreurs: dict[str, str],
+    nom_base: str,
+    utilisateur: str,
+    *,
+    collaborateur_en_modification: int | None = None,
+) -> HTMLResponse:
+    """Ré-affiche la page fonds avec les erreurs de validation et le
+    formulaire pré-rempli pour que l'utilisateur corrige. Pattern
+    PRG-friendly : status 400 ; pas de redirect."""
+    detail = composer_page_fonds(db, cote)
+    return templates.TemplateResponse(
+        request,
+        "pages/fonds_lecture.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            detail=detail,
+            roles_options=ROLES_OPTIONS,
+            libelles_roles=LIBELLES_ROLE,
+            erreurs_collab=erreurs,
+            formulaire_collab=formulaire,
+            collaborateur_en_modification=collaborateur_en_modification,
+        ),
+        status_code=400,
+    )
+
+
 @router.post("/fonds/{cote}/collaborateurs", response_class=HTMLResponse, response_model=None)
 def ajouter_collaborateur_fonds_route(
     cote: str,
     request: Request,
-    nom: str = Form(default=""),
-    roles: list[str] = Form(default=[]),
-    periode: str = Form(default=""),
-    notes: str = Form(default=""),
+    formulaire: Annotated[FormulaireCollaborateurFonds, Form()],
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
     fonds = _charger_fonds_ou_404(db, cote)
-    formulaire = FormulaireCollaborateurFonds(
-        nom=nom, roles=roles, periode=periode, notes=notes
-    )
     try:
         ajouter_collaborateur_fonds(db, fonds.id, formulaire)
     except CollaborateurFondsInvalide as e:
-        # Ré-affiche la page fonds avec les erreurs de formulaire et
-        # le formulaire ré-pré-rempli pour que l'utilisateur corrige.
-        detail = composer_page_fonds(db, cote)
-        return templates.TemplateResponse(
-            request,
-            "pages/fonds_lecture.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                detail=detail,
-                roles_options=ROLES_OPTIONS,
-                libelles_roles=LIBELLES_ROLE,
-                erreurs_collab=e.erreurs,
-                formulaire_collab=formulaire,
-            ),
-            status_code=400,
+        return _re_rendre_fonds_avec_erreurs_collab(
+            request, db, cote, formulaire, e.erreurs, nom_base, utilisateur
         )
     return RedirectResponse(f"/fonds/{cote}", status_code=303)
 
@@ -364,37 +366,25 @@ def modifier_collaborateur_fonds_route(
     cote: str,
     collaborateur_id: int,
     request: Request,
-    nom: str = Form(default=""),
-    roles: list[str] = Form(default=[]),
-    periode: str = Form(default=""),
-    notes: str = Form(default=""),
+    formulaire: Annotated[FormulaireCollaborateurFonds, Form()],
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
     fonds = _charger_fonds_ou_404(db, cote)
     _collaborateur_fonds_appartenant(db, collaborateur_id, fonds.id)
-    formulaire = FormulaireCollaborateurFonds(
-        nom=nom, roles=roles, periode=periode, notes=notes
-    )
     try:
         modifier_collaborateur_fonds(db, collaborateur_id, formulaire)
     except CollaborateurFondsInvalide as e:
-        detail = composer_page_fonds(db, cote)
-        return templates.TemplateResponse(
+        return _re_rendre_fonds_avec_erreurs_collab(
             request,
-            "pages/fonds_lecture.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                detail=detail,
-                roles_options=ROLES_OPTIONS,
-                libelles_roles=LIBELLES_ROLE,
-                erreurs_collab=e.erreurs,
-                formulaire_collab=formulaire,
-                collaborateur_en_modification=collaborateur_id,
-            ),
-            status_code=400,
+            db,
+            cote,
+            formulaire,
+            e.erreurs,
+            nom_base,
+            utilisateur,
+            collaborateur_en_modification=collaborateur_id,
         )
     except CollaborateurFondsIntrouvable as e:
         raise HTTPException(

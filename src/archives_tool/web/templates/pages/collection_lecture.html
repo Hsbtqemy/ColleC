@@ -6,8 +6,8 @@
    LIBRE transversale. #}
 {% extends "base.html" %}
 {% set col = detail.collection %}
-{% set est_miroir = col.type_collection == "miroir" %}
-{% set est_transversale = col.fonds_id is none %}
+{% set est_miroir = detail.est_miroir %}
+{% set est_transversale = detail.est_transversale %}
 
 {% block title %}{{ col.titre }} — archives-tool{% endblock %}
 

@@ -73,7 +73,7 @@
         <span class="grow">
           <a href="/collection/{{ col.cote }}?fonds={{ detail.fonds.cote }}"
              class="hover:underline">{{ col.titre }}</a>
-          {% if col.type_collection == "miroir" %}
+          {% if col.est_miroir %}
             <span class="ml-2 text-xs italic text-gray-400">miroir</span>
           {% endif %}
         </span>
@@ -199,16 +199,13 @@
         {% endfor %}
       </tbody>
     </table>
-    {% if detail.collections_resume %}
-      {% set miroir = detail.collections_resume[0] %}
-      {% if miroir.type_collection == "miroir" %}
-        <p class="mt-2 text-sm">
-          <a href="/collection/{{ miroir.cote }}?fonds={{ detail.fonds.cote }}"
-             class="text-blue-600 hover:underline">
-            Voir tous les items dans la miroir →
-          </a>
-        </p>
-      {% endif %}
+    {% if detail.miroir_resume %}
+      <p class="mt-2 text-sm">
+        <a href="/collection/{{ detail.miroir_resume.cote }}?fonds={{ detail.fonds.cote }}"
+           class="text-blue-600 hover:underline">
+          Voir tous les items dans la miroir →
+        </a>
+      </p>
     {% endif %}
   </section>
 {% endif %}

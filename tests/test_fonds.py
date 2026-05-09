@@ -20,19 +20,11 @@ from archives_tool.api.services.fonds import (
 )
 from archives_tool.models import (
     Collection,
-    EtatCatalogage,
     Fonds,
     Item,
     TypeCollection,
 )
-
-
-_BROUILLON = EtatCatalogage.BROUILLON.value
-
-
-def _item(fonds: Fonds, cote: str) -> Item:
-    """Helper de fabrication d'item minimal pour les tests."""
-    return Item(fonds_id=fonds.id, cote=cote, etat_catalogage=_BROUILLON)
+from _helpers import BROUILLON, make_item as _item
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +208,7 @@ def test_supprimer_inexistant(session: Session) -> None:
 
 def test_invariant_item_sans_fonds_rejete(session: Session) -> None:
     """Invariant 4 : un Item doit avoir un fonds_id."""
-    session.add(Item(cote="ORPH", etat_catalogage=_BROUILLON))
+    session.add(Item(cote="ORPH", etat_catalogage=BROUILLON))
     with pytest.raises(IntegrityError):
         session.commit()
 

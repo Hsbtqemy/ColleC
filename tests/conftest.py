@@ -9,8 +9,12 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+)
 from archives_tool.db import creer_engine, creer_session_factory
-from archives_tool.models import Base
+from archives_tool.models import Base, Fonds
 
 # V0.9.0-alpha : la refonte Fonds / Collection / Item invalide la
 # plupart des tests existants (ancien `Collection.parent_id`,
@@ -68,3 +72,9 @@ def session(engine: Engine) -> Iterator[Session]:
     factory = creer_session_factory(engine)
     with factory() as session:
         yield session
+
+
+@pytest.fixture
+def fonds_hk(session: Session) -> Fonds:
+    """Fonds HK + sa miroir auto, prêt à recevoir des items."""
+    return creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))

@@ -20,13 +20,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
-    message_cote_existe,
+    chaine_ou_none,
+    garde_cote_unique,
+    valider_cote_titre,
 )
 from archives_tool.models import Collection, Fonds, Item, TypeCollection
 
@@ -37,10 +38,6 @@ class FondsIntrouvable(EntiteIntrouvable):
 
 class FondsInvalide(FormulaireInvalide):
     """Données de formulaire invalides : cote vide, doublon, etc."""
-
-
-def _erreur_cote_existe(cote: str) -> FondsInvalide:
-    return FondsInvalide(message_cote_existe(cote))
 
 
 class FormulaireFonds(BaseModel):
@@ -81,31 +78,15 @@ class FondsResume:
     cree_le: datetime | None = None
 
 
-def _valider_formulaire(formulaire: FormulaireFonds) -> dict[str, str]:
-    erreurs: dict[str, str] = {}
-    if not formulaire.cote.strip():
-        erreurs["cote"] = "La cote est obligatoire."
-    if not formulaire.titre.strip():
-        erreurs["titre"] = "Le titre est obligatoire."
-    return erreurs
-
-
 def _appliquer_formulaire(fonds: Fonds, formulaire: FormulaireFonds) -> None:
-    """Copie le formulaire sur le modèle ; chaînes vides → None
-    pour les champs optionnels (cote/titre obligatoires sont strippés).
-
-    Tous les champs de `FormulaireFonds` sont des `str` aujourd'hui ;
-    le `isinstance(valeur, str)` protège l'ajout futur d'un champ
-    non-string (bool / list / etc.) — le service applicatif devra
-    alors traiter ce champ explicitement.
-    """
+    """Copie le formulaire sur le modèle ; chaînes vides → None pour
+    les champs optionnels (cote/titre obligatoires sont strippés)."""
     fonds.cote = formulaire.cote.strip()
     fonds.titre = formulaire.titre.strip()
     for nom, valeur in formulaire.model_dump().items():
         if nom in ("cote", "titre"):
             continue
-        if isinstance(valeur, str):
-            setattr(fonds, nom, valeur.strip() or None)
+        setattr(fonds, nom, chaine_ou_none(valeur))
 
 
 def lire_fonds(db: Session, fonds_id: int) -> Fonds:
@@ -189,7 +170,7 @@ def creer_fonds(
     une autre transaction l'a créée entretemps, l'IntegrityError du
     commit la rattrape.
     """
-    erreurs = _valider_formulaire(formulaire)
+    erreurs = valider_cote_titre(formulaire.cote, formulaire.titre, exiger_pattern=False)
     if erreurs:
         raise FondsInvalide(erreurs)
 
@@ -205,11 +186,8 @@ def creer_fonds(
     )
     db.add(fonds)
     db.add(miroir)
-    try:
+    with garde_cote_unique(db, FondsInvalide, fonds.cote):
         db.commit()
-    except IntegrityError as e:
-        db.rollback()
-        raise _erreur_cote_existe(fonds.cote) from e
     db.refresh(fonds)
     return fonds
 
@@ -229,7 +207,7 @@ def modifier_fonds(
     l'instant, le rattachement reste cohérent (même `fonds_id`) mais
     la miroir peut diverger.
     """
-    erreurs = _valider_formulaire(formulaire)
+    erreurs = valider_cote_titre(formulaire.cote, formulaire.titre, exiger_pattern=False)
     if erreurs:
         raise FondsInvalide(erreurs)
 
@@ -238,11 +216,8 @@ def modifier_fonds(
     fonds.modifie_par = modifie_par
     fonds.modifie_le = datetime.now()
 
-    try:
+    with garde_cote_unique(db, FondsInvalide, fonds.cote):
         db.commit()
-    except IntegrityError as e:
-        db.rollback()
-        raise _erreur_cote_existe(fonds.cote) from e
     db.refresh(fonds)
     return fonds
 

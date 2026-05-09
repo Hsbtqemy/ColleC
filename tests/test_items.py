@@ -44,12 +44,9 @@ from archives_tool.models import (
 )
 
 
-@pytest.fixture
-def fonds_hk(session: Session) -> Fonds:
-    return creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
-
-
-def _form(fonds: Fonds, cote: str = "HK-001", titre: str = "Item HK") -> FormulaireItem:
+def _form(
+    fonds: Fonds, cote: str = "HK-001", titre: str = "Item HK"
+) -> FormulaireItem:
     return FormulaireItem(cote=cote, titre=titre, fonds_id=fonds.id)
 
 

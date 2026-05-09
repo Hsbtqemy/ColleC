@@ -1,7 +1,7 @@
-"""Tests d'intégration cross-services V0.9.0-alpha.1.
+"""Tests d'intégration cross-services Fonds / Collection / Item.
 
 Valident les invariants 5, 6, 7 et les cascades sur des workflows
-end-to-end qui traversent les trois services Fonds / Collection / Item.
+end-to-end traversant les trois services.
 """
 
 from __future__ import annotations

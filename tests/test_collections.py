@@ -26,23 +26,12 @@ from archives_tool.api.services.fonds import (
 )
 from archives_tool.models import (
     Collection,
-    EtatCatalogage,
     Fonds,
     Item,
     ItemCollection,
     TypeCollection,
 )
-
-_BROUILLON = EtatCatalogage.BROUILLON.value
-
-
-@pytest.fixture
-def fonds_hk(session: Session) -> Fonds:
-    return creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
-
-
-def _item(fonds: Fonds, cote: str) -> Item:
-    return Item(fonds_id=fonds.id, cote=cote, etat_catalogage=_BROUILLON)
+from _helpers import make_item as _item
 
 
 # ---------------------------------------------------------------------------

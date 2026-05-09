@@ -12,21 +12,21 @@ Le `fonds_id` d'un item est immuable : déplacer un item d'un fonds
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
     OperationInterdite,
-    message_cote_existe,
+    chaine_ou_none,
+    garde_cote_unique,
+    valider_cote_titre,
 )
 from archives_tool.api.services.tri import (
     Listage,
@@ -43,7 +43,6 @@ from archives_tool.models import (
 )
 
 
-_PATTERN_COTE = re.compile(r"^[A-Za-z0-9_-]+$")
 _ETATS_VALIDES: frozenset[str] = frozenset(e.value for e in EtatCatalogage)
 
 
@@ -57,10 +56,6 @@ class ItemInvalide(FormulaireInvalide):
 
 class OperationItemInterdite(OperationInterdite):
     """Opération refusée : changer le fonds, fonds sans miroir, etc."""
-
-
-def _erreur_cote_existe(cote: str) -> ItemInvalide:
-    return ItemInvalide(message_cote_existe(cote))
 
 
 class FormulaireItem(BaseModel):
@@ -122,16 +117,7 @@ class ItemResume:
 
 
 def _valider_formulaire(formulaire: FormulaireItem) -> dict[str, str]:
-    erreurs: dict[str, str] = {}
-    cote = formulaire.cote.strip()
-    if not cote:
-        erreurs["cote"] = "La cote est obligatoire."
-    elif not _PATTERN_COTE.match(cote):
-        erreurs["cote"] = (
-            "Caractères autorisés : lettres, chiffres, tiret, souligné."
-        )
-    if not formulaire.titre.strip():
-        erreurs["titre"] = "Le titre est obligatoire."
+    erreurs = valider_cote_titre(formulaire.cote, formulaire.titre)
     if formulaire.fonds_id <= 0:
         erreurs["fonds_id"] = "Le fonds est obligatoire."
     return erreurs
@@ -161,8 +147,7 @@ def _appliquer_formulaire(item: Item, formulaire: FormulaireItem) -> None:
     item.numero_tri = formulaire.numero_tri
     item.metadonnees = formulaire.metadonnees or None
     for nom in _OPTIONNELS_NULLABLES:
-        valeur = getattr(formulaire, nom)
-        setattr(item, nom, valeur.strip() or None if isinstance(valeur, str) else valeur)
+        setattr(item, nom, chaine_ou_none(getattr(formulaire, nom)))
 
 
 def lire_item(db: Session, item_id: int) -> Item:
@@ -352,15 +337,8 @@ def creer_item(
     if fonds is None:
         raise ItemInvalide({"fonds_id": f"Le fonds {formulaire.fonds_id} n'existe pas."})
 
-    item = Item(fonds_id=fonds.id, cree_par=cree_par)
-    _appliquer_formulaire(item, formulaire)
-    db.add(item)
-    try:
-        db.flush()
-    except IntegrityError as e:
-        db.rollback()
-        raise _erreur_cote_existe(item.cote) from e
-
+    # Fail fast : si le fonds n'a pas de miroir (anomalie), pas la peine
+    # de tenter l'insert.
     miroir_id = db.scalar(
         select(Collection.id).where(
             Collection.fonds_id == fonds.id,
@@ -368,14 +346,18 @@ def creer_item(
         )
     )
     if miroir_id is None:
-        db.rollback()
         raise OperationItemInterdite(
             f"Le fonds {fonds.cote!r} (id={fonds.id}) n'a pas de "
             "collection miroir — anomalie d'intégrité."
         )
 
-    db.add(ItemCollection(item_id=item.id, collection_id=miroir_id))
-    db.commit()
+    item = Item(fonds_id=fonds.id, cree_par=cree_par)
+    _appliquer_formulaire(item, formulaire)
+    db.add(item)
+    with garde_cote_unique(db, ItemInvalide, item.cote):
+        db.flush()
+        db.add(ItemCollection(item_id=item.id, collection_id=miroir_id))
+        db.commit()
     db.refresh(item)
     return item
 
@@ -405,11 +387,8 @@ def modifier_item(
     item.modifie_par = modifie_par
     item.modifie_le = datetime.now()
 
-    try:
+    with garde_cote_unique(db, ItemInvalide, item.cote):
         db.commit()
-    except IntegrityError as e:
-        db.rollback()
-        raise _erreur_cote_existe(item.cote) from e
     db.refresh(item)
     return item
 

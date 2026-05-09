@@ -128,9 +128,6 @@ def vue_collection(
     if onglet == "items":
         contexte["colonnes_actives"] = colonnes_actives_items
         contexte["collection_id"] = collection_id_items
-        # Pour l'empty state : « collection vide » = aucun item ET
-        # aucune sous-collection. Si la collection a des enfants, on
-        # n'affiche pas l'empty state items (il y a déjà un onglet).
         contexte["nb_sous_collections"] = (
             db.scalar(
                 select(func.count(Collection.id)).where(

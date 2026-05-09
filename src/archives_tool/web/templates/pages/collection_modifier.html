@@ -5,51 +5,9 @@
    externes). Le POST cible `/collection/{cote}/modifier` et
    redirige vers `/collection/{cote}/items` au succès. #}
 {% extends "base.html" %}
+{% from "partials/_collection_form_corps.html" import champ, sections_communes with context %}
 
 {% block title %}Modifier {{ collection.cote_collection }} — archives-tool{% endblock %}
-
-{% macro champ(nom, label, valeur, type='text', placeholder='', help_text='', mono=false) %}
-  {% set en_erreur = nom in erreurs %}
-  <div style="margin-bottom:14px;">
-    <label for="champ-{{ nom }}"
-           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
-      {{ label }}
-    </label>
-    <input id="champ-{{ nom }}" type="{{ type }}" name="{{ nom }}"
-           value="{{ valeur }}"
-           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
-           class="w-full {% if mono %}font-mono{% endif %}"
-           style="padding:6px 10px;font-size:13px;
-                  border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
-                  border-radius:4px;background:#fff;">
-    {% if en_erreur %}
-      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
-    {% elif help_text %}
-      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
-    {% endif %}
-  </div>
-{% endmacro %}
-
-{% macro textarea(nom, label, valeur, placeholder='', help_text='') %}
-  {% set en_erreur = nom in erreurs %}
-  <div style="margin-bottom:14px;">
-    <label for="champ-{{ nom }}"
-           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
-      {{ label }}
-    </label>
-    <textarea id="champ-{{ nom }}" name="{{ nom }}" rows="3"
-              {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
-              class="w-full"
-              style="padding:6px 10px;font-size:13px;
-                     border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
-                     border-radius:4px;background:#fff;resize:vertical;">{{ valeur }}</textarea>
-    {% if en_erreur %}
-      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
-    {% elif help_text %}
-      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
-    {% endif %}
-  </div>
-{% endmacro %}
 
 {% block content %}
 <header class="mb-8">
@@ -87,91 +45,8 @@
     {{ champ('titre', 'Titre', formulaire.titre) }}
   </section>
 
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Description
-    </h2>
-    {{ textarea('description', 'Description publique',
-                formulaire.description,
-                help_text='Destinée aux exports Dublin Core et aux consultations externes.') }}
-    {{ textarea('description_interne', 'Description interne',
-                formulaire.description_interne,
-                help_text='Pour l’équipe — non exportée. Conventions, choix de catalogage, etc.') }}
-  </section>
-
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Origine et responsabilité
-    </h2>
-    {{ champ('personnalite_associee', 'Personnalité ou entité associée',
-             formulaire.personnalite_associee,
-             help_text='Personne, mouvement ou institution autour duquel s’organise la collection. Optionnel.') }}
-    {{ champ('responsable_archives', 'Responsable Archives',
-             formulaire.responsable_archives,
-             help_text='Personne ou institution responsable de la constitution de la collection.') }}
-  </section>
-
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Édition <span style="font-size:11px;color:#9ca3af;font-weight:normal;text-transform:none;letter-spacing:0;">— pour les revues et périodiques</span>
-    </h2>
-    <div class="grid grid-cols-2 gap-3">
-      {{ champ('editeur', 'Éditeur (revues)', formulaire.editeur) }}
-      {{ champ('lieu_edition', 'Lieu d’édition (revues)', formulaire.lieu_edition) }}
-    </div>
-  </section>
-
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Période
-    </h2>
-    <div class="grid grid-cols-2 gap-3">
-      {{ champ('date_debut', 'Date début',
-               formulaire.date_debut,
-               placeholder='1955, vers 1960…',
-               help_text='EDTF accepté.') }}
-      {{ champ('date_fin', 'Date fin',
-               formulaire.date_fin,
-               placeholder='2019, sans date…') }}
-    </div>
-  </section>
-
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Configuration
-    </h2>
-    <div style="margin-bottom:14px;">
-      <label for="champ-phase"
-             style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
-        Phase de chantier
-      </label>
-      <select id="champ-phase" name="phase"
-              class="w-full"
-              style="padding:6px 10px;font-size:13px;
-                     border:1px solid rgba(0,0,0,0.16);border-radius:4px;background:#fff;">
-        {% for p in phases %}
-          <option value="{{ p.value }}" {% if formulaire.phase == p.value %}selected{% endif %}>
-            {{ p | libelle_phase }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-    {{ champ('parent_cote', 'Collection parente (optionnel)',
-             formulaire.parent_cote,
-             placeholder='cote d’une collection existante',
-             help_text='Pour rattacher comme sous-collection. Laisser vide pour une racine.',
-             mono=true) }}
-  </section>
-
-  <section style="margin-bottom:28px;">
-    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Identifiants externes
-    </h2>
-    {{ champ('doi_nakala', 'DOI Nakala',
-             formulaire.doi_nakala,
-             placeholder='10.34847/nkl.xxxxxxxx',
-             mono=true) }}
-  </section>
+  {{ sections_communes(formulaire, erreurs, phases,
+                       parent_help='Pour rattacher comme sous-collection. Laisser vide pour une racine.') }}
 
   <div class="flex items-center justify-end gap-2"
        style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">

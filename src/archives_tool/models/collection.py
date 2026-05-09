@@ -39,13 +39,7 @@ class Collection(Base, TracabiliteMixin):
     doi_nakala: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     description_interne: Mapped[str | None] = mapped_column(Text)
-    # Personnalité ou entité autour de laquelle s'organise la collection
-    # (V0.7.x). Texte libre, optionnel — distinct de `responsable_archives`
-    # qui désigne la personne en charge de la constitution.
     personnalite_associee: Mapped[str | None] = mapped_column(Text)
-    # Renommé depuis `auteur_principal` (V0.7.x) — neutralisation du
-    # vocabulaire bibliographique. Personne ou institution responsable
-    # de la constitution de la collection.
     responsable_archives: Mapped[str | None] = mapped_column(Text)
     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     notes_internes: Mapped[str | None] = mapped_column(Text)

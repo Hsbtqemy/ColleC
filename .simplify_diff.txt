@@ -1,0 +1,1488 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 63fa6d0..3fcedc0 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -507,8 +507,13 @@ archives-tool/
+ - ✅ Sélection persistée des colonnes du tableau d'items via le panneau
+   Colonnes du bundle (drag-drop Sortable.js, `PreferencesAffichage`,
+   champs métadonnées dynamiques par collection) — V0.6.3.
++- ✅ Création de collection vide depuis l'UI + menu Importer
++  (placeholder /import) + breadcrumb fil d'ariane — V0.7-alpha.
++- ✅ Page de modification de collection + empty state proactif sur
++  collection vide + boutons « Modifier » / « Importer dans cette
++  collection » sur le bandeau — V0.7.x.
+ - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
+-- Édition des métadonnées item — V0.7.
++- Édition des métadonnées item — V0.8 (décalé depuis V0.7).
+ - Édition structurelle des champs personnalisés d'une collection
+   (créer, renommer, déprécier) depuis l'UI — V0.7.
+ - Édition des vocabulaires contrôlés depuis l'UI — V0.7.
+diff --git a/alembic/versions/e5j6k7l8m9n0_responsable_archives_personnalite.py b/alembic/versions/e5j6k7l8m9n0_responsable_archives_personnalite.py
+new file mode 100644
+index 0000000..ec77e5e
+--- /dev/null
++++ b/alembic/versions/e5j6k7l8m9n0_responsable_archives_personnalite.py
+@@ -0,0 +1,45 @@
++"""Renomme `auteur_principal` en `responsable_archives` et ajoute
++`personnalite_associee` sur Collection (V0.7.x).
++
++Neutralise le biais bibliographique du vocabulaire :
++- `auteur_principal` → `responsable_archives` (responsable de la
++  constitution de la collection).
++- Nouveau `personnalite_associee` : personne, mouvement ou institution
++  autour duquel s'organise la collection.
++
++Le renommage utilise `batch_alter_table` qui copie la table sous le
++capot (SQLite ne supporte pas RENAME COLUMN en ALTER direct sur
++toutes les versions). Les valeurs existantes sont préservées.
++
++Revision ID: e5j6k7l8m9n0
++Revises: d4i5j6k7l8m9
++Create Date: 2026-05-09
++"""
++
++from __future__ import annotations
++
++import sqlalchemy as sa
++from alembic import op
++
++revision: str = "e5j6k7l8m9n0"
++down_revision: str | None = "d4i5j6k7l8m9"
++branch_labels: str | tuple[str, ...] | None = None
++depends_on: str | tuple[str, ...] | None = None
++
++
++def upgrade() -> None:
++    with op.batch_alter_table("collection") as batch_op:
++        batch_op.add_column(
++            sa.Column("personnalite_associee", sa.Text(), nullable=True)
++        )
++        batch_op.alter_column(
++            "auteur_principal", new_column_name="responsable_archives"
++        )
++
++
++def downgrade() -> None:
++    with op.batch_alter_table("collection") as batch_op:
++        batch_op.alter_column(
++            "responsable_archives", new_column_name="auteur_principal"
++        )
++        batch_op.drop_column("personnalite_associee")
+diff --git a/docs/interface_web.md b/docs/interface_web.md
+index 710fa9e..6fec27f 100644
+--- a/docs/interface_web.md
++++ b/docs/interface_web.md
+@@ -324,6 +324,55 @@ elif dans la macro `_cell` de `components/tableau_items.html` (rendu
+ spécifique au type), et — si la colonne nécessite un champ pas
+ encore projeté — ajouter le champ Item à la SELECT de `lister_items`.
+ 
++## Création et édition de collection (V0.7.x)
++
++**Création** :
++- `GET /collections/nouvelle[?parent=COTE]` rend le formulaire ;
++  `?parent=COTE` pré-remplit la collection parente (silencieusement
++  ignorée si la cote n'existe pas).
++- `POST /collections` valide côté serveur et redirige (303) vers
++  `/collection/{cote}` au succès. Re-rend la page avec status 400
++  + erreurs préservées en cas d'échec.
++
++**Édition** :
++- `GET /collection/{cote}/modifier` rend le formulaire pré-rempli
++  via `services.collections_creation.formulaire_depuis_collection`.
++- `POST /collection/{cote}/modifier` valide via
++  `valider_modification` (qui ne re-vérifie pas la cote — verrouillée
++  par design — et accepte le DOI inchangé). Redirige vers
++  `/collection/{cote}/items` au succès.
++
++La cote est un input `disabled` avec aide explicative — toute
++tentative de la modifier via le POST est silencieusement ignorée
++(la valeur du model est utilisée).
++
++## Fil d'Ariane (breadcrumb)
++
++Composant `components/breadcrumb.html` accepte une liste
++`crumbs = [{label, href, mono?}]`. Le dernier élément est rendu
++non cliquable (page courante).
++
++Helper `services/collection.fil_ariane_collection(col, *,
++page_courante=None)` remonte la hiérarchie `parent_id` jusqu'à la
++racine et préfixe par « Tableau de bord ». Pour les pages dérivées
++d'une collection (ex. « Modifier »), passer `page_courante='Modifier'`
++ajoute une feuille non cliquable supplémentaire.
++
++Pages équipées : dashboard (implicite, racine sans breadcrumb),
++collection (3 onglets), nouvelle collection, modifier, import
++placeholder, vue item (via `bandeau_item`).
++
++## Empty states
++
++- Collection sans item ET sans sous-collection : grosse boîte
++  proactive avec « Importer un tableur » → `/import?collection={cote}`
++  et « Ajouter un item manuellement » (désactivé V0.8).
++- Onglet sous-collections vide : « Créer une sous-collection » →
++  `/collections/nouvelle?parent={cote}`.
++- Si la collection a des sous-collections mais pas d'items, l'onglet
++  items affiche un message court (l'utilisateur a un onglet à
++  explorer).
++
+ ## Limites V0.6.3
+ 
+ - Lecture seule : aucune édition possible depuis l'UI (V0.7).
+diff --git a/package.json b/package.json
+index eb189c6..68315ad 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "archives-tool-web",
+-  "version": "0.6.3",
++  "version": "0.7.0",
+   "private": true,
+   "scripts": {
+     "build:css": "tailwindcss -i ./src/archives_tool/web/static/css/input.css -o ./src/archives_tool/web/static/css/output.css",
+diff --git a/pyproject.toml b/pyproject.toml
+index eca79ad..f7bc99b 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,6 +1,6 @@
+ [project]
+ name = "archives-tool"
+-version = "0.6.3"
++version = "0.7.0"
+ description = "Outil interne de gestion de collections numérisées."
+ readme = "README.md"
+ requires-python = ">=3.11"
+diff --git a/schema.md b/schema.md
+index dd72935..9c48191 100644
+--- a/schema.md
++++ b/schema.md
+@@ -190,7 +190,8 @@ Représente une revue, un fonds, un ensemble catalographique.
+ | `doi_nakala` | TEXT | UNIQUE | DOI d'une collection publiée sur Nakala. Unique pour détecter les doubles imports. |
+ | `description` | TEXT | | Description publique/catalographique. |
+ | `description_interne` | TEXT | | Description usage équipe : choix de chantier, conventions, points d'attention. |
+-| `auteur_principal` | TEXT | | Nom libre, informatif. Pas une FK. |
++| `personnalite_associee` | TEXT | | Personnalité, mouvement ou institution autour duquel s'organise la collection (V0.7.x). Texte libre. |
++| `responsable_archives` | TEXT | | Personne ou institution responsable de la constitution de la collection. Renommé depuis `auteur_principal` (V0.7.x). |
+ | `metadonnees` | JSON | | Champs étendus spécifiques |
+ | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
+ | `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |
+diff --git a/src/archives_tool/affichage/collections.py b/src/archives_tool/affichage/collections.py
+index ac802ba..10713b4 100644
+--- a/src/archives_tool/affichage/collections.py
++++ b/src/archives_tool/affichage/collections.py
+@@ -182,7 +182,8 @@ def afficher_fiche_collection(
+         ("Items", str(stats["nb_items"])),
+         ("Fichiers", str(stats["nb_fichiers"])),
+         ("Sous-collections", str(nb_sous)),
+-        ("Auteur principal", col.auteur_principal or ABSENT),
++        ("Personnalité associée", col.personnalite_associee or ABSENT),
++        ("Responsable Archives", col.responsable_archives or ABSENT),
+     ]
+     largeur_cle = max(len(c) for c, _ in lignes_meta)
+     corps = "\n".join(
+diff --git a/src/archives_tool/api/routes/collection.py b/src/archives_tool/api/routes/collection.py
+index 69b203e..2243c7b 100644
+--- a/src/archives_tool/api/routes/collection.py
++++ b/src/archives_tool/api/routes/collection.py
+@@ -16,12 +16,14 @@ from typing import Literal
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Request
+ from fastapi.responses import HTMLResponse, RedirectResponse
++from sqlalchemy import func, select
+ from sqlalchemy.orm import Session
+ 
+ from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+ from archives_tool.api.services import collection as svc
+ from archives_tool.api.services import preferences as svc_prefs
+ from archives_tool.api.templating import templates
++from archives_tool.models import Collection
+ 
+ router = APIRouter()
+ 
+@@ -126,6 +128,17 @@ def vue_collection(
+     if onglet == "items":
+         contexte["colonnes_actives"] = colonnes_actives_items
+         contexte["collection_id"] = collection_id_items
++        # Pour l'empty state : « collection vide » = aucun item ET
++        # aucune sous-collection. Si la collection a des enfants, on
++        # n'affiche pas l'empty state items (il y a déjà un onglet).
++        contexte["nb_sous_collections"] = (
++            db.scalar(
++                select(func.count(Collection.id)).where(
++                    Collection.parent_id == collection_id_items
++                )
++            )
++            or 0
++        )
+ 
+     if request.headers.get("HX-Request"):
+         return templates.TemplateResponse(request, partial, contexte)
+@@ -141,10 +154,12 @@ def vue_collection(
+         )
+         contexte["filtres_cible_url"] = f"/collection/{cote}/fichiers"
+ 
++    col_model = svc._charger_collection(db, cote)
+     contexte.update(
+         nom_base=nom_base,
+         utilisateur=utilisateur,
+         detail=svc.collection_detail(db, cote),
++        crumbs=svc.fil_ariane_collection(col_model),
+         onglet=onglet,
+         partial_template=partial,
+     )
+diff --git a/src/archives_tool/api/routes/collections.py b/src/archives_tool/api/routes/collections.py
+index 856f167..6ca5116 100644
+--- a/src/archives_tool/api/routes/collections.py
++++ b/src/archives_tool/api/routes/collections.py
+@@ -12,11 +12,12 @@ de succès).
+ 
+ from __future__ import annotations
+ 
+-from fastapi import APIRouter, Depends, Form, Request
++from fastapi import APIRouter, Depends, Form, HTTPException, Request
+ from fastapi.responses import HTMLResponse, RedirectResponse
+ from sqlalchemy.orm import Session
+ 
+ from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
++from archives_tool.api.services import collection as svc_col
+ from archives_tool.api.services import collections_creation as svc
+ from archives_tool.api.templating import templates
+ from archives_tool.models import PhaseChantier
+@@ -27,16 +28,29 @@ router = APIRouter()
+ @router.get("/collections/nouvelle", response_class=HTMLResponse)
+ def formulaire_nouvelle_collection(
+     request: Request,
++    parent: str | None = None,
++    db: Session = Depends(get_db),
+     nom_base: str = Depends(get_nom_base),
+     utilisateur: str = Depends(get_utilisateur_courant),
+ ) -> HTMLResponse:
++    """`?parent=COTE` pré-remplit le champ « Collection parente ».
++
++    Si la cote ne correspond à aucune collection existante, le champ
++    est laissé vide (silencieusement — l'utilisateur saisira ce qu'il
++    veut).
++    """
++    formulaire = svc.FormulaireCollection()
++    if parent:
++        parent_existant = svc.lire_collection_par_cote(db, parent.strip())
++        if parent_existant is not None:
++            formulaire.parent_cote = parent_existant.cote_collection
+     return templates.TemplateResponse(
+         request,
+         "pages/collection_nouvelle.html",
+         {
+             "nom_base": nom_base,
+             "utilisateur": utilisateur,
+-            "formulaire": svc.FormulaireCollection(),
++            "formulaire": formulaire,
+             "erreurs": {},
+             "phases": list(PhaseChantier),
+         },
+@@ -52,7 +66,8 @@ def creer_collection_post(
+     description_interne: str = Form(default=""),
+     editeur: str = Form(default=""),
+     lieu_edition: str = Form(default=""),
+-    auteur_principal: str = Form(default=""),
++    personnalite_associee: str = Form(default=""),
++    responsable_archives: str = Form(default=""),
+     date_debut: str = Form(default=""),
+     date_fin: str = Form(default=""),
+     phase: str = Form(default="catalogage"),
+@@ -69,7 +84,8 @@ def creer_collection_post(
+         description_interne=description_interne,
+         editeur=editeur,
+         lieu_edition=lieu_edition,
+-        auteur_principal=auteur_principal,
++        personnalite_associee=personnalite_associee,
++        responsable_archives=responsable_archives,
+         date_debut=date_debut,
+         date_fin=date_fin,
+         phase=phase,
+@@ -94,3 +110,99 @@ def creer_collection_post(
+         db, formulaire, cree_par=utilisateur, parent=res.parent_resolu
+     )
+     return RedirectResponse(url=f"/collection/{col.cote_collection}", status_code=303)
++
++
++# ---------------------------------------------------------------------------
++# Modification d'une collection existante (V0.7.x)
++# ---------------------------------------------------------------------------
++
++
++def _charger_pour_edition(db: Session, cote: str):
++    col = svc.lire_collection_par_cote(db, cote)
++    if col is None:
++        raise HTTPException(status_code=404, detail=f"Collection {cote!r} introuvable.")
++    return col
++
++
++@router.get("/collection/{cote}/modifier", response_class=HTMLResponse)
++def formulaire_modifier_collection(
++    request: Request,
++    cote: str,
++    db: Session = Depends(get_db),
++    nom_base: str = Depends(get_nom_base),
++    utilisateur: str = Depends(get_utilisateur_courant),
++) -> HTMLResponse:
++    col = _charger_pour_edition(db, cote)
++    return templates.TemplateResponse(
++        request,
++        "pages/collection_modifier.html",
++        {
++            "nom_base": nom_base,
++            "utilisateur": utilisateur,
++            "collection": col,
++            "formulaire": svc.formulaire_depuis_collection(col),
++            "erreurs": {},
++            "phases": list(PhaseChantier),
++            "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
++        },
++    )
++
++
++@router.post("/collection/{cote}/modifier", response_class=HTMLResponse)
++def modifier_collection_post(
++    request: Request,
++    cote: str,
++    titre: str = Form(default=""),
++    description: str = Form(default=""),
++    description_interne: str = Form(default=""),
++    editeur: str = Form(default=""),
++    lieu_edition: str = Form(default=""),
++    personnalite_associee: str = Form(default=""),
++    responsable_archives: str = Form(default=""),
++    date_debut: str = Form(default=""),
++    date_fin: str = Form(default=""),
++    phase: str = Form(default="catalogage"),
++    parent_cote: str = Form(default=""),
++    doi_nakala: str = Form(default=""),
++    db: Session = Depends(get_db),
++    nom_base: str = Depends(get_nom_base),
++    utilisateur: str = Depends(get_utilisateur_courant),
++) -> HTMLResponse:
++    col = _charger_pour_edition(db, cote)
++    # La cote n'est jamais lue depuis le formulaire — verrouillée par
++    # design. Toute valeur envoyée est ignorée silencieusement.
++    formulaire = svc.FormulaireCollection(
++        cote=col.cote_collection,
++        titre=titre,
++        description=description,
++        description_interne=description_interne,
++        editeur=editeur,
++        lieu_edition=lieu_edition,
++        personnalite_associee=personnalite_associee,
++        responsable_archives=responsable_archives,
++        date_debut=date_debut,
++        date_fin=date_fin,
++        phase=phase,
++        parent_cote=parent_cote,
++        doi_nakala=doi_nakala,
++    )
++    res = svc.valider_modification(db, col, formulaire)
++    if not res.ok:
++        return templates.TemplateResponse(
++            request,
++            "pages/collection_modifier.html",
++            {
++                "nom_base": nom_base,
++                "utilisateur": utilisateur,
++                "collection": col,
++                "formulaire": formulaire,
++                "erreurs": res.erreurs,
++                "phases": list(PhaseChantier),
++                "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
++            },
++            status_code=400,
++        )
++    svc.modifier_collection(
++        db, col, formulaire, modifie_par=utilisateur, parent=res.parent_resolu
++    )
++    return RedirectResponse(url=f"/collection/{cote}/items", status_code=303)
+diff --git a/src/archives_tool/api/services/collection.py b/src/archives_tool/api/services/collection.py
+index b2eb08a..d631d50 100644
+--- a/src/archives_tool/api/services/collection.py
++++ b/src/archives_tool/api/services/collection.py
+@@ -45,7 +45,8 @@ class CollectionDetail:
+     doi_nakala: str | None
+     description: str | None
+     description_interne: str | None
+-    auteur_principal: str | None
++    personnalite_associee: str | None
++    responsable_archives: str | None
+     phase: PhaseChantier
+     parent_cote: str | None
+     parent_titre: str | None
+@@ -118,6 +119,43 @@ def _charger_collection(session: Session, cote: str) -> Collection:
+     return col
+ 
+ 
++def fil_ariane_collection(
++    col: Collection, *, page_courante: str | None = None
++) -> list[dict]:
++    """Construit le fil d'Ariane d'une collection.
++
++    Tableau de bord › … parents … › cote_courante › [page_courante].
++    `page_courante` (ex. « Modifier ») devient la feuille non
++    cliquable. Sinon la cote elle-même est la feuille.
++    """
++    chaine: list[Collection] = []
++    courant: Collection | None = col.parent
++    while courant is not None:
++        chaine.append(courant)
++        courant = courant.parent
++    chaine.reverse()
++
++    crumbs: list[dict] = [{"label": "Tableau de bord", "href": "/"}]
++    for ancetre in chaine:
++        crumbs.append(
++            {
++                "label": ancetre.cote_collection,
++                "href": f"/collection/{ancetre.cote_collection}",
++                "mono": True,
++            }
++        )
++    crumbs.append(
++        {
++            "label": col.cote_collection,
++            "href": f"/collection/{col.cote_collection}",
++            "mono": True,
++        }
++    )
++    if page_courante:
++        crumbs.append({"label": page_courante})
++    return crumbs
++
++
+ def collection_detail(session: Session, cote: str) -> CollectionDetail:
+     col = _charger_collection(session, cote)
+ 
+@@ -159,7 +197,8 @@ def collection_detail(session: Session, cote: str) -> CollectionDetail:
+         doi_nakala=col.doi_nakala,
+         description=col.description,
+         description_interne=col.description_interne,
+-        auteur_principal=col.auteur_principal,
++        personnalite_associee=col.personnalite_associee,
++        responsable_archives=col.responsable_archives,
+         phase=PhaseChantier(col.phase),
+         parent_cote=col.parent.cote_collection if col.parent else None,
+         parent_titre=col.parent.titre if col.parent else None,
+diff --git a/src/archives_tool/api/services/collections_creation.py b/src/archives_tool/api/services/collections_creation.py
+index 69fdf38..ee4d13f 100644
+--- a/src/archives_tool/api/services/collections_creation.py
++++ b/src/archives_tool/api/services/collections_creation.py
+@@ -12,6 +12,7 @@ from __future__ import annotations
+ 
+ import re
+ from dataclasses import dataclass, field
++from datetime import datetime
+ 
+ from sqlalchemy import select
+ from sqlalchemy.orm import Session
+@@ -38,7 +39,8 @@ class FormulaireCollection:
+     description_interne: str = ""
+     editeur: str = ""
+     lieu_edition: str = ""
+-    auteur_principal: str = ""
++    personnalite_associee: str = ""
++    responsable_archives: str = ""
+     date_debut: str = ""
+     date_fin: str = ""
+     phase: str = PhaseChantier.CATALOGAGE.value
+@@ -68,6 +70,103 @@ def lire_collection_par_cote(db: Session, cote: str) -> Collection | None:
+     return db.scalar(select(Collection).where(Collection.cote_collection == cote))
+ 
+ 
++def formulaire_depuis_collection(col: Collection) -> "FormulaireCollection":
++    """Pré-remplit un `FormulaireCollection` depuis une Collection
++    existante (pour la page de modification)."""
++    return FormulaireCollection(
++        cote=col.cote_collection,
++        titre=col.titre,
++        description=col.description or "",
++        description_interne=col.description_interne or "",
++        editeur=col.editeur or "",
++        lieu_edition=col.lieu_edition or "",
++        personnalite_associee=col.personnalite_associee or "",
++        responsable_archives=col.responsable_archives or "",
++        date_debut=col.date_debut or "",
++        date_fin=col.date_fin or "",
++        phase=col.phase or PhaseChantier.CATALOGAGE.value,
++        parent_cote=col.parent.cote_collection if col.parent else "",
++        doi_nakala=col.doi_nakala or "",
++    )
++
++
++def valider_modification(
++    db: Session, col: Collection, formulaire: FormulaireCollection
++) -> ResultatValidation:
++    """Validation pour la modification d'une collection existante.
++
++    La cote est lue seule (non modifiable) — toute valeur reçue dans
++    le formulaire est ignorée. Le DOI Nakala n'est rejeté que s'il
++    pointe vers une AUTRE collection (pas elle-même). Le parent ne
++    peut pas être la collection elle-même (anti-cycle).
++    """
++    res = ResultatValidation()
++
++    if not formulaire.titre.strip():
++        res.erreurs["titre"] = "Le titre est obligatoire."
++
++    if formulaire.phase and formulaire.phase not in _PHASES_VALIDES:
++        res.erreurs["phase"] = "Phase inconnue."
++
++    parent_cote = formulaire.parent_cote.strip()
++    if parent_cote:
++        if parent_cote == col.cote_collection:
++            res.erreurs["parent_cote"] = (
++                "Une collection ne peut pas être son propre parent."
++            )
++        else:
++            parent = lire_collection_par_cote(db, parent_cote)
++            if parent is None:
++                res.erreurs["parent_cote"] = (
++                    f"Aucune collection parente avec la cote {parent_cote!r}."
++                )
++            else:
++                res.parent_resolu = parent
++
++    if formulaire.doi_nakala:
++        existant = db.scalar(
++            select(Collection).where(Collection.doi_nakala == formulaire.doi_nakala)
++        )
++        if existant is not None and existant.id != col.id:
++            res.erreurs["doi_nakala"] = (
++                f"Le DOI Nakala est déjà associé à la collection "
++                f"{existant.cote_collection!r}."
++            )
++
++    return res
++
++
++def modifier_collection(
++    db: Session,
++    col: Collection,
++    formulaire: FormulaireCollection,
++    *,
++    modifie_par: str,
++    parent: Collection | None = None,
++) -> Collection:
++    """Met à jour la collection. La cote n'est jamais modifiée."""
++    if parent is None and formulaire.parent_cote.strip():
++        parent = lire_collection_par_cote(db, formulaire.parent_cote.strip())
++
++    col.titre = formulaire.titre.strip()
++    col.description = formulaire.description or None
++    col.description_interne = formulaire.description_interne or None
++    col.editeur = formulaire.editeur or None
++    col.lieu_edition = formulaire.lieu_edition or None
++    col.personnalite_associee = formulaire.personnalite_associee or None
++    col.responsable_archives = formulaire.responsable_archives or None
++    col.date_debut = formulaire.date_debut or None
++    col.date_fin = formulaire.date_fin or None
++    col.doi_nakala = formulaire.doi_nakala or None
++    col.phase = formulaire.phase or PhaseChantier.CATALOGAGE.value
++    col.parent_id = parent.id if parent else None
++    col.modifie_par = modifie_par
++    col.modifie_le = datetime.now()
++    db.commit()
++    db.refresh(col)
++    return col
++
++
+ def valider_formulaire(
+     db: Session, formulaire: FormulaireCollection
+ ) -> ResultatValidation:
+@@ -142,7 +241,8 @@ def creer_collection(
+         description_interne=formulaire.description_interne or None,
+         editeur=formulaire.editeur or None,
+         lieu_edition=formulaire.lieu_edition or None,
+-        auteur_principal=formulaire.auteur_principal or None,
++        personnalite_associee=formulaire.personnalite_associee or None,
++        responsable_archives=formulaire.responsable_archives or None,
+         date_debut=formulaire.date_debut or None,
+         date_fin=formulaire.date_fin or None,
+         doi_nakala=formulaire.doi_nakala or None,
+diff --git a/src/archives_tool/importers/ecrivain.py b/src/archives_tool/importers/ecrivain.py
+index 78cadb6..618e812 100644
+--- a/src/archives_tool/importers/ecrivain.py
++++ b/src/archives_tool/importers/ecrivain.py
+@@ -116,7 +116,8 @@ def _resoudre_ou_creer_collection(
+         doi_nakala=col_profil.doi_nakala,
+         description=col_profil.description,
+         description_interne=col_profil.description_interne,
+-        auteur_principal=col_profil.auteur_principal,
++        personnalite_associee=col_profil.personnalite_associee,
++        responsable_archives=col_profil.responsable_archives,
+         parent=parent,
+         cree_par=cree_par,
+     )
+diff --git a/src/archives_tool/models/collection.py b/src/archives_tool/models/collection.py
+index 8b52c9d..7670b0d 100644
+--- a/src/archives_tool/models/collection.py
++++ b/src/archives_tool/models/collection.py
+@@ -39,7 +39,14 @@ class Collection(Base, TracabiliteMixin):
+     doi_nakala: Mapped[str | None] = mapped_column(Text)
+     description: Mapped[str | None] = mapped_column(Text)
+     description_interne: Mapped[str | None] = mapped_column(Text)
+-    auteur_principal: Mapped[str | None] = mapped_column(Text)
++    # Personnalité ou entité autour de laquelle s'organise la collection
++    # (V0.7.x). Texte libre, optionnel — distinct de `responsable_archives`
++    # qui désigne la personne en charge de la constitution.
++    personnalite_associee: Mapped[str | None] = mapped_column(Text)
++    # Renommé depuis `auteur_principal` (V0.7.x) — neutralisation du
++    # vocabulaire bibliographique. Personne ou institution responsable
++    # de la constitution de la collection.
++    responsable_archives: Mapped[str | None] = mapped_column(Text)
+     metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+     notes_internes: Mapped[str | None] = mapped_column(Text)
+ 
+diff --git a/src/archives_tool/profils/generateur.py b/src/archives_tool/profils/generateur.py
+index 219c4f9..5c8979a 100644
+--- a/src/archives_tool/profils/generateur.py
++++ b/src/archives_tool/profils/generateur.py
+@@ -130,7 +130,8 @@ def _entete_squelette(
+         '  # doi_nakala: ""',
+         '  # description: ""',
+         '  # description_interne: "Notes équipe sur ce chantier"',
+-        '  # auteur_principal: ""',
++        '  # personnalite_associee: ""',
++        '  # responsable_archives: ""',
+         '  # parent_cote: ""  # rattacher à une collection parent existante',
+         "",
+         "tableur:",
+diff --git a/src/archives_tool/profils/schema.py b/src/archives_tool/profils/schema.py
+index e138782..768ec18 100644
+--- a/src/archives_tool/profils/schema.py
++++ b/src/archives_tool/profils/schema.py
+@@ -53,7 +53,8 @@ class CollectionProfil(_ProfilBase):
+     doi_nakala: str | None = None
+     description: str | None = None
+     description_interne: str | None = None
+-    auteur_principal: str | None = None
++    personnalite_associee: str | None = None
++    responsable_archives: str | None = None
+ 
+ 
+ class TableurSource(_ProfilBase):
+diff --git a/src/archives_tool/web/templates/components/breadcrumb.html b/src/archives_tool/web/templates/components/breadcrumb.html
+index e5d423a..871fb3b 100644
+--- a/src/archives_tool/web/templates/components/breadcrumb.html
++++ b/src/archives_tool/web/templates/components/breadcrumb.html
+@@ -1,7 +1,16 @@
+-{# Fil d'Ariane simple : un lien parent + une feuille en cote monospace.
+-   Variables : `parent_href`, `parent_label`, `feuille_cote`. #}
+-<nav class="text-sm text-gray-500 mb-2">
+-  <a href="{{ parent_href }}" class="hover:text-gray-700">{{ parent_label }}</a>
+-  <span aria-hidden="true">/</span>
+-  <span class="text-gray-700 font-mono">{{ feuille_cote }}</span>
++{# Fil d'Ariane générique. Variable : `crumbs` = liste de dicts
++   `{label, href, mono?}`. Le dernier élément est rendu non
++   cliquable (page courante). Les éléments avec `mono: true` sont
++   en police monospace (utile pour les cotes). #}
++{% if crumbs %}
++<nav class="text-sm text-gray-500 mb-2" aria-label="Fil d'Ariane">
++  {%- for c in crumbs -%}
++    {%- if loop.last -%}
++      <span class="text-gray-700 {% if c.mono %}font-mono{% endif %}">{{ c.label }}</span>
++    {%- else -%}
++      <a href="{{ c.href }}" class="hover:text-gray-700 {% if c.mono %}font-mono{% endif %}">{{ c.label }}</a>
++      <span aria-hidden="true">/</span>
++    {%- endif -%}
++  {%- endfor -%}
+ </nav>
++{% endif %}
+diff --git a/src/archives_tool/web/templates/components/collection_header.html b/src/archives_tool/web/templates/components/collection_header.html
+index f918897..943dd07 100644
+--- a/src/archives_tool/web/templates/components/collection_header.html
++++ b/src/archives_tool/web/templates/components/collection_header.html
+@@ -3,13 +3,7 @@
+    Attendu : `detail` (CollectionDetail). #}
+ {% from 'components/avancement.html' import avancement_detaille %}
+ <header class="mb-6">
+-  {% if detail.parent_cote %}
+-    {% with parent_href='/collection/' ~ detail.parent_cote,
+-            parent_label=detail.parent_cote ~ ' · ' ~ detail.parent_titre,
+-            feuille_cote=detail.cote %}
+-      {% include "components/breadcrumb.html" %}
+-    {% endwith %}
+-  {% endif %}
++  {% include "components/breadcrumb.html" %}
+   <div class="flex items-start justify-between gap-4">
+     <div>
+       <h1 class="text-2xl font-medium">
+@@ -30,16 +24,51 @@
+         {% endif %}
+       </p>
+     </div>
+-    <div class="flex gap-2 text-sm text-gray-500 shrink-0">
+-      <span class="font-tabular">{{ detail.nb_items }} items</span>
+-      <span aria-hidden="true">·</span>
+-      <span class="font-tabular">{{ detail.nb_fichiers }} fichiers</span>
+-      {% if detail.nb_sous_collections > 0 %}
++    <div class="flex flex-col items-end gap-2 shrink-0">
++      <div class="flex gap-2 text-sm text-gray-500">
++        <span class="font-tabular">{{ detail.nb_items }} items</span>
+         <span aria-hidden="true">·</span>
+-        <span class="font-tabular">{{ detail.nb_sous_collections }} sous-coll.</span>
+-      {% endif %}
++        <span class="font-tabular">{{ detail.nb_fichiers }} fichiers</span>
++        {% if detail.nb_sous_collections > 0 %}
++          <span aria-hidden="true">·</span>
++          <span class="font-tabular">{{ detail.nb_sous_collections }} sous-coll.</span>
++        {% endif %}
++      </div>
++      <div class="flex items-center gap-2">
++        <a href="/import?collection={{ detail.cote }}"
++           class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
++           style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
++          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
++            <path d="M2 11 H12 M7 2 V8 M4 5 L7 8 L10 5" fill="none" stroke="currentColor"
++                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
++          </svg>
++          Importer dans cette collection
++        </a>
++        <a href="/collection/{{ detail.cote }}/modifier"
++           class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
++           style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
++          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
++            <path d="M2 12 L4 10 L11 3 L12 4 L5 11 L2.5 11.5 Z" fill="none" stroke="currentColor"
++                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
++          </svg>
++          Modifier la collection
++        </a>
++      </div>
+     </div>
+   </div>
++  {% if detail.personnalite_associee or detail.responsable_archives %}
++    <p class="text-xs text-gray-500 mt-2">
++      {% if detail.personnalite_associee %}
++        <span class="text-gray-400">Personnalité :</span> {{ detail.personnalite_associee }}
++      {% endif %}
++      {% if detail.personnalite_associee and detail.responsable_archives %}
++        <span aria-hidden="true">·</span>
++      {% endif %}
++      {% if detail.responsable_archives %}
++        <span class="text-gray-400">Responsable Archives :</span> {{ detail.responsable_archives }}
++      {% endif %}
++    </p>
++  {% endif %}
+   {% if detail.repartition_etats %}
+     <div class="mt-4">
+       {{ avancement_detaille(detail.repartition_etats) }}
+diff --git a/src/archives_tool/web/templates/pages/collection_modifier.html b/src/archives_tool/web/templates/pages/collection_modifier.html
+new file mode 100644
+index 0000000..47bef8a
+--- /dev/null
++++ b/src/archives_tool/web/templates/pages/collection_modifier.html
+@@ -0,0 +1,190 @@
++{# Page de modification de collection (V0.7.x).
++   Variables : `collection` (Collection), `formulaire`, `erreurs`,
++   `phases`, `crumbs`. La cote est en lecture seule (verrouillée
++   par design — modifier la cote casserait fichiers, exports, refs
++   externes). Le POST cible `/collection/{cote}/modifier` et
++   redirige vers `/collection/{cote}/items` au succès. #}
++{% extends "base.html" %}
++
++{% block title %}Modifier {{ collection.cote_collection }} — archives-tool{% endblock %}
++
++{% macro champ(nom, label, valeur, type='text', placeholder='', help_text='', mono=false) %}
++  {% set en_erreur = nom in erreurs %}
++  <div style="margin-bottom:14px;">
++    <label for="champ-{{ nom }}"
++           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
++      {{ label }}
++    </label>
++    <input id="champ-{{ nom }}" type="{{ type }}" name="{{ nom }}"
++           value="{{ valeur }}"
++           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
++           class="w-full {% if mono %}font-mono{% endif %}"
++           style="padding:6px 10px;font-size:13px;
++                  border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
++                  border-radius:4px;background:#fff;">
++    {% if en_erreur %}
++      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
++    {% elif help_text %}
++      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
++    {% endif %}
++  </div>
++{% endmacro %}
++
++{% macro textarea(nom, label, valeur, placeholder='', help_text='') %}
++  {% set en_erreur = nom in erreurs %}
++  <div style="margin-bottom:14px;">
++    <label for="champ-{{ nom }}"
++           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
++      {{ label }}
++    </label>
++    <textarea id="champ-{{ nom }}" name="{{ nom }}" rows="3"
++              {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
++              class="w-full"
++              style="padding:6px 10px;font-size:13px;
++                     border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
++                     border-radius:4px;background:#fff;resize:vertical;">{{ valeur }}</textarea>
++    {% if en_erreur %}
++      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
++    {% elif help_text %}
++      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
++    {% endif %}
++  </div>
++{% endmacro %}
++
++{% block content %}
++<header class="mb-8">
++  {% include "components/breadcrumb.html" %}
++  <h1 class="text-2xl font-medium">
++    Modifier
++    <span class="font-mono text-gray-700" style="margin-left:6px;">{{ collection.cote_collection }}</span>
++  </h1>
++  <p class="text-sm text-gray-500 mt-1">
++    {{ collection.titre }}
++  </p>
++</header>
++
++<form method="post" action="/collection/{{ collection.cote_collection }}/modifier"
++      style="max-width:680px;">
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Identification
++    </h2>
++    <div style="margin-bottom:14px;">
++      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
++        Cote
++      </label>
++      <input type="text" value="{{ collection.cote_collection }}" disabled
++             class="w-full font-mono"
++             style="padding:6px 10px;font-size:13px;
++                    border:1px solid rgba(0,0,0,0.08);border-radius:4px;
++                    background:#f9fafb;color:#6b7280;">
++      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
++        La cote ne peut pas être modifiée — elle sert d'identifiant
++        stable pour les fichiers, exports et références externes.
++      </p>
++    </div>
++    {{ champ('titre', 'Titre', formulaire.titre) }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Description
++    </h2>
++    {{ textarea('description', 'Description publique',
++                formulaire.description,
++                help_text='Destinée aux exports Dublin Core et aux consultations externes.') }}
++    {{ textarea('description_interne', 'Description interne',
++                formulaire.description_interne,
++                help_text='Pour l’équipe — non exportée. Conventions, choix de catalogage, etc.') }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Origine et responsabilité
++    </h2>
++    {{ champ('personnalite_associee', 'Personnalité ou entité associée',
++             formulaire.personnalite_associee,
++             help_text='Personne, mouvement ou institution autour duquel s’organise la collection. Optionnel.') }}
++    {{ champ('responsable_archives', 'Responsable Archives',
++             formulaire.responsable_archives,
++             help_text='Personne ou institution responsable de la constitution de la collection.') }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Édition <span style="font-size:11px;color:#9ca3af;font-weight:normal;text-transform:none;letter-spacing:0;">— pour les revues et périodiques</span>
++    </h2>
++    <div class="grid grid-cols-2 gap-3">
++      {{ champ('editeur', 'Éditeur (revues)', formulaire.editeur) }}
++      {{ champ('lieu_edition', 'Lieu d’édition (revues)', formulaire.lieu_edition) }}
++    </div>
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Période
++    </h2>
++    <div class="grid grid-cols-2 gap-3">
++      {{ champ('date_debut', 'Date début',
++               formulaire.date_debut,
++               placeholder='1955, vers 1960…',
++               help_text='EDTF accepté.') }}
++      {{ champ('date_fin', 'Date fin',
++               formulaire.date_fin,
++               placeholder='2019, sans date…') }}
++    </div>
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Configuration
++    </h2>
++    <div style="margin-bottom:14px;">
++      <label for="champ-phase"
++             style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
++        Phase de chantier
++      </label>
++      <select id="champ-phase" name="phase"
++              class="w-full"
++              style="padding:6px 10px;font-size:13px;
++                     border:1px solid rgba(0,0,0,0.16);border-radius:4px;background:#fff;">
++        {% for p in phases %}
++          <option value="{{ p.value }}" {% if formulaire.phase == p.value %}selected{% endif %}>
++            {{ p | libelle_phase }}
++          </option>
++        {% endfor %}
++      </select>
++    </div>
++    {{ champ('parent_cote', 'Collection parente (optionnel)',
++             formulaire.parent_cote,
++             placeholder='cote d’une collection existante',
++             help_text='Pour rattacher comme sous-collection. Laisser vide pour une racine.',
++             mono=true) }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Identifiants externes
++    </h2>
++    {{ champ('doi_nakala', 'DOI Nakala',
++             formulaire.doi_nakala,
++             placeholder='10.34847/nkl.xxxxxxxx',
++             mono=true) }}
++  </section>
++
++  <div class="flex items-center justify-end gap-2"
++       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
++    <a href="/collection/{{ collection.cote_collection }}/items"
++       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
++       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
++      Annuler
++    </a>
++    <button type="submit"
++            class="inline-flex items-center gap-1.5 rounded"
++            style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
++      Enregistrer les modifications
++    </button>
++  </div>
++</form>
++{% endblock %}
+diff --git a/src/archives_tool/web/templates/pages/collection_nouvelle.html b/src/archives_tool/web/templates/pages/collection_nouvelle.html
+index 033b1d2..1df26a6 100644
+--- a/src/archives_tool/web/templates/pages/collection_nouvelle.html
++++ b/src/archives_tool/web/templates/pages/collection_nouvelle.html
+@@ -53,11 +53,12 @@
+ 
+ {% block content %}
+ <header class="mb-8">
+-  <nav class="text-sm text-gray-500 mb-2">
+-    <a href="/" class="hover:text-gray-700">Tableau de bord</a>
+-    <span aria-hidden="true">/</span>
+-    <span class="text-gray-700">Nouvelle collection</span>
+-  </nav>
++  {% with crumbs=[
++    {'label': 'Tableau de bord', 'href': '/'},
++    {'label': 'Nouvelle collection'},
++  ] %}
++    {% include "components/breadcrumb.html" %}
++  {% endwith %}
+   <h1 class="text-2xl font-medium">Nouvelle collection vide</h1>
+   <p class="text-sm text-gray-500 mt-1">
+     Crée une collection sans items. Vous pourrez l'alimenter ensuite via
+@@ -84,7 +85,7 @@
+ 
+   <section style="margin-bottom:28px;">
+     <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+-      Métadonnées de base (optionnel)
++      Description (optionnel)
+     </h2>
+     {{ textarea('description', 'Description publique',
+                 formulaire.description,
+@@ -92,12 +93,34 @@
+     {{ textarea('description_interne', 'Description interne',
+                 formulaire.description_interne,
+                 help_text='Pour l’équipe — non exportée. Conventions, choix de catalogage, etc.') }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Origine et responsabilité (optionnel)
++    </h2>
++    {{ champ('personnalite_associee', 'Personnalité ou entité associée',
++             formulaire.personnalite_associee,
++             help_text='Personne, mouvement ou institution autour duquel s’organise la collection.') }}
++    {{ champ('responsable_archives', 'Responsable Archives',
++             formulaire.responsable_archives,
++             help_text='Personne ou institution responsable de la constitution de la collection.') }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Édition <span style="font-size:11px;color:#9ca3af;font-weight:normal;text-transform:none;letter-spacing:0;">— pour les revues et périodiques</span>
++    </h2>
+     <div class="grid grid-cols-2 gap-3">
+-      {{ champ('editeur', 'Éditeur', formulaire.editeur) }}
+-      {{ champ('lieu_edition', 'Lieu d’édition', formulaire.lieu_edition) }}
++      {{ champ('editeur', 'Éditeur (revues)', formulaire.editeur) }}
++      {{ champ('lieu_edition', 'Lieu d’édition (revues)', formulaire.lieu_edition) }}
+     </div>
+-    {{ champ('auteur_principal', 'Responsable scientifique',
+-             formulaire.auteur_principal) }}
++  </section>
++
++  <section style="margin-bottom:28px;">
++    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
++      Période
++    </h2>
+     <div class="grid grid-cols-2 gap-3">
+       {{ champ('date_debut', 'Date début',
+                formulaire.date_debut,
+diff --git a/src/archives_tool/web/templates/pages/import_placeholder.html b/src/archives_tool/web/templates/pages/import_placeholder.html
+index 1d8baf1..18af004 100644
+--- a/src/archives_tool/web/templates/pages/import_placeholder.html
++++ b/src/archives_tool/web/templates/pages/import_placeholder.html
+@@ -8,11 +8,12 @@
+ {% block content %}
+ <div style="max-width:680px;">
+ 
+-  <nav class="text-sm text-gray-500 mb-2">
+-    <a href="/" class="hover:text-gray-700">Tableau de bord</a>
+-    <span aria-hidden="true">/</span>
+-    <span class="text-gray-700">Importer une collection</span>
+-  </nav>
++  {% with crumbs=[
++    {'label': 'Tableau de bord', 'href': '/'},
++    {'label': 'Importer'},
++  ] %}
++    {% include "components/breadcrumb.html" %}
++  {% endwith %}
+ 
+   <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
+     Importer une collection depuis un tableur
+diff --git a/src/archives_tool/web/templates/partials/collection_items.html b/src/archives_tool/web/templates/partials/collection_items.html
+index eb32c8a..ae6cb28 100644
+--- a/src/archives_tool/web/templates/partials/collection_items.html
++++ b/src/archives_tool/web/templates/partials/collection_items.html
+@@ -3,10 +3,13 @@
+    - cote : cote de la collection courante
+    - colonnes_actives : list[ColonneDisponible] dans l'ordre voulu
+      (par défaut, les 7 colonnes de COLONNES_DEFAUT_ITEMS).
++   - nb_sous_collections : pour décider de l'empty state
++     (collection vide = aucun item ET aucune sous-collection).
+ #}
+ {% from 'components/tableau_items.html' import tableau_items %}
+ {% set nb_f = items.nb_filtres_actifs %}
+ {% set noms_cols = colonnes_actives|map(attribute='nom')|list %}
++{% set nb_sous = nb_sous_collections|default(0) %}
+ {% if items.items or nb_f > 0 %}
+   {{ tableau_items({
+     'colonnes': noms_cols,
+@@ -23,6 +26,37 @@
+     'nb_colonnes_actives': noms_cols|length,
+     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
+   }) }}
++{% elif nb_sous == 0 %}
++  {# Collection complètement vide : empty state proactif. #}
++  <div id="tableau-items" class="bg-white rounded-lg"
++       style="border:1px solid rgba(0,0,0,0.08);padding:36px 24px;">
++    <div class="text-center" style="max-width:440px;margin:0 auto;">
++      <p style="font-size:14px;color:#374151;margin-bottom:18px;">
++        Cette collection ne contient aucun item.
++      </p>
++      <p style="font-size:13px;color:#6b7280;margin-bottom:18px;">
++        Vous pouvez :
++      </p>
++      <div class="flex flex-col items-center gap-2">
++        <a href="/import?collection={{ cote }}"
++           class="inline-flex items-center gap-2 rounded"
++           style="padding:8px 16px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
++          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
++            <path d="M2 11 H12 M7 2 V8 M4 5 L7 8 L10 5" fill="none" stroke="currentColor"
++                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
++          </svg>
++          Importer un tableur
++        </a>
++        <span aria-disabled="true"
++              title="Disponible dans une prochaine version"
++              class="inline-flex items-center gap-2 rounded cursor-not-allowed"
++              style="padding:8px 16px;font-size:13px;color:#9ca3af;background:#fff;border:1px solid rgba(0,0,0,0.10);">
++          + Ajouter un item manuellement
++          <span style="font-size:11px;font-style:italic;">bientôt</span>
++        </span>
++      </div>
++    </div>
++  </div>
+ {% else %}
+   <div id="tableau-items">
+     <p class="text-sm text-gray-500 text-center py-12">
+diff --git a/src/archives_tool/web/templates/partials/collection_sous_collections.html b/src/archives_tool/web/templates/partials/collection_sous_collections.html
+index 5eb4d17..a8a61ce 100644
+--- a/src/archives_tool/web/templates/partials/collection_sous_collections.html
++++ b/src/archives_tool/web/templates/partials/collection_sous_collections.html
+@@ -11,7 +11,20 @@
+     'id': 'tableau-sous-collections',
+   }) }}
+ {% else %}
+-  <p class="text-sm text-gray-500 text-center py-12">
+-    Aucune sous-collection.
+-  </p>
++  <div class="bg-white rounded-lg"
++       style="border:1px solid rgba(0,0,0,0.08);padding:36px 24px;">
++    <div class="text-center" style="max-width:440px;margin:0 auto;">
++      <p style="font-size:14px;color:#374151;margin-bottom:18px;">
++        Cette collection ne contient aucune sous-collection.
++      </p>
++      <a href="/collections/nouvelle?parent={{ cote }}"
++         class="inline-flex items-center gap-2 rounded"
++         style="padding:8px 16px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
++        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
++          <path d="M6 2 V10 M2 6 H10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
++        </svg>
++        Créer une sous-collection
++      </a>
++    </div>
++  </div>
+ {% endif %}
+diff --git a/tests/fixtures/profils/cas_fichier_groupe/profil.yaml b/tests/fixtures/profils/cas_fichier_groupe/profil.yaml
+index d3c7acb..6f37d4a 100644
+--- a/tests/fixtures/profils/cas_fichier_groupe/profil.yaml
++++ b/tests/fixtures/profils/cas_fichier_groupe/profil.yaml
+@@ -16,7 +16,7 @@ collection:
+   description_interne: >
+     Fixture de test. Démontre l'import depuis un export Nakala :
+     granularité fichier, DOI item par fichier, DOI collection partagé.
+-  auteur_principal: "Équipe fixture"
++  responsable_archives: "Équipe fixture"
+ 
+ tableur:
+   chemin: "tableur.csv"
+diff --git a/tests/fixtures/profils/cas_hierarchie_cote/profil.yaml b/tests/fixtures/profils/cas_hierarchie_cote/profil.yaml
+index 79668e5..c040bd8 100644
+--- a/tests/fixtures/profils/cas_hierarchie_cote/profil.yaml
++++ b/tests/fixtures/profils/cas_hierarchie_cote/profil.yaml
+@@ -13,7 +13,7 @@ collection:
+     Fixture de test. Démontre la double décomposition : cote parsée
+     par regex pour la hiérarchie archivistique, colonne Type parsée
+     par séparateur pour la typologie documentaire.
+-  auteur_principal: "Équipe fixture"
++  responsable_archives: "Équipe fixture"
+ 
+ tableur:
+   chemin: "tableur.csv"
+diff --git a/tests/fixtures/profils/cas_item_simple/profil.yaml b/tests/fixtures/profils/cas_item_simple/profil.yaml
+index e1e6c82..ed08cdf 100644
+--- a/tests/fixtures/profils/cas_item_simple/profil.yaml
++++ b/tests/fixtures/profils/cas_item_simple/profil.yaml
+@@ -17,7 +17,7 @@ collection:
+     Fixture de test — aucune donnée réelle. Démontre le cas le plus
+     courant : colonnes bibliographiques simples, pas de hiérarchie,
+     un fichier par item.
+-  auteur_principal: "Équipe fixture"
++  responsable_archives: "Équipe fixture"
+ 
+ tableur:
+   chemin: "tableur.csv"
+diff --git a/tests/fixtures/profils/cas_uri_dc/profil.yaml b/tests/fixtures/profils/cas_uri_dc/profil.yaml
+index 2ee27b3..1ec4392 100644
+--- a/tests/fixtures/profils/cas_uri_dc/profil.yaml
++++ b/tests/fixtures/profils/cas_uri_dc/profil.yaml
+@@ -16,7 +16,7 @@ collection:
+       en un seul champ metadonnees.sujets) ;
+     - agrégation de créateurs avec un autre séparateur.
+     Les cellules vides ("") font partie de la liste valeurs_nulles.
+-  auteur_principal: "Équipe fixture"
++  responsable_archives: "Équipe fixture"
+ 
+ tableur:
+   chemin: "tableur.csv"
+diff --git a/tests/test_collection_routes.py b/tests/test_collection_routes.py
+index 8825099..259c398 100644
+--- a/tests/test_collection_routes.py
++++ b/tests/test_collection_routes.py
+@@ -88,3 +88,69 @@ def test_vue_item_avec_fichier_initial(base_demo: Path) -> None:
+     resp = client.get("/item/HK-001?fichier=42")
+     assert resp.status_code == 200
+     assert "FICHIER_INITIAL_ID = 42" in resp.text
++
++
++def test_breadcrumb_collection_racine(base_demo: Path) -> None:
++    client = TestClient(app)
++    resp = client.get("/collection/HK/items")
++    assert resp.status_code == 200
++    # Tableau de bord (lien) + HK (page courante).
++    assert ">Tableau de bord</a>" in resp.text
++    assert ">HK</span>" in resp.text
++
++
++def test_breadcrumb_sous_collection_inclut_parent(base_demo: Path) -> None:
++    """Pour FA-AB, le fil d'ariane doit inclure FA (parent)."""
++    client = TestClient(app)
++    resp = client.get("/collection/FA-AB/items")
++    assert resp.status_code == 200
++    # FA en tant que lien parent dans le fil d'ariane.
++    assert 'href="/collection/FA"' in resp.text
++
++
++def test_empty_state_collection_vide(base_demo: Path, tmp_path: Path) -> None:
++    """Collection sans items et sans sous-collections → empty state."""
++    # On crée une collection vide via le POST.
++    client = TestClient(app)
++    client.post(
++        "/collections", data={"cote": "VIDE", "titre": "Vide"}, follow_redirects=False
++    )
++    resp = client.get("/collection/VIDE/items")
++    assert resp.status_code == 200
++    assert "Cette collection ne contient aucun item" in resp.text
++    assert "Importer un tableur" in resp.text
++    assert "/import?collection=VIDE" in resp.text
++    # Lien "Ajouter un item manuellement" désactivé.
++    assert 'aria-disabled="true"' in resp.text
++
++
++def test_empty_state_pas_si_des_sous_collections(base_demo: Path) -> None:
++    """FA a 4 sous-collections — pas d'empty state items prononcé."""
++    client = TestClient(app)
++    resp = client.get("/collection/FA/items")
++    assert resp.status_code == 200
++    # FA n'a pas d'items mais a des sous-collections : message court,
++    # pas la grosse boîte d'empty state.
++    assert "Cette collection ne contient aucun item" not in resp.text
++
++
++def test_empty_state_sous_collections_avec_lien_parent(base_demo: Path) -> None:
++    """HK n'a pas de sous-collections : empty state avec lien parent."""
++    client = TestClient(app)
++    resp = client.get("/collection/HK/sous-collections")
++    assert resp.status_code == 200
++    assert "Créer une sous-collection" in resp.text
++    assert "/collections/nouvelle?parent=HK" in resp.text
++
++
++def test_bandeau_collection_a_les_boutons_modifier_et_importer(
++    base_demo: Path,
++) -> None:
++    client = TestClient(app)
++    resp = client.get("/collection/HK/items")
++    assert resp.status_code == 200
++    # Boutons d'action sur le bandeau (V0.7.x).
++    assert 'href="/collection/HK/modifier"' in resp.text
++    assert "Modifier la collection" in resp.text
++    assert 'href="/import?collection=HK"' in resp.text
++    assert "Importer dans cette collection" in resp.text
+diff --git a/tests/test_collections_creation.py b/tests/test_collections_creation.py
+index 065271f..415babe 100644
+--- a/tests/test_collections_creation.py
++++ b/tests/test_collections_creation.py
+@@ -16,8 +16,11 @@ from archives_tool.api.main import app
+ from archives_tool.api.services.collections_creation import (
+     FormulaireCollection,
+     creer_collection,
++    formulaire_depuis_collection,
+     lire_collection_par_cote,
++    modifier_collection,
+     valider_formulaire,
++    valider_modification,
+ )
+ from archives_tool.demo import peupler_base
+ from archives_tool.models import Collection, PhaseChantier
+@@ -189,6 +192,157 @@ def test_post_cote_doublon_re_render(base_demo: Path) -> None:
+     assert "existe déjà" in resp.text
+ 
+ 
++def test_get_formulaire_avec_parent_query(base_demo: Path) -> None:
++    """`?parent=FA` pré-remplit le champ `parent_cote` du formulaire."""
++    client = TestClient(app)
++    resp = client.get("/collections/nouvelle?parent=FA")
++    assert resp.status_code == 200
++    assert 'value="FA"' in resp.text
++
++
++def test_get_formulaire_parent_inconnu_silencieux(base_demo: Path) -> None:
++    """Une cote parente inconnue ne casse pas la page (champ vide)."""
++    client = TestClient(app)
++    resp = client.get("/collections/nouvelle?parent=NEXISTE_PAS")
++    assert resp.status_code == 200
++
++
++# ---------------------------------------------------------------------------
++# Service modification
++# ---------------------------------------------------------------------------
++
++
++def test_formulaire_depuis_collection(session: Session) -> None:
++    col = Collection(
++        cote_collection="X",
++        titre="X",
++        description="d",
++        responsable_archives="Marie",
++        personnalite_associee="Sand",
++        phase="catalogage",
++    )
++    session.add(col)
++    session.commit()
++    formulaire = formulaire_depuis_collection(col)
++    assert formulaire.cote == "X"
++    assert formulaire.titre == "X"
++    assert formulaire.description == "d"
++    assert formulaire.responsable_archives == "Marie"
++    assert formulaire.personnalite_associee == "Sand"
++
++
++def test_valider_modification_self_parent_rejete(session: Session) -> None:
++    col = Collection(cote_collection="X", titre="X", phase="catalogage")
++    session.add(col)
++    session.commit()
++    formulaire = formulaire_depuis_collection(col)
++    formulaire.parent_cote = "X"  # auto-référence
++    res = valider_modification(session, col, formulaire)
++    assert "parent_cote" in res.erreurs
++
++
++def test_valider_modification_doi_doublon_autre_collection(session: Session) -> None:
++    a = Collection(
++        cote_collection="A", titre="A", phase="catalogage", doi_nakala="10.x.y"
++    )
++    b = Collection(cote_collection="B", titre="B", phase="catalogage")
++    session.add_all([a, b])
++    session.commit()
++    formulaire = formulaire_depuis_collection(b)
++    formulaire.doi_nakala = "10.x.y"  # déjà sur A
++    res = valider_modification(session, b, formulaire)
++    assert "doi_nakala" in res.erreurs
++
++
++def test_valider_modification_doi_inchange_ok(session: Session) -> None:
++    """Un DOI déjà attribué à la même collection ne déclenche pas d'erreur."""
++    col = Collection(
++        cote_collection="C", titre="C", phase="catalogage", doi_nakala="10.x.z"
++    )
++    session.add(col)
++    session.commit()
++    formulaire = formulaire_depuis_collection(col)
++    res = valider_modification(session, col, formulaire)
++    assert res.ok
++
++
++def test_modifier_collection_persistance(session: Session) -> None:
++    col = Collection(cote_collection="M", titre="ancien", phase="catalogage")
++    session.add(col)
++    session.commit()
++    formulaire = formulaire_depuis_collection(col)
++    formulaire.titre = "nouveau"
++    formulaire.responsable_archives = "Hugo"
++    formulaire.personnalite_associee = "Anonyme"
++    formulaire.phase = "revision"
++    modifier_collection(session, col, formulaire, modifie_par="hugo")
++    relue = lire_collection_par_cote(session, "M")
++    assert relue.titre == "nouveau"
++    assert relue.responsable_archives == "Hugo"
++    assert relue.personnalite_associee == "Anonyme"
++    assert relue.phase == "revision"
++    assert relue.modifie_par == "hugo"
++
++
++# ---------------------------------------------------------------------------
++# Routes modification
++# ---------------------------------------------------------------------------
++
++
++def test_get_formulaire_modification(base_demo: Path) -> None:
++    client = TestClient(app)
++    resp = client.get("/collection/HK/modifier")
++    assert resp.status_code == 200
++    assert "Modifier" in resp.text
++    # Cote en lecture seule.
++    assert "ne peut pas être modifiée" in resp.text
++
++
++def test_get_modification_collection_inexistante_404(base_demo: Path) -> None:
++    client = TestClient(app)
++    resp = client.get("/collection/N_EXISTE_PAS/modifier")
++    assert resp.status_code == 404
++
++
++def test_post_modification_redirect(base_demo: Path) -> None:
++    client = TestClient(app)
++    resp = client.post(
++        "/collection/HK/modifier",
++        data={"titre": "Hara-Kiri (modifié)", "phase": "catalogage"},
++        follow_redirects=False,
++    )
++    assert resp.status_code == 303
++    assert resp.headers["location"] == "/collection/HK/items"
++
++
++def test_post_modification_titre_vide_re_render(base_demo: Path) -> None:
++    client = TestClient(app)
++    resp = client.post(
++        "/collection/HK/modifier",
++        data={"titre": "", "phase": "catalogage"},
++        follow_redirects=False,
++    )
++    assert resp.status_code == 400
++    assert "titre est obligatoire" in resp.text
++
++
++def test_post_modification_cote_ignoree(base_demo: Path) -> None:
++    """Tentative de changer la cote via le POST → ignorée silencieusement."""
++    client = TestClient(app)
++    client.post(
++        "/collection/HK/modifier",
++        data={
++            "cote": "PIRATE",  # tentative — ignorée
++            "titre": "Hara-Kiri",
++            "phase": "catalogage",
++        },
++        follow_redirects=False,
++    )
++    # HK existe toujours, PIRATE non.
++    assert client.get("/collection/HK/items").status_code == 200
++    assert client.get("/collection/PIRATE/items").status_code == 404
++
++
+ def test_post_creation_complete(base_demo: Path) -> None:
+     client = TestClient(app)
+     resp = client.post(
+diff --git a/tests/test_roundtrip.py b/tests/test_roundtrip.py
+index 3cd6fa3..e57ea54 100644
+--- a/tests/test_roundtrip.py
++++ b/tests/test_roundtrip.py
+@@ -106,7 +106,7 @@ def test_roundtrip_hierarchie_collections(session: Session) -> None:
+     assert item_relu.collection.parent.parent.parent is None
+ 
+ 
+-def test_description_interne_et_auteur_principal(session: Session) -> None:
++def test_description_interne_et_responsable_archives(session: Session) -> None:
+     collection = Collection(
+         cote_collection="CHANTIER-1",
+         titre="Revue en cours",
+@@ -115,7 +115,8 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
+             "Chantier repris en 2026 ; cotes antérieures à 1870 à vérifier "
+             "contre l'inventaire manuscrit."
+         ),
+-        auteur_principal="Marie Dupont",
++        personnalite_associee="George Sand",
++        responsable_archives="Marie Dupont",
+         # Champs d'audit désormais en texte libre (pas de FK Utilisateur).
+         cree_par="Marie Dupont",
+     )
+@@ -126,16 +127,17 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
+     assert relue is not None
+     assert relue.description.startswith("Publication")
+     assert relue.description_interne.startswith("Chantier repris")
+-    assert relue.auteur_principal == "Marie Dupont"
++    assert relue.personnalite_associee == "George Sand"
++    assert relue.responsable_archives == "Marie Dupont"
+     assert relue.cree_par == "Marie Dupont"
+ 
+     # Les champs sont mutables sans contrainte.
+-    relue.auteur_principal = "Jean Martin"
++    relue.responsable_archives = "Jean Martin"
+     relue.description_interne = None
+     relue.modifie_par = "Jean Martin"
+     session.commit()
+     rerelue = session.get(Collection, collection.id)
+-    assert rerelue.auteur_principal == "Jean Martin"
++    assert rerelue.responsable_archives == "Jean Martin"
+     assert rerelue.description_interne is None
+     assert rerelue.modifie_par == "Jean Martin"
+ 

@@ -1,15 +1,5 @@
 """Renomme `auteur_principal` en `responsable_archives` et ajoute
-`personnalite_associee` sur Collection (V0.7.x).
-
-Neutralise le biais bibliographique du vocabulaire :
-- `auteur_principal` → `responsable_archives` (responsable de la
-  constitution de la collection).
-- Nouveau `personnalite_associee` : personne, mouvement ou institution
-  autour duquel s'organise la collection.
-
-Le renommage utilise `batch_alter_table` qui copie la table sous le
-capot (SQLite ne supporte pas RENAME COLUMN en ALTER direct sur
-toutes les versions). Les valeurs existantes sont préservées.
+`personnalite_associee` sur Collection.
 
 Revision ID: e5j6k7l8m9n0
 Revises: d4i5j6k7l8m9

@@ -1,8 +1,7 @@
-"""Création d'une collection vide depuis l'UI web (V0.7).
+"""Création / modification d'une collection depuis l'UI web (V0.7+).
 
-Logique de validation et création centralisée — la CLI peut s'y
-brancher si besoin (V0.8 : commande `archives-tool collection nouvelle`
-ou équivalent). Pas de duplication entre UI et CLI.
+Logique de validation et persistance centralisée — la CLI peut s'y
+brancher si besoin. Pas de duplication entre UI et CLI.
 
 Validation côté serveur uniquement : le navigateur peut envoyer ce
 qu'il veut, on ne lui fait pas confiance.
@@ -14,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,36 +23,51 @@ from archives_tool.models import Collection, PhaseChantier
 # d'accents (pour la portabilité fichier et URL). Voir CLAUDE.md.
 PATTERN_COTE = re.compile(r"^[A-Za-z0-9_-]+$")
 
+_PHASES_VALIDES: frozenset[str] = frozenset(p.value for p in PhaseChantier)
 
-@dataclass
-class FormulaireCollection:
-    """État de saisie pour la page « Nouvelle collection vide ».
 
-    Tous les champs optionnels sont à `""` (input vide en HTML) plutôt
-    qu'à `None` pour faciliter la propagation au template en cas
-    d'erreur de validation.
+class FormulaireCollection(BaseModel):
+    """État de saisie pour les pages création / modification.
+
+    Lié aux Form fields HTML par FastAPI (`Annotated[..., Form()]`).
+    Les valeurs vides côté HTML arrivent en `""` plutôt qu'en `None`.
+    Le re-rendu en cas d'erreur ré-utilise ce modèle directement.
     """
 
-    cote: str = ""
-    titre: str = ""
-    description: str = ""
-    description_interne: str = ""
-    editeur: str = ""
-    lieu_edition: str = ""
-    personnalite_associee: str = ""
-    responsable_archives: str = ""
-    date_debut: str = ""
-    date_fin: str = ""
-    phase: str = PhaseChantier.CATALOGAGE.value
-    parent_cote: str = ""
-    doi_nakala: str = ""
+    model_config = ConfigDict(str_strip_whitespace=False)
+
+    cote: str = Field(default="")
+    titre: str = Field(default="")
+    description: str = Field(default="")
+    description_interne: str = Field(default="")
+    editeur: str = Field(default="")
+    lieu_edition: str = Field(default="")
+    personnalite_associee: str = Field(default="")
+    responsable_archives: str = Field(default="")
+    date_debut: str = Field(default="")
+    date_fin: str = Field(default="")
+    phase: str = Field(default=PhaseChantier.CATALOGAGE.value)
+    parent_cote: str = Field(default="")
+    doi_nakala: str = Field(default="")
+
+    @field_validator("phase")
+    @classmethod
+    def _phase_valide_ou_defaut(cls, v: str) -> str:
+        """Normalise une phase vide ou inconnue en CATALOGAGE.
+
+        La validation stricte (rejet d'une phase inconnue) est faite
+        séparément dans `_valider_communs` pour qu'elle puisse
+        produire une erreur de formulaire propre plutôt qu'un 422.
+        """
+        return v or PhaseChantier.CATALOGAGE.value
 
 
 @dataclass
 class ResultatValidation:
     erreurs: dict[str, str] = field(default_factory=dict)
     # Parent résolu pendant la validation — réutilisé par
-    # `creer_collection` pour éviter une seconde requête.
+    # `creer_collection` / `modifier_collection` pour éviter une
+    # seconde requête.
     parent_resolu: Collection | None = None
 
     @property
@@ -60,13 +75,8 @@ class ResultatValidation:
         return not self.erreurs
 
 
-_PHASES_VALIDES: frozenset[str] = frozenset(p.value for p in PhaseChantier)
-
-
 def lire_collection_par_cote(db: Session, cote: str) -> Collection | None:
-    """Lecture par cote — exposé pour les tests et les futures routes
-    d'édition. `None` si non trouvée.
-    """
+    """Lecture par cote. `None` si non trouvée."""
     return db.scalar(select(Collection).where(Collection.cote_collection == cote))
 
 
@@ -90,15 +100,17 @@ def formulaire_depuis_collection(col: Collection) -> "FormulaireCollection":
     )
 
 
-def valider_modification(
-    db: Session, col: Collection, formulaire: FormulaireCollection
+def _valider_communs(
+    db: Session,
+    formulaire: FormulaireCollection,
+    *,
+    existante: Collection | None,
 ) -> ResultatValidation:
-    """Validation pour la modification d'une collection existante.
+    """Validation partagée création / modification.
 
-    La cote est lue seule (non modifiable) — toute valeur reçue dans
-    le formulaire est ignorée. Le DOI Nakala n'est rejeté que s'il
-    pointe vers une AUTRE collection (pas elle-même). Le parent ne
-    peut pas être la collection elle-même (anti-cycle).
+    `existante` non-None signale une modification : la self-référence
+    parentale est rejetée et le DOI ne lève pas d'erreur s'il est
+    déjà porté par cette même collection.
     """
     res = ResultatValidation()
 
@@ -110,7 +122,7 @@ def valider_modification(
 
     parent_cote = formulaire.parent_cote.strip()
     if parent_cote:
-        if parent_cote == col.cote_collection:
+        if existante is not None and parent_cote == existante.cote_collection:
             res.erreurs["parent_cote"] = (
                 "Une collection ne peut pas être son propre parent."
             )
@@ -127,7 +139,9 @@ def valider_modification(
         existant = db.scalar(
             select(Collection).where(Collection.doi_nakala == formulaire.doi_nakala)
         )
-        if existant is not None and existant.id != col.id:
+        if existant is not None and (
+            existante is None or existant.id != existante.id
+        ):
             res.erreurs["doi_nakala"] = (
                 f"Le DOI Nakala est déjà associé à la collection "
                 f"{existant.cote_collection!r}."
@@ -136,18 +150,41 @@ def valider_modification(
     return res
 
 
-def modifier_collection(
-    db: Session,
+def valider_formulaire(
+    db: Session, formulaire: FormulaireCollection
+) -> ResultatValidation:
+    """Valide un formulaire de création. Erreurs inscrites par champ."""
+    res = _valider_communs(db, formulaire, existante=None)
+
+    cote = formulaire.cote.strip()
+    if not cote:
+        res.erreurs["cote"] = "La cote est obligatoire."
+    elif not PATTERN_COTE.match(cote):
+        res.erreurs["cote"] = (
+            "Caractères autorisés : lettres, chiffres, tiret, souligné."
+        )
+    elif lire_collection_par_cote(db, cote) is not None:
+        res.erreurs["cote"] = f"La cote {cote!r} existe déjà."
+
+    return res
+
+
+def valider_modification(
+    db: Session, col: Collection, formulaire: FormulaireCollection
+) -> ResultatValidation:
+    """Validation pour la modification. La cote n'est jamais re-validée
+    (verrouillée à l'UI). Le DOI n'est rejeté que s'il pointe vers une
+    AUTRE collection ; le parent ne peut pas être la collection elle-même."""
+    return _valider_communs(db, formulaire, existante=col)
+
+
+def _appliquer_formulaire(
     col: Collection,
     formulaire: FormulaireCollection,
-    *,
-    modifie_par: str,
-    parent: Collection | None = None,
-) -> Collection:
-    """Met à jour la collection. La cote n'est jamais modifiée."""
-    if parent is None and formulaire.parent_cote.strip():
-        parent = lire_collection_par_cote(db, formulaire.parent_cote.strip())
-
+    parent: Collection | None,
+) -> None:
+    """Copie les champs éditables du formulaire sur la Collection.
+    La cote et la traçabilité sont gérées par les appelants."""
     col.titre = formulaire.titre.strip()
     col.description = formulaire.description or None
     col.description_interne = formulaire.description_interne or None
@@ -160,61 +197,6 @@ def modifier_collection(
     col.doi_nakala = formulaire.doi_nakala or None
     col.phase = formulaire.phase or PhaseChantier.CATALOGAGE.value
     col.parent_id = parent.id if parent else None
-    col.modifie_par = modifie_par
-    col.modifie_le = datetime.now()
-    db.commit()
-    db.refresh(col)
-    return col
-
-
-def valider_formulaire(
-    db: Session, formulaire: FormulaireCollection
-) -> ResultatValidation:
-    """Valide un formulaire de création. Erreurs inscrites par champ.
-
-    Si la cote parente est valide, la collection résolue est mise à
-    disposition via `res.parent_resolu` pour éviter à `creer_collection`
-    de la requêter à nouveau.
-    """
-    res = ResultatValidation()
-
-    cote = formulaire.cote.strip()
-    if not cote:
-        res.erreurs["cote"] = "La cote est obligatoire."
-    elif not PATTERN_COTE.match(cote):
-        res.erreurs["cote"] = (
-            "Caractères autorisés : lettres, chiffres, tiret, souligné."
-        )
-    elif lire_collection_par_cote(db, cote) is not None:
-        res.erreurs["cote"] = f"La cote {cote!r} existe déjà."
-
-    if not formulaire.titre.strip():
-        res.erreurs["titre"] = "Le titre est obligatoire."
-
-    if formulaire.phase and formulaire.phase not in _PHASES_VALIDES:
-        res.erreurs["phase"] = "Phase inconnue."
-
-    parent_cote = formulaire.parent_cote.strip()
-    if parent_cote:
-        parent = lire_collection_par_cote(db, parent_cote)
-        if parent is None:
-            res.erreurs["parent_cote"] = (
-                f"Aucune collection parente avec la cote {parent_cote!r}."
-            )
-        else:
-            res.parent_resolu = parent
-
-    if formulaire.doi_nakala:
-        existant = db.scalar(
-            select(Collection).where(Collection.doi_nakala == formulaire.doi_nakala)
-        )
-        if existant is not None:
-            res.erreurs["doi_nakala"] = (
-                f"Le DOI Nakala est déjà associé à la collection "
-                f"{existant.cote_collection!r}."
-            )
-
-    return res
 
 
 def creer_collection(
@@ -234,23 +216,29 @@ def creer_collection(
     if parent is None and formulaire.parent_cote.strip():
         parent = lire_collection_par_cote(db, formulaire.parent_cote.strip())
 
-    col = Collection(
-        cote_collection=formulaire.cote.strip(),
-        titre=formulaire.titre.strip(),
-        description=formulaire.description or None,
-        description_interne=formulaire.description_interne or None,
-        editeur=formulaire.editeur or None,
-        lieu_edition=formulaire.lieu_edition or None,
-        personnalite_associee=formulaire.personnalite_associee or None,
-        responsable_archives=formulaire.responsable_archives or None,
-        date_debut=formulaire.date_debut or None,
-        date_fin=formulaire.date_fin or None,
-        doi_nakala=formulaire.doi_nakala or None,
-        phase=formulaire.phase or PhaseChantier.CATALOGAGE.value,
-        parent_id=parent.id if parent else None,
-        cree_par=cree_par,
-    )
+    col = Collection(cote_collection=formulaire.cote.strip(), cree_par=cree_par)
+    _appliquer_formulaire(col, formulaire, parent)
     db.add(col)
+    db.commit()
+    db.refresh(col)
+    return col
+
+
+def modifier_collection(
+    db: Session,
+    col: Collection,
+    formulaire: FormulaireCollection,
+    *,
+    modifie_par: str,
+    parent: Collection | None = None,
+) -> Collection:
+    """Met à jour la collection. La cote n'est jamais modifiée."""
+    if parent is None and formulaire.parent_cote.strip():
+        parent = lire_collection_par_cote(db, formulaire.parent_cote.strip())
+
+    _appliquer_formulaire(col, formulaire, parent)
+    col.modifie_par = modifie_par
+    col.modifie_le = datetime.now()
     db.commit()
     db.refresh(col)
     return col

@@ -2,15 +2,17 @@
 
 À distinguer de `routes/collection.py` (singulier) qui gère la vue
 détail d'une collection. Ici, opérations sur la ressource elle-même :
-création, plus tard édition / suppression.
+création, édition.
 
-Pas d'HTMX swap pour le formulaire de création : on submet en POST
-classique et on re-rend la page entière avec les erreurs si la
-validation échoue (plus simple, marche sans JS, redirect en cas
+Pas d'HTMX swap pour le formulaire de création/édition : on submet
+en POST classique et on re-rend la page entière avec les erreurs si
+la validation échoue (plus simple, marche sans JS, redirect en cas
 de succès).
 """
 
 from __future__ import annotations
+
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -39,11 +41,12 @@ def formulaire_nouvelle_collection(
     est laissé vide (silencieusement — l'utilisateur saisira ce qu'il
     veut).
     """
-    formulaire = svc.FormulaireCollection()
+    parent_cote = ""
     if parent:
         parent_existant = svc.lire_collection_par_cote(db, parent.strip())
         if parent_existant is not None:
-            formulaire.parent_cote = parent_existant.cote_collection
+            parent_cote = parent_existant.cote_collection
+    formulaire = svc.FormulaireCollection(parent_cote=parent_cote)
     return templates.TemplateResponse(
         request,
         "pages/collection_nouvelle.html",
@@ -60,38 +63,11 @@ def formulaire_nouvelle_collection(
 @router.post("/collections", response_class=HTMLResponse)
 def creer_collection_post(
     request: Request,
-    cote: str = Form(default=""),
-    titre: str = Form(default=""),
-    description: str = Form(default=""),
-    description_interne: str = Form(default=""),
-    editeur: str = Form(default=""),
-    lieu_edition: str = Form(default=""),
-    personnalite_associee: str = Form(default=""),
-    responsable_archives: str = Form(default=""),
-    date_debut: str = Form(default=""),
-    date_fin: str = Form(default=""),
-    phase: str = Form(default="catalogage"),
-    parent_cote: str = Form(default=""),
-    doi_nakala: str = Form(default=""),
+    formulaire: Annotated[svc.FormulaireCollection, Form()],
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    formulaire = svc.FormulaireCollection(
-        cote=cote,
-        titre=titre,
-        description=description,
-        description_interne=description_interne,
-        editeur=editeur,
-        lieu_edition=lieu_edition,
-        personnalite_associee=personnalite_associee,
-        responsable_archives=responsable_archives,
-        date_debut=date_debut,
-        date_fin=date_fin,
-        phase=phase,
-        parent_cote=parent_cote,
-        doi_nakala=doi_nakala,
-    )
     res = svc.valider_formulaire(db, formulaire)
     if not res.ok:
         return templates.TemplateResponse(
@@ -110,11 +86,6 @@ def creer_collection_post(
         db, formulaire, cree_par=utilisateur, parent=res.parent_resolu
     )
     return RedirectResponse(url=f"/collection/{col.cote_collection}", status_code=303)
-
-
-# ---------------------------------------------------------------------------
-# Modification d'une collection existante (V0.7.x)
-# ---------------------------------------------------------------------------
 
 
 def _charger_pour_edition(db: Session, cote: str):
@@ -152,40 +123,15 @@ def formulaire_modifier_collection(
 def modifier_collection_post(
     request: Request,
     cote: str,
-    titre: str = Form(default=""),
-    description: str = Form(default=""),
-    description_interne: str = Form(default=""),
-    editeur: str = Form(default=""),
-    lieu_edition: str = Form(default=""),
-    personnalite_associee: str = Form(default=""),
-    responsable_archives: str = Form(default=""),
-    date_debut: str = Form(default=""),
-    date_fin: str = Form(default=""),
-    phase: str = Form(default="catalogage"),
-    parent_cote: str = Form(default=""),
-    doi_nakala: str = Form(default=""),
+    formulaire: Annotated[svc.FormulaireCollection, Form()],
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
     col = _charger_pour_edition(db, cote)
-    # La cote n'est jamais lue depuis le formulaire — verrouillée par
-    # design. Toute valeur envoyée est ignorée silencieusement.
-    formulaire = svc.FormulaireCollection(
-        cote=col.cote_collection,
-        titre=titre,
-        description=description,
-        description_interne=description_interne,
-        editeur=editeur,
-        lieu_edition=lieu_edition,
-        personnalite_associee=personnalite_associee,
-        responsable_archives=responsable_archives,
-        date_debut=date_debut,
-        date_fin=date_fin,
-        phase=phase,
-        parent_cote=parent_cote,
-        doi_nakala=doi_nakala,
-    )
+    # La cote du path l'emporte : la valeur Form `cote` (cachée dans
+    # le HTML par design) est ignorée.
+    formulaire.cote = col.cote_collection
     res = svc.valider_modification(db, col, formulaire)
     if not res.ok:
         return templates.TemplateResponse(

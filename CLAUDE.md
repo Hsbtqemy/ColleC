@@ -577,6 +577,10 @@ archives-tool/
   collections, collaborateurs (CollaborateurFonds avec CRUD),
   items récents, 3 variantes collection (miroir / libre rattachée
   / transversale), édition fonds — V0.9.0-beta.2.
+- ✅ Édition collection libres + tableau items paginé sur la page
+  lecture + item picker pour ajouter (multi-id idempotent) +
+  bouton retrait par ligne (idempotent, permis sur miroir) —
+  V0.9.0-beta.2.1.
 - Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
 - Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver

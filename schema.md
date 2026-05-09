@@ -692,7 +692,11 @@ reproductibilité) dans `tests/test_demo_seeder.py`.
 | `/fonds/{cote}/collaborateurs` | POST | Ajout d'un `CollaborateurFonds`. |
 | `/fonds/{cote}/collaborateurs/{id}` | POST | Modification. |
 | `/fonds/{cote}/collaborateurs/{id}/supprimer` | POST | Suppression dure. |
-| `/collection/{cote}?fonds=COTE` | GET | Page collection (3 variantes : miroir, libre rattachée, transversale). Précédence : si la cote matche un fonds et qu'aucun `?fonds=` n'est passé, redirige 303 vers `/fonds/{cote}`. |
+| `/collection/{cote}?fonds=COTE` | GET | Page collection (3 variantes : miroir, libre rattachée, transversale). Tableau d'items paginé (`page`, `par_page`, `tri`, `ordre`, `etat`). Précédence : si la cote matche un fonds et qu'aucun `?fonds=` n'est passé, redirige 303 vers `/fonds/{cote}`. |
+| `/collection/{cote}/modifier` | GET / POST | Édition (libres uniquement). 403 sur miroir. PRG : 303 au succès, 400 + re-render au refus. |
+| `/collection/{cote}/items/picker` | GET | Picker pour ajouter des items (filtre fonds, recherche, pagination). 403 sur miroir. |
+| `/collection/{cote}/items` | POST | Ajout multi-id idempotent depuis le picker. 403 sur miroir. |
+| `/collection/{cote}/items/{id}/retirer` | POST | Retrait d'un item, idempotent. Permis sur miroir (l'item reste dans le fonds, invariant 7). |
 | `/item/{cote}?fonds=COTE` | GET | Placeholder ; page complète en V0.9.0-beta.3. `?fonds=` obligatoire. |
 
 **Convention `?fonds=` en query string** : les cotes d'items et de
@@ -722,12 +726,25 @@ Tous en agrégats SQL — pas de N+1.
 imposée). Toute autre modification est libre. PRG : redirection au
 succès, re-render avec dict `erreurs` au refus.
 
-**Collection (édition)** — V0.9.0-beta.2 livre la lecture des 3
-variantes ; l'édition arrive en V0.9.0-beta.2.1 :
-- **MIROIR** : pas d'édition publique (gérée par le service Fonds).
-- **LIBRE rattachée** : édition complète sauf `fonds_id` (non
-  modifiable — supprimer/recréer pour changer de nature).
+**Collection (édition)** — V0.9.0-beta.2.1 :
+- **MIROIR** : 403 sur la route d'édition (pas de bouton « Modifier »
+  dans la lecture). Pas d'API publique pour muter le titre / la
+  cote / le `fonds_id`.
+- **LIBRE rattachée** : édition complète sauf `fonds_id` (verrouillé
+  côté serveur — le formulaire n'expose pas le champ ; pour changer
+  de nature on supprime / recrée).
 - **LIBRE transversale** : idem rattachée, sans `fonds_id`.
+
+**Items dans une collection (V0.9.0-beta.2.1)** :
+- Tableau paginé directement sur `GET /collection/{cote}` (pas de
+  page séparée). Tri whitelist (`cote`, `titre`, `date`, `annee`,
+  `etat`, `modifie`), filtre `etat`, pagination `par_page` 10–200.
+- Ajout via picker (`/items/picker` GET → soumission `POST /items`)
+  multi-id idempotent. Filtre fonds par défaut = fonds parent pour
+  une libre rattachée, tous fonds pour une transversale.
+- Retrait via bouton par ligne, `POST /items/{id}/retirer`.
+  Idempotent. Permis sur miroir aussi (invariant 7 : l'item reste
+  dans le fonds).
 
 ---
 

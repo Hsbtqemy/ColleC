@@ -53,11 +53,12 @@
 
 {% block content %}
 <header class="mb-8">
-  <nav class="text-sm text-gray-500 mb-2">
-    <a href="/" class="hover:text-gray-700">Tableau de bord</a>
-    <span aria-hidden="true">/</span>
-    <span class="text-gray-700">Nouvelle collection</span>
-  </nav>
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Nouvelle collection'},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
   <h1 class="text-2xl font-medium">Nouvelle collection vide</h1>
   <p class="text-sm text-gray-500 mt-1">
     Crée une collection sans items. Vous pourrez l'alimenter ensuite via

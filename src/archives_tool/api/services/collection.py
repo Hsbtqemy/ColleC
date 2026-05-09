@@ -119,6 +119,41 @@ def _charger_collection(session: Session, cote: str) -> Collection:
     return col
 
 
+def fil_ariane_collection(col: Collection, *, page_courante: str | None = None) -> list[dict]:
+    """Construit le fil d'Ariane d'une collection.
+
+    Tableau de bord › … parents … › cote_courante › [page_courante].
+    `page_courante` (ex. « Modifier ») devient la feuille non
+    cliquable. Sinon la cote elle-même est la feuille.
+    """
+    chaine: list[Collection] = []
+    courant: Collection | None = col.parent
+    while courant is not None:
+        chaine.append(courant)
+        courant = courant.parent
+    chaine.reverse()
+
+    crumbs: list[dict] = [{"label": "Tableau de bord", "href": "/"}]
+    for ancetre in chaine:
+        crumbs.append(
+            {
+                "label": ancetre.cote_collection,
+                "href": f"/collection/{ancetre.cote_collection}",
+                "mono": True,
+            }
+        )
+    crumbs.append(
+        {
+            "label": col.cote_collection,
+            "href": f"/collection/{col.cote_collection}",
+            "mono": True,
+        }
+    )
+    if page_courante:
+        crumbs.append({"label": page_courante})
+    return crumbs
+
+
 def collection_detail(session: Session, cote: str) -> CollectionDetail:
     col = _charger_collection(session, cote)
 

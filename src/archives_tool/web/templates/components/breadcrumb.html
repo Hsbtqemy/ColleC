@@ -1,7 +1,16 @@
-{# Fil d'Ariane simple : un lien parent + une feuille en cote monospace.
-   Variables : `parent_href`, `parent_label`, `feuille_cote`. #}
-<nav class="text-sm text-gray-500 mb-2">
-  <a href="{{ parent_href }}" class="hover:text-gray-700">{{ parent_label }}</a>
-  <span aria-hidden="true">/</span>
-  <span class="text-gray-700 font-mono">{{ feuille_cote }}</span>
+{# Fil d'Ariane générique. Variable : `crumbs` = liste de dicts
+   `{label, href, mono?}`. Le dernier élément est rendu non
+   cliquable (page courante). Les éléments avec `mono: true` sont
+   en police monospace (utile pour les cotes). #}
+{% if crumbs %}
+<nav class="text-sm text-gray-500 mb-2" aria-label="Fil d'Ariane">
+  {%- for c in crumbs -%}
+    {%- if loop.last -%}
+      <span class="text-gray-700 {% if c.mono %}font-mono{% endif %}">{{ c.label }}</span>
+    {%- else -%}
+      <a href="{{ c.href }}" class="hover:text-gray-700 {% if c.mono %}font-mono{% endif %}">{{ c.label }}</a>
+      <span aria-hidden="true">/</span>
+    {%- endif -%}
+  {%- endfor -%}
 </nav>
+{% endif %}

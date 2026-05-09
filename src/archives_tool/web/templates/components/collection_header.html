@@ -3,13 +3,7 @@
    Attendu : `detail` (CollectionDetail). #}
 {% from 'components/avancement.html' import avancement_detaille %}
 <header class="mb-6">
-  {% if detail.parent_cote %}
-    {% with parent_href='/collection/' ~ detail.parent_cote,
-            parent_label=detail.parent_cote ~ ' · ' ~ detail.parent_titre,
-            feuille_cote=detail.cote %}
-      {% include "components/breadcrumb.html" %}
-    {% endwith %}
-  {% endif %}
+  {% include "components/breadcrumb.html" %}
   <div class="flex items-start justify-between gap-4">
     <div>
       <h1 class="text-2xl font-medium">

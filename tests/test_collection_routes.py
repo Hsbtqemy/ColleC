@@ -88,3 +88,21 @@ def test_vue_item_avec_fichier_initial(base_demo: Path) -> None:
     resp = client.get("/item/HK-001?fichier=42")
     assert resp.status_code == 200
     assert "FICHIER_INITIAL_ID = 42" in resp.text
+
+
+def test_breadcrumb_collection_racine(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.get("/collection/HK/items")
+    assert resp.status_code == 200
+    # Tableau de bord (lien) + HK (page courante).
+    assert ">Tableau de bord</a>" in resp.text
+    assert ">HK</span>" in resp.text
+
+
+def test_breadcrumb_sous_collection_inclut_parent(base_demo: Path) -> None:
+    """Pour FA-AB, le fil d'ariane doit inclure FA (parent)."""
+    client = TestClient(app)
+    resp = client.get("/collection/FA-AB/items")
+    assert resp.status_code == 200
+    # FA en tant que lien parent dans le fil d'ariane.
+    assert 'href="/collection/FA"' in resp.text

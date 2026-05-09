@@ -141,10 +141,12 @@ def vue_collection(
         )
         contexte["filtres_cible_url"] = f"/collection/{cote}/fichiers"
 
+    col_model = svc._charger_collection(db, cote)
     contexte.update(
         nom_base=nom_base,
         utilisateur=utilisateur,
         detail=svc.collection_detail(db, cote),
+        crumbs=svc.fil_ariane_collection(col_model),
         onglet=onglet,
         partial_template=partial,
     )

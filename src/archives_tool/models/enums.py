@@ -92,6 +92,15 @@ class RoleCollaborateur(enum.StrEnum):
     CATALOGAGE = "catalogage"
 
 
+class TypeCollection(enum.StrEnum):
+    """Distingue collection miroir d'un fonds (créée auto, regroupe
+    tous les items du fonds par défaut) et collection libre (créée
+    manuellement, peut être rattachée à un fonds ou transversale)."""
+
+    MIROIR = "miroir"
+    LIBRE = "libre"
+
+
 LIBELLES_ROLE: dict[str, str] = {
     RoleCollaborateur.NUMERISATION.value: "Numérisation",
     RoleCollaborateur.TRANSCRIPTION.value: "Transcription",

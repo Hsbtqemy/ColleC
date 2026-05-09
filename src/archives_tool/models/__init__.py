@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from .base import Base, TracabiliteMixin
 from .collaborateur import CollaborateurCollection
-from .collection import Collection, valider_hierarchie
+from .collaborateur_fonds import CollaborateurFonds
+from .collection import Collection
 from .enums import (
     LIBELLES_PHASE,
     LIBELLES_ROLE,
@@ -18,13 +19,16 @@ from .enums import (
     RoleCollaborateur,
     StatutOperation,
     TypeChamp,
+    TypeCollection,
     TypeOperationFichier,
     TypePage,
     TypeRelationExterne,
 )
 from .externe import LienExterneItem, RessourceExterne, SourceExterne
 from .fichier import Fichier
+from .fonds import Fonds
 from .item import Item
+from .item_collection import ItemCollection
 from .journal import ModificationItem, OperationFichier, OperationImport
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
@@ -33,10 +37,12 @@ from .session_import import SessionImport
 __all__ = [
     "Base",
     "TracabiliteMixin",
+    "Fonds",
     "Collection",
     "CollaborateurCollection",
-    "valider_hierarchie",
+    "CollaborateurFonds",
     "Item",
+    "ItemCollection",
     "Fichier",
     "ProfilImport",
     "ChampPersonnalise",
@@ -54,6 +60,7 @@ __all__ = [
     "EtatFichier",
     "PhaseChantier",
     "RoleCollaborateur",
+    "TypeCollection",
     "LIBELLES_PHASE",
     "LIBELLES_ROLE",
     "TypePage",

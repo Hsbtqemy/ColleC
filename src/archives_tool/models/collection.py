@@ -1,23 +1,45 @@
-"""Modèle Collection avec hiérarchie auto-référentielle.
+"""Modèle Collection — un classement publiable.
 
-Les collections peuvent être imbriquées via `parent_id` (fonds > série
-> sous-série). L'anti-cycle est validé au niveau applicatif via un
-listener `before_flush` — SQLite ne supporte pas proprement les CHECK
-récursifs.
+Distinct du Fonds : la Collection est ce qui sera publié sur Nakala
+(une sélection d'items pour une présentation, un thème, un export).
+
+Deux types :
+- MIROIR : créée automatiquement avec un Fonds, regroupe par défaut
+  tous les items du fonds. Toujours rattachée à un fonds.
+- LIBRE : créée manuellement. Peut être rattachée à un fonds ou
+  rester transversale (`fonds_id IS NULL`).
+
+Une Collection peut contenir des items provenant de plusieurs fonds
+si elle est libre — la liaison N-N passe par `item_collection`.
+
+Invariants (la couche service les garantit) :
+- Une cote est unique au sein d'un fonds donné, mais peut se répéter
+  entre fonds (deux fonds peuvent avoir une collection « OEUVRES »).
+- La cote du fonds et celle de sa miroir sont volontairement
+  identiques (fonds HK ↔ collection miroir HK).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint, event
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TracabiliteMixin
-from .enums import PhaseChantier
+from .enums import PhaseChantier, TypeCollection
 
 if TYPE_CHECKING:
     from .collaborateur import CollaborateurCollection
+    from .fonds import Fonds
     from .item import Item
     from .profil import ChampPersonnalise, ProfilImport
 
@@ -26,48 +48,52 @@ class Collection(Base, TracabiliteMixin):
     __tablename__ = "collection"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    cote_collection: Mapped[str] = mapped_column(
-        String(50), nullable=False, unique=True
-    )
+    cote: Mapped[str] = mapped_column(String(64), nullable=False)
     titre: Mapped[str] = mapped_column(String(500), nullable=False)
     titre_secondaire: Mapped[str | None] = mapped_column(Text)
-    editeur: Mapped[str | None] = mapped_column(String(300))
-    lieu_edition: Mapped[str | None] = mapped_column(String(200))
-    periodicite: Mapped[str | None] = mapped_column(String(100))
-    date_debut: Mapped[str | None] = mapped_column(String(50))
-    date_fin: Mapped[str | None] = mapped_column(String(50))
-    issn: Mapped[str | None] = mapped_column(String(20))
-    doi_nakala: Mapped[str | None] = mapped_column(Text)
+
     description: Mapped[str | None] = mapped_column(Text)
+    description_publique: Mapped[str | None] = mapped_column(Text)
     description_interne: Mapped[str | None] = mapped_column(Text)
-    personnalite_associee: Mapped[str | None] = mapped_column(Text)
-    responsable_archives: Mapped[str | None] = mapped_column(Text)
-    metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
-    notes_internes: Mapped[str | None] = mapped_column(Text)
+
+    type_collection: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=TypeCollection.LIBRE.value,
+    )
+
+    fonds_id: Mapped[int | None] = mapped_column(
+        ForeignKey("fonds.id", ondelete="CASCADE"),
+        nullable=True,
+    )
 
     phase: Mapped[str] = mapped_column(
         String(20), nullable=False, default=PhaseChantier.CATALOGAGE.value
     )
 
+    # Champs périodique (collection-revue).
+    editeur: Mapped[str | None] = mapped_column(String(300))
+    lieu_edition: Mapped[str | None] = mapped_column(String(200))
+    periodicite: Mapped[str | None] = mapped_column(String(100))
+    issn: Mapped[str | None] = mapped_column(String(20))
+    date_debut: Mapped[str | None] = mapped_column(String(50))
+    date_fin: Mapped[str | None] = mapped_column(String(50))
+
+    doi_nakala: Mapped[str | None] = mapped_column(Text)
+    doi_collection_nakala_parent: Mapped[str | None] = mapped_column(String(128))
+
+    personnalite_associee: Mapped[str | None] = mapped_column(String(255))
+    responsable_archives: Mapped[str | None] = mapped_column(String(255))
+
+    metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    notes_internes: Mapped[str | None] = mapped_column(Text)
+
     profil_import_id: Mapped[int | None] = mapped_column(ForeignKey("profil_import.id"))
 
-    # Hiérarchie auto-référentielle.
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("collection.id", name="fk_collection_parent_id")
-    )
-    parent: Mapped[Collection | None] = relationship(
-        remote_side="Collection.id",
-        back_populates="enfants",
-        foreign_keys=[parent_id],
-    )
-    enfants: Mapped[list[Collection]] = relationship(
-        back_populates="parent",
-        cascade="all, delete-orphan",
-        foreign_keys=[parent_id],
-    )
-
+    fonds: Mapped[Fonds | None] = relationship(back_populates="collections")
     items: Mapped[list[Item]] = relationship(
-        back_populates="collection", cascade="all, delete-orphan"
+        secondary="item_collection",
+        back_populates="collections",
     )
     profil_import: Mapped[ProfilImport | None] = relationship()
     champs_personnalises: Mapped[list[ChampPersonnalise]] = relationship(
@@ -80,65 +106,18 @@ class Collection(Base, TracabiliteMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("doi_nakala", name="uq_collection_doi_nakala"),
+        # Cote unique par fonds (les collections transversales partagent
+        # un slot `fonds_id IS NULL` — SQLite traite NULL comme distinct,
+        # donc l'unicité ne se déclenche pas pour les transversales).
+        Index("ix_collection_fonds_cote", "fonds_id", "cote", unique=True),
+        Index("ix_collection_cote", "cote"),
         Index("ix_collection_titre", "titre"),
+        Index("ix_collection_fonds_id", "fonds_id"),
+        UniqueConstraint("doi_nakala", name="uq_collection_doi_nakala"),
         Index("ix_collection_doi_nakala", "doi_nakala"),
-        Index("ix_collection_parent_id", "parent_id"),
+        # Une miroir doit toujours pointer vers son fonds.
+        CheckConstraint(
+            "(type_collection = 'libre') OR (fonds_id IS NOT NULL)",
+            name="ck_collection_miroir_a_fonds",
+        ),
     )
-
-    def ids_descendants(self) -> list[int]:
-        """IDs de cette collection et de toute sa descendance (BFS).
-
-        Source de vérité unique pour les requêtes scopées à un sous-arbre
-        (importer, qa, renamer, derivatives, exporters).
-        """
-        ids = [self.id]
-        a_visiter = list(self.enfants)
-        while a_visiter:
-            n = a_visiter.pop(0)
-            ids.append(n.id)
-            a_visiter.extend(n.enfants)
-        return ids
-
-
-def valider_hierarchie(collection: Collection) -> None:
-    """Lève ValueError si la chaîne de parents contient un cycle.
-
-    Gère deux cas :
-    - Auto-référence sur objet transient (id `None` des deux côtés) :
-      détection par identité Python.
-    - Cycle profond sur objets persistés : détection par comparaison
-      d'`id` au long de la chaîne.
-    """
-    if collection.parent is None and collection.parent_id is None:
-        return
-    if collection.parent is collection:
-        raise ValueError(
-            f"Collection {collection.cote_collection!r} : une collection ne "
-            "peut pas être son propre parent."
-        )
-    vus: set[int] = set()
-    courant = collection.parent
-    while courant is not None:
-        if courant is collection:
-            raise ValueError(
-                f"Collection {collection.cote_collection!r} : cycle détecté "
-                "dans la hiérarchie de collections."
-            )
-        if courant.id is not None and collection.id is not None:
-            if courant.id == collection.id:
-                raise ValueError(
-                    f"Collection {collection.cote_collection!r} : cycle "
-                    "détecté dans la hiérarchie de collections."
-                )
-            if courant.id in vus:
-                break
-            vus.add(courant.id)
-        courant = courant.parent
-
-
-@event.listens_for(Session, "before_flush")
-def _valider_hierarchie_avant_flush(session, flush_context, instances):  # noqa: ANN001
-    for obj in list(session.new) + list(session.dirty):
-        if isinstance(obj, Collection):
-            valider_hierarchie(obj)

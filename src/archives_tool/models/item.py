@@ -1,4 +1,10 @@
-"""Modèle Item (unité de catalogage)."""
+"""Modèle Item (unité de catalogage).
+
+Un item appartient à exactement un Fonds (le matériel brut dont il
+est extrait). Il peut figurer dans plusieurs Collections via la
+liaison N-N `item_collection` — typiquement la miroir de son fonds
+plus 0..N collections libres.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ if TYPE_CHECKING:
     from .collection import Collection
     from .externe import LienExterneItem
     from .fichier import Fichier
+    from .fonds import Fonds
     from .journal import ModificationItem
 
 
@@ -30,11 +37,12 @@ class Item(Base, TracabiliteMixin):
     __tablename__ = "item"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    collection_id: Mapped[int] = mapped_column(
-        ForeignKey("collection.id"), nullable=False
+    fonds_id: Mapped[int] = mapped_column(
+        ForeignKey("fonds.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
-    cote: Mapped[str] = mapped_column(String(100), nullable=False)
+    cote: Mapped[str] = mapped_column(String(128), nullable=False)
     numero: Mapped[str | None] = mapped_column(String(50))
     numero_tri: Mapped[int | None] = mapped_column(Integer)
 
@@ -58,7 +66,11 @@ class Item(Base, TracabiliteMixin):
     )
     notes_internes: Mapped[str | None] = mapped_column(Text)
 
-    collection: Mapped[Collection] = relationship(back_populates="items")
+    fonds: Mapped[Fonds] = relationship(back_populates="items")
+    collections: Mapped[list[Collection]] = relationship(
+        secondary="item_collection",
+        back_populates="items",
+    )
     fichiers: Mapped[list[Fichier]] = relationship(
         back_populates="item",
         cascade="all, delete-orphan",
@@ -72,14 +84,14 @@ class Item(Base, TracabiliteMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("collection_id", "cote", name="uq_item_collection_cote"),
+        UniqueConstraint("fonds_id", "cote", name="uq_item_fonds_cote"),
         UniqueConstraint("doi_nakala", name="uq_item_doi_nakala"),
         CheckConstraint(
             "etat_catalogage IN "
             "('brouillon', 'a_verifier', 'verifie', 'valide', 'a_corriger')",
             name="ck_item_etat_catalogage",
         ),
-        Index("ix_item_collection_id", "collection_id"),
+        Index("ix_item_fonds_id", "fonds_id"),
         Index("ix_item_annee", "annee"),
         Index("ix_item_etat", "etat_catalogage"),
         Index("ix_item_doi_nakala", "doi_nakala"),

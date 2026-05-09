@@ -11,7 +11,6 @@ Invariants de référence (cf. `models/collection.py` et CLAUDE.md) :
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +25,7 @@ from archives_tool.api.services._erreurs import (
     garde_cote_unique,
     valider_cote_titre,
 )
+from archives_tool.api.services.tri import Listage
 from archives_tool.models import (
     Collection,
     Fonds,
@@ -353,22 +353,6 @@ def ajouter_items_a_collection(
     return len(a_creer)
 
 
-@dataclass
-class ItemsDisponiblesPage:
-    """Page de résultats pour le picker d'items."""
-
-    items: list[Item]
-    page: int
-    par_page: int
-    total: int
-
-    @property
-    def nb_pages(self) -> int:
-        if self.par_page <= 0:
-            return 1
-        return max(1, (self.total + self.par_page - 1) // self.par_page)
-
-
 def items_disponibles_pour_collection(
     db: Session,
     collection_id: int,
@@ -377,30 +361,33 @@ def items_disponibles_pour_collection(
     recherche: str | None = None,
     page: int = 1,
     par_page: int = 50,
-) -> ItemsDisponiblesPage:
+) -> Listage[Item]:
     """Page d'items qui ne sont PAS encore dans la collection.
 
     Filtres optionnels :
     - `fonds_id` : restreint aux items d'un fonds.
-    - `recherche` : matche cote OU titre via `LIKE %text%` (case-
-      insensitive).
+    - `recherche` : matche cote OU titre via `ILIKE %text%`.
+
+    Retourne un `Listage[Item]` (cf. `services/tri.py`) — même contrat
+    de pagination que `lister_items_collection`.
     """
     deja_dans = select(ItemCollection.item_id).where(
         ItemCollection.collection_id == collection_id
     )
     base_stmt = select(Item).where(Item.id.notin_(deja_dans))
+    filtres: dict[str, object] = {}
     if fonds_id is not None:
         base_stmt = base_stmt.where(Item.fonds_id == fonds_id)
-    if recherche:
-        terme = f"%{recherche.strip()}%"
-        if terme.strip("%"):
-            base_stmt = base_stmt.where(
-                Item.cote.ilike(terme) | Item.titre.ilike(terme)
-            )
+        filtres["fonds_id"] = fonds_id
+    terme_recherche = (recherche or "").strip()
+    if terme_recherche:
+        motif = f"%{terme_recherche}%"
+        base_stmt = base_stmt.where(
+            Item.cote.ilike(motif) | Item.titre.ilike(motif)
+        )
+        filtres["recherche"] = terme_recherche
 
-    count_stmt = select(func.count()).select_from(base_stmt.subquery())
-    total = db.scalar(count_stmt) or 0
-
+    total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
     page_eff = max(1, page)
     par_page_eff = max(1, par_page)
     items = list(
@@ -410,8 +397,14 @@ def items_disponibles_pour_collection(
             .offset((page_eff - 1) * par_page_eff)
         ).all()
     )
-    return ItemsDisponiblesPage(
-        items=items, page=page_eff, par_page=par_page_eff, total=total
+    return Listage(
+        items=items,
+        tri="cote",
+        ordre="asc",
+        page=page_eff,
+        par_page=par_page_eff,
+        total=total,
+        filtres=filtres,
     )
 
 

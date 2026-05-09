@@ -97,17 +97,17 @@
       </tbody>
     </table>
 
-    {% if disponibles.nb_pages > 1 %}
+    {% if disponibles.pages > 1 %}
       <nav class="flex items-center justify-between mt-3 text-sm">
         <span class="text-gray-500">
-          Page {{ disponibles.page }} / {{ disponibles.nb_pages }}
+          Page {{ disponibles.page }} / {{ disponibles.pages }}
         </span>
         <span class="flex gap-2">
           {% if disponibles.page > 1 %}
             <a href="?page={{ disponibles.page - 1 }}{% if fonds_filter %}&fonds_filter={{ fonds_filter }}{% endif %}{% if recherche %}&recherche={{ recherche }}{% endif %}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}"
                class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">‹</a>
           {% endif %}
-          {% if disponibles.page < disponibles.nb_pages %}
+          {% if disponibles.page < disponibles.pages %}
             <a href="?page={{ disponibles.page + 1 }}{% if fonds_filter %}&fonds_filter={{ fonds_filter }}{% endif %}{% if recherche %}&recherche={{ recherche }}{% endif %}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}"
                class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">›</a>
           {% endif %}

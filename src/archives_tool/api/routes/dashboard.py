@@ -60,6 +60,7 @@ from archives_tool.api.services.items import (
 from archives_tool.api.templating import templates
 from archives_tool.models import (
     CollaborateurFonds,
+    EtatCatalogage,
     Fonds,
     LIBELLES_ROLE,
     PhaseChantier,
@@ -240,6 +241,15 @@ def _refuser_si_miroir(collection) -> None:
         )
 
 
+def _resoudre_collection_mutable(db: Session, cote: str, fonds: str | None):
+    """Pour les routes qui mutent une collection : résout + refuse 403
+    si miroir. Centralise la paire `_resoudre_collection` +
+    `_refuser_si_miroir`."""
+    collection = _resoudre_collection(db, cote, fonds)
+    _refuser_si_miroir(collection)
+    return collection
+
+
 def _url_collection(cote: str, fonds: str | None) -> str:
     return f"/collection/{cote}" + (f"?fonds={fonds}" if fonds else "")
 
@@ -291,6 +301,7 @@ def page_collection(
             listage=listage,
             fonds_query=fonds,
             etat_actif=filtres_etat[0] if filtres_etat else None,
+            etats_disponibles=list(EtatCatalogage),
         ),
     )
 
@@ -312,8 +323,7 @@ def page_collection_modifier(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    collection = _resoudre_collection(db, cote, fonds)
-    _refuser_si_miroir(collection)
+    collection = _resoudre_collection_mutable(db, cote, fonds)
     formulaire = formulaire_depuis_collection(collection)
     return templates.TemplateResponse(
         request,
@@ -344,8 +354,7 @@ def soumettre_collection_modifier(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
-    collection = _resoudre_collection(db, cote, fonds)
-    _refuser_si_miroir(collection)
+    collection = _resoudre_collection_mutable(db, cote, fonds)
     # La cote est verrouillée : on impose la valeur du chemin.
     formulaire.cote = collection.cote
     # `fonds_id` est immuable côté UI (cf. décision V0.9.0-alpha.1).
@@ -395,28 +404,27 @@ def page_picker_items(
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
     """Page de sélection d'items à ajouter à une collection libre."""
-    collection = _resoudre_collection(db, cote, fonds)
-    _refuser_si_miroir(collection)
+    collection = _resoudre_collection_mutable(db, cote, fonds)
 
     # Détermine le filtre fonds par défaut : si la collection est
     # rattachée et qu'aucun filtre n'est explicite, on propose les
-    # items du fonds parent.
-    fonds_filter_id: int | None = None
+    # items du fonds parent. On charge le `Fonds` au plus une fois.
+    fonds_filter_obj: Fonds | None = None
     if fonds_filter:
         try:
-            fonds_filter_id = lire_fonds_par_cote(db, fonds_filter).id
+            fonds_filter_obj = lire_fonds_par_cote(db, fonds_filter)
         except FondsIntrouvable as e:
             raise HTTPException(
                 status_code=404,
                 detail=f"Fonds {fonds_filter!r} introuvable.",
             ) from e
     elif collection.fonds_id is not None:
-        fonds_filter_id = collection.fonds_id
+        fonds_filter_obj = db.get(Fonds, collection.fonds_id)
 
     disponibles = items_disponibles_pour_collection(
         db,
         collection.id,
-        fonds_id=fonds_filter_id,
+        fonds_id=fonds_filter_obj.id if fonds_filter_obj else None,
         recherche=recherche,
         page=page,
     )
@@ -430,9 +438,7 @@ def page_picker_items(
             disponibles=disponibles,
             fonds_options=lister_fonds(db),
             fonds_filter=fonds_filter,
-            fonds_filter_effectif=db.get(Fonds, fonds_filter_id)
-            if fonds_filter_id
-            else None,
+            fonds_filter_effectif=fonds_filter_obj,
             recherche=recherche or "",
             fonds_query=fonds,
         ),
@@ -447,14 +453,13 @@ def page_picker_items(
 def soumettre_ajouter_items(
     cote: str,
     request: Request,
-    item_ids: Annotated[list[int], Form()] = [],
+    item_ids: Annotated[list[int], Form()] = [],  # noqa: B006 — FastAPI lit Form() à chaque requête.
     fonds: str | None = Query(None),
     db: Session = Depends(get_db),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
     """Ajoute la sélection (multi-id) à la collection. Idempotent."""
-    collection = _resoudre_collection(db, cote, fonds)
-    _refuser_si_miroir(collection)
+    collection = _resoudre_collection_mutable(db, cote, fonds)
     ajouter_items_a_collection(
         db, collection.id, item_ids, ajoute_par=utilisateur
     )

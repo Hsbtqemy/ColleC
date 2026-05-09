@@ -38,6 +38,19 @@ def client_demo(
 
 
 @pytest.fixture
+def db_demo_factory(base_demo_path: Path):
+    """Factory de sessions sur la base demo (lecture/écriture).
+
+    Utile pour les tests qui ont besoin de lire la DB avant et/ou après
+    un appel HTTP : `with db_demo_factory() as s: ...`."""
+    engine = creer_engine(base_demo_path)
+    try:
+        yield creer_session_factory(engine)
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
 def client_vide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Client sur une base existante mais sans aucun fonds (tables vides)."""
     db_path = tmp_path / "vide.db"
@@ -358,13 +371,11 @@ def test_ajouter_collaborateur_fonds_inexistant_404(
 
 
 def test_supprimer_collaborateur_fonds(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Supprime un collaborateur seedé : redirige et la page ne le
     montre plus."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         fonds = s.scalar(sa_select(Fonds).where(Fonds.cote == "RDM"))
         # Ajouter d'abord un collaborateur dédié pour pouvoir le retirer
         # sans toucher aux fixtures partagées.
@@ -387,12 +398,10 @@ def test_supprimer_collaborateur_fonds(
 
 
 def test_collaborateur_fonds_anti_confused_deputy(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Un collaborateur de FA ne peut pas être supprimé via /fonds/HK/."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         fonds_fa = s.scalar(sa_select(Fonds).where(Fonds.cote == "FA"))
         cid = s.scalar(
             sa_select(CollaborateurFonds.id).where(
@@ -561,12 +570,10 @@ def test_picker_recherche(client_demo: TestClient) -> None:
 
 
 def test_ajouter_items_a_collection(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Ajout multi-id idempotent vers une transversale."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
         item_ids = list(
             s.scalars(
@@ -588,18 +595,16 @@ def test_ajouter_items_a_collection(
 
     # Vérifier la persistance directement en DB plutôt que via le
     # rendu HTML (la pagination peut placer HK-XXX hors page 1).
-    with factory() as s:
+    with db_demo_factory() as s:
         for iid in item_ids:
             assert s.get(ItemCollection, (iid, coll_id)) is not None
 
 
 def test_ajouter_items_idempotent(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Le second submit ne crée pas de doublon."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         fonds_fa = s.scalar(sa_select(Fonds).where(Fonds.cote == "FA"))
         un_item = s.scalar(
             sa_select(Item).where(Item.fonds_id == fonds_fa.id).limit(1)
@@ -638,11 +643,9 @@ def test_ajouter_items_a_miroir_403(client_demo: TestClient) -> None:
 
 
 def test_retirer_item_de_libre(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         oeuvres = s.scalar(
             sa_select(Collection).where(Collection.cote == "FA-OEUVRES")
         )
@@ -661,22 +664,21 @@ def test_retirer_item_de_libre(
     assert response.status_code == 303
 
     # Vérifier la suppression de la liaison.
-    with factory() as s:
+    with db_demo_factory() as s:
         relue = s.get(ItemCollection, (iid, coll_id))
         assert relue is None
 
 
 def test_retirer_item_de_miroir_garde_dans_fonds(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Invariant 7 : retirer un item de la miroir ne le supprime pas
     du fonds."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
+        fonds_hk_id = fonds_hk.id
         un_item = s.scalar(
-            sa_select(Item).where(Item.fonds_id == fonds_hk.id).limit(1)
+            sa_select(Item).where(Item.fonds_id == fonds_hk_id).limit(1)
         )
         iid = un_item.id
 
@@ -687,19 +689,17 @@ def test_retirer_item_de_miroir_garde_dans_fonds(
     assert response.status_code == 303
 
     # L'item existe toujours dans son fonds.
-    with factory() as s:
+    with db_demo_factory() as s:
         item = s.get(Item, iid)
         assert item is not None
-        assert item.fonds_id == fonds_hk.id
+        assert item.fonds_id == fonds_hk_id
 
 
 def test_retirer_item_idempotent(
-    client_demo: TestClient, base_demo_path: Path
+    client_demo: TestClient, db_demo_factory
 ) -> None:
     """Retirer un item déjà absent : pas d'erreur."""
-    engine = creer_engine(base_demo_path)
-    factory = creer_session_factory(engine)
-    with factory() as s:
+    with db_demo_factory() as s:
         un_item = s.scalar(sa_select(Item).limit(1))
         iid = un_item.id
 

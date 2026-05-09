@@ -97,10 +97,10 @@
     <select id="etat-filter" name="etat" onchange="this.form.submit()"
             class="px-2 py-1 border border-gray-300 rounded">
       <option value="">Tous</option>
-      {% for valeur in ("brouillon", "a_verifier", "verifie", "valide", "a_corriger") %}
-        <option value="{{ valeur }}"
-                {% if etat_actif == valeur %}selected{% endif %}>
-          {{ valeur | libelle_etat }}
+      {% for e in etats_disponibles %}
+        <option value="{{ e.value }}"
+                {% if etat_actif == e.value %}selected{% endif %}>
+          {{ e.value | libelle_etat }}
         </option>
       {% endfor %}
     </select>

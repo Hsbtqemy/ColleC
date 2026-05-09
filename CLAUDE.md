@@ -561,9 +561,17 @@ archives-tool/
   fermé numérisation/transcription/indexation/catalogage, multi-rôles
   par personne, affichage groupé par rôle, formulaire HTMX) — V0.8.0.
 - ✅ Refonte modèle Fonds / Collection (miroir + libre) / Item
-  (multi-appartenance) — V0.9.0-alpha. UI/CLI dégradés, services
-  Collection/Item à refondre, demo seeder + importers v2 + exporters
-  / qa / renamer / derivatives à adapter en V0.9.0-alpha.1, beta, gamma.
+  (multi-appartenance) — V0.9.0-alpha. UI/CLI dégradés en attendant
+  les sessions de polish.
+- ✅ Services Fonds / Collection / Item refondus avec bases
+  d'erreurs partagées (`EntiteIntrouvable`, `FormulaireInvalide`,
+  `OperationInterdite`), création-item auto-rattachée à la miroir
+  (invariant 6), liaisons N-N idempotentes — V0.9.0-alpha.1.
+- Demo seeder reconstruit pour le nouveau modèle — V0.9.0-alpha.2.
+- Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
+- Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
+- Adaptation CLI exporter / controler / montrer / renommer / deriver
+  + qa / renamer / derivatives — V0.9.0-gamma.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition des métadonnées item — V0.9.1 (après refonte service Item).
 - Édition structurelle des champs personnalisés d'une collection

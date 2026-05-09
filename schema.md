@@ -588,6 +588,62 @@ ON DELETE CASCADE. Index sur `fonds_id`.
 
 ---
 
+## Services CRUD (V0.9.0-alpha.1)
+
+Les services Python applicatifs garantissent les invariants
+au-dessus du schéma SQL. Trois services principaux :
+
+### `services/fonds.py`
+
+- `creer_fonds(formulaire)` → crée le fonds + sa miroir dans la
+  même transaction (invariants 1, 5).
+- `lire_fonds` / `lire_fonds_par_cote` / `lister_fonds` (compteurs
+  agrégés en 3 queries, pas de N+1).
+- `modifier_fonds`, `supprimer_fonds` (cascade items + miroir,
+  libres rattachées passent transversales via `ON DELETE SET NULL`).
+
+### `services/collections.py`
+
+Gère **uniquement les collections libres**. Les miroirs sont créées
+et supprimées par `services/fonds.py`.
+
+- `creer_collection_libre(formulaire)` → vérifie le fonds_id si
+  fourni, IntegrityError sur conflit `(fonds_id, cote)`.
+- `lire_collection`, `lire_collection_par_cote(cote, fonds_id=None)`
+  (lève `OperationCollectionInterdite` si plusieurs matches sans fonds).
+- `lister_collections(fonds_id=None, type_collection=None)`.
+- `modifier_collection` : refuse de changer `fonds_id` d'une miroir.
+- `supprimer_collection_libre` : refuse les miroirs.
+- `ajouter_item_a_collection`, `retirer_item_de_collection` :
+  idempotents, valident l'existence des entités.
+
+### `services/items.py`
+
+- `creer_item(formulaire)` → ajoute automatiquement à la miroir
+  du fonds (invariant 6) ; lève si miroir absente (anomalie).
+- `lire_item`, `lire_item_par_cote(cote, fonds_id)` (fonds_id
+  obligatoire, cote n'étant pas globalement unique).
+- `collections_de_item` : requête SQL fraîche via la junction
+  (la relation ORM `Item.collections` peut être obsolète après
+  écritures directes).
+- `lister_items_fonds`, `lister_items_collection` :
+  pagination + tri whitelisté + filtre etat_catalogage, retournent
+  `Listage[ItemResume]` (réutilise `services/tri.py`).
+- `modifier_item` : `fonds_id` est immuable (`OperationItemInterdite`
+  si changement).
+- `supprimer_item` : cascade fichiers + liaisons N-N.
+
+### Erreurs partagées (`services/_erreurs.py`)
+
+- `EntiteIntrouvable(LookupError)` → 404.
+- `FormulaireInvalide(ValueError)` avec dict `erreurs` champ→message → 400.
+- `OperationInterdite(Exception)` → 409.
+
+Chaque service spécialise (FondsIntrouvable, CollectionInvalide, etc.)
+pour les `try/except` typés et des messages contextualisés.
+
+---
+
 ## Sources externes (V2+)
 
 ### `source_externe`

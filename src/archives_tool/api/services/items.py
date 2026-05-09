@@ -184,9 +184,22 @@ def lire_item_par_cote(db: Session, cote: str, *, fonds_id: int) -> Item:
 
 
 def collections_de_item(db: Session, item_id: int) -> list[Collection]:
-    """Liste les collections (miroir + libres) où un item figure."""
-    item = lire_item(db, item_id)
-    return list(item.collections)
+    """Liste les collections (miroir + libres) où un item figure.
+
+    Requête SQL fraîche plutôt que `item.collections` : la relation
+    chargée peut être obsolète après des écritures directes sur la
+    junction `item_collection`.
+    """
+    if db.get(Item, item_id) is None:
+        raise ItemIntrouvable(item_id)
+    return list(
+        db.scalars(
+            select(Collection)
+            .join(ItemCollection, ItemCollection.collection_id == Collection.id)
+            .where(ItemCollection.item_id == item_id)
+            .order_by(Collection.titre)
+        ).all()
+    )
 
 
 def lister_items_fonds(

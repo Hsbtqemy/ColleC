@@ -1,0 +1,135 @@
+{# Page modification d'un item. Variables :
+   - `item` (modèle ORM)
+   - `fonds` (modèle ORM, parent de l'item)
+   - `formulaire` (FormulaireItem pré-rempli)
+   - `erreurs` (dict champ→message, vide si aucune)
+   - `etats` (list[EtatCatalogage]) #}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
+
+{% block title %}Modifier {{ item.titre or item.cote }} — archives-tool{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/fonds/{{ fonds.cote }}"
+       class="hover:underline font-mono">{{ fonds.cote }}</a> ›
+    <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+       class="hover:underline font-mono">{{ item.cote }}</a> ›
+    <span>Modifier</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Modifier
+    <span class="font-mono text-gray-700 ml-1">{{ item.cote }}</span>
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">{{ item.titre or "—" }}</p>
+</header>
+
+<form method="post"
+      action="/item/{{ item.cote }}/modifier?fonds={{ fonds.cote }}"
+      style="max-width:680px;">
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identification
+    </h2>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Cote
+      </label>
+      <input type="text" value="{{ item.cote }}" disabled
+             class="w-full font-mono"
+             style="padding:6px 10px;font-size:13px;
+                    border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                    background:#f9fafb;color:#6b7280;">
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        La cote ne peut pas être modifiée — identifiant stable.
+      </p>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Fonds
+      </label>
+      <input type="text" value="{{ fonds.titre }} ({{ fonds.cote }})" disabled
+             class="w-full"
+             style="padding:6px 10px;font-size:13px;
+                    border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                    background:#f9fafb;color:#6b7280;">
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        Le fonds d'un item est immuable — pour le déplacer, supprimer
+        et recréer.
+      </p>
+    </div>
+    {{ champ('titre', 'Titre', formulaire.titre, obligatoire=true) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Description
+    </h2>
+    {{ textarea('description', 'Description publique',
+                formulaire.description,
+                help_text='Destinée aux exports Dublin Core / Nakala.') }}
+    {{ textarea('notes_internes', 'Notes internes',
+                formulaire.notes_internes,
+                help_text='Pour l’équipe — non exportées.') }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Catalogage
+    </h2>
+    {% set libelles_etats = {} %}
+    {% for e in etats %}
+      {% set _ = libelles_etats.update({e.value: (e.value | libelle_etat)}) %}
+    {% endfor %}
+    {{ selecteur('etat_catalogage', 'État',
+                 formulaire.etat_catalogage,
+                 etats | map(attribute='value') | list,
+                 libelles=libelles_etats) }}
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('date', 'Date (EDTF)', formulaire.date,
+               placeholder='1969-09, vers 1960, s.d.…',
+               help_text='Format libre — EDTF accepté.') }}
+      {{ champ('annee', 'Année (numérique)',
+               formulaire.annee if formulaire.annee else '',
+               type='number') }}
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('numero', 'Numéro', formulaire.numero) }}
+      {{ champ('langue', 'Langue (ISO 639-3)',
+               formulaire.langue, placeholder='fra, eng…') }}
+    </div>
+    {{ champ('type_coar', 'Type COAR (URI ou label)',
+             formulaire.type_coar) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identifiants externes
+    </h2>
+    {{ champ('doi_nakala', 'DOI Nakala',
+             formulaire.doi_nakala,
+             placeholder='10.34847/nkl.xxxxxxxx', mono=true) }}
+    {{ champ('doi_collection_nakala', 'DOI collection Nakala',
+             formulaire.doi_collection_nakala,
+             help_text='Si l’item est rattaché à une collection Nakala partagée.',
+             mono=true) }}
+  </section>
+
+  <div class="flex items-center justify-end gap-2"
+       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+    <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      Annuler
+    </a>
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+      Enregistrer
+    </button>
+  </div>
+</form>
+{% endblock %}

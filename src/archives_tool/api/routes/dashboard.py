@@ -11,14 +11,20 @@ Précédence sur les cotes ambiguës :
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.deps import (
+    get_db,
+    get_nom_base,
+    get_racines,
+    get_utilisateur_courant,
+)
 from archives_tool.api.services.collaborateurs_fonds import (
     CollaborateurFondsIntrouvable,
     CollaborateurFondsInvalide,
@@ -42,6 +48,7 @@ from archives_tool.api.services.dashboard import (
     composer_dashboard,
     composer_page_collection,
     composer_page_fonds,
+    composer_page_item,
 )
 from archives_tool.api.services.fonds import (
     FondsIntrouvable,
@@ -53,14 +60,20 @@ from archives_tool.api.services.fonds import (
     modifier_fonds,
 )
 from archives_tool.api.services.items import (
+    FormulaireItem,
     ItemIntrouvable,
+    ItemInvalide,
+    OperationItemInterdite,
+    formulaire_depuis_item,
     lire_item_par_cote,
     lister_items_collection,
+    modifier_item,
 )
 from archives_tool.api.templating import templates
 from archives_tool.models import (
     CollaborateurFonds,
     EtatCatalogage,
+    Fichier,
     Fonds,
     LIBELLES_ROLE,
     PhaseChantier,
@@ -485,8 +498,15 @@ def soumettre_retirer_item(
 
 
 # ---------------------------------------------------------------------------
-# Item : placeholder (V0.9.0-beta.3 livrera la page complète)
+# Item : lecture, modification, service de fichier
 # ---------------------------------------------------------------------------
+
+
+# Formats raster supportés nativement par les navigateurs : `<img>` direct.
+# Les autres formats (TIFF, PDF, etc.) basculent en lien de téléchargement.
+_FORMATS_IMG_NATIFS: frozenset[str] = frozenset(
+    {"png", "jpg", "jpeg", "gif", "webp", "svg"}
+)
 
 
 @router.get("/item/{cote}", response_class=HTMLResponse)
@@ -495,31 +515,162 @@ def page_item(
     request: Request,
     fonds: str = Query(
         ...,
-        description="Cote du fonds (obligatoire : les cotes d'items ne sont uniques que par fonds).",
+        description=(
+            "Cote du fonds (obligatoire : les cotes d'items ne sont "
+            "uniques que par fonds)."
+        ),
     ),
+    fichier_courant: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    """Affiche un item (titre + cote ; visionneuse + métadonnées à venir)."""
+    """Page de lecture d'un item : bandeau, collections d'appartenance,
+    visionneuse et tableau des fichiers."""
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
-        fonds_obj = lire_fonds_par_cote(db, fonds)
-    except FondsIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail=f"Fonds {fonds!r} introuvable."
-        ) from e
-    try:
-        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+        detail = composer_page_item(
+            db, cote, fonds_obj.id, fichier_courant_pos=fichier_courant
+        )
     except ItemIntrouvable as e:
         raise HTTPException(
             status_code=404, detail=f"Item {cote!r} introuvable."
         ) from e
     return templates.TemplateResponse(
         request,
-        "pages/_placeholder_item.html",
+        "pages/item_lecture.html",
         _contexte_base(
-            nom_base, utilisateur, item=item, fonds_cote=fonds_obj.cote
+            nom_base,
+            utilisateur,
+            detail=detail,
+            fonds_cote=fonds_obj.cote,
+            formats_img_natifs=_FORMATS_IMG_NATIFS,
         ),
+    )
+
+
+@router.get("/item/{cote}/fichiers/{fichier_id}")
+def servir_fichier_item(
+    cote: str,
+    fichier_id: int,
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    racines: dict[str, Path] = Depends(get_racines),
+) -> FileResponse:
+    """Sert le binaire d'un fichier rattaché à un item.
+
+    Vérifie l'appartenance fichier→item→fonds (anti-confused-deputy)
+    avant toute résolution disque. Pour la base de démo où les
+    chemins sont fictifs, retourne 404 propre.
+    """
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
+    try:
+        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        raise HTTPException(status_code=404, detail="Item introuvable.") from e
+    fichier = db.get(Fichier, fichier_id)
+    if fichier is None or fichier.item_id != item.id:
+        raise HTTPException(
+            status_code=404,
+            detail="Fichier introuvable dans cet item.",
+        )
+    if not fichier.racine or not fichier.chemin_relatif:
+        raise HTTPException(
+            status_code=404,
+            detail="Fichier sans source locale (Nakala-only ou non résolu).",
+        )
+    racine_path = racines.get(fichier.racine)
+    if racine_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Racine {fichier.racine!r} non configurée.",
+        )
+    chemin_local = racine_path / fichier.chemin_relatif
+    if not chemin_local.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fichier absent du disque : {fichier.chemin_relatif}",
+        )
+    return FileResponse(chemin_local)
+
+
+def _resoudre_item_ou_404(db: Session, cote: str, fonds_cote: str):
+    """Charge un item par (cote, fonds_cote) ou lève 404 propre.
+    Centralise le couple `_charger_fonds_ou_404` + `lire_item_par_cote`
+    pour les routes /item/{cote}/..."""
+    fonds_obj = _charger_fonds_ou_404(db, fonds_cote)
+    try:
+        return lire_item_par_cote(db, cote, fonds_id=fonds_obj.id), fonds_obj
+    except ItemIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Item {cote!r} introuvable."
+        ) from e
+
+
+@router.get("/item/{cote}/modifier", response_class=HTMLResponse)
+def formulaire_modifier_item(
+    cote: str,
+    request: Request,
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    item, fonds_obj = _resoudre_item_ou_404(db, cote, fonds)
+    formulaire = formulaire_depuis_item(item)
+    return templates.TemplateResponse(
+        request,
+        "pages/item_modifier.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            item=item,
+            fonds=fonds_obj,
+            formulaire=formulaire,
+            erreurs={},
+            etats=list(EtatCatalogage),
+        ),
+    )
+
+
+@router.post("/item/{cote}/modifier", response_class=HTMLResponse, response_model=None)
+def soumettre_modification_item(
+    cote: str,
+    request: Request,
+    formulaire: Annotated[FormulaireItem, Form()],
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    item, fonds_obj = _resoudre_item_ou_404(db, cote, fonds)
+    # La cote et le fonds sont verrouillés : on impose les valeurs du
+    # chemin / item courant. Tout override venu du POST est silencieux.
+    formulaire.cote = item.cote
+    formulaire.fonds_id = item.fonds_id
+    try:
+        modifier_item(db, item.id, formulaire, modifie_par=utilisateur)
+    except ItemInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/item_modifier.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                item=item,
+                fonds=fonds_obj,
+                formulaire=formulaire,
+                erreurs=e.erreurs,
+                etats=list(EtatCatalogage),
+            ),
+            status_code=400,
+        )
+    except OperationItemInterdite as e:
+        # fonds_id immuable : ne devrait pas arriver vu l'override
+        # ci-dessus, mais on rend l'erreur lisible si elle survient.
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(
+        f"/item/{cote}?fonds={fonds_obj.cote}", status_code=303
     )
 
 

@@ -573,6 +573,10 @@ archives-tool/
   arborescence dépliable fonds→collections, placeholders pour les
   pages détail, précédence cote ambiguë → `/fonds/{cote}` —
   V0.9.0-beta.1.
+- ✅ Pages Fonds + Collection détaillées : bandeau métadonnées,
+  collections, collaborateurs (CollaborateurFonds avec CRUD),
+  items récents, 3 variantes collection (miroir / libre rattachée
+  / transversale), édition fonds — V0.9.0-beta.2.
 - Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
 - Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver

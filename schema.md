@@ -681,32 +681,53 @@ reproductibilité) dans `tests/test_demo_seeder.py`.
 
 ---
 
-## Routes web (V0.9.0-beta.1)
+## Routes web
 
-V0.9.0-beta.1 livre le dashboard refondu et des placeholders pour
-les pages détail. Les anciens routers (collaborateurs détaillé,
-preferences, derives, import_assistant) ne sont plus enregistrés
-en attendant V0.9.0-beta.2 / .3.
-
-| Route | Statut beta.1 | Notes |
+| Route | Méthode | Notes |
 |---|---|---|
-| `GET /` | Complète | Arborescence dépliable fonds → collections |
-| `GET /fonds` | Complète | Table simple alternative |
-| `GET /fonds/{cote}` | Placeholder | Page complète V0.9.0-beta.2 |
-| `GET /collection/{cote}` | Placeholder + redirection | `?fonds=COTE` désambiguïse ; sinon, redirige 303 vers `/fonds/{cote}` si la cote matche un fonds |
-| `GET /item/{cote}?fonds=COTE` | Placeholder | `?fonds=` obligatoire |
+| `/` | GET | Dashboard : arborescence dépliable fonds → collections + transversales. |
+| `/fonds` | GET | Table simple des fonds (alternative au dashboard). |
+| `/fonds/{cote}` | GET | Page fonds : bandeau métadonnées, collections, collaborateurs (par rôle), items récents. |
+| `/fonds/{cote}/modifier` | GET / POST | Édition complète du fonds, cote verrouillée. PRG : 303 vers `/fonds/{cote}` au succès, 400 + re-render au refus. |
+| `/fonds/{cote}/collaborateurs` | POST | Ajout d'un `CollaborateurFonds`. |
+| `/fonds/{cote}/collaborateurs/{id}` | POST | Modification. |
+| `/fonds/{cote}/collaborateurs/{id}/supprimer` | POST | Suppression dure. |
+| `/collection/{cote}?fonds=COTE` | GET | Page collection (3 variantes : miroir, libre rattachée, transversale). Précédence : si la cote matche un fonds et qu'aucun `?fonds=` n'est passé, redirige 303 vers `/fonds/{cote}`. |
+| `/item/{cote}?fonds=COTE` | GET | Placeholder ; page complète en V0.9.0-beta.3. `?fonds=` obligatoire. |
 
-**Convention `?fonds=` en query string** : les cotes d'items ne
-sont uniques que par fonds (cf. invariant) ; la query string
-désambiguïse. Pour les collections, la query est utile quand la
-cote est partagée entre une miroir et une transversale, ou entre
-fonds — la précédence par défaut envoie sur le fonds homonyme s'il
-existe.
+**Convention `?fonds=` en query string** : les cotes d'items et de
+collections (libres) ne sont uniques que par fonds. La query string
+désambiguïse. Pour les collections, la précédence par défaut envoie
+sur le fonds homonyme s'il existe.
 
-**Service dashboard** (`services/dashboard.py`) :
-`composer_dashboard(db) -> DashboardResume` charge tous les fonds,
-leurs collections et les compteurs en agrégats SQL — pas de N+1
-(testé via `test_dashboard_routes`).
+**Anti-confused-deputy** : les routes mutantes
+(`/fonds/{cote}/collaborateurs/{id}/...`) vérifient que le
+collaborateur appartient bien au fonds passé dans le chemin (404
+sinon).
+
+**Services dashboard** (`services/dashboard.py`) :
+- `composer_dashboard(db)` : tous les fonds + transversales pour `/`.
+- `composer_page_fonds(db, cote)` : `FondsDetail` (fonds + collections
+  + items récents + collaborateurs groupés par rôle).
+- `composer_page_collection(db, collection)` : `CollectionDetail`
+  avec fonds parent ou fonds représentés selon le type.
+Tous en agrégats SQL — pas de N+1.
+
+---
+
+## Pages Fonds et Collection — variantes d'édition
+
+**Fonds (édition)** — formulaire complet ; cote verrouillée
+(disabled côté HTML, ignorée côté serveur — la valeur du chemin est
+imposée). Toute autre modification est libre. PRG : redirection au
+succès, re-render avec dict `erreurs` au refus.
+
+**Collection (édition)** — V0.9.0-beta.2 livre la lecture des 3
+variantes ; l'édition arrive en V0.9.0-beta.2.1 :
+- **MIROIR** : pas d'édition publique (gérée par le service Fonds).
+- **LIBRE rattachée** : édition complète sauf `fonds_id` (non
+  modifiable — supprimer/recréer pour changer de nature).
+- **LIBRE transversale** : idem rattachée, sans `fonds_id`.
 
 ---
 

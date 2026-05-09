@@ -32,11 +32,10 @@ from archives_tool.api.services.fonds import (
 )
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
-from archives_tool.exporters.dublin_core import exporter_dc_xml
+from archives_tool.exporters.dublin_core import exporter_dublin_core
 from archives_tool.exporters.excel import exporter_excel
 from archives_tool.exporters.nakala import exporter_nakala_csv
 from archives_tool.exporters.rapport import RapportExport
-from archives_tool.exporters.selection import CritereSelection, SelectionErreur
 from archives_tool.importers.ecrivain import RapportImport, importer as importer_profil
 from archives_tool.models import Collection, Fonds, PhaseChantier, TypeCollection
 from archives_tool.profils import (
@@ -89,6 +88,44 @@ def _charger_config_ou_sortie(chemin: Path) -> ConfigLocale:
     except Exception as e:
         typer.echo(f"Erreur config : {e}", err=True)
         raise typer.Exit(2) from None
+
+
+# ---------------------------------------------------------------------------
+# Helpers partagés par les sous-groupes `exporter` et `collections`.
+# Hissés ici pour être disponibles avant la déclaration des commandes
+# (les `typer.Option(default=_DB_PATH_OPTION)` sont évalués à la
+# définition, pas à l'appel).
+# ---------------------------------------------------------------------------
+
+
+def _ouvrir_session_existante(db_path: Path):
+    """Ouvre une session sur une base SQLite **existante** (Exit 2 si
+    le fichier est absent). À utiliser pour les commandes lecture/
+    export ou mutations qui supposent que la base existe — différent
+    de `archives-tool importer` qui peut créer la base à la volée."""
+    if not db_path.is_file():
+        typer.echo(f"Erreur : base introuvable ({db_path}).", err=True)
+        raise typer.Exit(2)
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    return factory()
+
+
+def _resoudre_fonds_ou_sortie(session, cote: str | None) -> Fonds | None:
+    """Résout `--fonds COTE` en `Fonds` (ou None si cote absente).
+    Sortie code 1 + message stderr si la cote est inconnue."""
+    if cote is None:
+        return None
+    try:
+        return lire_fonds_par_cote(session, cote)
+    except FondsIntrouvable:
+        typer.echo(f"Erreur : fonds {cote!r} introuvable.", err=True)
+        raise typer.Exit(1) from None
+
+
+_DB_PATH_OPTION = typer.Option(
+    Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
+)
 
 
 def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
@@ -224,142 +261,141 @@ def _afficher_rapport_export(rapport: RapportExport, verbose: bool) -> None:
             typer.echo(f"    - {a}")
 
 
-@app.command("exporter")
-def cmd_exporter(
-    format: str = typer.Argument(
-        ...,
-        metavar="FORMAT",
-        help="Un parmi : xlsx, csv, dc-xml, nakala-csv.",
-    ),
-    collection: str = typer.Option(
-        ...,
-        "--collection",
-        help="Cote de la collection à exporter (obligatoire en V1).",
-    ),
-    recursif: bool = typer.Option(
-        False,
-        "--recursif/--non-recursif",
-        help="Inclure les sous-collections.",
-    ),
-    etat: list[str] = typer.Option(
+# ---------------------------------------------------------------------------
+# Sous-groupe `exporter` : Dublin Core / Nakala / xlsx (V0.9.0-gamma.2).
+# Granularité = la collection (miroir, libre rattachée, transversale).
+# ---------------------------------------------------------------------------
+
+exporter_app = typer.Typer(
+    help="Exporter une collection vers un format externe.",
+    no_args_is_help=True,
+)
+app.add_typer(exporter_app, name="exporter")
+
+
+def _resoudre_collection_pour_export(
+    session, cote: str, fonds_cote: str | None
+) -> Collection:
+    """Charge une collection par cote, avec désambiguïsation `--fonds COTE`.
+    Sortie code 1 + message stderr si la collection est inconnue ou
+    ambiguë."""
+    fonds_obj = _resoudre_fonds_ou_sortie(session, fonds_cote)
+    fonds_id = fonds_obj.id if fonds_obj else None
+    try:
+        return lire_collection_par_cote(session, cote, fonds_id=fonds_id)
+    except CollectionIntrouvable:
+        typer.echo(f"Erreur : collection {cote!r} introuvable.", err=True)
+        raise typer.Exit(1) from None
+
+
+def _afficher_rapport_export_simple(rapport: RapportExport, verbose: bool) -> None:
+    """Variante simplifiée du rapport d'export pour V0.9.0-gamma.2.
+
+    Plus court que `_afficher_rapport_export` (sans dry-run, strict,
+    etc. qui ont disparu de l'API). On garde le détail des items
+    incomplets en mode verbose pour aider l'utilisateur à corriger."""
+    typer.echo(
+        f"Export {rapport.format} — {rapport.nb_items_selectionnes} items, "
+        f"{rapport.nb_fichiers_selectionnes} fichiers — "
+        f"{rapport.duree_secondes:.2f}s"
+    )
+    if rapport.chemin_sortie:
+        typer.echo(f"  Sortie : {rapport.chemin_sortie}")
+    if rapport.items_incomplets:
+        typer.echo(
+            f"  ⚠ Items incomplets : {len(rapport.items_incomplets)}", err=True
+        )
+        if verbose:
+            for cote, manques in rapport.items_incomplets:
+                typer.echo(f"    - {cote} : manque {', '.join(manques)}", err=True)
+
+
+@exporter_app.command("dublin-core")
+def cmd_exporter_dublin_core(
+    cote: str = typer.Argument(..., help="Cote de la collection à exporter."),
+    fonds: str | None = typer.Option(
         None,
-        "--etat",
-        help="Filtrer par état de catalogage (multiple).",
+        "--fonds",
+        "-f",
+        help="Cote du fonds parent (pour désambiguïser une cote partagée).",
     ),
-    granularite: str = typer.Option(
-        "item",
-        "--granularite",
-        help="'item' ou 'fichier' (ignoré pour nakala-csv, forcé à item).",
-    ),
-    sortie: Path = typer.Option(
-        ...,
+    sortie: Path | None = typer.Option(
+        None,
         "--sortie",
-        help="Chemin du fichier (xlsx/csv/nakala-csv, dc-xml agrégé) "
-        "ou dossier (dc-xml un-fichier-par-item).",
-    ),
-    colonnes: str = typer.Option(
-        None,
-        "--colonnes",
-        help="Liste de champs internes séparés par virgule (uniquement xlsx/csv).",
-    ),
-    mode: str = typer.Option(
-        "agrege",
-        "--mode",
-        help="'agrege' ou 'un-fichier-par-item' (uniquement dc-xml).",
-    ),
-    licence: str = typer.Option(
-        "CC-BY-NC-ND-4.0",
-        "--licence",
-        help="Licence par défaut (nakala-csv).",
-    ),
-    statut: str = typer.Option(
-        "pending",
-        "--statut",
-        help="Statut par défaut (nakala-csv).",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run/--no-dry-run",
-        help="Calcule le rapport sans écrire le fichier de sortie.",
-    ),
-    strict: bool = typer.Option(
-        False,
-        "--strict/--souple",
-        help="Exit non-zéro si des items sont incomplets.",
+        "-o",
+        help="Chemin du fichier XML (défaut : <cote>_dc.xml dans le cwd).",
     ),
     verbose: bool = typer.Option(False, "--verbose/--quiet"),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
-    """Exporter une sélection d'items vers un format canonique."""
-    critere = CritereSelection(
-        collection_cote=collection,
-        recursif=recursif,
-        etats=list(etat) if etat else None,
-        granularite="fichier" if granularite == "fichier" else "item",
-    )
+    """Exporte une collection en Dublin Core XML (un fichier agrégé)."""
+    chemin = sortie or Path.cwd() / f"{cote}_dc.xml"
+    with _ouvrir_session_existante(db_path) as session:
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        rapport = exporter_dublin_core(session, collection, chemin)
+    _afficher_rapport_export_simple(rapport, verbose)
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    try:
-        with factory() as session:
-            if format == "xlsx":
-                cols = [c.strip() for c in colonnes.split(",")] if colonnes else None
-                rapport = exporter_excel(
-                    session,
-                    critere,
-                    sortie,
-                    format="xlsx",
-                    colonnes=cols,
-                    dry_run=dry_run,
-                )
-            elif format == "csv":
-                cols = [c.strip() for c in colonnes.split(",")] if colonnes else None
-                rapport = exporter_excel(
-                    session,
-                    critere,
-                    sortie,
-                    format="csv",
-                    colonnes=cols,
-                    dry_run=dry_run,
-                )
-            elif format == "dc-xml":
-                mode_norm = (
-                    "un_fichier_par_item" if mode == "un-fichier-par-item" else "agrege"
-                )
-                rapport = exporter_dc_xml(
-                    session,
-                    critere,
-                    sortie,
-                    mode=mode_norm,
-                    dry_run=dry_run,
-                )
-            elif format == "nakala-csv":
-                # Nakala : granularité forcée à item.
-                critere.granularite = "item"
-                rapport = exporter_nakala_csv(
-                    session,
-                    critere,
-                    sortie,
-                    licence_defaut=licence,
-                    statut_defaut=statut,
-                    dry_run=dry_run,
-                )
-            else:
-                typer.echo(
-                    f"Format inconnu : {format!r}. Attendu : xlsx, csv, "
-                    "dc-xml, nakala-csv.",
-                    err=True,
-                )
-                raise typer.Exit(2)
-    except SelectionErreur as e:
-        typer.echo(f"Erreur sélection : {e}", err=True)
-        raise typer.Exit(2) from None
 
-    _afficher_rapport_export(rapport, verbose)
+@exporter_app.command("nakala")
+def cmd_exporter_nakala(
+    cote: str = typer.Argument(..., help="Cote de la collection à exporter."),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds parent (pour désambiguïser une cote partagée).",
+    ),
+    sortie: Path | None = typer.Option(
+        None,
+        "--sortie",
+        "-o",
+        help="Chemin du fichier CSV (défaut : <cote>_nakala.csv dans le cwd).",
+    ),
+    licence: str = typer.Option(
+        "CC-BY-NC-ND-4.0", "--licence", help="Licence par défaut."
+    ),
+    statut: str = typer.Option("pending", "--statut", help="Statut par défaut."),
+    verbose: bool = typer.Option(False, "--verbose/--quiet"),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Exporte une collection en CSV de dépôt bulk Nakala."""
+    chemin = sortie or Path.cwd() / f"{cote}_nakala.csv"
+    with _ouvrir_session_existante(db_path) as session:
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        rapport = exporter_nakala_csv(
+            session,
+            collection,
+            chemin,
+            licence_defaut=licence,
+            statut_defaut=statut,
+        )
+    _afficher_rapport_export_simple(rapport, verbose)
 
-    if strict and rapport.items_incomplets:
-        raise typer.Exit(1)
-    raise typer.Exit(0)
+
+@exporter_app.command("xlsx")
+def cmd_exporter_xlsx(
+    cote: str = typer.Argument(..., help="Cote de la collection à exporter."),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds parent (pour désambiguïser une cote partagée).",
+    ),
+    sortie: Path | None = typer.Option(
+        None,
+        "--sortie",
+        "-o",
+        help="Chemin du fichier xlsx (défaut : <cote>.xlsx dans le cwd).",
+    ),
+    verbose: bool = typer.Option(False, "--verbose/--quiet"),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Exporte une collection en xlsx pour catalogage manuel."""
+    chemin = sortie or Path.cwd() / f"{cote}.xlsx"
+    with _ouvrir_session_existante(db_path) as session:
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        rapport = exporter_excel(session, collection, chemin)
+    _afficher_rapport_export_simple(rapport, verbose)
 
 
 # ---------------------------------------------------------------------------
@@ -1054,36 +1090,6 @@ collections_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(collections_app, name="collections")
-
-
-def _ouvrir_session_existante(db_path: Path):
-    """Ouvre une session sur une base SQLite **existante** (Exit 2 si
-    le fichier est absent). Les commandes `collections` exigent une
-    base déjà créée — pas d'auto-création ici (différent de
-    `archives-tool importer` qui peut créer la base à la volée)."""
-    if not db_path.is_file():
-        typer.echo(f"Erreur : base introuvable ({db_path}).", err=True)
-        raise typer.Exit(2)
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    return factory()
-
-
-def _resoudre_fonds_ou_sortie(session, cote: str | None) -> Fonds | None:
-    """Résout `--fonds COTE` en `Fonds` (ou None si cote absente).
-    Sortie code 1 + message stderr si la cote est inconnue."""
-    if cote is None:
-        return None
-    try:
-        return lire_fonds_par_cote(session, cote)
-    except FondsIntrouvable:
-        typer.echo(f"Erreur : fonds {cote!r} introuvable.", err=True)
-        raise typer.Exit(1) from None
-
-
-_DB_PATH_OPTION = typer.Option(
-    Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
-)
 
 
 @collections_app.command("creer-libre")

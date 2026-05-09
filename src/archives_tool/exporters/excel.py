@@ -1,154 +1,120 @@
-"""Export Excel (.xlsx) et CSV d'une sélection."""
+"""Export xlsx d'une collection (V0.9.0-gamma.2).
+
+Une feuille avec :
+- métadonnées de la collection en haut (cote, titre, type, fonds
+  parent ou fonds représentés) ;
+- une ligne d'entête avec les colonnes ;
+- une ligne par item avec ses valeurs.
+
+Format facile à éditer dans Excel/LibreOffice pour catalogage.
+"""
 
 from __future__ import annotations
 
-import csv
 import time
 from pathlib import Path
-from typing import Any, Literal
 
 from openpyxl import Workbook
+from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
+from archives_tool.exporters._commun import composer_export
 from archives_tool.exporters.mapping_dc import extraire_valeur
 from archives_tool.exporters.rapport import RapportExport
-from archives_tool.exporters.selection import (
-    CritereSelection,
-    selectionner_fichiers,
-    selectionner_items,
-)
-from archives_tool.models import Fichier, Item
+from archives_tool.models import Collection, TypeCollection
 
-COLONNES_DEFAUT_ITEM = [
-    "cote",
-    "titre",
-    "date",
-    "annee",
-    "langue",
-    "type_coar",
-    "etat_catalogage",
-    "doi_nakala",
+# Colonnes affichées par item, dans l'ordre. Adaptées au workflow
+# de catalogage : cote/titre/contexte d'abord, puis état et dates,
+# puis identifiants externes.
+_COLONNES = [
+    ("cote", "Cote"),
+    ("titre", "Titre"),
+    ("fonds_cote", "Fonds"),
+    ("etat_catalogage", "État"),
+    ("date", "Date"),
+    ("annee", "Année"),
+    ("type_coar", "Type"),
+    ("langue", "Langue"),
+    ("description", "Description"),
+    ("notes_internes", "Notes internes"),
+    ("doi_nakala", "DOI Nakala"),
+    ("nb_fichiers", "Nb fichiers"),
 ]
 
-COLONNES_DEFAUT_FICHIER = [
-    "item.cote",
-    "item.titre",
-    "fichier.ordre",
-    "fichier.nom_fichier",
-    "fichier.racine",
-    "fichier.chemin_relatif",
-    "fichier.format",
-]
-
-LIBELLES = {
-    "cote": "Cote",
-    "titre": "Titre",
-    "date": "Date",
-    "annee": "Année",
-    "langue": "Langue",
-    "type_coar": "Type (COAR)",
-    "etat_catalogage": "État",
-    "doi_nakala": "DOI Nakala",
-    "item.cote": "Cote item",
-    "item.titre": "Titre item",
-    "fichier.ordre": "Ordre",
-    "fichier.nom_fichier": "Nom du fichier",
-    "fichier.racine": "Racine",
-    "fichier.chemin_relatif": "Chemin relatif",
-    "fichier.format": "Format",
-}
+# Excel limite les noms de feuille à 31 caractères et interdit certains
+# caractères (`[]:*?/\`).
+_TITRE_FEUILLE_MAX = 31
 
 
-def _libelle(champ: str) -> str:
-    return LIBELLES.get(champ, champ)
-
-
-def _valeur_item(champ: str, item: Item) -> Any:
-    val = extraire_valeur(item, champ)
-    if isinstance(val, list):
-        return " | ".join(str(v) for v in val)
-    return val
-
-
-def _valeur_couple(champ: str, item: Item, fichier: Fichier) -> Any:
-    if champ.startswith("item."):
-        return _valeur_item(champ[len("item.") :], item)
-    if champ.startswith("fichier."):
-        return getattr(fichier, champ[len("fichier.") :], None)
-    return _valeur_item(champ, item)
+def _slug_feuille(titre: str) -> str:
+    interdits = set('[]:*?/\\')
+    nettoye = "".join(c for c in titre if c not in interdits)
+    return nettoye[:_TITRE_FEUILLE_MAX] or "Export"
 
 
 def exporter_excel(
     session: Session,
-    critere: CritereSelection,
+    collection: Collection,
     chemin_sortie: Path,
-    format: Literal["xlsx", "csv"] = "xlsx",
-    colonnes: list[str] | None = None,
-    dry_run: bool = False,
 ) -> RapportExport:
-    """Exporte une sélection vers `chemin_sortie` en xlsx ou csv.
-
-    La granularité est prise dans `critere.granularite`. Les colonnes
-    par défaut varient selon la granularité. En granularité fichier,
-    les colonnes préfixées par `item.` ou `fichier.` désignent la
-    source de la valeur.
-
-    `dry_run=True` : calcule le rapport (nombre de lignes) sans
-    écrire le fichier.
-    """
+    """Exporte une collection en xlsx pour catalogage manuel."""
     debut = time.monotonic()
-    rapport = RapportExport(format=format, chemin_sortie=chemin_sortie)
+    export = composer_export(session, collection)
 
-    if colonnes is None:
-        colonnes = (
-            COLONNES_DEFAUT_FICHIER
-            if critere.granularite == "fichier"
-            else COLONNES_DEFAUT_ITEM
-        )
-    en_tetes = [_libelle(c) for c in colonnes]
-
-    # Construction des lignes via streaming.
-    if critere.granularite == "fichier":
-
-        def _iter_lignes() -> list[list[Any]]:
-            lignes = []
-            items_vus: set[int] = set()
-            for item, fichier in selectionner_fichiers(session, critere):
-                lignes.append([_valeur_couple(c, item, fichier) for c in colonnes])
-                items_vus.add(item.id)
-                rapport.nb_fichiers_selectionnes += 1
-            rapport.nb_items_selectionnes = len(items_vus)
-            return lignes
-
-        lignes = _iter_lignes()
-    else:
-        lignes = []
-        for item in selectionner_items(session, critere):
-            lignes.append([_valeur_item(c, item) for c in colonnes])
-            rapport.nb_items_selectionnes += 1
-
-    if dry_run:
-        rapport.duree_secondes = time.monotonic() - debut
-        return rapport
+    rapport = RapportExport(
+        format="xlsx",
+        chemin_sortie=chemin_sortie,
+        nb_items_selectionnes=len(export.items),
+        nb_fichiers_selectionnes=sum(len(ipe.item.fichiers) for ipe in export.items),
+    )
 
     chemin_sortie.parent.mkdir(parents=True, exist_ok=True)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = _slug_feuille(collection.titre)
 
-    if format == "xlsx":
-        wb = Workbook(write_only=True)
-        ws = wb.create_sheet(title="Export")
-        ws.append(en_tetes)
-        for ligne in lignes:
-            ws.append(ligne)
-        wb.save(chemin_sortie)
-    elif format == "csv":
-        # UTF-8 avec BOM pour ouverture directe dans Excel Windows.
-        with chemin_sortie.open("w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.writer(f, delimiter=";")
-            writer.writerow(en_tetes)
-            for ligne in lignes:
-                writer.writerow(["" if v is None else v for v in ligne])
-    else:
-        raise ValueError(f"Format inconnu : {format!r}")
+    # Bandeau métadonnées de collection (lignes 1-4).
+    type_libelle = (
+        "miroir"
+        if collection.type_collection == TypeCollection.MIROIR.value
+        else ("transversale" if collection.fonds_id is None else "libre")
+    )
+    ws["A1"] = f"Collection : {collection.titre}"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = f"Cote : {collection.cote}"
+    ws["A3"] = f"Type : {type_libelle}"
+    if export.fonds_parent is not None:
+        ws["A4"] = f"Fonds parent : {export.fonds_parent.titre} ({export.fonds_parent.cote})"
+    elif export.fonds_representes:
+        cotes = ", ".join(f.cote for f in export.fonds_representes)
+        ws["A4"] = f"Fonds représentés : {cotes}"
 
+    # Entêtes (ligne 6).
+    en_tete_row = 6
+    for col_idx, (_, libelle) in enumerate(_COLONNES, start=1):
+        cell = ws.cell(row=en_tete_row, column=col_idx, value=libelle)
+        cell.font = Font(bold=True)
+
+    # Items (ligne 7+).
+    for row_offset, ipe in enumerate(export.items, start=1):
+        item = ipe.item
+        row = en_tete_row + row_offset
+        for col_idx, (champ, _) in enumerate(_COLONNES, start=1):
+            if champ == "fonds_cote":
+                valeur = ipe.fonds_cote
+            elif champ == "nb_fichiers":
+                valeur = len(item.fichiers)
+            else:
+                valeur = extraire_valeur(item, champ)
+                if isinstance(valeur, list):
+                    valeur = " | ".join(str(v) for v in valeur)
+            ws.cell(row=row, column=col_idx, value=valeur)
+
+    # Largeurs raisonnables sur les colonnes textuelles.
+    largeurs = {"A": 18, "B": 40, "C": 10, "I": 40, "J": 30}
+    for lettre, largeur in largeurs.items():
+        ws.column_dimensions[lettre].width = largeur
+
+    wb.save(chemin_sortie)
     rapport.duree_secondes = time.monotonic() - debut
     return rapport

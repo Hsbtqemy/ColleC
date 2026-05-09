@@ -569,6 +569,10 @@ archives-tool/
   (invariant 6), liaisons N-N idempotentes — V0.9.0-alpha.1.
 - ✅ Demo seeder reconstruit (5 fonds, 10 collections, 333 items,
   ~1300 fichiers, 1 transversale, collaborateurs) — V0.9.0-alpha.2.
+- ✅ Refonte des routes web : dashboard fonctionnel avec
+  arborescence dépliable fonds→collections, placeholders pour les
+  pages détail, précédence cote ambiguë → `/fonds/{cote}` —
+  V0.9.0-beta.1.
 - Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
 - Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver

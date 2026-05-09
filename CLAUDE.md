@@ -507,8 +507,13 @@ archives-tool/
 - ✅ Sélection persistée des colonnes du tableau d'items via le panneau
   Colonnes du bundle (drag-drop Sortable.js, `PreferencesAffichage`,
   champs métadonnées dynamiques par collection) — V0.6.3.
+- ✅ Création de collection vide depuis l'UI + menu Importer
+  (placeholder /import) + breadcrumb fil d'ariane — V0.7-alpha.
+- ✅ Page de modification de collection + empty state proactif sur
+  collection vide + boutons « Modifier » / « Importer dans cette
+  collection » sur le bandeau — V0.7.x.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
-- Édition des métadonnées item — V0.7.
+- Édition des métadonnées item — V0.8 (décalé depuis V0.7).
 - Édition structurelle des champs personnalisés d'une collection
   (créer, renommer, déprécier) depuis l'UI — V0.7.
 - Édition des vocabulaires contrôlés depuis l'UI — V0.7.

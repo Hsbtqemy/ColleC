@@ -324,6 +324,55 @@ elif dans la macro `_cell` de `components/tableau_items.html` (rendu
 spécifique au type), et — si la colonne nécessite un champ pas
 encore projeté — ajouter le champ Item à la SELECT de `lister_items`.
 
+## Création et édition de collection (V0.7.x)
+
+**Création** :
+- `GET /collections/nouvelle[?parent=COTE]` rend le formulaire ;
+  `?parent=COTE` pré-remplit la collection parente (silencieusement
+  ignorée si la cote n'existe pas).
+- `POST /collections` valide côté serveur et redirige (303) vers
+  `/collection/{cote}` au succès. Re-rend la page avec status 400
+  + erreurs préservées en cas d'échec.
+
+**Édition** :
+- `GET /collection/{cote}/modifier` rend le formulaire pré-rempli
+  via `services.collections_creation.formulaire_depuis_collection`.
+- `POST /collection/{cote}/modifier` valide via
+  `valider_modification` (qui ne re-vérifie pas la cote — verrouillée
+  par design — et accepte le DOI inchangé). Redirige vers
+  `/collection/{cote}/items` au succès.
+
+La cote est un input `disabled` avec aide explicative — toute
+tentative de la modifier via le POST est silencieusement ignorée
+(la valeur du model est utilisée).
+
+## Fil d'Ariane (breadcrumb)
+
+Composant `components/breadcrumb.html` accepte une liste
+`crumbs = [{label, href, mono?}]`. Le dernier élément est rendu
+non cliquable (page courante).
+
+Helper `services/collection.fil_ariane_collection(col, *,
+page_courante=None)` remonte la hiérarchie `parent_id` jusqu'à la
+racine et préfixe par « Tableau de bord ». Pour les pages dérivées
+d'une collection (ex. « Modifier »), passer `page_courante='Modifier'`
+ajoute une feuille non cliquable supplémentaire.
+
+Pages équipées : dashboard (implicite, racine sans breadcrumb),
+collection (3 onglets), nouvelle collection, modifier, import
+placeholder, vue item (via `bandeau_item`).
+
+## Empty states
+
+- Collection sans item ET sans sous-collection : grosse boîte
+  proactive avec « Importer un tableur » → `/import?collection={cote}`
+  et « Ajouter un item manuellement » (désactivé V0.8).
+- Onglet sous-collections vide : « Créer une sous-collection » →
+  `/collections/nouvelle?parent={cote}`.
+- Si la collection a des sous-collections mais pas d'items, l'onglet
+  items affiche un message court (l'utilisateur a un onglet à
+  explorer).
+
 ## Limites V0.6.3
 
 - Lecture seule : aucune édition possible depuis l'UI (V0.7).

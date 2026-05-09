@@ -1,6 +1,6 @@
 {
   "name": "archives-tool-web",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./src/archives_tool/web/static/css/input.css -o ./src/archives_tool/web/static/css/output.css",

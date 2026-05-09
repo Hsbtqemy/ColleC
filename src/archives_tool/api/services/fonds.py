@@ -91,13 +91,20 @@ def _valider_formulaire(formulaire: FormulaireFonds) -> dict[str, str]:
 
 def _appliquer_formulaire(fonds: Fonds, formulaire: FormulaireFonds) -> None:
     """Copie le formulaire sur le modèle ; chaînes vides → None
-    pour les champs optionnels (cote/titre obligatoires sont strippés)."""
+    pour les champs optionnels (cote/titre obligatoires sont strippés).
+
+    Tous les champs de `FormulaireFonds` sont des `str` aujourd'hui ;
+    le `isinstance(valeur, str)` protège l'ajout futur d'un champ
+    non-string (bool / list / etc.) — le service applicatif devra
+    alors traiter ce champ explicitement.
+    """
     fonds.cote = formulaire.cote.strip()
     fonds.titre = formulaire.titre.strip()
     for nom, valeur in formulaire.model_dump().items():
         if nom in ("cote", "titre"):
             continue
-        setattr(fonds, nom, valeur.strip() or None)
+        if isinstance(valeur, str):
+            setattr(fonds, nom, valeur.strip() or None)
 
 
 def lire_fonds(db: Session, fonds_id: int) -> Fonds:
@@ -149,20 +156,23 @@ def lister_fonds(db: Session) -> list[FondsResume]:
         ).all()
     }
 
-    return [
-        FondsResume(
-            id=f.id,
-            cote=f.cote,
-            titre=f.titre,
-            description=f.description,
-            nb_items=nb_items_par_fonds.get(f.id, 0),
-            nb_collections=nb_coll_par_fonds.get(f.id, 0),
-            miroir_id=miroirs_par_fonds.get(f.id, (None, None))[0],
-            miroir_cote=miroirs_par_fonds.get(f.id, (None, None))[1],
-            cree_le=f.cree_le,
+    resumes: list[FondsResume] = []
+    for f in fonds_list:
+        miroir_id, miroir_cote = miroirs_par_fonds.get(f.id, (None, None))
+        resumes.append(
+            FondsResume(
+                id=f.id,
+                cote=f.cote,
+                titre=f.titre,
+                description=f.description,
+                nb_items=nb_items_par_fonds.get(f.id, 0),
+                nb_collections=nb_coll_par_fonds.get(f.id, 0),
+                miroir_id=miroir_id,
+                miroir_cote=miroir_cote,
+                cree_le=f.cree_le,
+            )
         )
-        for f in fonds_list
-    ]
+    return resumes
 
 
 def creer_fonds(

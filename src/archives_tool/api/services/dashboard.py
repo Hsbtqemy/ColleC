@@ -46,7 +46,15 @@ class TransversaleResume:
 
 
 @dataclass(frozen=True)
-class FondsResume:
+class FondsArborescence:
+    """Vue arborescente d'un fonds pour le dashboard : ses compteurs +
+    sa miroir + ses libres rattachées.
+
+    Distinct de `services.fonds.FondsResume` qui sert le listing
+    table simple — les deux entités ont des shapes différents. La
+    confusion serait subtile, le nom `FondsArborescence` la prévient.
+    """
+
     cote: str
     titre: str
     nb_items: int
@@ -56,7 +64,7 @@ class FondsResume:
 
 @dataclass(frozen=True)
 class DashboardResume:
-    fonds: tuple[FondsResume, ...]
+    fonds: tuple[FondsArborescence, ...]
     transversales: tuple[TransversaleResume, ...]
 
     @property
@@ -69,13 +77,12 @@ class DashboardResume:
 
 
 def composer_dashboard(db: Session) -> DashboardResume:
-    """Charge fonds + collections + transversales en quelques agrégats.
+    """Charge fonds + collections + transversales en agrégats SQL.
 
-    Compte total de queries pour la base demo (5 fonds, 10 collections,
-    1 transversale, 333 items) : 4 — un select(Fonds), un select(Collection),
-    un select(Item.fonds_id, count) GROUP BY, un select(ItemCollection.collection_id, count) GROUP BY,
-    plus un agrégat final pour les fonds représentés dans les transversales.
-    Concrètement 5 queries, mais O(1) par rapport au nombre de fonds.
+    Coût indépendant du nombre de fonds : ~4-5 queries (select Fonds,
+    select Collection, GROUP BY items par fonds, GROUP BY items par
+    collection, plus un join pour les fonds représentés dans les
+    transversales — uniquement si ≥1 transversale).
     """
     fonds_rows = list(db.scalars(select(Fonds).order_by(Fonds.cote)).all())
     collection_rows = list(db.scalars(select(Collection).order_by(Collection.titre)).all())
@@ -97,7 +104,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
     for c in collection_rows:
         collections_par_fonds.setdefault(c.fonds_id, []).append(c)
 
-    fonds_resumes: list[FondsResume] = []
+    fonds_resumes: list[FondsArborescence] = []
     for f in fonds_rows:
         cols = collections_par_fonds.get(f.id, [])
         miroir: CollectionResume | None = None
@@ -115,7 +122,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
             else:
                 libres.append(resume)
         fonds_resumes.append(
-            FondsResume(
+            FondsArborescence(
                 cote=f.cote,
                 titre=f.titre,
                 nb_items=nb_items_par_fonds.get(f.id, 0),

@@ -1,11 +1,9 @@
 """Application FastAPI : montage des routes et des fichiers statiques.
 
-V0.9.0-beta.1 : seul le router `dashboard` (refondu) est enregistré
-côté web. Les anciens routers (collection détaillée, collaborateurs,
-preferences, derives, import_assistant, item) dépendent encore de
-l'ancien modèle / d'anciens services et seront ré-enregistrés au fil
-de V0.9.0-beta.2 (page fonds + collection détaillée), V0.9.0-beta.3
-(page item).
+Seul le router `dashboard` est actuellement enregistré : il porte
+le tableau de bord et les pages fonds / collection / item. Les
+routers collaborateurs / preferences / derives / import_assistant
+seront ré-introduits à mesure que les pages détail sont étoffées.
 """
 
 from __future__ import annotations

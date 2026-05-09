@@ -1,10 +1,4 @@
-"""Routes web V0.9.0-beta.1 — dashboard + placeholders fonds/collection/item.
-
-Le dashboard (`/`) affiche l'arborescence dépliable fonds → collections.
-Les pages détail (`/fonds/{cote}`, `/collection/{cote}`,
-`/item/{cote}`) sont des placeholders en V0.9.0-beta.1 : titre,
-breadcrumb minimal, lien retour. Elles seront étoffées en
-V0.9.0-beta.2 et beta.3.
+"""Routes web — dashboard + pages détail (fonds / collection / item).
 
 Précédence sur les cotes ambiguës :
 - `/fonds/{cote}` : recherche stricte par fonds.cote.
@@ -88,7 +82,7 @@ def page_fonds(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    """Placeholder page fonds (V0.9.0-beta.2 livrera la page complète)."""
+    """Affiche un fonds (titre + métadonnées ; tableau d'items à venir)."""
     try:
         fonds = lire_fonds_par_cote(db, cote)
     except FondsIntrouvable as e:
@@ -113,7 +107,7 @@ def page_collection(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
-    """Placeholder page collection (V0.9.0-beta.2 livrera la page complète).
+    """Affiche une collection (titre + type ; tableau d'items à venir).
 
     Précédence cote ambiguë : si `cote` matche un fonds et qu'aucun
     `?fonds=` n'est passé, redirige vers `/fonds/{cote}` (le cas
@@ -156,7 +150,7 @@ def page_item(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    """Placeholder page item (V0.9.0-beta.3 livrera la page complète)."""
+    """Affiche un item (titre + cote ; visionneuse + métadonnées à venir)."""
     try:
         fonds_obj = lire_fonds_par_cote(db, fonds)
     except FondsIntrouvable as e:

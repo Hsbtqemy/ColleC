@@ -1,9 +1,7 @@
-"""Tests d'intégration du dashboard et des routes placeholders V0.9.0-beta.1."""
+"""Tests d'intégration du dashboard et des routes placeholders."""
 
 from __future__ import annotations
 
-import html
-import re
 from pathlib import Path
 
 import pytest
@@ -13,14 +11,8 @@ from archives_tool.api.main import app
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-
-
-def _texte_visible(markup: str) -> str:
-    """Approximation du texte visible : strippe les balises, décode les
-    entités HTML, compresse les blancs."""
-    sans_balises = re.sub(r"<[^>]+>", " ", markup)
-    decode = html.unescape(sans_balises)
-    return re.sub(r"\s+", " ", decode).strip()
+from archives_tool.models import Base
+from _helpers import texte_visible as _texte_visible
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +40,6 @@ def client_vide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Client sur une base existante mais sans aucun fonds (tables vides)."""
     db_path = tmp_path / "vide.db"
     engine = creer_engine(db_path)
-    from archives_tool.models import Base
-
     Base.metadata.create_all(engine)
     engine.dispose()
     monkeypatch.setenv("ARCHIVES_DB", str(db_path))
@@ -126,8 +116,6 @@ def test_dashboard_n_affiche_pas_section_transversale_si_vide(
 ) -> None:
     db_path = tmp_path / "minimal.db"
     engine = creer_engine(db_path)
-    from archives_tool.models import Base
-
     Base.metadata.create_all(engine)
     factory = creer_session_factory(engine)
     with factory() as s:

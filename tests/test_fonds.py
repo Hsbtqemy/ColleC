@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,10 +20,19 @@ from archives_tool.api.services.fonds import (
 )
 from archives_tool.models import (
     Collection,
+    EtatCatalogage,
     Fonds,
     Item,
     TypeCollection,
 )
+
+
+_BROUILLON = EtatCatalogage.BROUILLON.value
+
+
+def _item(fonds: Fonds, cote: str) -> Item:
+    """Helper de fabrication d'item minimal pour les tests."""
+    return Item(fonds_id=fonds.id, cote=cote, etat_catalogage=_BROUILLON)
 
 
 # ---------------------------------------------------------------------------
@@ -117,12 +126,7 @@ def test_lister_avec_compteurs(session: Session) -> None:
     fonds = creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
     # Ajout direct de 2 items pour tester le compteur (le service Item
     # n'est pas encore disponible dans cette tranche).
-    session.add_all(
-        [
-            Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"),
-            Item(fonds_id=fonds.id, cote="HK-002", etat_catalogage="brouillon"),
-        ]
-    )
+    session.add_all([_item(fonds, "HK-001"), _item(fonds, "HK-002")])
     session.commit()
     resumes = lister_fonds(session)
     assert len(resumes) == 1
@@ -166,7 +170,7 @@ def test_modifier_inexistant(session: Session) -> None:
 
 def test_supprimer_cascade_items_et_miroir(session: Session) -> None:
     fonds = creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
-    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
+    session.add(_item(fonds, "HK-001"))
     session.commit()
     fonds_id = fonds.id
     miroir_id = fonds.collection_miroir.id
@@ -212,7 +216,7 @@ def test_supprimer_inexistant(session: Session) -> None:
 
 def test_invariant_item_sans_fonds_rejete(session: Session) -> None:
     """Invariant 4 : un Item doit avoir un fonds_id."""
-    session.add(Item(cote="ORPH", etat_catalogage="brouillon"))
+    session.add(Item(cote="ORPH", etat_catalogage=_BROUILLON))
     with pytest.raises(IntegrityError):
         session.commit()
 
@@ -258,14 +262,10 @@ def test_invariant_cote_fonds_et_collection_peuvent_coincider(
     )
     session.commit()
     # 2 collections cote=HK : la miroir + la transversale.
-    rows = (
-        session.execute(
-            select(Collection).where(Collection.cote == "HK").order_by(Collection.id)
-        )
-        .scalars()
-        .all()
+    nb = session.scalar(
+        select(func.count(Collection.id)).where(Collection.cote == "HK")
     )
-    assert len(rows) == 2
+    assert nb == 2
 
 
 def test_invariant_cote_collection_unique_par_fonds(session: Session) -> None:
@@ -286,9 +286,9 @@ def test_invariant_cote_collection_unique_par_fonds(session: Session) -> None:
 
 def test_invariant_cote_item_unique_par_fonds(session: Session) -> None:
     fonds = creer_fonds(session, FormulaireFonds(cote="HK", titre="HK"))
-    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
+    session.add(_item(fonds, "HK-001"))
     session.commit()
-    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
+    session.add(_item(fonds, "HK-001"))
     with pytest.raises(IntegrityError):
         session.commit()
 
@@ -296,12 +296,9 @@ def test_invariant_cote_item_unique_par_fonds(session: Session) -> None:
 def test_invariant_cote_item_peut_se_repeter_entre_fonds(session: Session) -> None:
     fonds_a = creer_fonds(session, FormulaireFonds(cote="A", titre="A"))
     fonds_b = creer_fonds(session, FormulaireFonds(cote="B", titre="B"))
-    session.add_all(
-        [
-            Item(fonds_id=fonds_a.id, cote="001", etat_catalogage="brouillon"),
-            Item(fonds_id=fonds_b.id, cote="001", etat_catalogage="brouillon"),
-        ]
-    )
+    session.add_all([_item(fonds_a, "001"), _item(fonds_b, "001")])
     session.commit()
-    nb = session.scalar(select(Item.id).where(Item.cote == "001"))
-    assert nb is not None  # au moins un, et le commit n'a pas échoué
+    nb = session.scalar(
+        select(func.count(Item.id)).where(Item.cote == "001")
+    )
+    assert nb == 2

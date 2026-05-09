@@ -21,6 +21,7 @@ from sqlalchemy import Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TracabiliteMixin
+from .enums import TypeCollection
 
 if TYPE_CHECKING:
     from .collaborateur_fonds import CollaborateurFonds
@@ -80,10 +81,10 @@ class Fonds(Base, TracabiliteMixin):
         """La collection miroir de ce fonds (créée automatiquement).
 
         Retourne `None` si aucune n'a encore été créée — état transitoire
-        que le service `creer_fonds` ne laisse jamais persister.
+        que le service `creer_fonds` ne laisse jamais persister. Pour
+        un listing à grande échelle, préférer une requête SQL ciblée
+        plutôt que cette propriété (cf. `services.fonds.lister_fonds`).
         """
-        from .enums import TypeCollection
-
         for c in self.collections:
             if c.type_collection == TypeCollection.MIROIR.value:
                 return c

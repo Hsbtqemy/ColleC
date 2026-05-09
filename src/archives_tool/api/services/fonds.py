@@ -18,11 +18,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from archives_tool.models import Collection, Fonds, TypeCollection
+from archives_tool.models import Collection, Fonds, Item, TypeCollection
 
 
 class FondsIntrouvable(LookupError):
@@ -37,23 +38,33 @@ class FondsInvalide(ValueError):
         self.erreurs = erreurs
 
 
-@dataclass
-class FormulaireFonds:
-    """État de saisie pour création / modification d'un fonds."""
+def _erreur_cote_existe(cote: str) -> FondsInvalide:
+    return FondsInvalide({"cote": f"La cote {cote!r} existe déjà."})
 
-    cote: str = ""
-    titre: str = ""
-    description: str = ""
-    description_publique: str = ""
-    description_interne: str = ""
-    personnalite_associee: str = ""
-    responsable_archives: str = ""
-    editeur: str = ""
-    lieu_edition: str = ""
-    periodicite: str = ""
-    issn: str = ""
-    date_debut: str = ""
-    date_fin: str = ""
+
+class FormulaireFonds(BaseModel):
+    """État de saisie pour création / modification d'un fonds.
+
+    Pydantic pour la cohérence avec `FormulaireCollection` /
+    `FormulaireCollaborateur` ; lié plus tard aux Form fields HTML
+    via `Annotated[..., Form()]`.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=False)
+
+    cote: str = Field(default="")
+    titre: str = Field(default="")
+    description: str = Field(default="")
+    description_publique: str = Field(default="")
+    description_interne: str = Field(default="")
+    personnalite_associee: str = Field(default="")
+    responsable_archives: str = Field(default="")
+    editeur: str = Field(default="")
+    lieu_edition: str = Field(default="")
+    periodicite: str = Field(default="")
+    issn: str = Field(default="")
+    date_debut: str = Field(default="")
+    date_fin: str = Field(default="")
 
 
 @dataclass
@@ -69,21 +80,6 @@ class FondsResume:
     cree_le: datetime | None = None
 
 
-_OPTIONNELS_CHAINES: tuple[str, ...] = (
-    "description",
-    "description_publique",
-    "description_interne",
-    "personnalite_associee",
-    "responsable_archives",
-    "editeur",
-    "lieu_edition",
-    "periodicite",
-    "issn",
-    "date_debut",
-    "date_fin",
-)
-
-
 def _valider_formulaire(formulaire: FormulaireFonds) -> dict[str, str]:
     erreurs: dict[str, str] = {}
     if not formulaire.cote.strip():
@@ -94,10 +90,13 @@ def _valider_formulaire(formulaire: FormulaireFonds) -> dict[str, str]:
 
 
 def _appliquer_formulaire(fonds: Fonds, formulaire: FormulaireFonds) -> None:
+    """Copie le formulaire sur le modèle ; chaînes vides → None
+    pour les champs optionnels (cote/titre obligatoires sont strippés)."""
     fonds.cote = formulaire.cote.strip()
     fonds.titre = formulaire.titre.strip()
-    for nom in _OPTIONNELS_CHAINES:
-        valeur = getattr(formulaire, nom)
+    for nom, valeur in formulaire.model_dump().items():
+        if nom in ("cote", "titre"):
+            continue
         setattr(fonds, nom, valeur.strip() or None)
 
 
@@ -116,25 +115,54 @@ def lire_fonds_par_cote(db: Session, cote: str) -> Fonds:
 
 
 def lister_fonds(db: Session) -> list[FondsResume]:
-    """Liste tous les fonds avec leurs compteurs (items, collections)."""
+    """Liste tous les fonds avec leurs compteurs.
+
+    Les compteurs `nb_items`, `nb_collections` et la résolution de la
+    miroir sont obtenus en agrégations SQL (3 requêtes total, pas N+1).
+    """
     fonds_list = db.scalars(select(Fonds).order_by(Fonds.cote)).all()
-    resumes: list[FondsResume] = []
-    for f in fonds_list:
-        miroir = f.collection_miroir
-        resumes.append(
-            FondsResume(
-                id=f.id,
-                cote=f.cote,
-                titre=f.titre,
-                description=f.description,
-                nb_items=len(f.items),
-                nb_collections=len(f.collections),
-                miroir_id=miroir.id if miroir else None,
-                miroir_cote=miroir.cote if miroir else None,
-                cree_le=f.cree_le,
+    if not fonds_list:
+        return []
+
+    ids = [f.id for f in fonds_list]
+    nb_items_par_fonds: dict[int, int] = dict(
+        db.execute(
+            select(Item.fonds_id, func.count(Item.id))
+            .where(Item.fonds_id.in_(ids))
+            .group_by(Item.fonds_id)
+        ).all()
+    )
+    nb_coll_par_fonds: dict[int, int] = dict(
+        db.execute(
+            select(Collection.fonds_id, func.count(Collection.id))
+            .where(Collection.fonds_id.in_(ids))
+            .group_by(Collection.fonds_id)
+        ).all()
+    )
+    miroirs_par_fonds: dict[int, tuple[int, str]] = {
+        fonds_id: (mid, cote)
+        for fonds_id, mid, cote in db.execute(
+            select(Collection.fonds_id, Collection.id, Collection.cote).where(
+                Collection.fonds_id.in_(ids),
+                Collection.type_collection == TypeCollection.MIROIR.value,
             )
+        ).all()
+    }
+
+    return [
+        FondsResume(
+            id=f.id,
+            cote=f.cote,
+            titre=f.titre,
+            description=f.description,
+            nb_items=nb_items_par_fonds.get(f.id, 0),
+            nb_collections=nb_coll_par_fonds.get(f.id, 0),
+            miroir_id=miroirs_par_fonds.get(f.id, (None, None))[0],
+            miroir_cote=miroirs_par_fonds.get(f.id, (None, None))[1],
+            cree_le=f.cree_le,
         )
-    return resumes
+        for f in fonds_list
+    ]
 
 
 def creer_fonds(
@@ -146,22 +174,19 @@ def creer_fonds(
     """Crée un fonds + sa collection miroir dans la même transaction.
 
     Le titre et la cote sont copiés sur la miroir (invariant 5).
-    Lève `FondsInvalide` si la cote / titre sont vides ou si la cote
-    est déjà utilisée par un autre fonds.
+    L'unicité de la cote est garantie par l'index UNIQUE en base : si
+    une autre transaction l'a créée entretemps, l'IntegrityError du
+    commit la rattrape.
     """
     erreurs = _valider_formulaire(formulaire)
     if erreurs:
         raise FondsInvalide(erreurs)
 
-    cote = formulaire.cote.strip()
-    if db.scalar(select(Fonds.id).where(Fonds.cote == cote)) is not None:
-        raise FondsInvalide({"cote": f"La cote {cote!r} existe déjà."})
-
     fonds = Fonds(cree_par=cree_par)
     _appliquer_formulaire(fonds, formulaire)
 
     miroir = Collection(
-        cote=cote,
+        cote=fonds.cote,
         titre=fonds.titre,
         type_collection=TypeCollection.MIROIR.value,
         fonds=fonds,
@@ -173,7 +198,7 @@ def creer_fonds(
         db.commit()
     except IntegrityError as e:
         db.rollback()
-        raise FondsInvalide({"cote": f"La cote {cote!r} existe déjà."}) from e
+        raise _erreur_cote_existe(fonds.cote) from e
     db.refresh(fonds)
     return fonds
 
@@ -185,25 +210,19 @@ def modifier_fonds(
     *,
     modifie_par: str | None = None,
 ) -> Fonds:
-    """Met à jour un fonds. La cote peut changer ; si elle entre en
-    conflit avec un autre fonds, lève `FondsInvalide`.
+    """Met à jour un fonds. La cote peut changer ; un conflit avec un
+    autre fonds est rattrapé par l'IntegrityError du commit.
 
     Note : la cote de la collection miroir n'est PAS automatiquement
-    réalignée. Le brief V0.9.0-alpha laisse cette décision aux
-    sessions de polish ; pour l'instant, le rattachement reste
-    cohérent (même `fonds_id`) mais la miroir peut diverger.
+    réalignée. Décision laissée aux sessions de polish ; pour
+    l'instant, le rattachement reste cohérent (même `fonds_id`) mais
+    la miroir peut diverger.
     """
     erreurs = _valider_formulaire(formulaire)
     if erreurs:
         raise FondsInvalide(erreurs)
 
     fonds = lire_fonds(db, fonds_id)
-    nouvelle_cote = formulaire.cote.strip()
-    if nouvelle_cote != fonds.cote:
-        conflit = db.scalar(select(Fonds.id).where(Fonds.cote == nouvelle_cote))
-        if conflit is not None:
-            raise FondsInvalide({"cote": f"La cote {nouvelle_cote!r} existe déjà."})
-
     _appliquer_formulaire(fonds, formulaire)
     fonds.modifie_par = modifie_par
     fonds.modifie_le = datetime.now()
@@ -212,7 +231,7 @@ def modifier_fonds(
         db.commit()
     except IntegrityError as e:
         db.rollback()
-        raise FondsInvalide({"cote": f"La cote {nouvelle_cote!r} existe déjà."}) from e
+        raise _erreur_cote_existe(fonds.cote) from e
     db.refresh(fonds)
     return fonds
 
@@ -231,8 +250,6 @@ def supprimer_fonds(db: Session, fonds_id: int) -> None:
 
     Les items du fonds disparaissent en cascade (FK CASCADE +
     relation ORM avec `delete-orphan`).
-
-    Lève `FondsIntrouvable` si l'id n'existe pas.
     """
     fonds = lire_fonds(db, fonds_id)
     miroir = fonds.collection_miroir

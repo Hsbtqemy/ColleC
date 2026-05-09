@@ -3,10 +3,13 @@
    - cote : cote de la collection courante
    - colonnes_actives : list[ColonneDisponible] dans l'ordre voulu
      (par défaut, les 7 colonnes de COLONNES_DEFAUT_ITEMS).
+   - nb_sous_collections : pour décider de l'empty state
+     (collection vide = aucun item ET aucune sous-collection).
 #}
 {% from 'components/tableau_items.html' import tableau_items %}
 {% set nb_f = items.nb_filtres_actifs %}
 {% set noms_cols = colonnes_actives|map(attribute='nom')|list %}
+{% set nb_sous = nb_sous_collections|default(0) %}
 {% if items.items or nb_f > 0 %}
   {{ tableau_items({
     'colonnes': noms_cols,
@@ -23,6 +26,37 @@
     'nb_colonnes_actives': noms_cols|length,
     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
   }) }}
+{% elif nb_sous == 0 %}
+  {# Collection complètement vide : empty state proactif. #}
+  <div id="tableau-items" class="bg-white rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:36px 24px;">
+    <div class="text-center" style="max-width:440px;margin:0 auto;">
+      <p style="font-size:14px;color:#374151;margin-bottom:18px;">
+        Cette collection ne contient aucun item.
+      </p>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:18px;">
+        Vous pouvez :
+      </p>
+      <div class="flex flex-col items-center gap-2">
+        <a href="/import?collection={{ cote }}"
+           class="inline-flex items-center gap-2 rounded"
+           style="padding:8px 16px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M2 11 H12 M7 2 V8 M4 5 L7 8 L10 5" fill="none" stroke="currentColor"
+                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Importer un tableur
+        </a>
+        <span aria-disabled="true"
+              title="Disponible dans une prochaine version"
+              class="inline-flex items-center gap-2 rounded cursor-not-allowed"
+              style="padding:8px 16px;font-size:13px;color:#9ca3af;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+          + Ajouter un item manuellement
+          <span style="font-size:11px;font-style:italic;">bientôt</span>
+        </span>
+      </div>
+    </div>
+  </div>
 {% else %}
   <div id="tableau-items">
     <p class="text-sm text-gray-500 text-center py-12">

@@ -106,3 +106,38 @@ def test_breadcrumb_sous_collection_inclut_parent(base_demo: Path) -> None:
     assert resp.status_code == 200
     # FA en tant que lien parent dans le fil d'ariane.
     assert 'href="/collection/FA"' in resp.text
+
+
+def test_empty_state_collection_vide(base_demo: Path, tmp_path: Path) -> None:
+    """Collection sans items et sans sous-collections → empty state."""
+    # On crée une collection vide via le POST.
+    client = TestClient(app)
+    client.post(
+        "/collections", data={"cote": "VIDE", "titre": "Vide"}, follow_redirects=False
+    )
+    resp = client.get("/collection/VIDE/items")
+    assert resp.status_code == 200
+    assert "Cette collection ne contient aucun item" in resp.text
+    assert "Importer un tableur" in resp.text
+    assert "/import?collection=VIDE" in resp.text
+    # Lien "Ajouter un item manuellement" désactivé.
+    assert 'aria-disabled="true"' in resp.text
+
+
+def test_empty_state_pas_si_des_sous_collections(base_demo: Path) -> None:
+    """FA a 4 sous-collections — pas d'empty state items prononcé."""
+    client = TestClient(app)
+    resp = client.get("/collection/FA/items")
+    assert resp.status_code == 200
+    # FA n'a pas d'items mais a des sous-collections : message court,
+    # pas la grosse boîte d'empty state.
+    assert "Cette collection ne contient aucun item" not in resp.text
+
+
+def test_empty_state_sous_collections_avec_lien_parent(base_demo: Path) -> None:
+    """HK n'a pas de sous-collections : empty state avec lien parent."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK/sous-collections")
+    assert resp.status_code == 200
+    assert "Créer une sous-collection" in resp.text
+    assert "/collections/nouvelle?parent=HK" in resp.text

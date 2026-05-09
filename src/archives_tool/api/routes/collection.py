@@ -16,12 +16,14 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
 from archives_tool.api.services import collection as svc
 from archives_tool.api.services import preferences as svc_prefs
 from archives_tool.api.templating import templates
+from archives_tool.models import Collection
 
 router = APIRouter()
 
@@ -126,6 +128,17 @@ def vue_collection(
     if onglet == "items":
         contexte["colonnes_actives"] = colonnes_actives_items
         contexte["collection_id"] = collection_id_items
+        # Pour l'empty state : « collection vide » = aucun item ET
+        # aucune sous-collection. Si la collection a des enfants, on
+        # n'affiche pas l'empty state items (il y a déjà un onglet).
+        contexte["nb_sous_collections"] = (
+            db.scalar(
+                select(func.count(Collection.id)).where(
+                    Collection.parent_id == collection_id_items
+                )
+            )
+            or 0
+        )
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, partial, contexte)

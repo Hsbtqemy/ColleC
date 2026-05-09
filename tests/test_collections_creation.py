@@ -189,6 +189,21 @@ def test_post_cote_doublon_re_render(base_demo: Path) -> None:
     assert "existe déjà" in resp.text
 
 
+def test_get_formulaire_avec_parent_query(base_demo: Path) -> None:
+    """`?parent=FA` pré-remplit le champ `parent_cote` du formulaire."""
+    client = TestClient(app)
+    resp = client.get("/collections/nouvelle?parent=FA")
+    assert resp.status_code == 200
+    assert 'value="FA"' in resp.text
+
+
+def test_get_formulaire_parent_inconnu_silencieux(base_demo: Path) -> None:
+    """Une cote parente inconnue ne casse pas la page (champ vide)."""
+    client = TestClient(app)
+    resp = client.get("/collections/nouvelle?parent=NEXISTE_PAS")
+    assert resp.status_code == 200
+
+
 def test_post_creation_complete(base_demo: Path) -> None:
     client = TestClient(app)
     resp = client.post(

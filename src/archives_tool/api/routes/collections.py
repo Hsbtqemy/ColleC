@@ -27,16 +27,29 @@ router = APIRouter()
 @router.get("/collections/nouvelle", response_class=HTMLResponse)
 def formulaire_nouvelle_collection(
     request: Request,
+    parent: str | None = None,
+    db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
+    """`?parent=COTE` pré-remplit le champ « Collection parente ».
+
+    Si la cote ne correspond à aucune collection existante, le champ
+    est laissé vide (silencieusement — l'utilisateur saisira ce qu'il
+    veut).
+    """
+    formulaire = svc.FormulaireCollection()
+    if parent:
+        parent_existant = svc.lire_collection_par_cote(db, parent.strip())
+        if parent_existant is not None:
+            formulaire.parent_cote = parent_existant.cote_collection
     return templates.TemplateResponse(
         request,
         "pages/collection_nouvelle.html",
         {
             "nom_base": nom_base,
             "utilisateur": utilisateur,
-            "formulaire": svc.FormulaireCollection(),
+            "formulaire": formulaire,
             "erreurs": {},
             "phases": list(PhaseChantier),
         },

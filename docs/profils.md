@@ -28,20 +28,52 @@ permanente :
   clé inconnue ou mal orthographiée lève une erreur explicite avec
   localisation dans le YAML.
 - **Versionnée** : tout profil doit commencer par
-  `version_profil: 1`. Sans ce champ ou avec une autre valeur, rejet.
+  `version_profil: 2`. Les profils v1 (avec `collection:` racine) sont
+  rejetés avec un message de migration manuelle (voir plus bas).
 - **Erreurs utiles** : Pydantic 2 remonte le chemin YAML + la valeur
   attendue + la valeur reçue. `ProfilInvalide` les reformate en une
   liste lisible.
 
+## Migration depuis v1 (V0.9.0-gamma.1)
+
+Le format v2 sépare explicitement deux concepts qui étaient confondus
+en v1 :
+
+- **Fonds** : le corpus brut (revue, fonds personnel, ensemble de
+  correspondance). C'est l'entité racine, créée à l'import.
+- **Collection miroir** : créée automatiquement avec le fonds, regroupe
+  par défaut tous ses items. Optionnellement personnalisable via la
+  section `collection_miroir:`.
+
+Pour migrer un profil v1 :
+
+1. Renommer la section `collection:` en `fonds:`.
+2. Changer `version_profil: 1` en `version_profil: 2`.
+3. Retirer `parent_cote` (la hiérarchie de collections a disparu).
+4. Optionnel : ajouter une section `collection_miroir:` pour
+   personnaliser la miroir auto-créée (titre, description, phase,
+   DOI Nakala).
+
+Les profils v1 sont rejetés à l'import avec exit code 2 et le message
+de migration ci-dessus. **Pas de migration automatique** : la situation
+v1 → v2 est ambiguë (fallait-il faire de la collection un fonds ou
+une collection libre rattachée ? que devient `parent_cote` ?). Mieux
+vaut migrer manuellement, c'est rapide.
+
 ## Structure générale
 
 ```yaml
-version_profil: 1
+version_profil: 2
 
-collection:      # métadonnées de la collection cible
+fonds:           # métadonnées du fonds cible (entité racine)
   cote: "..."
   titre: "..."
-  # ... autres champs de CollectionProfil
+  # ... autres champs de FondsProfil
+
+collection_miroir:   # optionnel : personnalise la miroir auto-créée
+  titre: "..."       # par défaut hérite de fonds.titre
+  phase: "..."
+  doi_nakala: "..."
 
 tableur:         # description du fichier source
   chemin: "..."
@@ -73,15 +105,35 @@ decomposition_type:          # optionnel : colonne à séparateur
 
 ## Sections — référence
 
-### `collection`
+### `fonds`
 
-Métadonnées de la collection cible, écrites telles quelles sur
-`Collection` en base (principe d'autonomie).
+Métadonnées du fonds cible, écrites telles quelles sur `Fonds` en
+base (principe d'autonomie). Sa cote doit être unique globalement.
 
-Champs : `cote` (obligatoire), `titre` (obligatoire), `parent_cote`,
-`titre_secondaire`, `editeur`, `lieu_edition`, `periodicite`,
-`date_debut`, `date_fin`, `issn`, `doi_nakala`, `description`,
-`description_interne`, `auteur_principal`.
+Champs : `cote` (obligatoire), `titre` (obligatoire), `description`,
+`description_publique`, `description_interne`, `personnalite_associee`,
+`responsable_archives`, `editeur`, `lieu_edition`, `periodicite`,
+`issn`, `date_debut`, `date_fin`.
+
+### `collection_miroir`
+
+Personnalisations optionnelles de la collection miroir auto-créée.
+**Section facultative** : si absente, la miroir hérite de `cote` et
+`titre` du fonds, le reste reste à `None` / valeurs par défaut.
+
+Champs (tous optionnels) : `cote` (par défaut = fonds.cote),
+`titre` (par défaut = fonds.titre), `description`,
+`description_publique`, `description_interne`, `phase` (parmi
+`numerisation` / `catalogage` / `revision` / `finalisation` /
+`archivee` / `en_pause`), `doi_nakala`, `doi_collection_nakala_parent`,
+`personnalite_associee`, `responsable_archives`.
+
+Cas d'usage :
+- Distinguer titre du fonds vs titre de la collection publiée
+  (« Hara-Kiri » → « Hara-Kiri (collection complète) »).
+- Renseigner un DOI Nakala dès l'import, parce que la collection est
+  déjà déposée.
+- Avancer la phase de la miroir au-delà du défaut `catalogage`.
 
 ### `tableur`
 
@@ -237,6 +289,9 @@ du chantier et que le chemin relatif démarre correctement.
 
 ### Version non supportée
 
-`version_profil` absent ou différent de `1` : rejet. Le profil doit
-être écrit pour la version courante du schéma. La V2 (future)
-introduira un chemin de migration ou un parser rétro-compatible.
+`version_profil` absent ou différent de `2` : rejet.
+
+- **`version_profil: 1`** ou présence de `collection:` racine sans
+  `fonds:` : déclenche `ProfilObsoleteV1` avec message de migration
+  (voir « Migration depuis v1 » plus haut).
+- **Autre valeur** (3, 99, etc.) : rejet Pydantic standard.

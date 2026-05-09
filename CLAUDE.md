@@ -165,19 +165,29 @@ page (couverture, page, planche...), un folio.
 
 ### Profils d'import
 
-Les profils d'import YAML sont chargés et validés dans
-`src/archives_tool/profils/` (schéma Pydantic + loader). Ils décrivent
-comment lire un tableur existant et une arborescence de scans pour
-amorcer une collection. Référence complète dans
-[`docs/profils.md`](docs/profils.md). Fixtures représentatives sous
-`tests/fixtures/profils/`.
+Les profils d'import YAML (format **v2** depuis V0.9.0-gamma.1) sont
+chargés et validés dans `src/archives_tool/profils/` (schéma Pydantic +
+loader). Le format v2 sépare deux concepts qui étaient confondus en v1 :
 
-Le module `profils/generateur.py` produit des squelettes YAML
+- Section **`fonds:`** (obligatoire) : métadonnées du corpus brut
+  (cote, titre, éditeur, périodicité, ISSN, dates, descriptions…).
+  Le fonds créé est l'entité racine, sa miroir est créée
+  automatiquement par le service `creer_fonds`.
+- Section **`collection_miroir:`** (optionnelle) : overrides pour la
+  miroir auto-créée (titre, descriptions, phase, DOI Nakala). Si
+  absente, la miroir hérite intégralement du fonds.
+
+Les profils v1 (avec `collection:` racine) sont rejetés via
+`ProfilObsoleteV1` avec un message de migration manuelle. Pas de
+migration automatique : la situation est ambiguë (`parent_cote`
+disparu, fonds vs collection libre rattachée). Référence complète :
+[`docs/profils.md`](docs/profils.md).
+
+Le module `profils/generateur.py` produit des squelettes v2
 commentés :
 - `generer_squelette` : profil minimal avec placeholder à remplir.
 - `analyser_tableur` : profil pré-rempli des colonnes détectées,
-  avec heuristique pour les champs structurants (cote, titre, date,
-  URI Dublin Core, ...).
+  avec heuristique pour les champs structurants.
 
 CLI : `archives-tool profil init` et `archives-tool profil analyser`.
 Guide utilisateur : [`docs/profils_creation.md`](docs/profils_creation.md).
@@ -193,11 +203,25 @@ Le pipeline d'import est découpé en quatre modules sous
   mapping, valeurs par défaut, décompositions, transformations.
 - `resolveur_fichiers.py` : cherche les fichiers sur disque selon
   le motif template ou regex du profil.
-- `ecrivain.py` : orchestre, écrit en base sous transaction avec
-  dry-run par défaut, journalise dans `OperationImport`.
+- `ecrivain.py` : orchestre l'import en réutilisant les services
+  métier (`creer_fonds`, `modifier_collection`, `creer_item`) — pas
+  de duplication de logique. Dry-run = validation Pydantic + lecture
+  tableur + résolution fichiers, sans appel aux services. Journalise
+  dans `OperationImport` en mode réel.
 
 CLI : `archives-tool importer <profil>` (Typer). Référence
 complète dans [`docs/importer.md`](docs/importer.md).
+
+### CLI Collections
+
+`archives-tool collections {creer-libre, lister, supprimer}` est le
+pendant CLI de l'UI V0.9.0-beta.2.1 pour gérer les collections libres
+sans passer par le navigateur :
+
+- `creer-libre COTE TITRE [--fonds COTE | rien (transversale)]
+  [--description ...] [--phase ...]`
+- `lister [--fonds COTE | --transversales]`
+- `supprimer COTE [--fonds COTE] [--yes]` (refuse les miroirs).
 
 ### Exports canoniques
 
@@ -592,9 +616,16 @@ archives-tool/
   (PRG, cote+fonds_id verrouillés/silent override), endpoint
   `/item/{cote}/fichiers/{id}?fonds=COTE` (anti-confused-deputy,
   404 si fichier absent du disque) — V0.9.0-beta.3.
-- Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
+- ✅ Importers v2 : profils avec sections `fonds:` (obligatoire)
+  + `collection_miroir:` (optionnelle pour overrides). Rejet
+  explicite des profils v1 avec message de migration manuelle
+  (`ProfilObsoleteV1`). Écrivain réutilise `creer_fonds`,
+  `modifier_collection`, `creer_item` (services métier qui
+  garantissent les invariants 1, 5, 6). Nouvelle CLI
+  `archives-tool collections {creer-libre,lister,supprimer}`
+  (pendant CLI de l'UI V0.9.0-beta.2.1). — V0.9.0-gamma.1.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver
-  + qa / renamer / derivatives — V0.9.0-gamma.
+  + qa / renamer / derivatives — V0.9.0-gamma.2 à V0.9.0-gamma.4.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection

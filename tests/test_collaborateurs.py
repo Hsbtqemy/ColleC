@@ -25,6 +25,7 @@ from archives_tool.api.services.collaborateurs import (
     modifier_collaborateur,
     supprimer_collaborateur,
 )
+from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
 from archives_tool.models import (
     CollaborateurCollection,
@@ -68,10 +69,9 @@ def test_ajout_role_inconnu_rejete(session: Session, col: Collection) -> None:
     assert "roles" in exc.value.erreurs
 
 
-def test_ajout_collection_inexistante(session: Session) -> None:
-    formulaire = FormulaireCollaborateur(nom="Marie", roles=["numerisation"])
-    with pytest.raises(LookupError):
-        ajouter_collaborateur(session, 99999, formulaire)
+# L'existence de la collection est garantie par les routes
+# (`charger_collection_ou_404`) ; le service ne re-vérifie pas.
+# Voir `test_post_collection_inexistante_404`.
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +268,22 @@ def base_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return db
 
 
+@pytest.fixture
+def session_demo(base_demo: Path):
+    """Session sur la même base que celle utilisée par TestClient.
+
+    Permet aux tests de routes de relire des objets (ex. récupérer
+    l'id du collaborateur juste créé) sans reconstruire un engine.
+    """
+    factory = creer_session_factory(creer_engine(base_demo))
+    with factory() as s:
+        yield s
+
+
+def _premier_id_collab(session) -> int:
+    return session.query(CollaborateurCollection).first().id
+
+
 def test_get_section_vide(base_demo: Path) -> None:
     """GET section : 200, message « Aucun collaborateur »."""
     client = TestClient(app)
@@ -328,22 +344,14 @@ def test_post_collection_inexistante_404(base_demo: Path) -> None:
     assert resp.status_code == 404
 
 
-def test_modifier_pre_remplissage(base_demo: Path) -> None:
+def test_modifier_pre_remplissage(session_demo) -> None:
     client = TestClient(app)
     add = client.post(
         "/collection/HK/collaborateurs",
         data={"nom": "Hugo", "roles": ["transcription"], "periode": "2024"},
     )
     assert add.status_code == 200
-    # Récupère l'id depuis la base.
-    from archives_tool.db import creer_engine, creer_session_factory
-
-    engine = creer_engine(base_demo)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        col = session.query(Collection).filter_by(cote_collection="HK").one()
-        c = session.query(CollaborateurCollection).filter_by(collection_id=col.id).one()
-        cid = c.id
+    cid = _premier_id_collab(session_demo)
 
     resp = client.get(f"/collection/HK/collaborateurs/{cid}/modifier")
     assert resp.status_code == 200
@@ -352,18 +360,13 @@ def test_modifier_pre_remplissage(base_demo: Path) -> None:
     assert 'value="2024"' in resp.text
 
 
-def test_post_modifier(base_demo: Path) -> None:
+def test_post_modifier(session_demo) -> None:
     client = TestClient(app)
     client.post(
         "/collection/HK/collaborateurs",
         data={"nom": "Ancien", "roles": ["numerisation"]},
     )
-    from archives_tool.db import creer_engine, creer_session_factory
-
-    engine = creer_engine(base_demo)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        cid = session.query(CollaborateurCollection).first().id
+    cid = _premier_id_collab(session_demo)
 
     resp = client.post(
         f"/collection/HK/collaborateurs/{cid}",
@@ -379,37 +382,27 @@ def test_post_modifier(base_demo: Path) -> None:
     assert "Ancien" not in resp.text
 
 
-def test_post_supprimer(base_demo: Path) -> None:
+def test_post_supprimer(session_demo) -> None:
     client = TestClient(app)
     client.post(
         "/collection/HK/collaborateurs",
         data={"nom": "X", "roles": ["numerisation"]},
     )
-    from archives_tool.db import creer_engine, creer_session_factory
-
-    engine = creer_engine(base_demo)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        cid = session.query(CollaborateurCollection).first().id
+    cid = _premier_id_collab(session_demo)
 
     resp = client.post(f"/collection/HK/collaborateurs/{cid}/supprimer")
     assert resp.status_code == 200
     assert "Aucun collaborateur" in resp.text
 
 
-def test_modifier_collaborateur_autre_collection_404(base_demo: Path) -> None:
+def test_modifier_collaborateur_autre_collection_404(session_demo) -> None:
     """Un collaborateur de FA-AA ne peut pas être muté via la cote HK."""
     client = TestClient(app)
     client.post(
         "/collection/FA-AA/collaborateurs",
         data={"nom": "X", "roles": ["numerisation"]},
     )
-    from archives_tool.db import creer_engine, creer_session_factory
-
-    engine = creer_engine(base_demo)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        cid = session.query(CollaborateurCollection).first().id
+    cid = _premier_id_collab(session_demo)
 
     resp = client.post(
         f"/collection/HK/collaborateurs/{cid}",

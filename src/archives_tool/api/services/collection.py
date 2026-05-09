@@ -112,11 +112,20 @@ class FichierResume:
     etat: str  # clé EtatFichier ('actif'/'remplace'/'corbeille') pour badge_etat
 
 
-def _charger_collection(session: Session, cote: str) -> Collection:
+def charger_collection(session: Session, cote: str) -> Collection:
+    """Charge une Collection par cote ou lève `CollectionIntrouvable`.
+
+    Source unique pour les routes (qui mappent l'exception en 404)
+    et les services internes.
+    """
     col = session.scalar(select(Collection).where(Collection.cote_collection == cote))
     if col is None:
         raise CollectionIntrouvable(cote)
     return col
+
+
+# Alias rétro-compatible — les usages internes restent légitimes.
+_charger_collection = charger_collection
 
 
 def fil_ariane_collection(

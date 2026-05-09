@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,17 +49,6 @@ class FormulaireCollection(BaseModel):
     phase: str = Field(default=PhaseChantier.CATALOGAGE.value)
     parent_cote: str = Field(default="")
     doi_nakala: str = Field(default="")
-
-    @field_validator("phase")
-    @classmethod
-    def _phase_valide_ou_defaut(cls, v: str) -> str:
-        """Normalise une phase vide ou inconnue en CATALOGAGE.
-
-        La validation stricte (rejet d'une phase inconnue) est faite
-        séparément dans `_valider_communs` pour qu'elle puisse
-        produire une erreur de formulaire propre plutôt qu'un 422.
-        """
-        return v or PhaseChantier.CATALOGAGE.value
 
 
 @dataclass

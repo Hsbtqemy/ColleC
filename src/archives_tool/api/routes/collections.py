@@ -23,9 +23,15 @@ from archives_tool.api.services import collaborateurs as svc_collab
 from archives_tool.api.services import collection as svc_col
 from archives_tool.api.services import collections_creation as svc
 from archives_tool.api.templating import templates
-from archives_tool.models import PhaseChantier
+from archives_tool.models import LIBELLES_PHASE, PhaseChantier
 
 router = APIRouter()
+
+
+_CONTEXTE_PHASES = {
+    "phases": list(PhaseChantier),
+    "libelles_phases": LIBELLES_PHASE,
+}
 
 
 @router.get("/collections/nouvelle", response_class=HTMLResponse)
@@ -56,7 +62,7 @@ def formulaire_nouvelle_collection(
             "utilisateur": utilisateur,
             "formulaire": formulaire,
             "erreurs": {},
-            "phases": list(PhaseChantier),
+            **_CONTEXTE_PHASES,
         },
     )
 
@@ -79,7 +85,7 @@ def creer_collection_post(
                 "utilisateur": utilisateur,
                 "formulaire": formulaire,
                 "erreurs": res.erreurs,
-                "phases": list(PhaseChantier),
+                **_CONTEXTE_PHASES,
             },
             status_code=400,
         )
@@ -89,11 +95,22 @@ def creer_collection_post(
     return RedirectResponse(url=f"/collection/{col.cote_collection}", status_code=303)
 
 
-def _charger_pour_edition(db: Session, cote: str):
-    col = svc.lire_collection_par_cote(db, cote)
-    if col is None:
-        raise HTTPException(status_code=404, detail=f"Collection {cote!r} introuvable.")
-    return col
+def charger_collection_ou_404(db: Session, cote: str):
+    """Helper partagé : lève 404 si la collection n'existe pas.
+
+    Exposé aux autres routers (collaborateurs, etc.) pour éviter de
+    dupliquer la traduction `CollectionIntrouvable` → `HTTPException`.
+    """
+    try:
+        return svc_col.charger_collection(db, cote)
+    except svc_col.CollectionIntrouvable:
+        raise HTTPException(
+            status_code=404, detail=f"Collection {cote!r} introuvable."
+        ) from None
+
+
+# Alias interne — tous les call sites historiques de ce module.
+_charger_pour_edition = charger_collection_ou_404
 
 
 @router.get("/collection/{cote}/modifier", response_class=HTMLResponse)
@@ -115,7 +132,7 @@ def formulaire_modifier_collection(
             "collection_cote": col.cote_collection,
             "formulaire": svc.formulaire_depuis_collection(col),
             "erreurs": {},
-            "phases": list(PhaseChantier),
+            **_CONTEXTE_PHASES,
             "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
             "groupes_par_role": svc_collab.lister_collaborateurs_par_role(db, col.id),
         },
@@ -147,7 +164,7 @@ def modifier_collection_post(
                 "collection_cote": col.cote_collection,
                 "formulaire": formulaire,
                 "erreurs": res.erreurs,
-                "phases": list(PhaseChantier),
+                **_CONTEXTE_PHASES,
                 "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
                 "groupes_par_role": svc_collab.lister_collaborateurs_par_role(
                     db, col.id

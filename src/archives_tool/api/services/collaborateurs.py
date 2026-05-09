@@ -1,4 +1,4 @@
-"""Gestion des collaborateurs d'une collection (V0.8.0).
+"""Gestion des collaborateurs d'une collection.
 
 Lecture (groupée par rôle pour l'affichage), ajout, modification,
 suppression. Toutes les opérations valident le vocabulaire des rôles
@@ -7,14 +7,14 @@ contre l'enum `RoleCollaborateur`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.models import (
     CollaborateurCollection,
-    Collection,
     RoleCollaborateur,
 )
 
@@ -24,8 +24,8 @@ class CollaborateurIntrouvable(LookupError):
 
 
 class CollaborateurInvalide(ValueError):
-    """Données de formulaire invalides (nom vide, rôles vides ou hors
-    vocabulaire). Les routes mappent ça en 400 + erreurs de champ."""
+    """Données de formulaire invalides : nom vide, rôles vides ou hors
+    vocabulaire. Porte un dict `erreurs` champ → message."""
 
     def __init__(self, erreurs: dict[str, str]) -> None:
         super().__init__("; ".join(f"{k}: {v}" for k, v in erreurs.items()))
@@ -41,15 +41,17 @@ class CollaborateurResume:
     notes: str | None
 
 
-@dataclass
-class FormulaireCollaborateur:
-    """Formulaire de saisie. Les rôles arrivent depuis HTML comme une
-    liste de chaînes (checkboxes du même `name`)."""
+class FormulaireCollaborateur(BaseModel):
+    """Formulaire de saisie ; lié aux Form fields HTML par
+    `Annotated[..., Form()]`. Les rôles arrivent comme une liste de
+    chaînes (checkboxes du même `name`)."""
 
-    nom: str = ""
-    roles: list[str] = field(default_factory=list)
-    periode: str = ""
-    notes: str = ""
+    model_config = ConfigDict(str_strip_whitespace=False)
+
+    nom: str = Field(default="")
+    roles: list[str] = Field(default_factory=list)
+    periode: str = Field(default="")
+    notes: str = Field(default="")
 
 
 _ROLES_VALIDES: frozenset[str] = frozenset(r.value for r in RoleCollaborateur)
@@ -108,8 +110,8 @@ def lister_collaborateurs_par_role(
     return groupes
 
 
-def lire_collaborateur(db: Session, collaborateur_id: int) -> CollaborateurCollection:
-    """Retourne le modèle ou lève `CollaborateurIntrouvable`."""
+def _lire_modele(db: Session, collaborateur_id: int) -> CollaborateurCollection:
+    """Retourne le modèle ORM ou lève `CollaborateurIntrouvable`."""
     c = db.get(CollaborateurCollection, collaborateur_id)
     if c is None:
         raise CollaborateurIntrouvable(collaborateur_id)
@@ -122,13 +124,15 @@ def ajouter_collaborateur(
     formulaire: FormulaireCollaborateur,
 ) -> CollaborateurResume:
     """Ajoute un collaborateur après validation. Lève
-    `CollaborateurInvalide` si les données ne sont pas conformes."""
+    `CollaborateurInvalide` si les données ne sont pas conformes.
+
+    Hypothèse de contrat : `collection_id` pointe vers une Collection
+    existante (le routeur vérifie en amont). La FK + cascade
+    rattrapent toute violation côté SQL.
+    """
     erreurs = valider_formulaire(formulaire)
     if erreurs:
         raise CollaborateurInvalide(erreurs)
-
-    if db.get(Collection, collection_id) is None:
-        raise LookupError(f"Collection id={collection_id} introuvable.")
 
     c = CollaborateurCollection(
         collection_id=collection_id,
@@ -154,7 +158,7 @@ def modifier_collaborateur(
     if erreurs:
         raise CollaborateurInvalide(erreurs)
 
-    c = lire_collaborateur(db, collaborateur_id)
+    c = _lire_modele(db, collaborateur_id)
     c.nom = formulaire.nom.strip()
     c.roles = list(formulaire.roles)
     c.periode = formulaire.periode.strip() or None
@@ -166,6 +170,6 @@ def modifier_collaborateur(
 
 def supprimer_collaborateur(db: Session, collaborateur_id: int) -> None:
     """Suppression dure. Lève `CollaborateurIntrouvable` si l'id n'existe pas."""
-    c = lire_collaborateur(db, collaborateur_id)
+    c = _lire_modele(db, collaborateur_id)
     db.delete(c)
     db.commit()

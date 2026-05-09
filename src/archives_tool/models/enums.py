@@ -65,14 +65,17 @@ class PhaseChantier(enum.StrEnum):
 
     @property
     def libelle(self) -> str:
-        return {
-            "numerisation": "numérisation",
-            "catalogage": "catalogage",
-            "revision": "révision",
-            "finalisation": "finalisation",
-            "archivee": "archivée",
-            "en_pause": "en pause",
-        }[self.value]
+        return LIBELLES_PHASE[self.value]
+
+
+LIBELLES_PHASE: dict[str, str] = {
+    "numerisation": "numérisation",
+    "catalogage": "catalogage",
+    "revision": "révision",
+    "finalisation": "finalisation",
+    "archivee": "archivée",
+    "en_pause": "en pause",
+}
 
 
 class TypeRelationExterne(enum.StrEnum):

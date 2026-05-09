@@ -10,6 +10,7 @@ from .base import Base, TracabiliteMixin
 from .collaborateur import CollaborateurCollection
 from .collection import Collection, valider_hierarchie
 from .enums import (
+    LIBELLES_PHASE,
     LIBELLES_ROLE,
     EtatCatalogage,
     EtatFichier,
@@ -53,6 +54,7 @@ __all__ = [
     "EtatFichier",
     "PhaseChantier",
     "RoleCollaborateur",
+    "LIBELLES_PHASE",
     "LIBELLES_ROLE",
     "TypePage",
     "TypeOperationFichier",

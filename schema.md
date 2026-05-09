@@ -190,7 +190,8 @@ Représente une revue, un fonds, un ensemble catalographique.
 | `doi_nakala` | TEXT | UNIQUE | DOI d'une collection publiée sur Nakala. Unique pour détecter les doubles imports. |
 | `description` | TEXT | | Description publique/catalographique. |
 | `description_interne` | TEXT | | Description usage équipe : choix de chantier, conventions, points d'attention. |
-| `auteur_principal` | TEXT | | Nom libre, informatif. Pas une FK. |
+| `personnalite_associee` | TEXT | | Personnalité, mouvement ou institution autour duquel s'organise la collection (V0.7.x). Texte libre. |
+| `responsable_archives` | TEXT | | Personne ou institution responsable de la constitution de la collection. Renommé depuis `auteur_principal` (V0.7.x). |
 | `metadonnees` | JSON | | Champs étendus spécifiques |
 | `profil_import_id` | INTEGER | FK → `profil_import.id` | NULL si pas encore défini |
 | `parent_id` | INTEGER | FK → `collection.id` | NULL pour une collection racine. Hiérarchie fonds > série > sous-série. |

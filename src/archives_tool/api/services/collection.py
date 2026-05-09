@@ -45,7 +45,8 @@ class CollectionDetail:
     doi_nakala: str | None
     description: str | None
     description_interne: str | None
-    auteur_principal: str | None
+    personnalite_associee: str | None
+    responsable_archives: str | None
     phase: PhaseChantier
     parent_cote: str | None
     parent_titre: str | None
@@ -159,7 +160,8 @@ def collection_detail(session: Session, cote: str) -> CollectionDetail:
         doi_nakala=col.doi_nakala,
         description=col.description,
         description_interne=col.description_interne,
-        auteur_principal=col.auteur_principal,
+        personnalite_associee=col.personnalite_associee,
+        responsable_archives=col.responsable_archives,
         phase=PhaseChantier(col.phase),
         parent_cote=col.parent.cote_collection if col.parent else None,
         parent_titre=col.parent.titre if col.parent else None,

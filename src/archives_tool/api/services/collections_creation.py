@@ -38,7 +38,8 @@ class FormulaireCollection:
     description_interne: str = ""
     editeur: str = ""
     lieu_edition: str = ""
-    auteur_principal: str = ""
+    personnalite_associee: str = ""
+    responsable_archives: str = ""
     date_debut: str = ""
     date_fin: str = ""
     phase: str = PhaseChantier.CATALOGAGE.value
@@ -142,7 +143,8 @@ def creer_collection(
         description_interne=formulaire.description_interne or None,
         editeur=formulaire.editeur or None,
         lieu_edition=formulaire.lieu_edition or None,
-        auteur_principal=formulaire.auteur_principal or None,
+        personnalite_associee=formulaire.personnalite_associee or None,
+        responsable_archives=formulaire.responsable_archives or None,
         date_debut=formulaire.date_debut or None,
         date_fin=formulaire.date_fin or None,
         doi_nakala=formulaire.doi_nakala or None,

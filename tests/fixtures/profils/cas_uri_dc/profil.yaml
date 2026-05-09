@@ -16,7 +16,7 @@ collection:
       en un seul champ metadonnees.sujets) ;
     - agrégation de créateurs avec un autre séparateur.
     Les cellules vides ("") font partie de la liste valeurs_nulles.
-  auteur_principal: "Équipe fixture"
+  responsable_archives: "Équipe fixture"
 
 tableur:
   chemin: "tableur.csv"

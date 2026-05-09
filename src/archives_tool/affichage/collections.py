@@ -182,7 +182,8 @@ def afficher_fiche_collection(
         ("Items", str(stats["nb_items"])),
         ("Fichiers", str(stats["nb_fichiers"])),
         ("Sous-collections", str(nb_sous)),
-        ("Auteur principal", col.auteur_principal or ABSENT),
+        ("Personnalité associée", col.personnalite_associee or ABSENT),
+        ("Responsable Archives", col.responsable_archives or ABSENT),
     ]
     largeur_cle = max(len(c) for c, _ in lignes_meta)
     corps = "\n".join(

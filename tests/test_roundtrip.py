@@ -106,7 +106,7 @@ def test_roundtrip_hierarchie_collections(session: Session) -> None:
     assert item_relu.collection.parent.parent.parent is None
 
 
-def test_description_interne_et_auteur_principal(session: Session) -> None:
+def test_description_interne_et_responsable_archives(session: Session) -> None:
     collection = Collection(
         cote_collection="CHANTIER-1",
         titre="Revue en cours",
@@ -115,7 +115,8 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
             "Chantier repris en 2026 ; cotes antérieures à 1870 à vérifier "
             "contre l'inventaire manuscrit."
         ),
-        auteur_principal="Marie Dupont",
+        personnalite_associee="George Sand",
+        responsable_archives="Marie Dupont",
         # Champs d'audit désormais en texte libre (pas de FK Utilisateur).
         cree_par="Marie Dupont",
     )
@@ -126,16 +127,17 @@ def test_description_interne_et_auteur_principal(session: Session) -> None:
     assert relue is not None
     assert relue.description.startswith("Publication")
     assert relue.description_interne.startswith("Chantier repris")
-    assert relue.auteur_principal == "Marie Dupont"
+    assert relue.personnalite_associee == "George Sand"
+    assert relue.responsable_archives == "Marie Dupont"
     assert relue.cree_par == "Marie Dupont"
 
     # Les champs sont mutables sans contrainte.
-    relue.auteur_principal = "Jean Martin"
+    relue.responsable_archives = "Jean Martin"
     relue.description_interne = None
     relue.modifie_par = "Jean Martin"
     session.commit()
     rerelue = session.get(Collection, collection.id)
-    assert rerelue.auteur_principal == "Jean Martin"
+    assert rerelue.responsable_archives == "Jean Martin"
     assert rerelue.description_interne is None
     assert rerelue.modifie_par == "Jean Martin"
 

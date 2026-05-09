@@ -17,7 +17,7 @@ collection:
     Fixture de test — aucune donnée réelle. Démontre le cas le plus
     courant : colonnes bibliographiques simples, pas de hiérarchie,
     un fichier par item.
-  auteur_principal: "Équipe fixture"
+  responsable_archives: "Équipe fixture"
 
 tableur:
   chemin: "tableur.csv"

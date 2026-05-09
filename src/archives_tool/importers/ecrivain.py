@@ -116,7 +116,8 @@ def _resoudre_ou_creer_collection(
         doi_nakala=col_profil.doi_nakala,
         description=col_profil.description,
         description_interne=col_profil.description_interne,
-        auteur_principal=col_profil.auteur_principal,
+        personnalite_associee=col_profil.personnalite_associee,
+        responsable_archives=col_profil.responsable_archives,
         parent=parent,
         cree_par=cree_par,
     )

@@ -53,7 +53,8 @@ class CollectionProfil(_ProfilBase):
     doi_nakala: str | None = None
     description: str | None = None
     description_interne: str | None = None
-    auteur_principal: str | None = None
+    personnalite_associee: str | None = None
+    responsable_archives: str | None = None
 
 
 class TableurSource(_ProfilBase):

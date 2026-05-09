@@ -13,7 +13,7 @@ collection:
     Fixture de test. Démontre la double décomposition : cote parsée
     par regex pour la hiérarchie archivistique, colonne Type parsée
     par séparateur pour la typologie documentaire.
-  auteur_principal: "Équipe fixture"
+  responsable_archives: "Équipe fixture"
 
 tableur:
   chemin: "tableur.csv"

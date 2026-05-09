@@ -96,8 +96,12 @@
       {{ champ('editeur', 'Éditeur', formulaire.editeur) }}
       {{ champ('lieu_edition', 'Lieu d’édition', formulaire.lieu_edition) }}
     </div>
-    {{ champ('auteur_principal', 'Responsable scientifique',
-             formulaire.auteur_principal) }}
+    {{ champ('personnalite_associee', 'Personnalité ou entité associée',
+             formulaire.personnalite_associee,
+             help_text='Personne, mouvement ou institution autour duquel s’organise la collection. Optionnel.') }}
+    {{ champ('responsable_archives', 'Responsable Archives',
+             formulaire.responsable_archives,
+             help_text='Personne ou institution responsable de la constitution de la collection.') }}
     <div class="grid grid-cols-2 gap-3">
       {{ champ('date_debut', 'Date début',
                formulaire.date_debut,

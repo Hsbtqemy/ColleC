@@ -16,7 +16,7 @@ collection:
   description_interne: >
     Fixture de test. Démontre l'import depuis un export Nakala :
     granularité fichier, DOI item par fichier, DOI collection partagé.
-  auteur_principal: "Équipe fixture"
+  responsable_archives: "Équipe fixture"
 
 tableur:
   chemin: "tableur.csv"

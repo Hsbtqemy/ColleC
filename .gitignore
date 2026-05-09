@@ -22,3 +22,4 @@ config_local.yaml
 node_modules/
 src/archives_tool/web/static/css/output.css
 src/archives_tool/web/static/js/vendor/
+.simplify_diff*

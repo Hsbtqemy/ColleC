@@ -4,7 +4,8 @@
    les valeurs saisies préservées. En cas de succès, redirection vers
    `/collection/{cote}` (303 See Other). #}
 {% extends "base.html" %}
-{% from "partials/_collection_form_corps.html" import champ, sections_communes with context %}
+{% from "components/_champ_form.html" import champ with context %}
+{% from "partials/_collection_form_corps.html" import sections_communes with context %}
 
 {% block title %}Nouvelle collection — archives-tool{% endblock %}
 

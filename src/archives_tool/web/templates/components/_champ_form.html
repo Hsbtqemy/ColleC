@@ -1,0 +1,112 @@
+{# Macros de champs de formulaire mutualisées (V0.8.0).
+   Importées par les pages création/modification de collection et,
+   à partir de V0.8.0, par le formulaire collaborateur.
+
+   Tous les macros lisent `erreurs` depuis le contexte (importer
+   ces macros avec `with context`). #}
+
+{% macro champ(nom, label, valeur='', type='text', placeholder='',
+                help_text='', mono=false, lecture_seule=false,
+                obligatoire=false) %}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-{{ nom }}"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      {{ label }}{% if obligatoire %} <span style="color:#E24B4A;">*</span>{% endif %}
+    </label>
+    <input id="champ-{{ nom }}" type="{{ type }}" name="{{ nom }}"
+           value="{{ valeur }}"
+           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+           {% if lecture_seule %}disabled{% endif %}
+           class="w-full {% if mono %}font-mono{% endif %}"
+           style="padding:6px 10px;font-size:13px;
+                  border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                  border-radius:4px;
+                  background:{% if lecture_seule %}#f9fafb{% else %}#fff{% endif %};
+                  color:{% if lecture_seule %}#6b7280{% else %}inherit{% endif %};">
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro textarea(nom, label, valeur='', placeholder='', help_text='',
+                   lignes=3, obligatoire=false) %}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-{{ nom }}"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      {{ label }}{% if obligatoire %} <span style="color:#E24B4A;">*</span>{% endif %}
+    </label>
+    <textarea id="champ-{{ nom }}" name="{{ nom }}" rows="{{ lignes }}"
+              {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+              class="w-full"
+              style="padding:6px 10px;font-size:13px;
+                     border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                     border-radius:4px;background:#fff;resize:vertical;">{{ valeur }}</textarea>
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro selecteur(nom, label, valeur, options, libelles=None,
+                    help_text='', obligatoire=false) %}
+  {# `options` : liste de chaînes ; `libelles` : dict optionnel
+     valeur→label affichable. Sans `libelles`, la valeur sert de label. #}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-{{ nom }}"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      {{ label }}{% if obligatoire %} <span style="color:#E24B4A;">*</span>{% endif %}
+    </label>
+    <select id="champ-{{ nom }}" name="{{ nom }}"
+            class="w-full"
+            style="padding:6px 10px;font-size:13px;
+                   border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                   border-radius:4px;background:#fff;">
+      {% for opt in options %}
+        <option value="{{ opt }}" {% if valeur == opt %}selected{% endif %}>
+          {{ libelles[opt] if libelles and opt in libelles else opt }}
+        </option>
+      {% endfor %}
+    </select>
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro cases_a_cocher(nom, label, valeurs, options, libelles=None,
+                         help_text='', obligatoire=false) %}
+  {# Sélection multiple via checkboxes. `valeurs` : liste pré-cochée.
+     Le name est le même pour toutes les cases : FastAPI parse en list. #}
+  {% set en_erreur = nom in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:6px;">
+      {{ label }}{% if obligatoire %} <span style="color:#E24B4A;">*</span>{% endif %}
+    </label>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+      {% for opt in options %}
+        <label class="inline-flex items-center gap-2"
+               style="font-size:13px;color:#374151;">
+          <input type="checkbox" name="{{ nom }}" value="{{ opt }}"
+                 {% if opt in valeurs %}checked{% endif %}
+                 style="width:14px;height:14px;">
+          <span>{{ libelles[opt] if libelles and opt in libelles else opt }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>
+    {% elif help_text %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">{{ help_text }}</p>
+    {% endif %}
+  </div>
+{% endmacro %}

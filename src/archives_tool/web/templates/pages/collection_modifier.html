@@ -5,7 +5,8 @@
    externes). Le POST cible `/collection/{cote}/modifier` et
    redirige vers `/collection/{cote}/items` au succès. #}
 {% extends "base.html" %}
-{% from "partials/_collection_form_corps.html" import champ, sections_communes with context %}
+{% from "components/_champ_form.html" import champ with context %}
+{% from "partials/_collection_form_corps.html" import sections_communes with context %}
 
 {% block title %}Modifier {{ collection.cote_collection }} — archives-tool{% endblock %}
 

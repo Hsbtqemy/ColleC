@@ -1,14 +1,20 @@
-"""Tests du service `collaborateurs` (V0.8.0).
+"""Tests du service `collaborateurs` et des routes HTMX (V0.8.0).
 
-Couvre listage, groupement par rôle, validation d'ajout/modification,
-suppression, cascade depuis Collection.
+Couvre :
+- Service : listage, groupement par rôle, validation, suppression,
+  cascade depuis Collection.
+- Routes : ajouter / modifier / supprimer + form fragments.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from archives_tool.api.main import app
 from archives_tool.api.services.collaborateurs import (
     CollaborateurIntrouvable,
     CollaborateurInvalide,
@@ -19,6 +25,7 @@ from archives_tool.api.services.collaborateurs import (
     modifier_collaborateur,
     supprimer_collaborateur,
 )
+from archives_tool.demo import peupler_base
 from archives_tool.models import (
     CollaborateurCollection,
     Collection,
@@ -246,3 +253,181 @@ def test_cascade_suppression_collection(session: Session, col: Collection) -> No
     session.commit()
     nb_restants = session.query(CollaborateurCollection).count()
     assert nb_restants == 0
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def base_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    db = tmp_path / "demo.db"
+    peupler_base(db)
+    monkeypatch.setenv("ARCHIVES_DB", str(db))
+    return db
+
+
+def test_get_section_vide(base_demo: Path) -> None:
+    """GET section : 200, message « Aucun collaborateur »."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK/collaborateurs")
+    assert resp.status_code == 200
+    assert "Aucun collaborateur" in resp.text
+
+
+def test_get_formulaire_nouveau(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.get("/collection/HK/collaborateurs/nouveau")
+    assert resp.status_code == 200
+    assert 'name="nom"' in resp.text
+    assert 'name="roles"' in resp.text
+    assert "Numérisation" in resp.text
+
+
+def test_post_ajout_valide_renvoie_section(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/HK/collaborateurs",
+        data={
+            "nom": "Marie Dupont",
+            "roles": ["numerisation", "indexation"],
+            "periode": "2022-2023",
+            "notes": "",
+        },
+    )
+    assert resp.status_code == 200
+    assert "Marie Dupont" in resp.text
+    assert "Numérisation" in resp.text
+    assert "Indexation" in resp.text
+
+
+def test_post_ajout_nom_vide_renvoie_formulaire(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/HK/collaborateurs",
+        data={"nom": "", "roles": ["numerisation"]},
+    )
+    assert resp.status_code == 400
+    assert "nom est obligatoire" in resp.text
+
+
+def test_post_ajout_sans_role_renvoie_formulaire(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/HK/collaborateurs", data={"nom": "Marie"}
+    )
+    assert resp.status_code == 400
+    assert "rôle" in resp.text.lower()
+
+
+def test_post_collection_inexistante_404(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/N_EXISTE_PAS/collaborateurs",
+        data={"nom": "X", "roles": ["numerisation"]},
+    )
+    assert resp.status_code == 404
+
+
+def test_modifier_pre_remplissage(base_demo: Path) -> None:
+    client = TestClient(app)
+    add = client.post(
+        "/collection/HK/collaborateurs",
+        data={"nom": "Hugo", "roles": ["transcription"], "periode": "2024"},
+    )
+    assert add.status_code == 200
+    # Récupère l'id depuis la base.
+    from archives_tool.db import creer_engine, creer_session_factory
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        col = session.query(Collection).filter_by(cote_collection="HK").one()
+        c = (
+            session.query(CollaborateurCollection)
+            .filter_by(collection_id=col.id)
+            .one()
+        )
+        cid = c.id
+
+    resp = client.get(f"/collection/HK/collaborateurs/{cid}/modifier")
+    assert resp.status_code == 200
+    assert 'value="Hugo"' in resp.text
+    assert "checked" in resp.text  # rôle transcription pré-coché
+    assert 'value="2024"' in resp.text
+
+
+def test_post_modifier(base_demo: Path) -> None:
+    client = TestClient(app)
+    client.post(
+        "/collection/HK/collaborateurs",
+        data={"nom": "Ancien", "roles": ["numerisation"]},
+    )
+    from archives_tool.db import creer_engine, creer_session_factory
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        cid = session.query(CollaborateurCollection).first().id
+
+    resp = client.post(
+        f"/collection/HK/collaborateurs/{cid}",
+        data={
+            "nom": "Nouveau",
+            "roles": ["catalogage"],
+            "periode": "",
+            "notes": "",
+        },
+    )
+    assert resp.status_code == 200
+    assert "Nouveau" in resp.text
+    assert "Ancien" not in resp.text
+
+
+def test_post_supprimer(base_demo: Path) -> None:
+    client = TestClient(app)
+    client.post(
+        "/collection/HK/collaborateurs",
+        data={"nom": "X", "roles": ["numerisation"]},
+    )
+    from archives_tool.db import creer_engine, creer_session_factory
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        cid = session.query(CollaborateurCollection).first().id
+
+    resp = client.post(f"/collection/HK/collaborateurs/{cid}/supprimer")
+    assert resp.status_code == 200
+    assert "Aucun collaborateur" in resp.text
+
+
+def test_modifier_collaborateur_autre_collection_404(base_demo: Path) -> None:
+    """Un collaborateur de FA-AA ne peut pas être muté via la cote HK."""
+    client = TestClient(app)
+    client.post(
+        "/collection/FA-AA/collaborateurs",
+        data={"nom": "X", "roles": ["numerisation"]},
+    )
+    from archives_tool.db import creer_engine, creer_session_factory
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as session:
+        cid = session.query(CollaborateurCollection).first().id
+
+    resp = client.post(
+        f"/collection/HK/collaborateurs/{cid}",
+        data={"nom": "Hijack", "roles": ["catalogage"]},
+    )
+    assert resp.status_code == 404
+
+
+def test_page_modifier_inclut_section(base_demo: Path) -> None:
+    """La page /collection/HK/modifier inclut la section collaborateurs."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK/modifier")
+    assert resp.status_code == 200
+    assert 'id="section-collaborateurs"' in resp.text
+    assert "Ajouter un collaborateur" in resp.text

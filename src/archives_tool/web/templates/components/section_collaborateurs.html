@@ -1,0 +1,78 @@
+{# Section Collaborateurs sur la page de modification de collection
+   (V0.8.0). Variables :
+   - `collection_cote`
+   - `groupes_par_role` : dict[RoleCollaborateur, list[CollaborateurResume]]
+   Ce composant retourne TOUTE la section pour swap HTMX outerHTML
+   après ajout/modif/suppression. #}
+<section id="section-collaborateurs" style="margin-top:32px;padding-top:24px;border-top:1px solid rgba(0,0,0,0.08);max-width:680px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+    Collaborateurs
+  </h2>
+  <p style="font-size:12px;color:#9ca3af;margin-bottom:16px;">
+    Personnes qui ont contribué à la constitution de la collection.
+    Les modifications dans cette section sont sauvegardées automatiquement.
+  </p>
+
+  {% if groupes_par_role %}
+    <div style="margin-bottom:16px;">
+      {% for role, collaborateurs in groupes_par_role.items() %}
+        <h3 style="font-size:13px;font-weight:500;color:#374151;margin-top:16px;margin-bottom:6px;">
+          {{ role | libelle_role }}
+        </h3>
+        <ul style="list-style:none;padding:0;margin:0;">
+          {% for c in collaborateurs %}
+            <li class="group"
+                style="display:flex;align-items:baseline;justify-content:space-between;
+                       padding:4px 0;font-size:13px;">
+              <div>
+                <span style="color:#1f1f1f;">{{ c.nom }}</span>
+                {% if c.periode %}
+                  <span style="color:#9ca3af;font-size:12px;margin-left:8px;">
+                    · {{ c.periode }}
+                  </span>
+                {% endif %}
+                {% if c.notes %}
+                  <span style="color:#9ca3af;font-size:12px;font-style:italic;margin-left:8px;"
+                        title="{{ c.notes }}">notes</span>
+                {% endif %}
+              </div>
+              <div class="opacity-0 group-hover:opacity-100"
+                   style="display:flex;gap:8px;font-size:12px;">
+                <button type="button"
+                        hx-get="/collection/{{ collection_cote }}/collaborateurs/{{ c.id }}/modifier"
+                        hx-target="#formulaire-collaborateur"
+                        hx-swap="innerHTML"
+                        style="background:transparent;border:none;color:#6b7280;cursor:pointer;padding:0;">
+                  Modifier
+                </button>
+                <button type="button"
+                        hx-post="/collection/{{ collection_cote }}/collaborateurs/{{ c.id }}/supprimer"
+                        hx-confirm="Supprimer {{ c.nom }} de cette collection ?"
+                        hx-target="#section-collaborateurs"
+                        hx-swap="outerHTML"
+                        style="background:transparent;border:none;color:#dc2626;cursor:pointer;padding:0;">
+                  Supprimer
+                </button>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p style="font-size:13px;color:#6b7280;margin-bottom:16px;">
+      Aucun collaborateur pour cette collection.
+    </p>
+  {% endif %}
+
+  <button type="button"
+          hx-get="/collection/{{ collection_cote }}/collaborateurs/nouveau"
+          hx-target="#formulaire-collaborateur"
+          hx-swap="innerHTML"
+          class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+          style="padding:6px 12px;font-size:13px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);cursor:pointer;">
+    + Ajouter un collaborateur
+  </button>
+
+  <div id="formulaire-collaborateur" style="margin-top:16px;"></div>
+</section>

@@ -1,9 +1,12 @@
-{# Page de modification de collection (V0.7.x).
+{# Page de modification de collection (V0.7.x + V0.8.0).
    Variables : `collection` (Collection), `formulaire`, `erreurs`,
-   `phases`, `crumbs`. La cote est en lecture seule (verrouillée
-   par design — modifier la cote casserait fichiers, exports, refs
-   externes). Le POST cible `/collection/{cote}/modifier` et
-   redirige vers `/collection/{cote}/items` au succès. #}
+   `phases`, `crumbs`, `groupes_par_role`. La cote est en lecture
+   seule (verrouillée par design — modifier la cote casserait
+   fichiers, exports, refs externes). Le POST cible
+   `/collection/{cote}/modifier` et redirige vers
+   `/collection/{cote}/items` au succès. La section Collaborateurs
+   est en dehors du formulaire principal : ses actions sont
+   sauvegardées indépendamment via HTMX. #}
 {% extends "base.html" %}
 {% from "components/_champ_form.html" import champ with context %}
 {% from "partials/_collection_form_corps.html" import sections_communes with context %}
@@ -63,4 +66,12 @@
     </button>
   </div>
 </form>
+
+{% include "components/section_collaborateurs.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/htmx.org@1.9.12"
+        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+        crossorigin="anonymous"></script>
 {% endblock %}

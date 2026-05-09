@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.services import collaborateurs as svc_collab
 from archives_tool.api.services import collection as svc_col
 from archives_tool.api.services import collections_creation as svc
 from archives_tool.api.templating import templates
@@ -111,10 +112,12 @@ def formulaire_modifier_collection(
             "nom_base": nom_base,
             "utilisateur": utilisateur,
             "collection": col,
+            "collection_cote": col.cote_collection,
             "formulaire": svc.formulaire_depuis_collection(col),
             "erreurs": {},
             "phases": list(PhaseChantier),
             "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
+            "groupes_par_role": svc_collab.lister_collaborateurs_par_role(db, col.id),
         },
     )
 
@@ -141,10 +144,14 @@ def modifier_collection_post(
                 "nom_base": nom_base,
                 "utilisateur": utilisateur,
                 "collection": col,
+                "collection_cote": col.cote_collection,
                 "formulaire": formulaire,
                 "erreurs": res.erreurs,
                 "phases": list(PhaseChantier),
                 "crumbs": svc_col.fil_ariane_collection(col, page_courante="Modifier"),
+                "groupes_par_role": svc_collab.lister_collaborateurs_par_role(
+                    db, col.id
+                ),
             },
             status_code=400,
         )

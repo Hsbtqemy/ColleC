@@ -1,0 +1,52 @@
+{# Fragment HTMX du formulaire d'ajout/modification d'un collaborateur
+   (V0.8.0). Variables :
+   - `collection_cote`
+   - `formulaire` : FormulaireCollaborateur
+   - `erreurs` : dict[str, str]
+   - `mode` : "ajouter" | "modifier"
+   - `collaborateur_id` : int | None
+   - `roles_options` : list[str]
+   - `libelles_roles` : dict[str, str] #}
+{% from "components/_champ_form.html" import champ, textarea, cases_a_cocher with context %}
+
+{% if mode == "modifier" %}
+  {% set action_url = "/collection/" ~ collection_cote ~ "/collaborateurs/" ~ collaborateur_id %}
+  {% set titre = "Modifier le collaborateur" %}
+  {% set bouton = "Enregistrer" %}
+{% else %}
+  {% set action_url = "/collection/" ~ collection_cote ~ "/collaborateurs" %}
+  {% set titre = "Ajouter un collaborateur" %}
+  {% set bouton = "Ajouter" %}
+{% endif %}
+
+<form hx-post="{{ action_url }}"
+      hx-target="#section-collaborateurs"
+      hx-swap="outerHTML"
+      style="background:#f9fafb;border:1px solid rgba(0,0,0,0.08);
+             border-radius:6px;padding:16px;margin-top:8px;">
+  <h3 style="font-size:13px;font-weight:500;color:#374151;margin-bottom:12px;">
+    {{ titre }}
+  </h3>
+
+  {{ champ('nom', 'Nom', formulaire.nom, obligatoire=true) }}
+  {{ cases_a_cocher('roles', 'Rôles', formulaire.roles,
+                     roles_options, libelles=libelles_roles, obligatoire=true) }}
+  {{ champ('periode', 'Période d’intervention', formulaire.periode,
+            placeholder='2022, 2022-2023…',
+            help_text='Format libre, par exemple « 2022 », « 2022-2023 ».') }}
+  {{ textarea('notes', 'Notes', formulaire.notes, lignes=2) }}
+
+  <div class="flex items-center justify-end gap-2" style="margin-top:8px;">
+    <button type="button"
+            onclick="document.getElementById('formulaire-collaborateur').innerHTML='';"
+            class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+            style="padding:5px 12px;font-size:13px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);cursor:pointer;">
+      Annuler
+    </button>
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:5px 12px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;cursor:pointer;">
+      {{ bouton }}
+    </button>
+  </div>
+</form>

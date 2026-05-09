@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from archives_tool.api.routes import (
+    collaborateurs,
     collection,
     collections,
     dashboard,
@@ -28,6 +29,11 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
 app.include_router(dashboard.router)
 app.include_router(collections.router)
+# `collaborateurs` doit précéder `collection` : ses routes sont
+# `/collection/{cote}/collaborateurs(...)` et entreraient en conflit
+# avec `/collection/{cote}/{onglet}` (Literal) sinon — premier match
+# l'emporte.
+app.include_router(collaborateurs.router)
 app.include_router(collection.router)
 app.include_router(item.router)
 app.include_router(import_assistant.router)

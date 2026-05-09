@@ -21,16 +21,16 @@ VALIDES = ["cas_item_simple", "cas_fichier_groupe", "cas_hierarchie_cote", "cas_
 @pytest.mark.parametrize("cas", VALIDES)
 def test_fixture_valide_charge(cas: str) -> None:
     profil = charger_profil(FIXTURES / cas / "profil.yaml")
-    assert profil.version_profil == 1
-    assert profil.collection.cote
-    assert profil.collection.titre
+    assert profil.version_profil == 2
+    assert profil.fonds.cote
+    assert profil.fonds.titre
     assert profil.mapping.champs  # au moins un mapping
 
 
 def test_cas_item_simple_details() -> None:
     p = charger_profil(FIXTURES / "cas_item_simple" / "profil.yaml")
     assert p.granularite_source == "item"
-    assert p.collection.editeur == "Éditions du Square (fictif)"
+    assert p.fonds.editeur == "Éditions du Square (fictif)"
     # Forme 1 : mapping simple chaîne → MappingSimple
     assert isinstance(p.mapping.champs["cote"], MappingSimple)
     assert p.mapping.champs["cote"].source == "Cote"
@@ -45,7 +45,9 @@ def test_cas_fichier_groupe_details() -> None:
     p = charger_profil(FIXTURES / "cas_fichier_groupe" / "profil.yaml")
     assert p.granularite_source == "fichier"
     assert "cote" in p.mapping.champs  # requis pour fichier
-    assert p.collection.doi_nakala == "10.34847/nkl.fakepfcoll"
+    # DOI Nakala vit sur la collection miroir, pas sur le fonds.
+    assert p.collection_miroir is not None
+    assert p.collection_miroir.doi_nakala == "10.34847/nkl.fakepfcoll"
 
 
 def test_cas_hierarchie_cote_details() -> None:
@@ -118,11 +120,25 @@ def test_version_absente() -> None:
     assert "version_profil" in str(exc.value)
 
 
-def test_version_future() -> None:
+def test_version_inconnue() -> None:
+    """Une version > 2 (futur ou inconnue) doit être rejetée avec un
+    message qui pointe sur le champ `version_profil`."""
     with pytest.raises(ProfilInvalide) as exc:
-        charger_profil(INVALIDES / "version_future.yaml")
-    # Le message doit pointer sur la version.
+        charger_profil(INVALIDES / "version_inconnue.yaml")
     assert "version_profil" in str(exc.value)
+
+
+def test_v1_obsolete_rejet():
+    """Les profils v1 (avec section `collection:` racine) sont rejetés
+    avec un message de migration vers v2."""
+    from archives_tool.profils import ProfilObsoleteV1
+
+    with pytest.raises(ProfilObsoleteV1) as exc:
+        charger_profil(INVALIDES / "v1_obsolete.yaml")
+    msg = str(exc.value)
+    assert "v2" in msg
+    assert "fonds:" in msg
+    assert "collection:" in msg
 
 
 def test_cle_inconnue_dans_collection() -> None:

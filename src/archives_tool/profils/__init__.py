@@ -1,11 +1,12 @@
 """Profils d'import : schéma Pydantic et loader YAML."""
 
 from .generateur import analyser_tableur, generer_squelette
-from .loader import ProfilInvalide, charger_profil
+from .loader import ProfilInvalide, ProfilObsoleteV1, charger_profil
 from .schema import (
-    CollectionProfil,
+    CollectionMiroirProfil,
     DecompositionCote,
     DecompositionType,
+    FondsProfil,
     MappingAgrege,
     MappingChamp,
     MappingSimple,
@@ -17,7 +18,8 @@ from .schema import (
 
 __all__ = [
     "Profil",
-    "CollectionProfil",
+    "FondsProfil",
+    "CollectionMiroirProfil",
     "TableurSource",
     "MappingChamp",
     "MappingSimple",
@@ -28,6 +30,7 @@ __all__ = [
     "DecompositionType",
     "charger_profil",
     "ProfilInvalide",
+    "ProfilObsoleteV1",
     "generer_squelette",
     "analyser_tableur",
 ]

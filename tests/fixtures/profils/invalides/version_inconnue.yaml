@@ -1,7 +1,7 @@
-version_profil: 2
-collection:
+version_profil: 99
+fonds:
   cote: "X"
-  titre: "Version future"
+  titre: "Version inconnue"
 tableur:
   chemin: "x.csv"
 mapping:

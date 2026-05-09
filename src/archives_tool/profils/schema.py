@@ -37,22 +37,49 @@ class _ProfilBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class CollectionProfil(_ProfilBase):
-    """Métadonnées de la collection cible créée / complétée par l'import."""
+class FondsProfil(_ProfilBase):
+    """Métadonnées du fonds cible créé par l'import.
+
+    Le fonds est l'**entité racine** : un corpus brut (revue, fonds
+    personnel, ensemble de correspondance). À sa création, sa
+    collection miroir est créée automatiquement (invariant 1).
+
+    Tous les items importés sont rattachés à ce fonds (`fonds_id`)
+    et ajoutés à sa miroir (invariant 6, géré par `creer_item`).
+    """
 
     cote: str
     titre: str
-    parent_cote: str | None = None
-    titre_secondaire: str | None = None
+    description: str | None = None
+    description_publique: str | None = None
+    description_interne: str | None = None
+    personnalite_associee: str | None = None
+    responsable_archives: str | None = None
     editeur: str | None = None
     lieu_edition: str | None = None
     periodicite: str | None = None
+    issn: str | None = None
     date_debut: str | None = None
     date_fin: str | None = None
-    issn: str | None = None
-    doi_nakala: str | None = None
+
+
+class CollectionMiroirProfil(_ProfilBase):
+    """Personnalisations optionnelles de la collection miroir.
+
+    Section facultative : si absente, la miroir hérite du fonds
+    (cote = fonds.cote, titre = fonds.titre, descriptions = None,
+    phase = catalogage). Si présente, seuls les champs renseignés
+    écrasent ces valeurs héritées.
+    """
+
+    cote: str | None = None
+    titre: str | None = None
     description: str | None = None
+    description_publique: str | None = None
     description_interne: str | None = None
+    phase: str | None = None
+    doi_nakala: str | None = None
+    doi_collection_nakala_parent: str | None = None
     personnalite_associee: str | None = None
     responsable_archives: str | None = None
 
@@ -220,10 +247,17 @@ class DecompositionType(_ProfilBase):
 
 
 class Profil(_ProfilBase):
-    """Racine du schéma de profil d'import."""
+    """Racine du schéma de profil d'import (v2).
 
-    version_profil: Literal[1]
-    collection: CollectionProfil
+    Le format v2 sépare explicitement les concepts de **fonds** (corpus
+    brut) et de **collection miroir** (sa première vue, créée auto).
+    Les profils v1 (avec section `collection:` racine) sont rejetés
+    par le loader avec un message de migration manuelle.
+    """
+
+    version_profil: Literal[2]
+    fonds: FondsProfil
+    collection_miroir: CollectionMiroirProfil | None = None
     tableur: TableurSource
     granularite_source: Literal["item", "fichier"] = "item"
     mapping: MappingProfil

@@ -2,9 +2,9 @@
 # Granularité item : une ligne du tableur = un item en base.
 # Inspiré librement d'un périodique type Hara-Kiri.
 
-version_profil: 1
+version_profil: 2
 
-collection:
+fonds:
   cote: "HK"
   titre: "Hara-Kiri (fictif)"
   editeur: "Éditions du Square (fictif)"

@@ -2,13 +2,12 @@
 # et agrégation multi-colonnes (sujets, créateurs).
 # Inspiré librement du format de dépôt Nakala.
 
-version_profil: 1
+version_profil: 2
 
-collection:
+fonds:
   cote: "NKLDC"
-  titre: "Collection Nakala / Dublin Core (fictive)"
-  doi_nakala: "10.34847/nkl.fakedccoll"
-  description: "Collection démonstrative pour colonnes URI DC."
+  titre: "Fonds Nakala / Dublin Core (fictif)"
+  description: "Fonds démonstratif pour colonnes URI DC."
   description_interne: >
     Fixture de test. Démontre :
     - noms de colonnes sous forme d'URI (dc:identifier, dc:title...) ;
@@ -17,6 +16,9 @@ collection:
     - agrégation de créateurs avec un autre séparateur.
     Les cellules vides ("") font partie de la liste valeurs_nulles.
   responsable_archives: "Équipe fixture"
+
+collection_miroir:
+  doi_nakala: "10.34847/nkl.fakedccoll"
 
 tableur:
   chemin: "tableur.csv"

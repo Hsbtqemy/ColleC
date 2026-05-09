@@ -1,0 +1,12 @@
+# Profil v1 (format pré-V0.9.0-gamma.1) — doit être rejeté avec un
+# message de migration manuelle vers le format v2.
+version_profil: 1
+collection:
+  cote: "HK"
+  titre: "Hara-Kiri (v1 obsolete)"
+  parent_cote: "REVUES"
+  editeur: "Éditions du Square"
+tableur:
+  chemin: "tableur.csv"
+mapping:
+  cote: "Cote"

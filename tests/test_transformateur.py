@@ -172,8 +172,8 @@ def test_valeur_par_defaut_nonecrase_valeur_tableur(tmp_path: Path) -> None:
     yml = tmp_path / "p.yaml"
     yml.write_text(
         """
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Défauts"
 tableur:
@@ -212,8 +212,8 @@ def test_transformations(
     yml = tmp_path / "p.yaml"
     yml.write_text(
         f"""
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Transformations"
 tableur:

@@ -1,5 +1,5 @@
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Granularité fichier sans cote mappée"
 tableur:

@@ -90,8 +90,8 @@ def test_profil_sans_section_fichiers(tmp_path: Path) -> None:
     yml = tmp_path / "p.yaml"
     yml.write_text(
         """
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Sans fichiers"
 tableur:

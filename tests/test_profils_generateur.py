@@ -50,7 +50,7 @@ def test_generer_squelette_charge_avec_placeholder(tmp_path: Path) -> None:
     yml = generer_squelette("X", "X", "tableur.csv")
     chemin = _ecrire_yaml_co_localise(yml, tmp_path)
     profil = charger_profil(chemin)
-    assert profil.collection.cote == "X"
+    assert profil.fonds.cote == "X"
     assert "cote" in profil.mapping.champs
     # Le placeholder est bien là, repérable par l'utilisateur.
     assert "A_REMPLACER" in yml
@@ -79,7 +79,7 @@ def test_generer_squelette_titre_avec_apostrophe(tmp_path: Path) -> None:
     (tmp_path / "tableur.csv").write_text("X\n", encoding="utf-8")
     chemin = _ecrire_yaml_co_localise(yml, tmp_path)
     profil = charger_profil(chemin)
-    assert profil.collection.titre == "Titre de l'œuvre"
+    assert profil.fonds.titre == "Titre de l'œuvre"
 
 
 def test_generer_squelette_reproductible() -> None:

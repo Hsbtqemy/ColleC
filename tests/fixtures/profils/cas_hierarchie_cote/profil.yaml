@@ -3,9 +3,9 @@
 # La colonne Type encode catégorie / sous-catégorie / spécifique.
 # Inspiré librement d'un fonds d'archives type Ainsa.
 
-version_profil: 1
+version_profil: 2
 
-collection:
+fonds:
   cote: "FA"
   titre: "Fonds d'archives (fictif)"
   description: "Fonds archivistique avec séries et sous-séries."

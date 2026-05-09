@@ -1,22 +1,28 @@
-"""Écrivain d'import : du profil validé aux données en base.
+"""Écrivain d'import : du profil v2 validé aux données en base.
 
 Orchestration :
-1. Résout ou crée la Collection cible (et son parent si déclaré).
-2. Pour chaque ligne du tableur :
+1. Crée le fonds + sa miroir auto via `creer_fonds` (service métier).
+2. Si la section `collection_miroir:` est présente, applique les
+   personnalisations (titre, descriptions, phase, DOI) via
+   `modifier_collection`.
+3. Pour chaque ligne du tableur :
    - lire + transformer → ItemPrepare ;
    - résoudre les fichiers sur disque → list[FichierPrepare].
-3. Si granularite_source == "fichier", regroupe les lignes par cote
-   avant l'étape d'écriture.
-4. Applique les créations/mises à jour en une seule transaction
-   (rollback sur erreur en mode réel). En dry-run, le rapport est
-   complet mais rien n'est écrit.
+4. Si granularite_source == "fichier", regroupe les lignes par cote.
+5. Crée les items via `creer_item` (auto-rattachement à la miroir,
+   invariant 6).
+6. Ajoute les Fichier à la session (couche basse, pas de service
+   dédié pour l'instant).
 
 Comportement :
-- Dry-run par défaut. Hash SHA-256 non calculés en dry-run (rapide).
-- En mode réel : hash calculés, batch_id généré (UUID), entrée
-  OperationImport journalisée.
-- Ré-import : mise à jour par (collection_id, cote). Item inchangé
-  si aucun champ mappé n'a bougé.
+- Dry-run par défaut : aucune écriture en base, rapport simulé.
+  Pas d'appel aux services qui commitent ; validation Pydantic + lecture
+  tableur + résolution fichiers seulement.
+- Mode réel : appel aux services métier (qui commitent à chaque entité).
+  En cas d'erreur après création du fonds, le fonds créé reste en base
+  (les commits sont déjà passés) — l'utilisateur peut le supprimer
+  manuellement.
+- Hash SHA-256 calculés en mode réel uniquement (rapide en dry-run).
 """
 
 from __future__ import annotations
@@ -28,9 +34,23 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    formulaire_depuis_collection,
+    modifier_collection,
+)
+from archives_tool.api.services.fonds import (
+    FondsInvalide,
+    FormulaireFonds,
+    creer_fonds,
+)
+from archives_tool.api.services.items import (
+    FormulaireItem,
+    ItemInvalide,
+    creer_item,
+)
 from archives_tool.config import ConfigLocale
 from archives_tool.importers.lecteur_tableur import lire_tableur
 from archives_tool.importers.resolveur_fichiers import (
@@ -41,21 +61,31 @@ from archives_tool.importers.transformateur import ItemPrepare, transformer_lign
 from archives_tool.models import (
     Collection,
     Fichier,
+    Fonds,
     Item,
     OperationImport,
+    PhaseChantier,
+    TypeCollection,
 )
-from archives_tool.profils.schema import Profil
+from archives_tool.profils.schema import (
+    CollectionMiroirProfil,
+    FondsProfil,
+    Profil,
+)
 
 
 @dataclass
 class RapportImport:
     dry_run: bool
     batch_id: str | None = None
-    collection_creee: bool = False
-    collection_id: int | None = None
+    fonds_cote: str | None = None
+    fonds_id: int | None = None
+    fonds_cree: bool = False
+    miroir_id: int | None = None
+    miroir_personnalisee: bool = False
     items_crees: int = 0
-    items_mis_a_jour: int = 0
-    items_inchanges: int = 0
+    items_inchanges: int = 0  # conservé pour compat ; toujours 0 en gamma.1
+    items_mis_a_jour: int = 0  # idem
     fichiers_ajoutes: int = 0
     fichiers_deja_connus: int = 0
     fichiers_orphelins: list[str] = field(default_factory=list)
@@ -64,67 +94,136 @@ class RapportImport:
     erreurs: list[str] = field(default_factory=list)
     duree_secondes: float = 0.0
 
+    @property
+    def collection_id(self) -> int | None:
+        """Alias rétro-compatible : la « collection cible » est la miroir."""
+        return self.miroir_id
 
-def _resoudre_ou_creer_collection(
-    profil: Profil,
-    session: Session,
-    cree_par: str | None,
-    rapport: RapportImport,
-) -> Collection:
-    col_profil = profil.collection
+    @property
+    def collection_creee(self) -> bool:
+        """La miroir est créée en même temps que le fonds."""
+        return self.fonds_cree
 
-    # Parent éventuel : doit exister.
-    parent: Collection | None = None
-    if col_profil.parent_cote:
-        parent = session.scalar(
-            select(Collection).where(
-                Collection.cote_collection == col_profil.parent_cote
-            )
+
+def _formulaire_fonds_depuis_profil(prof: FondsProfil) -> FormulaireFonds:
+    """Convertit la section `fonds:` d'un profil en `FormulaireFonds`.
+    Les champs non renseignés (None) deviennent chaîne vide — le service
+    les normalisera en None côté ORM via `chaine_ou_none`."""
+    return FormulaireFonds(
+        cote=prof.cote,
+        titre=prof.titre,
+        description=prof.description or "",
+        description_publique=prof.description_publique or "",
+        description_interne=prof.description_interne or "",
+        personnalite_associee=prof.personnalite_associee or "",
+        responsable_archives=prof.responsable_archives or "",
+        editeur=prof.editeur or "",
+        lieu_edition=prof.lieu_edition or "",
+        periodicite=prof.periodicite or "",
+        issn=prof.issn or "",
+        date_debut=prof.date_debut or "",
+        date_fin=prof.date_fin or "",
+    )
+
+
+def _appliquer_overrides_miroir(
+    base: FormulaireCollection, overrides: CollectionMiroirProfil
+) -> FormulaireCollection:
+    """Applique les champs renseignés du profil sur le formulaire de base.
+    Renvoie un nouveau formulaire (Pydantic immutable côté pratique)."""
+    data = base.model_dump()
+    for nom, val in overrides.model_dump().items():
+        if val is None:
+            continue
+        data[nom] = val
+    return FormulaireCollection.model_validate(data)
+
+
+def _phase_valide(phase: str | None) -> str | None:
+    """Valide la phase si renseignée. Retourne None si phase non
+    fournie ; lève ValueError si phase inconnue."""
+    if phase is None:
+        return None
+    valides = {p.value for p in PhaseChantier}
+    if phase not in valides:
+        raise ValueError(
+            f"Phase inconnue dans le profil : {phase!r}. "
+            f"Valides : {sorted(valides)}"
         )
-        if parent is None:
-            raise ValueError(
-                f"Collection parent {col_profil.parent_cote!r} déclarée dans "
-                "le profil mais introuvable en base."
-            )
+    return phase
 
-    existante = session.scalar(
-        select(Collection).where(Collection.cote_collection == col_profil.cote)
-    )
-    if existante is not None:
-        # Signaler les divergences de métadonnées sans bloquer l'import.
-        for champ, val_prof in col_profil.model_dump(
-            exclude={"cote", "parent_cote"}
-        ).items():
-            val_base = getattr(existante, champ, None)
-            if val_prof is not None and val_base != val_prof:
-                rapport.warnings.append(
-                    f"Collection {col_profil.cote}: {champ} diverge "
-                    f"(base={val_base!r}, profil={val_prof!r}). Base conservée."
-                )
-        return existante
 
-    nouvelle = Collection(
-        cote_collection=col_profil.cote,
-        titre=col_profil.titre,
-        titre_secondaire=col_profil.titre_secondaire,
-        editeur=col_profil.editeur,
-        lieu_edition=col_profil.lieu_edition,
-        periodicite=col_profil.periodicite,
-        date_debut=col_profil.date_debut,
-        date_fin=col_profil.date_fin,
-        issn=col_profil.issn,
-        doi_nakala=col_profil.doi_nakala,
-        description=col_profil.description,
-        description_interne=col_profil.description_interne,
-        personnalite_associee=col_profil.personnalite_associee,
-        responsable_archives=col_profil.responsable_archives,
-        parent=parent,
-        cree_par=cree_par,
+def _personnaliser_miroir(
+    db: Session,
+    miroir: Collection,
+    overrides: CollectionMiroirProfil,
+    modifie_par: str | None,
+) -> None:
+    """Applique les overrides du profil sur la miroir auto-créée."""
+    base = formulaire_depuis_collection(miroir)
+    # `phase` est validée tôt pour produire une erreur lisible plutôt
+    # qu'une CHECK constraint SQLite obscure.
+    _phase_valide(overrides.phase)
+    nouveau = _appliquer_overrides_miroir(base, overrides)
+    modifier_collection(db, miroir.id, nouveau, modifie_par=modifie_par)
+
+
+def _construire_formulaire_item(
+    prep: ItemPrepare,
+    fonds_id: int,
+    valeurs_par_defaut: dict[str, Any],
+) -> FormulaireItem:
+    """Convertit un `ItemPrepare` en `FormulaireItem`.
+
+    `valeurs_par_defaut` complète les colonnes absentes (langue,
+    etat_catalogage, etc.) sans écraser ce qui vient du tableur.
+    Les métadonnées étendues (clé `metadonnees.X` du mapping) sont
+    fusionnées avec hiérarchie/typologie issues des décompositions.
+    """
+    champs = dict(prep.champs_colonne)
+    # Compléter avec les défauts du profil sans écraser les valeurs
+    # explicitement renseignées (y compris None, qui peut être une
+    # absence intentionnelle si l'utilisateur a mappé une colonne).
+    for nom, val in valeurs_par_defaut.items():
+        if nom not in champs:
+            champs[nom] = val
+
+    metadonnees = dict(prep.metadonnees)
+    if prep.hierarchie:
+        metadonnees["hierarchie"] = prep.hierarchie
+    if prep.typologie:
+        metadonnees["typologie"] = prep.typologie
+
+    return FormulaireItem(
+        cote=champs.get("cote") or prep.cote,
+        titre=champs.get("titre") or "",
+        fonds_id=fonds_id,
+        description=champs.get("description") or "",
+        notes_internes=champs.get("notes_internes") or "",
+        type_coar=champs.get("type_coar") or "",
+        langue=champs.get("langue") or "",
+        date=champs.get("date") or "",
+        annee=_int_ou_none(champs.get("annee")),
+        numero=champs.get("numero") or "",
+        numero_tri=_int_ou_none(champs.get("numero_tri")),
+        etat_catalogage=champs.get("etat_catalogage") or "brouillon",
+        metadonnees=metadonnees,
+        doi_nakala=champs.get("doi_nakala") or "",
+        doi_collection_nakala=champs.get("doi_collection_nakala") or "",
     )
-    session.add(nouvelle)
-    session.flush()  # pour obtenir l'id
-    rapport.collection_creee = True
-    return nouvelle
+
+
+def _int_ou_none(valeur: Any) -> int | None:
+    """Coerce une valeur lue en str depuis un tableur en int, ou None.
+    Les chaînes vides et les valeurs déjà-None deviennent None."""
+    if valeur is None or valeur == "":
+        return None
+    if isinstance(valeur, int):
+        return valeur
+    try:
+        return int(str(valeur).strip())
+    except (ValueError, TypeError):
+        return None
 
 
 def _grouper_par_cote(
@@ -174,95 +273,18 @@ def _grouper_par_cote(
     return resultats
 
 
-def _valeurs_equivalentes(a: Any, b: Any) -> bool:
-    """Comparaison tolérante entre une valeur lue en base et une
-    valeur produite par le transformateur.
-
-    pandas lit toutes les cellules en `dtype=str` ; les colonnes
-    typées (Integer) stockent la valeur coercée par SQLite. Il faut
-    donc accepter 1960 == "1960", sinon chaque ré-import marque
-    artificiellement à jour les items avec un champ numérique.
-    """
-    if a == b:
-        return True
-    if a is None or b is None:
-        return False
-    return str(a) == str(b)
-
-
-def _champs_item_a_jour(item: Item, prep: ItemPrepare) -> dict[str, Any]:
-    """Retourne le dict des champs à mettre à jour (valeur différente)."""
-    diff: dict[str, Any] = {}
-    for cle, val in prep.champs_colonne.items():
-        if cle == "cote":
-            continue  # cote identifie l'item, pas à mettre à jour ici
-        if hasattr(item, cle) and not _valeurs_equivalentes(getattr(item, cle), val):
-            diff[cle] = val
-    # metadonnees complètes remplacées par le nouveau dict (avec
-    # injection de hierarchie/typologie si présentes).
-    nouvelles_meta = dict(prep.metadonnees)
-    if prep.hierarchie:
-        nouvelles_meta["hierarchie"] = prep.hierarchie
-    if prep.typologie:
-        nouvelles_meta["typologie"] = prep.typologie
-    if (item.metadonnees or {}) != nouvelles_meta:
-        diff["metadonnees"] = nouvelles_meta
-    return diff
-
-
-def _ecrire_item(
-    prep: ItemPrepare,
-    collection: Collection,
-    session: Session,
-    cree_par: str | None,
-    rapport: RapportImport,
-) -> Item:
-    existant = session.scalar(
-        select(Item).where(
-            (Item.collection_id == collection.id) & (Item.cote == prep.cote)
-        )
-    )
-    meta = dict(prep.metadonnees)
-    if prep.hierarchie:
-        meta["hierarchie"] = prep.hierarchie
-    if prep.typologie:
-        meta["typologie"] = prep.typologie
-
-    if existant is None:
-        item = Item(
-            collection_id=collection.id,
-            cote=prep.cote,
-            metadonnees=meta or None,
-            cree_par=cree_par,
-        )
-        for cle, val in prep.champs_colonne.items():
-            if cle == "cote":
-                continue
-            if hasattr(item, cle):
-                setattr(item, cle, val)
-        session.add(item)
-        session.flush()
-        rapport.items_crees += 1
-        return item
-
-    diff = _champs_item_a_jour(existant, prep)
-    if not diff:
-        rapport.items_inchanges += 1
-        return existant
-    for cle, val in diff.items():
-        setattr(existant, cle, val)
-    existant.modifie_par = cree_par
-    session.flush()
-    rapport.items_mis_a_jour += 1
-    return existant
-
-
 def _ecrire_fichiers(
     item: Item,
     fichiers_prep: list[FichierPrepare],
     session: Session,
     rapport: RapportImport,
 ) -> None:
+    """Crée les Fichier rattachés à l'item (couche ORM directe).
+
+    Pas de service `creer_fichier` : le besoin est trop simple (pas
+    de validation métier complexe) et le journalisme se fait au niveau
+    OperationImport pour l'import.
+    """
     if not fichiers_prep:
         return
     existants_par_chemin = {(f.racine, f.chemin_relatif): f for f in item.fichiers}
@@ -292,6 +314,140 @@ def _ecrire_fichiers(
         rapport.fichiers_ajoutes += 1
 
 
+def _preparer_lignes(
+    profil: Profil,
+    chemin_profil: Path,
+    config: ConfigLocale,
+    *,
+    dry_run: bool,
+    rapport: RapportImport,
+) -> list[tuple[ItemPrepare, list[FichierPrepare]]]:
+    """Lit le tableur et résout les fichiers, sans toucher la base.
+
+    Cette étape est commune à dry-run et mode réel — c'est le point
+    où l'on peut détecter les erreurs de mapping ou de motif fichiers
+    avant toute écriture.
+    """
+    lignes = lire_tableur(profil, chemin_profil)
+    items_et_fichiers: list[tuple[ItemPrepare, list[FichierPrepare]]] = []
+    for idx, ligne in enumerate(lignes):
+        numero_ligne = idx + profil.tableur.ligne_entete + 1  # 1-indexé
+        try:
+            prep = transformer_ligne(ligne, numero_ligne, profil)
+        except ValueError as e:
+            rapport.erreurs.append(f"Ligne {numero_ligne}: {e}")
+            continue
+        if prep is None:
+            rapport.lignes_ignorees.append((numero_ligne, "ligne entièrement vide"))
+            continue
+        try:
+            fichiers = resoudre_fichiers_pour_item(
+                prep, profil, config, avec_hash=not dry_run
+            )
+        except Exception as e:  # noqa: BLE001 — résolveur a plusieurs erreurs typées
+            rapport.erreurs.append(
+                f"Ligne {numero_ligne}: résolution fichiers : {e}"
+            )
+            continue
+        items_et_fichiers.append((prep, fichiers))
+
+    if profil.granularite_source == "fichier":
+        items_et_fichiers = _grouper_par_cote(items_et_fichiers, rapport)
+    return items_et_fichiers
+
+
+def _executer_dry_run(
+    profil: Profil,
+    items_et_fichiers: list[tuple[ItemPrepare, list[FichierPrepare]]],
+    rapport: RapportImport,
+) -> None:
+    """Simule l'import sans écriture en base.
+
+    Valide chaque FormulaireItem produit + compte les fichiers qui
+    seraient liés. Le fonds n'est pas réellement créé : on rapporte
+    juste sa cote pour information.
+    """
+    rapport.fonds_cote = profil.fonds.cote
+    rapport.fonds_cree = True
+    rapport.miroir_personnalisee = profil.collection_miroir is not None
+    _phase_valide(profil.collection_miroir.phase if profil.collection_miroir else None)
+
+    for prep, fichiers in items_et_fichiers:
+        try:
+            # fonds_id factice : la validation Pydantic ne le vérifie
+            # pas plus loin (le service ferait l'existence check).
+            _construire_formulaire_item(prep, fonds_id=1, valeurs_par_defaut=profil.valeurs_par_defaut)
+        except ValueError as e:
+            rapport.erreurs.append(f"Item {prep.cote}: {e}")
+            continue
+        rapport.items_crees += 1
+        rapport.fichiers_ajoutes += len(fichiers)
+
+
+def _executer_reel(
+    profil: Profil,
+    items_et_fichiers: list[tuple[ItemPrepare, list[FichierPrepare]]],
+    session: Session,
+    cree_par: str | None,
+    rapport: RapportImport,
+) -> None:
+    """Exécute l'import effectivement en base.
+
+    Note : `creer_fonds` et `creer_item` commitent à chaque appel. Si
+    une erreur survient en cours d'import, les entités déjà créées
+    restent en base — l'utilisateur peut supprimer le fonds via la
+    CLI `collections supprimer` (miroir gérée par le fonds).
+    """
+    formulaire_fonds = _formulaire_fonds_depuis_profil(profil.fonds)
+    fonds = creer_fonds(session, formulaire_fonds, cree_par=cree_par)
+    rapport.fonds_id = fonds.id
+    rapport.fonds_cote = fonds.cote
+    rapport.fonds_cree = True
+
+    miroir = next(
+        (
+            c
+            for c in fonds.collections
+            if c.type_collection == TypeCollection.MIROIR.value
+        ),
+        None,
+    )
+    if miroir is None:
+        # Anomalie : `creer_fonds` doit toujours créer la miroir.
+        rapport.erreurs.append(
+            f"Fonds {fonds.cote} créé sans miroir — anomalie d'intégrité."
+        )
+        return
+    rapport.miroir_id = miroir.id
+
+    if profil.collection_miroir is not None:
+        try:
+            _personnaliser_miroir(session, miroir, profil.collection_miroir, cree_par)
+            rapport.miroir_personnalisee = True
+        except ValueError as e:
+            rapport.erreurs.append(f"Personnalisation miroir : {e}")
+            return
+
+    for prep, fichiers in items_et_fichiers:
+        try:
+            formulaire_item = _construire_formulaire_item(
+                prep, fonds_id=fonds.id, valeurs_par_defaut=profil.valeurs_par_defaut
+            )
+        except ValueError as e:
+            rapport.erreurs.append(f"Item {prep.cote}: {e}")
+            continue
+        try:
+            item = creer_item(session, formulaire_item, cree_par=cree_par)
+        except ItemInvalide as e:
+            rapport.erreurs.append(
+                f"Item {prep.cote} invalide : {e.erreurs}"
+            )
+            continue
+        rapport.items_crees += 1
+        _ecrire_fichiers(item, fichiers, session, rapport)
+    session.flush()
+
+
 def importer(
     profil: Profil,
     chemin_profil: Path,
@@ -305,69 +461,38 @@ def importer(
     rapport = RapportImport(dry_run=dry_run)
 
     try:
-        # 1. Collection cible.
-        collection = _resoudre_ou_creer_collection(profil, session, cree_par, rapport)
-        rapport.collection_id = collection.id
+        items_et_fichiers = _preparer_lignes(
+            profil, chemin_profil, config, dry_run=dry_run, rapport=rapport
+        )
 
-        # 2. Lecture + transformation + résolution fichiers.
-        lignes = lire_tableur(profil, chemin_profil)
-        items_et_fichiers: list[tuple[ItemPrepare, list[FichierPrepare]]] = []
-        for idx, ligne in enumerate(lignes):
-            numero_ligne = (
-                idx + profil.tableur.ligne_entete + 1
-            )  # 1-indexé, après l'entête
-            try:
-                prep = transformer_ligne(ligne, numero_ligne, profil)
-            except ValueError as e:
-                rapport.erreurs.append(f"Ligne {numero_ligne}: {e}")
-                continue
-            if prep is None:
-                rapport.lignes_ignorees.append((numero_ligne, "ligne entièrement vide"))
-                continue
-            try:
-                fichiers = resoudre_fichiers_pour_item(
-                    prep, profil, config, avec_hash=not dry_run
-                )
-            except Exception as e:
-                rapport.erreurs.append(
-                    f"Ligne {numero_ligne}: résolution fichiers : {e}"
-                )
-                continue
-            items_et_fichiers.append((prep, fichiers))
-
-        # 3. Regroupement granularité fichier.
-        if profil.granularite_source == "fichier":
-            items_et_fichiers = _grouper_par_cote(items_et_fichiers, rapport)
-
-        # 4. Si erreurs avant écriture et mode réel : arrêter net.
+        # Si erreurs avant écriture en mode réel, on s'arrête.
         if rapport.erreurs and not dry_run:
-            session.rollback()
             rapport.duree_secondes = time.monotonic() - debut
             return rapport
 
-        # 5. Écritures (en session ; commit ou rollback plus loin).
-        for prep, fichiers in items_et_fichiers:
-            item = _ecrire_item(prep, collection, session, cree_par, rapport)
-            _ecrire_fichiers(item, fichiers, session, rapport)
-
         if dry_run:
-            session.rollback()
+            _executer_dry_run(profil, items_et_fichiers, rapport)
         else:
-            rapport.batch_id = str(uuid.uuid4())
-            journal = OperationImport(
-                batch_id=rapport.batch_id,
-                profil_chemin=str(chemin_profil),
-                collection_id=collection.id,
-                items_crees=rapport.items_crees,
-                items_mis_a_jour=rapport.items_mis_a_jour,
-                items_inchanges=rapport.items_inchanges,
-                fichiers_ajoutes=rapport.fichiers_ajoutes,
-                execute_par=cree_par,
-                rapport_json=json.dumps(asdict(rapport), ensure_ascii=False),
-            )
-            session.add(journal)
-            session.commit()
-    except Exception as e:
+            _executer_reel(profil, items_et_fichiers, session, cree_par, rapport)
+            if not rapport.erreurs:
+                rapport.batch_id = str(uuid.uuid4())
+                journal = OperationImport(
+                    batch_id=rapport.batch_id,
+                    profil_chemin=str(chemin_profil),
+                    collection_id=rapport.miroir_id,
+                    items_crees=rapport.items_crees,
+                    items_mis_a_jour=rapport.items_mis_a_jour,
+                    items_inchanges=rapport.items_inchanges,
+                    fichiers_ajoutes=rapport.fichiers_ajoutes,
+                    execute_par=cree_par,
+                    rapport_json=json.dumps(asdict(rapport), ensure_ascii=False),
+                )
+                session.add(journal)
+                session.commit()
+    except FondsInvalide as e:
+        rapport.erreurs.append(f"Fonds invalide : {e.erreurs}")
+        session.rollback()
+    except Exception as e:  # noqa: BLE001 — fail-safe pour ne pas perdre le rapport
         session.rollback()
         rapport.erreurs.append(f"Erreur fatale : {e}")
 

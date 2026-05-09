@@ -100,7 +100,7 @@ def test_profil_init_stdout(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0
-    assert "version_profil: 1" in result.output
+    assert "version_profil: 2" in result.output
     # Pas de fichier créé.
     assert not (tmp_path / "profil.yaml").exists()
 
@@ -157,7 +157,7 @@ def test_profil_analyser_cree_fichier(tmp_path: Path) -> None:
     assert "mappées automatiquement" in result.output
     # Le profil produit doit être chargeable (tableur co-localisé).
     profil = charger_profil(sortie)
-    assert profil.collection.cote == "HK"
+    assert profil.fonds.cote == "HK"
     assert "cote" in profil.mapping.champs
     assert profil.mapping.champs["cote"].source == "Cote"
 

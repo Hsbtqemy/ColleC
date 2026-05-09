@@ -26,6 +26,35 @@ class ProfilInvalide(Exception):
         return "\n".join(lignes)
 
 
+class ProfilObsoleteV1(ProfilInvalide):
+    """Profil au format v1 — non supporté depuis V0.9.0-gamma.1.
+
+    Le format v1 décrit une `collection:` racine ; le format v2 sépare
+    `fonds:` (corpus brut, racine) et `collection_miroir:` (overrides
+    optionnels de la miroir auto-créée).
+
+    Pas de migration automatique : la situation v1 → v2 est ambiguë
+    (la « collection » devient-elle un fonds ou une collection libre ?
+    qu'en est-il de `parent_cote` ?). Mieux vaut rejeter clairement
+    et laisser l'utilisateur choisir.
+    """
+
+    MESSAGE_MIGRATION = (
+        "Profil au format v1 — non supporté depuis V0.9.0-gamma.1.\n"
+        "Le format v2 sépare les concepts de fonds et de collection :\n"
+        "  - renommer la section `collection:` en `fonds:`\n"
+        "  - changer `version_profil: 1` en `version_profil: 2`\n"
+        "  - retirer `parent_cote` (la hiérarchie a disparu)\n"
+        "  - optionnel : ajouter une section `collection_miroir:` pour\n"
+        "    personnaliser le titre / la description / la phase de la\n"
+        "    miroir auto-créée à partir du fonds.\n"
+        "Voir docs/profils.md pour le guide complet."
+    )
+
+    def __init__(self, chemin: Path) -> None:
+        super().__init__(chemin, [self.MESSAGE_MIGRATION])
+
+
 def _normaliser_nfc_recursif(valeur: Any) -> Any:
     """Normalise en NFC toutes les chaînes contenues dans une structure
     imbriquée (dicts, listes). Laisse les autres types inchangés."""
@@ -78,6 +107,14 @@ def charger_profil(chemin: Path) -> Profil:
         )
 
     donnees = _normaliser_nfc_recursif(donnees)
+
+    # Détection précoce des profils v1 : version=1, ou présence de la
+    # section `collection:` racine (forme v1) avec absence de `fonds:`.
+    # Le message d'erreur est plus utile que les erreurs Pydantic
+    # cryptiques sur des clés manquantes/inconnues.
+    version = donnees.get("version_profil")
+    if version == 1 or ("collection" in donnees and "fonds" not in donnees):
+        raise ProfilObsoleteV1(chemin)
 
     try:
         profil = Profil.model_validate(donnees)

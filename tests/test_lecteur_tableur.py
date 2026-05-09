@@ -71,8 +71,8 @@ def test_accents_nfc(tmp_path: Path) -> None:
     yml = tmp_path / "p.yaml"
     yml.write_text(
         """
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Test NFC"
 tableur:
@@ -93,8 +93,8 @@ def test_fichier_inexistant(tmp_path: Path) -> None:
     yml = tmp_path / "p.yaml"
     yml.write_text(
         """
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Fichier absent"
 tableur:
@@ -115,8 +115,8 @@ def test_extension_non_supportee(tmp_path: Path) -> None:
     yml = tmp_path / "p.yaml"
     yml.write_text(
         """
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "Mauvais format"
 tableur:

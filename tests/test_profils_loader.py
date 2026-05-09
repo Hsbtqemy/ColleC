@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "profils"
 def test_charger_avec_chemin_absolu() -> None:
     chemin_abs = (FIXTURES / "cas_item_simple" / "profil.yaml").resolve()
     profil = charger_profil(chemin_abs)
-    assert profil.collection.cote == "HK"
+    assert profil.fonds.cote == "HK"
 
 
 def test_charger_avec_chemin_relatif(
@@ -31,7 +31,7 @@ def test_charger_avec_chemin_relatif(
     profil = charger_profil(
         Path("tests") / "fixtures" / "profils" / "cas_item_simple" / "profil.yaml"
     )
-    assert profil.collection.cote == "HK"
+    assert profil.fonds.cote == "HK"
 
 
 def test_fichier_inexistant(tmp_path: Path) -> None:
@@ -64,8 +64,8 @@ def test_normalisation_nfc_sur_chaines(tmp_path: Path) -> None:
     chemin = tmp_path / "profil.yaml"
     chemin.write_text(
         f"""
-version_profil: 1
-collection:
+version_profil: 2
+fonds:
   cote: "X"
   titre: "{nfd}"
 tableur:
@@ -76,5 +76,5 @@ mapping:
         encoding="utf-8",
     )
     profil = charger_profil(chemin)
-    assert profil.collection.titre == "café"
-    assert unicodedata.is_normalized("NFC", profil.collection.titre)
+    assert profil.fonds.titre == "café"
+    assert unicodedata.is_normalized("NFC", profil.fonds.titre)

@@ -23,23 +23,24 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services._erreurs import (
+    EntiteIntrouvable,
+    FormulaireInvalide,
+    message_cote_existe,
+)
 from archives_tool.models import Collection, Fonds, Item, TypeCollection
 
 
-class FondsIntrouvable(LookupError):
+class FondsIntrouvable(EntiteIntrouvable):
     """L'identifiant ou la cote du fonds n'existe pas."""
 
 
-class FondsInvalide(ValueError):
+class FondsInvalide(FormulaireInvalide):
     """Données de formulaire invalides : cote vide, doublon, etc."""
-
-    def __init__(self, erreurs: dict[str, str]) -> None:
-        super().__init__("; ".join(f"{k}: {v}" for k, v in erreurs.items()))
-        self.erreurs = erreurs
 
 
 def _erreur_cote_existe(cote: str) -> FondsInvalide:
-    return FondsInvalide({"cote": f"La cote {cote!r} existe déjà."})
+    return FondsInvalide(message_cote_existe(cote))
 
 
 class FormulaireFonds(BaseModel):

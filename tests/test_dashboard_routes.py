@@ -11,7 +11,7 @@ from archives_tool.api.main import app
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-from archives_tool.models import Base, CollaborateurFonds, Fonds
+from archives_tool.models import Base, CollaborateurFonds, Collection, Fonds, Item, ItemCollection
 from sqlalchemy import select as sa_select
 
 from _helpers import texte_visible as _texte_visible
@@ -405,3 +405,307 @@ def test_collaborateur_fonds_anti_confused_deputy(
         follow_redirects=False,
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Édition collection (V0.9.0-beta.2.1)
+# ---------------------------------------------------------------------------
+
+
+def test_modifier_collection_libre_charge(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/FA-OEUVRES/modifier?fonds=FA"
+    )
+    assert response.status_code == 200
+    assert "Œuvres" in response.text
+    assert 'value="FA-OEUVRES"' in response.text  # cote pré-affichée
+
+
+def test_modifier_collection_miroir_403(client_demo: TestClient) -> None:
+    response = client_demo.get("/collection/HK/modifier?fonds=HK")
+    assert response.status_code == 403
+
+
+def test_modifier_collection_transversale_charge(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.get("/collection/TEMOIG/modifier")
+    assert response.status_code == 200
+    assert "Témoignages" in response.text
+
+
+def test_modifier_collection_post_succes(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/collection/FA-OEUVRES/modifier?fonds=FA",
+        data={
+            "cote": "FA-OEUVRES",
+            "titre": "Œuvres (modifié)",
+            "phase": "catalogage",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/collection/FA-OEUVRES?fonds=FA"
+    relue = client_demo.get("/collection/FA-OEUVRES?fonds=FA")
+    assert "Œuvres (modifié)" in relue.text
+
+
+def test_modifier_collection_titre_vide_re_render(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.post(
+        "/collection/FA-OEUVRES/modifier?fonds=FA",
+        data={"cote": "FA-OEUVRES", "titre": "", "phase": "catalogage"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+def test_modifier_collection_post_miroir_403(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/collection/HK/modifier?fonds=HK",
+        data={"cote": "HK", "titre": "X", "phase": "catalogage"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Tableau d'items + pagination + filtre état
+# ---------------------------------------------------------------------------
+
+
+def test_collection_lecture_affiche_tableau_items(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.get("/collection/FA-OEUVRES?fonds=FA")
+    assert response.status_code == 200
+    # Au moins une ligne d'item visible.
+    assert "FA-OEUVRES-001" in response.text
+
+
+def test_collection_libre_a_bouton_ajouter(client_demo: TestClient) -> None:
+    response = client_demo.get("/collection/FA-OEUVRES?fonds=FA")
+    assert "items/picker" in response.text
+
+
+def test_collection_miroir_pas_de_bouton_ajouter(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.get("/collection/HK?fonds=HK")
+    # La miroir : pas de bouton picker.
+    assert "items/picker" not in response.text
+
+
+def test_collection_pagination(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/FA?fonds=FA&par_page=50&page=1"
+    )
+    assert response.status_code == 200
+    # FA a 167 items dans sa miroir → pagination active.
+    texte = _texte_visible(response.text)
+    assert "Page 1" in texte
+
+
+def test_collection_filtre_etat(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/FA-OEUVRES?fonds=FA&etat=brouillon"
+    )
+    assert response.status_code == 200
+
+
+def test_collection_transversale_montre_colonne_fonds(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.get("/collection/TEMOIG")
+    assert response.status_code == 200
+    # Header Fonds présent dans la table car transversale.
+    texte = _texte_visible(response.text)
+    assert "Fonds" in texte
+
+
+# ---------------------------------------------------------------------------
+# Item picker
+# ---------------------------------------------------------------------------
+
+
+def test_picker_charge(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/FA-OEUVRES/items/picker?fonds=FA"
+    )
+    assert response.status_code == 200
+    assert "Ajouter" in response.text
+
+
+def test_picker_miroir_403(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/HK/items/picker?fonds=HK"
+    )
+    assert response.status_code == 403
+
+
+def test_picker_transversale_filtre_fonds(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/TEMOIG/items/picker?fonds_filter=HK"
+    )
+    assert response.status_code == 200
+    # Au moins un item HK proposé.
+    assert "HK-" in response.text
+
+
+def test_picker_recherche(client_demo: TestClient) -> None:
+    response = client_demo.get(
+        "/collection/FA-OEUVRES/items/picker?fonds=FA&recherche=manuscrit"
+    )
+    assert response.status_code == 200
+
+
+def test_ajouter_items_a_collection(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Ajout multi-id idempotent vers une transversale."""
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
+        item_ids = list(
+            s.scalars(
+                sa_select(Item.id)
+                .where(Item.fonds_id == fonds_hk.id)
+                .order_by(Item.cote)
+                .limit(2)
+            ).all()
+        )
+        transv = s.scalar(sa_select(Collection).where(Collection.cote == "TEMOIG"))
+        coll_id = transv.id
+
+    response = client_demo.post(
+        "/collection/TEMOIG/items",
+        data={"item_ids": item_ids},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Vérifier la persistance directement en DB plutôt que via le
+    # rendu HTML (la pagination peut placer HK-XXX hors page 1).
+    with factory() as s:
+        for iid in item_ids:
+            assert s.get(ItemCollection, (iid, coll_id)) is not None
+
+
+def test_ajouter_items_idempotent(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Le second submit ne crée pas de doublon."""
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_fa = s.scalar(sa_select(Fonds).where(Fonds.cote == "FA"))
+        un_item = s.scalar(
+            sa_select(Item).where(Item.fonds_id == fonds_fa.id).limit(1)
+        )
+        iid = un_item.id
+
+    # Premier ajout (l'item est déjà dans la miroir, mais on l'ajoute
+    # à TEMOIG : il y est en demo avec d'autres items déjà).
+    r1 = client_demo.post(
+        "/collection/TEMOIG/items",
+        data={"item_ids": str(iid)},
+        follow_redirects=False,
+    )
+    # Second ajout du même : idempotent → 303 sans erreur.
+    r2 = client_demo.post(
+        "/collection/TEMOIG/items",
+        data={"item_ids": str(iid)},
+        follow_redirects=False,
+    )
+    assert r1.status_code == 303
+    assert r2.status_code == 303
+
+
+def test_ajouter_items_a_miroir_403(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/collection/HK/items?fonds=HK",
+        data={"item_ids": "1"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Retrait d'item
+# ---------------------------------------------------------------------------
+
+
+def test_retirer_item_de_libre(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        oeuvres = s.scalar(
+            sa_select(Collection).where(Collection.cote == "FA-OEUVRES")
+        )
+        liaison = s.scalar(
+            sa_select(ItemCollection)
+            .where(ItemCollection.collection_id == oeuvres.id)
+            .limit(1)
+        )
+        iid = liaison.item_id
+        coll_id = oeuvres.id
+
+    response = client_demo.post(
+        f"/collection/FA-OEUVRES/items/{iid}/retirer?fonds=FA",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Vérifier la suppression de la liaison.
+    with factory() as s:
+        relue = s.get(ItemCollection, (iid, coll_id))
+        assert relue is None
+
+
+def test_retirer_item_de_miroir_garde_dans_fonds(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Invariant 7 : retirer un item de la miroir ne le supprime pas
+    du fonds."""
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
+        un_item = s.scalar(
+            sa_select(Item).where(Item.fonds_id == fonds_hk.id).limit(1)
+        )
+        iid = un_item.id
+
+    response = client_demo.post(
+        f"/collection/HK/items/{iid}/retirer?fonds=HK",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # L'item existe toujours dans son fonds.
+    with factory() as s:
+        item = s.get(Item, iid)
+        assert item is not None
+        assert item.fonds_id == fonds_hk.id
+
+
+def test_retirer_item_idempotent(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Retirer un item déjà absent : pas d'erreur."""
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        un_item = s.scalar(sa_select(Item).limit(1))
+        iid = un_item.id
+
+    # FA-OEUVRES ne contient probablement pas un HK item.
+    response = client_demo.post(
+        f"/collection/FA-OEUVRES/items/{iid}/retirer?fonds=FA",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303

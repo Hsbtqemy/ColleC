@@ -11,10 +11,11 @@ Invariants de référence (cf. `models/collection.py` et CLAUDE.md) :
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.services._erreurs import (
@@ -86,6 +87,24 @@ _OPTIONNELS_NULLABLES: tuple[str, ...] = (
     "personnalite_associee",
     "responsable_archives",
 )
+
+
+def formulaire_depuis_collection(col: Collection) -> FormulaireCollection:
+    """Pré-remplit un `FormulaireCollection` depuis une Collection
+    existante (pour la page d'édition)."""
+    return FormulaireCollection(
+        cote=col.cote,
+        titre=col.titre,
+        description=col.description or "",
+        description_publique=col.description_publique or "",
+        description_interne=col.description_interne or "",
+        fonds_id=col.fonds_id,
+        phase=col.phase or PhaseChantier.CATALOGAGE.value,
+        doi_nakala=col.doi_nakala or "",
+        doi_collection_nakala_parent=col.doi_collection_nakala_parent or "",
+        personnalite_associee=col.personnalite_associee or "",
+        responsable_archives=col.responsable_archives or "",
+    )
 
 
 def _appliquer_formulaire(
@@ -287,6 +306,113 @@ def ajouter_item_a_collection(
     db.add(liaison)
     db.commit()
     return liaison
+
+
+def ajouter_items_a_collection(
+    db: Session,
+    collection_id: int,
+    item_ids: list[int],
+    *,
+    ajoute_par: str | None = None,
+) -> int:
+    """Ajoute plusieurs items à une collection en un commit. Idempotent
+    (les items déjà présents sont ignorés). Retourne le nombre de
+    liaisons effectivement créées.
+
+    Vérifie l'existence de la collection (`CollectionIntrouvable` sinon).
+    Les `item_id` inexistants sont silencieusement ignorés (l'IntegrityError
+    sur INSERT échouerait sinon, mais on filtre avant).
+    """
+    lire_collection(db, collection_id)
+    if not item_ids:
+        return 0
+
+    # Items qui existent réellement.
+    ids_valides = set(
+        db.scalars(select(Item.id).where(Item.id.in_(item_ids))).all()
+    )
+    # Items déjà liés à la collection.
+    deja_lies = set(
+        db.scalars(
+            select(ItemCollection.item_id).where(
+                ItemCollection.collection_id == collection_id,
+                ItemCollection.item_id.in_(ids_valides),
+            )
+        ).all()
+    )
+    a_creer = ids_valides - deja_lies
+    for iid in a_creer:
+        db.add(
+            ItemCollection(
+                item_id=iid,
+                collection_id=collection_id,
+                ajoute_par=ajoute_par,
+            )
+        )
+    db.commit()
+    return len(a_creer)
+
+
+@dataclass
+class ItemsDisponiblesPage:
+    """Page de résultats pour le picker d'items."""
+
+    items: list[Item]
+    page: int
+    par_page: int
+    total: int
+
+    @property
+    def nb_pages(self) -> int:
+        if self.par_page <= 0:
+            return 1
+        return max(1, (self.total + self.par_page - 1) // self.par_page)
+
+
+def items_disponibles_pour_collection(
+    db: Session,
+    collection_id: int,
+    *,
+    fonds_id: int | None = None,
+    recherche: str | None = None,
+    page: int = 1,
+    par_page: int = 50,
+) -> ItemsDisponiblesPage:
+    """Page d'items qui ne sont PAS encore dans la collection.
+
+    Filtres optionnels :
+    - `fonds_id` : restreint aux items d'un fonds.
+    - `recherche` : matche cote OU titre via `LIKE %text%` (case-
+      insensitive).
+    """
+    deja_dans = select(ItemCollection.item_id).where(
+        ItemCollection.collection_id == collection_id
+    )
+    base_stmt = select(Item).where(Item.id.notin_(deja_dans))
+    if fonds_id is not None:
+        base_stmt = base_stmt.where(Item.fonds_id == fonds_id)
+    if recherche:
+        terme = f"%{recherche.strip()}%"
+        if terme.strip("%"):
+            base_stmt = base_stmt.where(
+                Item.cote.ilike(terme) | Item.titre.ilike(terme)
+            )
+
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = db.scalar(count_stmt) or 0
+
+    page_eff = max(1, page)
+    par_page_eff = max(1, par_page)
+    items = list(
+        db.scalars(
+            base_stmt.order_by(Item.cote)
+            .limit(par_page_eff)
+            .offset((page_eff - 1) * par_page_eff)
+        ).all()
+    )
+    return ItemsDisponiblesPage(
+        items=items, page=page_eff, par_page=par_page_eff, total=total
+    )
 
 
 def retirer_item_de_collection(

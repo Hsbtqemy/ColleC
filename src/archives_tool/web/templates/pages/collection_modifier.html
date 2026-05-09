@@ -1,31 +1,36 @@
-{# Page de modification de collection (V0.7.x + V0.8.0).
-   Variables : `collection` (Collection), `formulaire`, `erreurs`,
-   `phases`, `crumbs`, `groupes_par_role`. La cote est en lecture
-   seule (verrouillée par design — modifier la cote casserait
-   fichiers, exports, refs externes). Le POST cible
-   `/collection/{cote}/modifier` et redirige vers
-   `/collection/{cote}/items` au succès. La section Collaborateurs
-   est en dehors du formulaire principal : ses actions sont
-   sauvegardées indépendamment via HTMX. #}
+{# Modification d'une collection libre. Variables :
+   - `collection` (modèle ORM)
+   - `formulaire` (FormulaireCollection pré-rempli)
+   - `erreurs` (dict champ→message)
+   - `fonds_query` (cote du fonds parent ou None — pour les liens
+     de retour en cas d'annulation et le redirect après succès)
+   - `phases` (list[PhaseChantier]) #}
 {% extends "base.html" %}
-{% from "components/_champ_form.html" import champ with context %}
-{% from "partials/_collection_form_corps.html" import sections_communes with context %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
 
-{% block title %}Modifier {{ collection.cote_collection }} — archives-tool{% endblock %}
+{% block title %}Modifier {{ collection.titre }} — archives-tool{% endblock %}
 
 {% block content %}
-<header class="mb-8">
-  {% include "components/breadcrumb.html" %}
-  <h1 class="text-2xl font-medium">
-    Modifier
-    <span class="font-mono text-gray-700" style="margin-left:6px;">{{ collection.cote_collection }}</span>
-  </h1>
-  <p class="text-sm text-gray-500 mt-1">
-    {{ collection.titre }}
+{% set fonds_q = "?fonds=" ~ fonds_query if fonds_query else "" %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if fonds_query %}
+      <a href="/fonds/{{ fonds_query }}"
+         class="hover:underline font-mono">{{ fonds_query }}</a> ›
+    {% endif %}
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+       class="hover:underline font-mono">{{ collection.cote }}</a> ›
+    <span>Modifier</span>
   </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Modifier
+    <span class="font-mono text-gray-700 ml-1">{{ collection.cote }}</span>
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">{{ collection.titre }}</p>
 </header>
 
-<form method="post" action="/collection/{{ collection.cote_collection }}/modifier"
+<form method="post" action="/collection/{{ collection.cote }}/modifier{{ fonds_q }}"
       style="max-width:680px;">
 
   <section style="margin-bottom:28px;">
@@ -36,25 +41,63 @@
       <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
         Cote
       </label>
-      <input type="text" value="{{ collection.cote_collection }}" disabled
+      <input type="text" value="{{ collection.cote }}" disabled
              class="w-full font-mono"
              style="padding:6px 10px;font-size:13px;
                     border:1px solid rgba(0,0,0,0.08);border-radius:4px;
                     background:#f9fafb;color:#6b7280;">
       <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
-        La cote ne peut pas être modifiée — elle sert d'identifiant
-        stable pour les fichiers, exports et références externes.
+        La cote ne peut pas être modifiée — identifiant stable. Le
+        rattachement au fonds parent ne se modifie pas non plus
+        (supprimer/recréer pour transformer une rattachée en transversale
+        ou inversement).
       </p>
     </div>
-    {{ champ('titre', 'Titre', formulaire.titre) }}
+    {{ champ('titre', 'Titre', formulaire.titre, obligatoire=true) }}
   </section>
 
-  {{ sections_communes(formulaire, erreurs, phases,
-                       parent_help='Pour rattacher comme sous-collection. Laisser vide pour une racine.') }}
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Description
+    </h2>
+    {{ textarea('description', 'Description courte', formulaire.description) }}
+    {{ textarea('description_publique', 'Description publique',
+                formulaire.description_publique,
+                help_text='Destinée aux exports Dublin Core / Nakala.') }}
+    {{ textarea('description_interne', 'Description interne',
+                formulaire.description_interne,
+                help_text='Pour l’équipe — non exportée.') }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Phase de chantier
+    </h2>
+    {% set libelles_phases = {} %}
+    {% for p in phases %}{% set _ = libelles_phases.update({p.value: (p | libelle_phase)}) %}{% endfor %}
+    {{ selecteur('phase', 'Phase',
+                 formulaire.phase,
+                 phases | map(attribute='value') | list,
+                 libelles=libelles_phases) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identifiants externes
+    </h2>
+    {{ champ('doi_nakala', 'DOI Nakala',
+             formulaire.doi_nakala,
+             placeholder='10.34847/nkl.xxxxxxxx', mono=true) }}
+    {{ champ('doi_collection_nakala_parent',
+             'DOI de la collection Nakala parente',
+             formulaire.doi_collection_nakala_parent,
+             help_text='Si cette collection est rattachée à une collection Nakala plus large.',
+             mono=true) }}
+  </section>
 
   <div class="flex items-center justify-end gap-2"
        style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
-    <a href="/collection/{{ collection.cote_collection }}/items"
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
        class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
        style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
       Annuler
@@ -62,16 +105,8 @@
     <button type="submit"
             class="inline-flex items-center gap-1.5 rounded"
             style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
-      Enregistrer les modifications
+      Enregistrer
     </button>
   </div>
 </form>
-
-{% include "components/section_collaborateurs.html" %}
-{% endblock %}
-
-{% block scripts %}
-<script src="https://unpkg.com/htmx.org@1.9.12"
-        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
-        crossorigin="anonymous"></script>
 {% endblock %}

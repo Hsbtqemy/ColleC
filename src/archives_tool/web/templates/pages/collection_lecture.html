@@ -75,10 +75,110 @@
   {% endif %}
 </header>
 
-<section class="mb-6 p-4 bg-gray-50 rounded text-sm text-gray-700">
-  Liste paginée d'items à compléter — V0.9.0-beta.2.1 livrera le
-  tableau filtrable / triable / paginé. Pour l'instant, {{ detail.nb_items }}
-  item{{ "s" if detail.nb_items != 1 else "" }} dans cette collection.
+<section class="mb-8">
+  <div class="flex items-baseline justify-between mb-2">
+    <h2 class="text-lg font-medium">
+      Items <span class="text-gray-400">({{ listage.total }})</span>
+    </h2>
+    {% if not est_miroir %}
+      <a href="/collection/{{ col.cote }}/items/picker{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+        + Ajouter des items
+      </a>
+    {% endif %}
+  </div>
+
+  {# Filtre simple par état (whitelist côté serveur). #}
+  <form method="get" class="flex items-center gap-2 mb-3 text-sm">
+    {% if fonds_query %}
+      <input type="hidden" name="fonds" value="{{ fonds_query }}">
+    {% endif %}
+    <label class="text-gray-500" for="etat-filter">État :</label>
+    <select id="etat-filter" name="etat" onchange="this.form.submit()"
+            class="px-2 py-1 border border-gray-300 rounded">
+      <option value="">Tous</option>
+      {% for valeur in ("brouillon", "a_verifier", "verifie", "valide", "a_corriger") %}
+        <option value="{{ valeur }}"
+                {% if etat_actif == valeur %}selected{% endif %}>
+          {{ valeur | libelle_etat }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% if listage.items %}
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-500 uppercase tracking-wide border-b">
+        <tr>
+          <th class="text-left py-2">Cote</th>
+          <th class="text-left py-2">Titre</th>
+          {% if est_transversale %}
+            <th class="text-left py-2">Fonds</th>
+          {% endif %}
+          <th class="text-left py-2">État</th>
+          <th class="text-right py-2">Modifié</th>
+          <th class="text-right py-2"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in listage.items %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">
+              <a href="/item/{{ item.cote }}?fonds={{ item.fonds_cote }}"
+                 class="hover:underline">{{ item.cote }}</a>
+            </td>
+            <td class="py-2">{{ item.titre or "—" }}</td>
+            {% if est_transversale %}
+              <td class="py-2 font-mono text-xs text-gray-500">
+                <a href="/fonds/{{ item.fonds_cote }}"
+                   class="hover:underline">{{ item.fonds_cote }}</a>
+              </td>
+            {% endif %}
+            <td class="py-2">{{ item.etat | libelle_etat }}</td>
+            <td class="py-2 text-right text-gray-500">
+              {{ item.modifie_le | temps_relatif if item.modifie_le else "—" }}
+            </td>
+            <td class="py-2 text-right">
+              <form method="post"
+                    action="/collection/{{ col.cote }}/items/{{ item.id }}/retirer{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+                    onsubmit="return confirm('Retirer {{ item.cote | e }} de cette collection ?');"
+                    class="inline">
+                <button type="submit"
+                        title="Retirer de la collection"
+                        class="text-xs text-red-600 hover:underline">
+                  ×
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if listage.pages > 1 %}
+      <nav class="flex items-center justify-between mt-3 text-sm">
+        <span class="text-gray-500">
+          Page {{ listage.page }} / {{ listage.pages }}
+          ({{ listage.total }} item{{ "s" if listage.total != 1 else "" }})
+        </span>
+        <span class="flex gap-2">
+          {% if listage.page > 1 %}
+            <a href="?page={{ listage.page - 1 }}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}{% if etat_actif %}&etat={{ etat_actif }}{% endif %}"
+               class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">‹</a>
+          {% endif %}
+          {% if listage.page < listage.pages %}
+            <a href="?page={{ listage.page + 1 }}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}{% if etat_actif %}&etat={{ etat_actif }}{% endif %}"
+               class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">›</a>
+          {% endif %}
+        </span>
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="text-sm text-gray-500">
+      Aucun item dans cette collection
+      {% if etat_actif %}avec l'état « {{ etat_actif | libelle_etat }} »{% endif %}.
+    </p>
+  {% endif %}
 </section>
 
 <p class="text-sm">

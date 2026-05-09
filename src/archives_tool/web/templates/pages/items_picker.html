@@ -1,0 +1,141 @@
+{# Item picker : page de sélection d'items à ajouter à une
+   collection libre. Variables :
+   - `collection` (modèle ORM)
+   - `disponibles` (ItemsDisponiblesPage)
+   - `fonds_options` (list[FondsResume])
+   - `fonds_filter` : cote choisie (str|None)
+   - `fonds_filter_effectif` : objet Fonds correspondant (peut être
+     None si tous les fonds)
+   - `recherche` : str
+   - `fonds_query` : cote du fonds parent pour les liens retour
+#}
+{% extends "base.html" %}
+{% set fonds_q = "?fonds=" ~ fonds_query if fonds_query else "" %}
+{% block title %}Ajouter des items à {{ collection.titre }} — archives-tool{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if fonds_query %}
+      <a href="/fonds/{{ fonds_query }}"
+         class="hover:underline font-mono">{{ fonds_query }}</a> ›
+    {% endif %}
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+       class="hover:underline font-mono">{{ collection.cote }}</a> ›
+    <span>Ajouter des items</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Ajouter des items à {{ collection.titre }}
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">
+    {{ disponibles.total }} item{{ "s" if disponibles.total != 1 else "" }}
+    disponible{{ "s" if disponibles.total != 1 else "" }}
+    {% if fonds_filter_effectif %}
+      dans {{ fonds_filter_effectif.titre }}
+    {% else %}
+      tous fonds confondus
+    {% endif %}
+  </p>
+</header>
+
+<form method="get" class="flex items-center gap-3 mb-4 text-sm flex-wrap">
+  <label class="text-gray-500" for="picker-fonds">Filtrer par fonds :</label>
+  <select id="picker-fonds" name="fonds_filter"
+          onchange="this.form.submit()"
+          class="px-2 py-1 border border-gray-300 rounded">
+    <option value="">Tous les fonds</option>
+    {% for f in fonds_options %}
+      <option value="{{ f.cote }}"
+              {% if fonds_filter == f.cote %}selected{% endif %}>
+        {{ f.titre }} ({{ f.cote }})
+      </option>
+    {% endfor %}
+  </select>
+
+  <label class="text-gray-500 ml-3" for="picker-recherche">Rechercher :</label>
+  <input id="picker-recherche" type="text" name="recherche"
+         value="{{ recherche }}"
+         placeholder="cote ou titre"
+         class="px-2 py-1 border border-gray-300 rounded">
+  <button type="submit"
+          class="px-3 py-1 text-sm bg-gray-800 text-white rounded hover:bg-gray-700">
+    Filtrer
+  </button>
+  {% if fonds_query %}
+    <input type="hidden" name="fonds" value="{{ fonds_query }}">
+  {% endif %}
+</form>
+
+<form method="post"
+      action="/collection/{{ collection.cote }}/items{{ fonds_q }}">
+  {% if disponibles.items %}
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-500 uppercase tracking-wide border-b">
+        <tr>
+          <th class="text-left py-2 w-8"></th>
+          <th class="text-left py-2">Cote</th>
+          <th class="text-left py-2">Titre</th>
+          <th class="text-left py-2">Fonds</th>
+          <th class="text-left py-2">État</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in disponibles.items %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2">
+              <input type="checkbox" name="item_ids" value="{{ item.id }}">
+            </td>
+            <td class="py-2 font-mono">{{ item.cote }}</td>
+            <td class="py-2">{{ item.titre or "—" }}</td>
+            <td class="py-2 font-mono text-xs text-gray-500">
+              {{ item.fonds.cote if item.fonds else "—" }}
+            </td>
+            <td class="py-2">{{ item.etat_catalogage | libelle_etat }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if disponibles.nb_pages > 1 %}
+      <nav class="flex items-center justify-between mt-3 text-sm">
+        <span class="text-gray-500">
+          Page {{ disponibles.page }} / {{ disponibles.nb_pages }}
+        </span>
+        <span class="flex gap-2">
+          {% if disponibles.page > 1 %}
+            <a href="?page={{ disponibles.page - 1 }}{% if fonds_filter %}&fonds_filter={{ fonds_filter }}{% endif %}{% if recherche %}&recherche={{ recherche }}{% endif %}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}"
+               class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">‹</a>
+          {% endif %}
+          {% if disponibles.page < disponibles.nb_pages %}
+            <a href="?page={{ disponibles.page + 1 }}{% if fonds_filter %}&fonds_filter={{ fonds_filter }}{% endif %}{% if recherche %}&recherche={{ recherche }}{% endif %}{% if fonds_query %}&fonds={{ fonds_query }}{% endif %}"
+               class="px-2 py-1 border border-gray-300 rounded hover:bg-gray-50">›</a>
+          {% endif %}
+        </span>
+      </nav>
+      <p class="text-xs text-gray-500 mt-2">
+        La sélection ne survit pas au changement de page — ajouter
+        les items page par page.
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="text-sm text-gray-500 mt-4">
+      Aucun item disponible avec ce filtre.
+      {% if collection.fonds_id %}
+        Tous les items du fonds parent sont déjà dans cette collection.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  <div class="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-gray-100">
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+       class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+      Annuler
+    </a>
+    <button type="submit"
+            class="inline-flex items-center px-3 py-1 text-sm bg-gray-800 text-white rounded hover:bg-gray-700">
+      Ajouter à la collection
+    </button>
+  </div>
+</form>
+{% endblock %}

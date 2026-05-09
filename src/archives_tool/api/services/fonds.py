@@ -15,7 +15,7 @@ Source de vérité pour les invariants 1, 2, 5, 8 du modèle V0.9.0 :
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
@@ -212,9 +212,7 @@ def modifier_fonds(
         db.commit()
     except IntegrityError as e:
         db.rollback()
-        raise FondsInvalide(
-            {"cote": f"La cote {nouvelle_cote!r} existe déjà."}
-        ) from e
+        raise FondsInvalide({"cote": f"La cote {nouvelle_cote!r} existe déjà."}) from e
     db.refresh(fonds)
     return fonds
 

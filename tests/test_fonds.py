@@ -166,9 +166,7 @@ def test_modifier_inexistant(session: Session) -> None:
 
 def test_supprimer_cascade_items_et_miroir(session: Session) -> None:
     fonds = creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
-    session.add(
-        Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon")
-    )
+    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
     session.commit()
     fonds_id = fonds.id
     miroir_id = fonds.collection_miroir.id
@@ -177,12 +175,7 @@ def test_supprimer_cascade_items_et_miroir(session: Session) -> None:
 
     assert session.get(Fonds, fonds_id) is None
     assert session.get(Collection, miroir_id) is None
-    assert (
-        session.scalar(
-            select(Item).where(Item.fonds_id == fonds_id)
-        )
-        is None
-    )
+    assert session.scalar(select(Item).where(Item.fonds_id == fonds_id)) is None
 
 
 def test_supprimer_libres_deviennent_transversales(session: Session) -> None:
@@ -264,10 +257,7 @@ def test_invariant_cote_fonds_et_collection_peuvent_coincider(
         )
     )
     session.commit()
-    nb = session.scalar(
-        select(Collection.id).where(Collection.cote == "HK").execution_options()
-    )
-    # Au moins 2 collections cote=HK : la miroir + la transversale.
+    # 2 collections cote=HK : la miroir + la transversale.
     rows = (
         session.execute(
             select(Collection).where(Collection.cote == "HK").order_by(Collection.id)
@@ -296,13 +286,9 @@ def test_invariant_cote_collection_unique_par_fonds(session: Session) -> None:
 
 def test_invariant_cote_item_unique_par_fonds(session: Session) -> None:
     fonds = creer_fonds(session, FormulaireFonds(cote="HK", titre="HK"))
-    session.add(
-        Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon")
-    )
+    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
     session.commit()
-    session.add(
-        Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon")
-    )
+    session.add(Item(fonds_id=fonds.id, cote="HK-001", etat_catalogage="brouillon"))
     with pytest.raises(IntegrityError):
         session.commit()
 

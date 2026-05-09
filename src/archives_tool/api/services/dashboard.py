@@ -207,8 +207,12 @@ def _comptes_sous_collections(session: Session) -> dict[int, int]:
     return dict(rows)
 
 
+# V0.9.0-alpha : ce module fonctionne encore sur l'ancien schéma (Item.
+# collection_id, Collection.parent_id) et ses fonctions cassent à
+# l'exécution. Reconstruction prévue en V0.9.0-gamma. Le dict ci-dessous
+# garde les références neuves pour permettre l'import du module.
 _TRI_SQL_COLLECTIONS = {
-    "cote": Collection.cote_collection,
+    "cote": Collection.cote,
     "titre": Collection.titre,
     "modifie": Collection.modifie_le,
 }

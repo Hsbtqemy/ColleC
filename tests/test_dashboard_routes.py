@@ -148,11 +148,14 @@ def test_liste_fonds(client_demo: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_fonds_placeholder(client_demo: TestClient) -> None:
+def test_fonds_lecture(client_demo: TestClient) -> None:
     response = client_demo.get("/fonds/HK")
     assert response.status_code == 200
     assert "Hara-Kiri" in response.text
-    assert "à compléter" in response.text
+    # Bandeau métadonnées affiche le responsable Archives.
+    assert "Cavanna" in response.text
+    # Au moins un item récent visible.
+    assert "HK-040" in response.text
 
 
 def test_fonds_inexistant_404(client_demo: TestClient) -> None:
@@ -208,4 +211,202 @@ def test_item_sans_fonds_renvoie_422(client_demo: TestClient) -> None:
 
 def test_item_inexistant_404(client_demo: TestClient) -> None:
     response = client_demo.get("/item/N_EXISTE_PAS?fonds=HK")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Page fonds : modification
+# ---------------------------------------------------------------------------
+
+
+def test_fonds_modifier_charge(client_demo: TestClient) -> None:
+    response = client_demo.get("/fonds/HK/modifier")
+    assert response.status_code == 200
+    # La cote est verrouillée et pré-affichée.
+    assert 'value="HK"' in response.text
+    assert "Hara-Kiri" in response.text
+
+
+def test_fonds_modifier_post_redirect(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/fonds/HK/modifier",
+        data={
+            "cote": "HK",
+            "titre": "Hara-Kiri (modifié)",
+            "responsable_archives": "Cavanna",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/fonds/HK"
+    # Vérifier la persistance.
+    relue = client_demo.get("/fonds/HK")
+    assert "Hara-Kiri (modifié)" in relue.text
+
+
+def test_fonds_modifier_titre_vide_re_render(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/fonds/HK/modifier",
+        data={"cote": "HK", "titre": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "obligatoire" in response.text.lower()
+
+
+def test_fonds_modifier_inexistant_404(client_demo: TestClient) -> None:
+    response = client_demo.get("/fonds/INCONNU/modifier")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Page collection : 3 variantes
+# ---------------------------------------------------------------------------
+
+
+def test_collection_lecture_miroir(client_demo: TestClient) -> None:
+    response = client_demo.get("/collection/HK?fonds=HK")
+    assert response.status_code == 200
+    assert "Collection miroir" in response.text
+    # Lien retour vers le fonds parent.
+    assert 'href="/fonds/HK"' in response.text
+    # Pas de bouton « Modifier » sur une miroir : le lien d'édition
+    # n'est pas généré.
+    assert "/collection/HK/modifier" not in response.text
+
+
+def test_collection_lecture_libre_rattachee(client_demo: TestClient) -> None:
+    response = client_demo.get("/collection/FA-OEUVRES?fonds=FA")
+    assert response.status_code == 200
+    assert "Œuvres" in response.text
+    assert "Fonds Aínsa" in response.text
+    # Bouton modifier disponible pour une libre.
+    assert "/collection/FA-OEUVRES/modifier" in response.text
+
+
+def test_collection_lecture_transversale(client_demo: TestClient) -> None:
+    response = client_demo.get("/collection/TEMOIG")
+    assert response.status_code == 200
+    texte = _texte_visible(response.text)
+    assert "transversale" in texte.lower()
+    assert "Pioche dans" in texte
+    # Au moins 2 fonds représentés.
+    assert "Fonds Aínsa" in response.text
+    assert "Concorde 1789" in response.text
+
+
+# ---------------------------------------------------------------------------
+# Collaborateurs d'un fonds
+# ---------------------------------------------------------------------------
+
+
+def test_collaborateurs_fonds_listes_sur_page_fonds(
+    client_demo: TestClient,
+) -> None:
+    """Les collaborateurs seedés sur HK sont visibles."""
+    response = client_demo.get("/fonds/HK")
+    assert response.status_code == 200
+    assert "Marie Dupont" in response.text
+    assert "Hugo Martin" in response.text
+    # Groupé par rôle : la libellé du rôle apparaît.
+    assert "Numérisation" in response.text
+
+
+def test_ajouter_collaborateur_fonds(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/fonds/RDM/collaborateurs",
+        data={"nom": "Lucas Bernard", "roles": ["catalogage"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/fonds/RDM"
+    # Vérifier la présence sur la page.
+    page = client_demo.get("/fonds/RDM")
+    assert "Lucas Bernard" in page.text
+
+
+def test_ajouter_collaborateur_nom_vide_400(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/fonds/HK/collaborateurs",
+        data={"nom": "", "roles": ["numerisation"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "nom" in response.text.lower()
+
+
+def test_ajouter_collaborateur_roles_vides_400(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/fonds/HK/collaborateurs",
+        data={"nom": "Test"},  # pas de roles
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
+def test_ajouter_collaborateur_fonds_inexistant_404(
+    client_demo: TestClient,
+) -> None:
+    response = client_demo.post(
+        "/fonds/N_EXISTE_PAS/collaborateurs",
+        data={"nom": "X", "roles": ["numerisation"]},
+        follow_redirects=False,
+    )
+    assert response.status_code == 404
+
+
+def test_supprimer_collaborateur_fonds(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Supprime un collaborateur seedé : redirige et la page ne le
+    montre plus."""
+    # Récupérer l'id d'un collaborateur HK directement en DB.
+    from archives_tool.models import CollaborateurFonds, Fonds
+    from sqlalchemy import select as sa_select
+
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(sa_select(Fonds).where(Fonds.cote == "RDM"))
+        # Ajouter d'abord un collaborateur dédié pour pouvoir le retirer
+        # sans toucher aux fixtures partagées.
+        nouveau = CollaborateurFonds(
+            fonds_id=fonds.id, nom="ÀSupprimer", roles=["numerisation"]
+        )
+        s.add(nouveau)
+        s.commit()
+        s.refresh(nouveau)
+        cid = nouveau.id
+
+    response = client_demo.post(
+        f"/fonds/RDM/collaborateurs/{cid}/supprimer",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    page = client_demo.get("/fonds/RDM")
+    assert "ÀSupprimer" not in page.text
+
+
+def test_collaborateur_fonds_anti_confused_deputy(
+    client_demo: TestClient, base_demo_path: Path
+) -> None:
+    """Un collaborateur de FA ne peut pas être supprimé via /fonds/HK/."""
+    from archives_tool.models import CollaborateurFonds, Fonds
+    from sqlalchemy import select as sa_select
+
+    engine = creer_engine(base_demo_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_fa = s.scalar(sa_select(Fonds).where(Fonds.cote == "FA"))
+        cid = s.scalar(
+            sa_select(CollaborateurFonds.id).where(
+                CollaborateurFonds.fonds_id == fonds_fa.id
+            )
+        )
+
+    response = client_demo.post(
+        f"/fonds/HK/collaborateurs/{cid}/supprimer",
+        follow_redirects=False,
+    )
     assert response.status_code == 404

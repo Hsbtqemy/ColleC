@@ -1,0 +1,215 @@
+{# Page fonds (lecture).
+   Variables :
+   - `detail` (FondsDetail) : fonds + collections + items_recents +
+     collaborateurs_par_role
+   - `roles_options`, `libelles_roles` : pour le formulaire d'ajout
+     de collaborateur
+   - `erreurs_collab` (optionnel) + `formulaire_collab` : si erreurs
+     de validation au POST collaborateurs, ré-affichées ici
+#}
+{% extends "base.html" %}
+{% block title %}{{ detail.fonds.titre }} — archives-tool{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <span class="font-mono">{{ detail.fonds.cote }}</span>
+  </p>
+  <div class="flex items-start justify-between mt-2 gap-4">
+    <div>
+      <h1 class="text-2xl font-medium">{{ detail.fonds.titre }}</h1>
+      <p class="text-sm text-gray-500 font-mono">{{ detail.fonds.cote }}</p>
+      {% if detail.fonds.description %}
+        <p class="text-sm text-gray-700 mt-1">{{ detail.fonds.description }}</p>
+      {% endif %}
+    </div>
+    <a href="/fonds/{{ detail.fonds.cote }}/modifier"
+       class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+      Modifier le fonds
+    </a>
+  </div>
+
+  {# Bandeau métadonnées : seuls les champs renseignés s'affichent. #}
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-1 mt-4 text-sm">
+    {% if detail.fonds.responsable_archives %}
+      <dt class="text-gray-500">Responsable Archives</dt>
+      <dd>{{ detail.fonds.responsable_archives }}</dd>
+    {% endif %}
+    {% if detail.fonds.personnalite_associee %}
+      <dt class="text-gray-500">Personnalité associée</dt>
+      <dd>{{ detail.fonds.personnalite_associee }}</dd>
+    {% endif %}
+    {% if detail.fonds.editeur %}
+      <dt class="text-gray-500">Éditeur</dt>
+      <dd>{{ detail.fonds.editeur }}</dd>
+    {% endif %}
+    {% if detail.fonds.lieu_edition %}
+      <dt class="text-gray-500">Lieu d'édition</dt>
+      <dd>{{ detail.fonds.lieu_edition }}</dd>
+    {% endif %}
+    {% if detail.fonds.periodicite %}
+      <dt class="text-gray-500">Périodicité</dt>
+      <dd>{{ detail.fonds.periodicite }}</dd>
+    {% endif %}
+    {% if detail.fonds.issn %}
+      <dt class="text-gray-500">ISSN</dt>
+      <dd class="font-mono">{{ detail.fonds.issn }}</dd>
+    {% endif %}
+    {% if detail.fonds.date_debut or detail.fonds.date_fin %}
+      <dt class="text-gray-500">Période</dt>
+      <dd>{{ detail.fonds.date_debut or "?" }} – {{ detail.fonds.date_fin or "?" }}</dd>
+    {% endif %}
+  </dl>
+</header>
+
+<section class="mb-8">
+  <h2 class="text-lg font-medium mb-2">
+    Collections du fonds <span class="text-gray-400">({{ detail.collections_resume | length }})</span>
+  </h2>
+  <ul class="space-y-1 text-sm">
+    {% for col in detail.collections_resume %}
+      <li class="flex items-baseline gap-2 border-b border-gray-100 py-1">
+        <span class="grow">
+          <a href="/collection/{{ col.cote }}?fonds={{ detail.fonds.cote }}"
+             class="hover:underline">{{ col.titre }}</a>
+          {% if col.type_collection == "miroir" %}
+            <span class="ml-2 text-xs italic text-gray-400">miroir</span>
+          {% endif %}
+        </span>
+        <span class="text-gray-500 font-tabular text-sm">{{ col.nb_items }} items</span>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="mt-2 text-sm">
+    <a href="/collections/nouvelle?fonds={{ detail.fonds.cote }}"
+       class="text-blue-600 hover:underline">+ Créer une collection libre</a>
+  </p>
+</section>
+
+<section class="mb-8">
+  <h2 class="text-lg font-medium mb-2">Collaborateurs</h2>
+  {% if detail.collaborateurs_par_role %}
+    {% for role, collabs in detail.collaborateurs_par_role.items() %}
+      <h3 class="text-sm font-medium text-gray-700 mt-3">{{ role | libelle_role }}</h3>
+      <ul class="text-sm">
+        {% for c in collabs %}
+          <li class="flex items-baseline justify-between py-1 border-b border-gray-100">
+            <span>
+              {{ c.nom }}
+              {% if c.periode %}
+                <span class="text-gray-500 text-xs ml-2">· {{ c.periode }}</span>
+              {% endif %}
+            </span>
+            <form method="post"
+                  action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
+                  onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
+                  class="inline">
+              <button type="submit" class="text-xs text-red-600 hover:underline">
+                Supprimer
+              </button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endfor %}
+  {% else %}
+    <p class="text-sm text-gray-500">Aucun collaborateur sur ce fonds.</p>
+  {% endif %}
+
+  <details class="mt-3">
+    <summary class="cursor-pointer text-sm text-blue-600 hover:underline">
+      + Ajouter un collaborateur
+    </summary>
+    <form method="post"
+          action="/fonds/{{ detail.fonds.cote }}/collaborateurs"
+          class="mt-3 space-y-2 text-sm">
+      <div>
+        <label for="collab-nom" class="block text-xs text-gray-500">Nom</label>
+        <input id="collab-nom" type="text" name="nom" required
+               value="{{ formulaire_collab.nom if formulaire_collab else '' }}"
+               class="w-full px-2 py-1 border border-gray-300 rounded">
+        {% if erreurs_collab and erreurs_collab.nom %}
+          <p class="text-xs text-red-600">{{ erreurs_collab.nom }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <span class="block text-xs text-gray-500">Rôles</span>
+        <div class="flex flex-wrap gap-3 mt-1">
+          {% set roles_actifs = formulaire_collab.roles if formulaire_collab else [] %}
+          {% for r in roles_options %}
+            <label class="inline-flex items-center gap-1">
+              <input type="checkbox" name="roles" value="{{ r }}"
+                     {% if r in roles_actifs %}checked{% endif %}>
+              <span>{{ libelles_roles[r] }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if erreurs_collab and erreurs_collab.roles %}
+          <p class="text-xs text-red-600">{{ erreurs_collab.roles }}</p>
+        {% endif %}
+      </div>
+      <div>
+        <label for="collab-periode" class="block text-xs text-gray-500">
+          Période d'intervention
+        </label>
+        <input id="collab-periode" type="text" name="periode"
+               value="{{ formulaire_collab.periode if formulaire_collab else '' }}"
+               placeholder="2022, 2022-2023…"
+               class="w-full px-2 py-1 border border-gray-300 rounded">
+      </div>
+      <div>
+        <label for="collab-notes" class="block text-xs text-gray-500">Notes</label>
+        <textarea id="collab-notes" name="notes" rows="2"
+                  class="w-full px-2 py-1 border border-gray-300 rounded">{{ formulaire_collab.notes if formulaire_collab else '' }}</textarea>
+      </div>
+      <button type="submit"
+              class="px-3 py-1 text-sm bg-gray-800 text-white rounded hover:bg-gray-700">
+        Ajouter
+      </button>
+    </form>
+  </details>
+</section>
+
+{% if detail.items_recents %}
+  <section class="mb-8">
+    <h2 class="text-lg font-medium mb-2">Items récents</h2>
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-500 uppercase tracking-wide border-b">
+        <tr>
+          <th class="text-left py-2">Cote</th>
+          <th class="text-left py-2">Titre</th>
+          <th class="text-left py-2">État</th>
+          <th class="text-right py-2">Modifié</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in detail.items_recents %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">
+              <a href="/item/{{ item.cote }}?fonds={{ detail.fonds.cote }}"
+                 class="hover:underline">{{ item.cote }}</a>
+            </td>
+            <td class="py-2">{{ item.titre or "—" }}</td>
+            <td class="py-2">{{ item.etat | libelle_etat }}</td>
+            <td class="py-2 text-right text-gray-500">
+              {{ item.modifie_le | temps_relatif if item.modifie_le else "—" }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if detail.collections_resume %}
+      {% set miroir = detail.collections_resume[0] %}
+      {% if miroir.type_collection == "miroir" %}
+        <p class="mt-2 text-sm">
+          <a href="/collection/{{ miroir.cote }}?fonds={{ detail.fonds.cote }}"
+             class="text-blue-600 hover:underline">
+            Voir tous les items dans la miroir →
+          </a>
+        </p>
+      {% endif %}
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

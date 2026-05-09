@@ -1,0 +1,87 @@
+{# Page collection (lecture). Variables :
+   - `detail` (CollectionDetail) : collection ORM + nb_items +
+     fonds_parent (None si transversale) + fonds_representes
+     (vide si rattachée)
+   Le template gère 3 variantes : MIROIR, LIBRE rattachée,
+   LIBRE transversale. #}
+{% extends "base.html" %}
+{% set col = detail.collection %}
+{% set est_miroir = col.type_collection == "miroir" %}
+{% set est_transversale = col.fonds_id is none %}
+
+{% block title %}{{ col.titre }} — archives-tool{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if detail.fonds_parent %}
+      <a href="/fonds/{{ detail.fonds_parent.cote }}"
+         class="hover:underline font-mono">{{ detail.fonds_parent.cote }}</a> ›
+    {% endif %}
+    <span class="font-mono">{{ col.cote }}</span>
+  </p>
+
+  <div class="flex items-start justify-between mt-2 gap-4">
+    <div>
+      <h1 class="text-2xl font-medium">{{ col.titre }}</h1>
+      <p class="text-sm text-gray-500">
+        <span class="font-mono">{{ col.cote }}</span>
+        <span aria-hidden="true">·</span>
+        {% if est_miroir %}
+          Collection miroir
+          {% if detail.fonds_parent %}
+            du fonds <a href="/fonds/{{ detail.fonds_parent.cote }}"
+                        class="hover:underline">{{ detail.fonds_parent.titre }}</a>
+          {% endif %}
+        {% elif est_transversale %}
+          Collection libre transversale
+        {% else %}
+          Collection libre
+          {% if detail.fonds_parent %}
+            dans <a href="/fonds/{{ detail.fonds_parent.cote }}"
+                    class="hover:underline">{{ detail.fonds_parent.titre }}</a>
+          {% endif %}
+        {% endif %}
+      </p>
+      {% if col.description %}
+        <p class="text-sm text-gray-700 mt-1">{{ col.description }}</p>
+      {% endif %}
+    </div>
+    <div class="flex items-start gap-2">
+      {% if detail.fonds_parent %}
+        <a href="/fonds/{{ detail.fonds_parent.cote }}"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+          Voir le fonds
+        </a>
+      {% endif %}
+      {% if not est_miroir %}
+        <a href="/collection/{{ col.cote }}/modifier{% if detail.fonds_parent %}?fonds={{ detail.fonds_parent.cote }}{% endif %}"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+          Modifier
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if est_transversale and detail.fonds_representes %}
+    <p class="text-sm text-gray-500 mt-3">
+      Pioche dans :
+      {% for f in detail.fonds_representes -%}
+        <a href="/fonds/{{ f.cote }}" class="hover:underline">{{ f.titre }}</a>
+        {%- if not loop.last %}, {% endif -%}
+      {%- endfor %}
+    </p>
+  {% endif %}
+</header>
+
+<section class="mb-6 p-4 bg-gray-50 rounded text-sm text-gray-700">
+  Liste paginée d'items à compléter — V0.9.0-beta.2.1 livrera le
+  tableau filtrable / triable / paginé. Pour l'instant, {{ detail.nb_items }}
+  item{{ "s" if detail.nb_items != 1 else "" }} dans cette collection.
+</section>
+
+<p class="text-sm">
+  <a href="/" class="text-blue-600 hover:underline">← Retour au tableau de bord</a>
+</p>
+{% endblock %}

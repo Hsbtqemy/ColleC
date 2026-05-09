@@ -11,36 +11,67 @@ Précédence sur les cotes ambiguës :
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.services.collaborateurs_fonds import (
+    CollaborateurFondsIntrouvable,
+    CollaborateurFondsInvalide,
+    FormulaireCollaborateurFonds,
+    ajouter_collaborateur_fonds,
+    modifier_collaborateur_fonds,
+    supprimer_collaborateur_fonds,
+)
 from archives_tool.api.services.collections import (
     CollectionIntrouvable,
     lire_collection_par_cote,
 )
-from archives_tool.api.services.dashboard import composer_dashboard
+from archives_tool.api.services.dashboard import (
+    composer_dashboard,
+    composer_page_collection,
+    composer_page_fonds,
+)
 from archives_tool.api.services.fonds import (
     FondsIntrouvable,
+    FondsInvalide,
+    FormulaireFonds,
+    formulaire_depuis_fonds,
     lire_fonds_par_cote,
     lister_fonds,
+    modifier_fonds,
 )
 from archives_tool.api.services.items import (
     ItemIntrouvable,
     lire_item_par_cote,
 )
 from archives_tool.api.templating import templates
-from archives_tool.models import Fonds
+from archives_tool.models import (
+    CollaborateurFonds,
+    Fonds,
+    LIBELLES_ROLE,
+    PhaseChantier,
+    RoleCollaborateur,
+)
 
 router = APIRouter()
+
+ROLES_OPTIONS: list[str] = [r.value for r in RoleCollaborateur]
 
 
 def _contexte_base(
     nom_base: str, utilisateur: str, **extra: object
 ) -> dict[str, object]:
     return {"nom_base": nom_base, "utilisateur": utilisateur, **extra}
+
+
+# ---------------------------------------------------------------------------
+# Dashboard + listes
+# ---------------------------------------------------------------------------
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -74,6 +105,11 @@ def liste_fonds(
     )
 
 
+# ---------------------------------------------------------------------------
+# Fonds : lecture + modification
+# ---------------------------------------------------------------------------
+
+
 @router.get("/fonds/{cote}", response_class=HTMLResponse)
 def page_fonds(
     cote: str,
@@ -82,18 +118,94 @@ def page_fonds(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    """Affiche un fonds (titre + métadonnées ; tableau d'items à venir)."""
+    """Page lecture d'un fonds : bandeau, collections, collaborateurs, items récents."""
     try:
-        fonds = lire_fonds_par_cote(db, cote)
+        detail = composer_page_fonds(db, cote)
     except FondsIntrouvable as e:
         raise HTTPException(
             status_code=404, detail=f"Fonds {cote!r} introuvable."
         ) from e
     return templates.TemplateResponse(
         request,
-        "pages/_placeholder_fonds.html",
-        _contexte_base(nom_base, utilisateur, fonds=fonds),
+        "pages/fonds_lecture.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            detail=detail,
+            roles_options=ROLES_OPTIONS,
+            libelles_roles=LIBELLES_ROLE,
+        ),
     )
+
+
+@router.get("/fonds/{cote}/modifier", response_class=HTMLResponse)
+def formulaire_modifier_fonds(
+    cote: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    try:
+        fonds = lire_fonds_par_cote(db, cote)
+    except FondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds {cote!r} introuvable."
+        ) from e
+    formulaire = formulaire_depuis_fonds(fonds)
+    return templates.TemplateResponse(
+        request,
+        "pages/fonds_modifier.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            fonds=fonds,
+            formulaire=formulaire,
+            erreurs={},
+            phases=list(PhaseChantier),
+        ),
+    )
+
+
+@router.post("/fonds/{cote}/modifier", response_class=HTMLResponse, response_model=None)
+def soumettre_modification_fonds(
+    cote: str,
+    request: Request,
+    formulaire: Annotated[FormulaireFonds, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    try:
+        fonds = lire_fonds_par_cote(db, cote)
+    except FondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds {cote!r} introuvable."
+        ) from e
+    # La cote est verrouillée : on impose la valeur du chemin.
+    formulaire.cote = fonds.cote
+    try:
+        modifier_fonds(db, fonds.id, formulaire, modifie_par=utilisateur)
+    except FondsInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/fonds_modifier.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                fonds=fonds,
+                formulaire=formulaire,
+                erreurs=e.erreurs,
+                phases=list(PhaseChantier),
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/fonds/{cote}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Collection : lecture
+# ---------------------------------------------------------------------------
 
 
 @router.get("/collection/{cote}", response_class=HTMLResponse, response_model=None)
@@ -107,11 +219,11 @@ def page_collection(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
-    """Affiche une collection (titre + type ; tableau d'items à venir).
+    """Affiche une collection avec items + contexte fonds parent (ou
+    fonds représentés si transversale).
 
     Précédence cote ambiguë : si `cote` matche un fonds et qu'aucun
-    `?fonds=` n'est passé, redirige vers `/fonds/{cote}` (le cas
-    typique : la cote d'une miroir = la cote de son fonds).
+    `?fonds=` n'est passé, redirige vers `/fonds/{cote}`.
     """
     if fonds is None:
         fonds_meme_cote = db.scalar(select(Fonds).where(Fonds.cote == cote))
@@ -132,11 +244,17 @@ def page_collection(
         raise HTTPException(
             status_code=404, detail=f"Collection {cote!r} introuvable."
         ) from e
+    detail = composer_page_collection(db, collection)
     return templates.TemplateResponse(
         request,
-        "pages/_placeholder_collection.html",
-        _contexte_base(nom_base, utilisateur, collection=collection),
+        "pages/collection_lecture.html",
+        _contexte_base(nom_base, utilisateur, detail=detail),
     )
+
+
+# ---------------------------------------------------------------------------
+# Item : placeholder (V0.9.0-beta.3 livrera la page complète)
+# ---------------------------------------------------------------------------
 
 
 @router.get("/item/{cote}", response_class=HTMLResponse)
@@ -144,7 +262,8 @@ def page_item(
     cote: str,
     request: Request,
     fonds: str = Query(
-        ..., description="Cote du fonds (obligatoire : les cotes d'items ne sont uniques que par fonds)."
+        ...,
+        description="Cote du fonds (obligatoire : les cotes d'items ne sont uniques que par fonds).",
     ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
@@ -170,3 +289,131 @@ def page_item(
             nom_base, utilisateur, item=item, fonds_cote=fonds_obj.cote
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Collaborateurs d'un fonds (CRUD HTMX-friendly)
+# ---------------------------------------------------------------------------
+
+
+def _charger_fonds_ou_404(db: Session, cote: str) -> Fonds:
+    try:
+        return lire_fonds_par_cote(db, cote)
+    except FondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds {cote!r} introuvable."
+        ) from e
+
+
+def _collaborateur_fonds_appartenant(
+    db: Session, collaborateur_id: int, fonds_id: int
+) -> CollaborateurFonds:
+    c = db.get(CollaborateurFonds, collaborateur_id)
+    if c is None or c.fonds_id != fonds_id:
+        raise HTTPException(
+            status_code=404, detail="Collaborateur introuvable dans ce fonds."
+        )
+    return c
+
+
+@router.post("/fonds/{cote}/collaborateurs", response_class=HTMLResponse, response_model=None)
+def ajouter_collaborateur_fonds_route(
+    cote: str,
+    request: Request,
+    nom: str = Form(default=""),
+    roles: list[str] = Form(default=[]),
+    periode: str = Form(default=""),
+    notes: str = Form(default=""),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    fonds = _charger_fonds_ou_404(db, cote)
+    formulaire = FormulaireCollaborateurFonds(
+        nom=nom, roles=roles, periode=periode, notes=notes
+    )
+    try:
+        ajouter_collaborateur_fonds(db, fonds.id, formulaire)
+    except CollaborateurFondsInvalide as e:
+        # Ré-affiche la page fonds avec les erreurs de formulaire et
+        # le formulaire ré-pré-rempli pour que l'utilisateur corrige.
+        detail = composer_page_fonds(db, cote)
+        return templates.TemplateResponse(
+            request,
+            "pages/fonds_lecture.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                detail=detail,
+                roles_options=ROLES_OPTIONS,
+                libelles_roles=LIBELLES_ROLE,
+                erreurs_collab=e.erreurs,
+                formulaire_collab=formulaire,
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/fonds/{cote}", status_code=303)
+
+
+@router.post(
+    "/fonds/{cote}/collaborateurs/{collaborateur_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def modifier_collaborateur_fonds_route(
+    cote: str,
+    collaborateur_id: int,
+    request: Request,
+    nom: str = Form(default=""),
+    roles: list[str] = Form(default=[]),
+    periode: str = Form(default=""),
+    notes: str = Form(default=""),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    fonds = _charger_fonds_ou_404(db, cote)
+    _collaborateur_fonds_appartenant(db, collaborateur_id, fonds.id)
+    formulaire = FormulaireCollaborateurFonds(
+        nom=nom, roles=roles, periode=periode, notes=notes
+    )
+    try:
+        modifier_collaborateur_fonds(db, collaborateur_id, formulaire)
+    except CollaborateurFondsInvalide as e:
+        detail = composer_page_fonds(db, cote)
+        return templates.TemplateResponse(
+            request,
+            "pages/fonds_lecture.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                detail=detail,
+                roles_options=ROLES_OPTIONS,
+                libelles_roles=LIBELLES_ROLE,
+                erreurs_collab=e.erreurs,
+                formulaire_collab=formulaire,
+                collaborateur_en_modification=collaborateur_id,
+            ),
+            status_code=400,
+        )
+    except CollaborateurFondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail="Collaborateur introuvable."
+        ) from e
+    return RedirectResponse(f"/fonds/{cote}", status_code=303)
+
+
+@router.post(
+    "/fonds/{cote}/collaborateurs/{collaborateur_id}/supprimer",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def supprimer_collaborateur_fonds_route(
+    cote: str,
+    collaborateur_id: int,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    fonds = _charger_fonds_ou_404(db, cote)
+    _collaborateur_fonds_appartenant(db, collaborateur_id, fonds.id)
+    supprimer_collaborateur_fonds(db, collaborateur_id)
+    return RedirectResponse(f"/fonds/{cote}", status_code=303)

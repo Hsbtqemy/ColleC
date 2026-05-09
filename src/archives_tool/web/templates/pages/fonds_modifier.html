@@ -1,0 +1,114 @@
+{# Page modification d'un fonds. Variables :
+   - `fonds` (modèle ORM)
+   - `formulaire` (FormulaireFonds pré-rempli)
+   - `erreurs` (dict champ→message, vide si aucune)
+   - `phases` (list[PhaseChantier]) #}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
+
+{% block title %}Modifier {{ fonds.titre }} — archives-tool{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/fonds/{{ fonds.cote }}" class="hover:underline font-mono">{{ fonds.cote }}</a> ›
+    <span>Modifier</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Modifier
+    <span class="font-mono text-gray-700 ml-1">{{ fonds.cote }}</span>
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">{{ fonds.titre }}</p>
+</header>
+
+<form method="post" action="/fonds/{{ fonds.cote }}/modifier"
+      style="max-width:680px;">
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identification
+    </h2>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Cote
+      </label>
+      <input type="text" value="{{ fonds.cote }}" disabled
+             class="w-full font-mono"
+             style="padding:6px 10px;font-size:13px;
+                    border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                    background:#f9fafb;color:#6b7280;">
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        La cote ne peut pas être modifiée — elle sert d'identifiant
+        stable pour les fichiers, exports et références externes.
+      </p>
+    </div>
+    {{ champ('titre', 'Titre', formulaire.titre, obligatoire=true) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Description
+    </h2>
+    {{ textarea('description', 'Description courte (libre / interne)',
+                formulaire.description) }}
+    {{ textarea('description_publique', 'Description publique',
+                formulaire.description_publique,
+                help_text='Destinée aux exports Dublin Core / Nakala.') }}
+    {{ textarea('description_interne', 'Description interne',
+                formulaire.description_interne,
+                help_text='Pour l’équipe — non exportée.') }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Origine et responsabilité
+    </h2>
+    {{ champ('personnalite_associee', 'Personnalité ou entité associée',
+             formulaire.personnalite_associee) }}
+    {{ champ('responsable_archives', 'Responsable Archives',
+             formulaire.responsable_archives) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Édition <span style="font-size:11px;color:#9ca3af;font-weight:normal;text-transform:none;">— pour les fonds-revues</span>
+    </h2>
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('editeur', 'Éditeur', formulaire.editeur) }}
+      {{ champ('lieu_edition', 'Lieu d’édition', formulaire.lieu_edition) }}
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('periodicite', 'Périodicité', formulaire.periodicite) }}
+      {{ champ('issn', 'ISSN', formulaire.issn, mono=true) }}
+    </div>
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Période
+    </h2>
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('date_debut', 'Date début', formulaire.date_debut,
+               placeholder='1955, vers 1960…',
+               help_text='EDTF accepté.') }}
+      {{ champ('date_fin', 'Date fin', formulaire.date_fin,
+               placeholder='2019, sans date…') }}
+    </div>
+  </section>
+
+  <div class="flex items-center justify-end gap-2"
+       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+    <a href="/fonds/{{ fonds.cote }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      Annuler
+    </a>
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+      Enregistrer
+    </button>
+  </div>
+</form>
+{% endblock %}

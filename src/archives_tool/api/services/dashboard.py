@@ -1,9 +1,14 @@
-"""Composition du dashboard : fonds + collections rattachées + transversales.
+"""Composition des vues : dashboard, page fonds, page collection.
 
-Une seule fonction publique `composer_dashboard(db)` retourne un
-`DashboardResume` prêt à être consommé par le template. Les
-compteurs sont obtenus en 3 agrégats SQL (par fonds, par collection,
-par fonds-représenté-dans-une-transversale) — pas de N+1.
+Trois fonctions publiques :
+- `composer_dashboard(db)` : `DashboardResume` (tous les fonds + transversales).
+- `composer_page_fonds(db, cote)` : `FondsDetail` (un fonds, ses
+  collections, items récents, collaborateurs groupés).
+- `composer_page_collection(db, cote, fonds_id=None)` :
+  `CollectionDetail` (une collection, ses items paginés, le fonds
+  parent ou les fonds représentés si transversale).
+
+Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 """
 
 from __future__ import annotations
@@ -13,11 +18,18 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collaborateurs_fonds import (
+    CollaborateurFondsResume,
+    lister_collaborateurs_fonds_par_role,
+)
+from archives_tool.api.services.fonds import FondsIntrouvable
+from archives_tool.api.services.items import ItemResume
 from archives_tool.models import (
     Collection,
     Fonds,
     Item,
     ItemCollection,
+    RoleCollaborateur,
     TypeCollection,
 )
 
@@ -164,4 +176,162 @@ def composer_dashboard(db: Session) -> DashboardResume:
     return DashboardResume(
         fonds=tuple(fonds_resumes),
         transversales=tuple(transversales),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Page fonds (lecture)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FondsDetail:
+    fonds: Fonds  # modèle ORM (le template lit ses champs métadonnées)
+    nb_items: int
+    collections_resume: tuple[CollectionResume, ...]
+    items_recents: tuple[ItemResume, ...]
+    collaborateurs_par_role: dict[RoleCollaborateur, list[CollaborateurFondsResume]]
+
+
+def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
+    """Charge un fonds + ses collections + 10 items les plus récents
+    + ses collaborateurs groupés par rôle.
+
+    Lève `FondsIntrouvable` si la cote est inconnue.
+    """
+    fonds = db.scalar(select(Fonds).where(Fonds.cote == cote))
+    if fonds is None:
+        raise FondsIntrouvable(cote)
+
+    nb_items = (
+        db.scalar(select(func.count(Item.id)).where(Item.fonds_id == fonds.id)) or 0
+    )
+
+    collections_rows = list(
+        db.scalars(
+            select(Collection)
+            .where(Collection.fonds_id == fonds.id)
+            .order_by(Collection.titre)
+        ).all()
+    )
+    nb_items_par_collection: dict[int, int] = dict(
+        db.execute(
+            select(ItemCollection.collection_id, func.count(ItemCollection.item_id))
+            .where(
+                ItemCollection.collection_id.in_([c.id for c in collections_rows])
+            )
+            .group_by(ItemCollection.collection_id)
+        ).all()
+    ) if collections_rows else {}
+
+    # Miroir d'abord, puis les libres triées par titre.
+    collections_resume = tuple(
+        sorted(
+            (
+                CollectionResume(
+                    cote=c.cote,
+                    titre=c.titre,
+                    type_collection=c.type_collection,
+                    nb_items=nb_items_par_collection.get(c.id, 0),
+                    fonds_id=c.fonds_id,
+                )
+                for c in collections_rows
+            ),
+            # Miroir d'abord (False < True), puis ordre alphabétique titre.
+            key=lambda r: (r.type_collection != TypeCollection.MIROIR.value, r.titre),
+        )
+    )
+
+    # « Récents » = ordre de modification effective si l'item a été
+    # modifié, sinon ordre de création (le plus récent d'abord). Cote
+    # DESC en tie-breaker pour offrir une vue stable et inversée.
+    items_rows = list(
+        db.scalars(
+            select(Item)
+            .where(Item.fonds_id == fonds.id)
+            .order_by(
+                func.coalesce(Item.modifie_le, Item.cree_le).desc(),
+                Item.cote.desc(),
+            )
+            .limit(10)
+        ).all()
+    )
+    items_recents = tuple(
+        ItemResume(
+            id=i.id,
+            cote=i.cote,
+            titre=i.titre,
+            fonds_id=i.fonds_id,
+            fonds_cote=fonds.cote,
+            etat=i.etat_catalogage,
+            date=i.date,
+            annee=i.annee,
+            type_coar=i.type_coar,
+            modifie_le=i.modifie_le,
+        )
+        for i in items_rows
+    )
+
+    return FondsDetail(
+        fonds=fonds,
+        nb_items=nb_items,
+        collections_resume=collections_resume,
+        items_recents=items_recents,
+        collaborateurs_par_role=lister_collaborateurs_fonds_par_role(db, fonds.id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Page collection (lecture)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CollectionDetail:
+    collection: Collection  # modèle ORM
+    nb_items: int
+    fonds_parent: Fonds | None  # None pour transversale
+    fonds_representes: tuple[FondsRepresente, ...]  # vide si rattachée à un fonds
+
+
+def composer_page_collection(
+    db: Session, collection: Collection
+) -> CollectionDetail:
+    """Charge le contexte d'affichage d'une collection.
+
+    `collection` doit déjà être chargée (la route fait le lookup +
+    désambiguïsation, ce service ne re-lit pas la DB pour ça)."""
+    nb_items = (
+        db.scalar(
+            select(func.count(ItemCollection.item_id)).where(
+                ItemCollection.collection_id == collection.id
+            )
+        )
+        or 0
+    )
+
+    fonds_parent: Fonds | None = None
+    fonds_representes: tuple[FondsRepresente, ...] = ()
+
+    if collection.fonds_id is not None:
+        fonds_parent = db.get(Fonds, collection.fonds_id)
+    else:
+        # Transversale : agrégation des fonds représentés via JOIN.
+        rows = db.execute(
+            select(Fonds.cote, Fonds.titre)
+            .join(Item, Item.fonds_id == Fonds.id)
+            .join(ItemCollection, ItemCollection.item_id == Item.id)
+            .where(ItemCollection.collection_id == collection.id)
+            .distinct()
+            .order_by(Fonds.titre)
+        ).all()
+        fonds_representes = tuple(
+            FondsRepresente(cote=cote, titre=titre) for cote, titre in rows
+        )
+
+    return CollectionDetail(
+        collection=collection,
+        nb_items=nb_items,
+        fonds_parent=fonds_parent,
+        fonds_representes=fonds_representes,
     )

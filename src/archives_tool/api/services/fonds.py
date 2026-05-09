@@ -89,6 +89,26 @@ def _appliquer_formulaire(fonds: Fonds, formulaire: FormulaireFonds) -> None:
         setattr(fonds, nom, chaine_ou_none(valeur))
 
 
+def formulaire_depuis_fonds(fonds: Fonds) -> FormulaireFonds:
+    """Pré-remplit un `FormulaireFonds` depuis un Fonds existant
+    (pour la page de modification)."""
+    return FormulaireFonds(
+        cote=fonds.cote,
+        titre=fonds.titre,
+        description=fonds.description or "",
+        description_publique=fonds.description_publique or "",
+        description_interne=fonds.description_interne or "",
+        personnalite_associee=fonds.personnalite_associee or "",
+        responsable_archives=fonds.responsable_archives or "",
+        editeur=fonds.editeur or "",
+        lieu_edition=fonds.lieu_edition or "",
+        periodicite=fonds.periodicite or "",
+        issn=fonds.issn or "",
+        date_debut=fonds.date_debut or "",
+        date_fin=fonds.date_fin or "",
+    )
+
+
 def lire_fonds(db: Session, fonds_id: int) -> Fonds:
     fonds = db.get(Fonds, fonds_id)
     if fonds is None:

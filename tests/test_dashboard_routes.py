@@ -213,12 +213,6 @@ def test_collection_transversale_sans_fonds(client_demo: TestClient) -> None:
     assert "Témoignages" in response.text
 
 
-def test_item_placeholder(client_demo: TestClient) -> None:
-    response = client_demo.get("/item/HK-001?fonds=HK")
-    assert response.status_code == 200
-    assert "HK-001" in response.text
-
-
 def test_item_sans_fonds_renvoie_422(client_demo: TestClient) -> None:
     response = client_demo.get("/item/HK-001")
     assert response.status_code == 422
@@ -709,3 +703,196 @@ def test_retirer_item_idempotent(
         follow_redirects=False,
     )
     assert response.status_code == 303
+
+
+# ---------------------------------------------------------------------------
+# Page item — lecture, visionneuse, service de fichier (V0.9.0-beta.3)
+# ---------------------------------------------------------------------------
+
+
+def test_page_item_lecture_charge(client_demo: TestClient) -> None:
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert "HK-001" in response.text
+    # Bandeau : titre du fonds + breadcrumb cliquable.
+    assert "Hara-Kiri" in response.text
+    assert 'href="/"' in response.text
+    assert 'href="/fonds/HK"' in response.text
+
+
+def test_page_item_lecture_collections_appartenance(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Tout item nouvellement créé est dans sa miroir → badge `miroir`.
+
+    On évite HK-001 car d'autres tests retirent le premier item HK de
+    sa miroir (invariant 7) ; on prend une cote d'un fonds non muté."""
+    with db_demo_factory() as s:
+        # Premier item d'un fonds que les autres tests ne touchent pas.
+        row = s.execute(
+            sa_select(Item.cote, Fonds.cote.label("fonds_cote"))
+            .join(Fonds, Fonds.id == Item.fonds_id)
+            .where(Fonds.cote.in_(("MAR", "RDM", "CONC-1789")))
+            .order_by(Fonds.cote, Item.cote)
+            .limit(1)
+        ).first()
+    assert row is not None
+    response = client_demo.get(f"/item/{row.cote}?fonds={row.fonds_cote}")
+    assert response.status_code == 200
+    assert "Présent dans les collections" in response.text
+    assert "miroir" in response.text
+
+
+def test_page_item_lecture_visionneuse_premier_fichier(
+    client_demo: TestClient,
+) -> None:
+    """Le premier fichier (ordre=1) est affiché par défaut."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    # Le seeder crée des fichiers nommés `{cote}-{ordre:02d}.tif`.
+    assert "HK-001-01.tif" in response.text
+    # Position 1 / N affichée dans le contrôle de navigation.
+    assert "1 /" in response.text
+
+
+def test_page_item_lecture_visionneuse_navigation(
+    client_demo: TestClient,
+) -> None:
+    """?fichier_courant=2 affiche le 2e fichier."""
+    response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=2")
+    assert response.status_code == 200
+    assert "HK-001-02.tif" in response.text
+
+
+def test_page_item_lecture_visionneuse_format_non_natif(
+    client_demo: TestClient,
+) -> None:
+    """Format TIFF (non supporté) : message + lien de téléchargement."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert "non supporté nativement" in response.text
+    assert "Télécharger le fichier" in response.text
+
+
+def test_page_item_lecture_clamp_position_si_depasse(
+    client_demo: TestClient,
+) -> None:
+    """?fichier_courant trop grand est clampé sur le dernier fichier."""
+    response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=999")
+    assert response.status_code == 200
+    # La position effective <= nb_fichiers : pas de crash.
+
+
+def test_servir_fichier_404_si_disque_absent(client_demo: TestClient) -> None:
+    """Sur la base demo, les chemins sont fictifs : la racine n'est pas
+    configurée → 404."""
+    # Récupérer l'id d'un fichier de HK-001 — par convention seeder
+    # ordre=1 existe.
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    # On utilise l'API directement plutôt que parser le HTML.
+    # L'id le plus bas existe en demo.
+    response = client_demo.get("/item/HK-001/fichiers/1?fonds=HK")
+    assert response.status_code == 404
+
+
+def test_servir_fichier_anti_confused_deputy(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Demander un fichier d'un autre item via /item/X/fichiers/{id} → 404."""
+    with db_demo_factory() as s:
+        # Récupère un fichier rattaché à HK-001.
+        fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
+        item_hk1 = s.scalar(
+            sa_select(Item).where(
+                Item.fonds_id == fonds_hk.id, Item.cote == "HK-001"
+            )
+        )
+        from archives_tool.models import Fichier as FichierModel
+
+        f_id = s.scalar(
+            sa_select(FichierModel.id)
+            .where(FichierModel.item_id == item_hk1.id)
+            .order_by(FichierModel.ordre)
+            .limit(1)
+        )
+
+    # Demander ce fichier via un autre item du même fonds → 404.
+    response = client_demo.get(f"/item/HK-002/fichiers/{f_id}?fonds=HK")
+    assert response.status_code == 404
+
+
+def test_servir_fichier_inexistant_404(client_demo: TestClient) -> None:
+    response = client_demo.get("/item/HK-001/fichiers/9999999?fonds=HK")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Page item — édition (V0.9.0-beta.3)
+# ---------------------------------------------------------------------------
+
+
+def test_modifier_item_charge(client_demo: TestClient) -> None:
+    response = client_demo.get("/item/HK-001/modifier?fonds=HK")
+    assert response.status_code == 200
+    assert "HK-001" in response.text
+    # La cote est verrouillée (input disabled), le fonds aussi.
+    assert "ne peut pas être modifiée" in response.text
+    assert "immuable" in response.text
+
+
+def test_modifier_item_inexistant_404(client_demo: TestClient) -> None:
+    response = client_demo.get("/item/N_EXISTE_PAS/modifier?fonds=HK")
+    assert response.status_code == 404
+
+
+def test_modifier_item_sans_fonds_422(client_demo: TestClient) -> None:
+    response = client_demo.get("/item/HK-001/modifier")
+    assert response.status_code == 422
+
+
+def test_post_modifier_item_succes(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    response = client_demo.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001",
+            "titre": "Numéro 1 (modifié par test)",
+            "fonds_id": "999",  # ignoré silencieusement (immuable)
+            "etat_catalogage": "valide",
+            "annee": "1969",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "/item/HK-001" in response.headers["location"]
+
+    # Vérifier la persistance en DB.
+    with db_demo_factory() as s:
+        fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
+        item = s.scalar(
+            sa_select(Item).where(
+                Item.fonds_id == fonds_hk.id, Item.cote == "HK-001"
+            )
+        )
+        assert item.titre == "Numéro 1 (modifié par test)"
+        assert item.etat_catalogage == "valide"
+        assert item.annee == 1969
+        # fonds_id immuable : silent override.
+        assert item.fonds_id == fonds_hk.id
+
+
+def test_post_modifier_item_titre_vide(client_demo: TestClient) -> None:
+    response = client_demo.post(
+        "/item/HK-002/modifier?fonds=HK",
+        data={
+            "cote": "HK-002",
+            "titre": "",
+            "fonds_id": "1",
+            "etat_catalogage": "brouillon",
+        },
+    )
+    assert response.status_code == 400
+    # Le formulaire est ré-rendu avec le message d'erreur.
+    assert "titre" in response.text.lower()

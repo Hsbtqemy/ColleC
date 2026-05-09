@@ -36,7 +36,7 @@ from archives_tool.models import (
 
 @pytest.fixture
 def col(session: Session) -> Collection:
-    c = Collection(cote_collection="HK", titre="Hara-Kiri", phase="catalogage")
+    c = Collection(cote="HK", titre="Hara-Kiri", phase="catalogage")
     session.add(c)
     session.commit()
     session.refresh(c)

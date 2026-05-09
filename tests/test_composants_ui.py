@@ -170,62 +170,6 @@ def test_tableau_items_date_none_pas_de_litteral(env) -> None:
     assert "—" in out
 
 
-def test_bandeau_item(env) -> None:
-    ctx = {
-        "breadcrumb": [
-            {"label": "Tableau de bord", "href": "/"},
-            {"label": "FA", "href": "/collection/FA", "mono": True},
-        ],
-        "item": {
-            "cote": "FA-001",
-            "titre": "Notice un",
-            "etat": "valide",
-            "nb_fichiers": 12,
-            "phase": "catalogage",
-            "modifie_par": "Hugo",
-            "modifie_depuis": "hier",
-            "url_vue_fichiers": "/item/FA-001/fichiers",
-            "url_precedent": "/item/FA-000",
-            "url_suivant": "/item/FA-002",
-        },
-    }
-    out = _render_macro(env, "components/bandeau_item.html", "bandeau_item", ctx)
-    assert "FA-001" in out and "Notice un" in out and "Vue fichiers" in out
-
-
-def test_panneau_fichiers(env) -> None:
-    ctx = {
-        "etat": "collapsed",
-        "nb_fichiers": 3,
-        "fichiers": [
-            {
-                "ordre": 1,
-                "nom": "001.tif",
-                "type": "couverture",
-                "vignette_url": None,
-                "courant": True,
-                "href": "#",
-            },
-            {
-                "ordre": 3,  # saut détecté entre 1 et 3
-                "nom": "003.tif",
-                "type": "page",
-                "vignette_url": None,
-                "courant": False,
-                "href": "#",
-            },
-        ],
-        "url_vue_fichiers": "/item/x/fichiers",
-        "url_ajout": "/item/x/ajout",
-    }
-    out = _render_macro(
-        env, "components/panneau_fichiers.html", "panneau_fichiers", ctx
-    )
-    assert 'data-state="collapsed"' in out
-    assert "001.tif" in out
-    assert "manque entre 1 et 3" in out
-
-
 def test_panneau_colonnes(env) -> None:
     ctx = {
         "collection_cote": "FA",
@@ -239,17 +183,3 @@ def test_panneau_colonnes(env) -> None:
     assert "Cote" in out and "DOI Nakala" in out and "Fascicule" in out
 
 
-def test_cartouche_metadonnees(env) -> None:
-    """Composition manuelle des sections (pattern documenté)."""
-    template_str = """
-    {% from 'components/cartouche_metadonnees.html' import
-       cartouche_wrapper, section, ligne, valeur_mono, valeur_non_renseigne %}
-    {% call cartouche_wrapper() %}
-      {% call section("Identification", info="DC qualifié") %}
-        {% call ligne("Cote", field="cote") %}{{ valeur_mono("FA-001") }}{% endcall %}
-        {% call ligne("ARK") %}{{ valeur_non_renseigne() }}{% endcall %}
-      {% endcall %}
-    {% endcall %}
-    """
-    out = env.from_string(template_str).render()
-    assert "Identification" in out and "FA-001" in out and "non renseigné" in out

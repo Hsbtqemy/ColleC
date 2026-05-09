@@ -17,6 +17,7 @@ from .base import Base, TracabiliteMixin
 from .enums import PhaseChantier
 
 if TYPE_CHECKING:
+    from .collaborateur import CollaborateurCollection
     from .item import Item
     from .profil import ChampPersonnalise, ProfilImport
 
@@ -71,6 +72,11 @@ class Collection(Base, TracabiliteMixin):
     profil_import: Mapped[ProfilImport | None] = relationship()
     champs_personnalises: Mapped[list[ChampPersonnalise]] = relationship(
         back_populates="collection", cascade="all, delete-orphan"
+    )
+    collaborateurs: Mapped[list[CollaborateurCollection]] = relationship(
+        back_populates="collection",
+        cascade="all, delete-orphan",
+        order_by="CollaborateurCollection.cree_le",
     )
 
     __table_args__ = (

@@ -16,7 +16,12 @@ from archives_tool.affichage.formatters import (
     formater_taille_octets,
     temps_relatif,
 )
-from archives_tool.models import EtatCatalogage, PhaseChantier
+from archives_tool.models import (
+    LIBELLES_ROLE,
+    EtatCatalogage,
+    PhaseChantier,
+    RoleCollaborateur,
+)
 
 RACINE_TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
@@ -83,11 +88,19 @@ def _pages_visibles(courante: int, total: int) -> list[int | str]:
     return pages
 
 
+def _libelle_role(role: RoleCollaborateur | str | None) -> str:
+    if role is None:
+        return "—"
+    code = role.value if isinstance(role, RoleCollaborateur) else role
+    return LIBELLES_ROLE.get(code, code)
+
+
 templates = Jinja2Templates(directory=RACINE_TEMPLATES)
 templates.env.filters["libelle_phase"] = lambda p: (
     p.libelle if isinstance(p, PhaseChantier) else "—"
 )
 templates.env.filters["libelle_etat"] = _libelle_etat
+templates.env.filters["libelle_role"] = _libelle_role
 templates.env.filters["temps_relatif"] = temps_relatif
 templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri

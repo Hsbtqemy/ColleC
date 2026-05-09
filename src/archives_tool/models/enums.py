@@ -80,3 +80,18 @@ class TypeRelationExterne(enum.StrEnum):
     PARTIE_DE = "partie_de"
     SUPPLEMENT_DE = "supplement_de"
     EVOQUE = "evoque"
+
+
+class RoleCollaborateur(enum.StrEnum):
+    NUMERISATION = "numerisation"
+    TRANSCRIPTION = "transcription"
+    INDEXATION = "indexation"
+    CATALOGAGE = "catalogage"
+
+
+LIBELLES_ROLE: dict[str, str] = {
+    RoleCollaborateur.NUMERISATION.value: "Numérisation",
+    RoleCollaborateur.TRANSCRIPTION.value: "Transcription",
+    RoleCollaborateur.INDEXATION.value: "Indexation",
+    RoleCollaborateur.CATALOGAGE.value: "Catalogage",
+}

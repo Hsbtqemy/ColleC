@@ -119,7 +119,9 @@ def _charger_collection(session: Session, cote: str) -> Collection:
     return col
 
 
-def fil_ariane_collection(col: Collection, *, page_courante: str | None = None) -> list[dict]:
+def fil_ariane_collection(
+    col: Collection, *, page_courante: str | None = None
+) -> list[dict]:
     """Construit le fil d'Ariane d'une collection.
 
     Tableau de bord › … parents … › cote_courante › [page_courante].

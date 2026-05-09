@@ -16,8 +16,11 @@ from archives_tool.api.main import app
 from archives_tool.api.services.collections_creation import (
     FormulaireCollection,
     creer_collection,
+    formulaire_depuis_collection,
     lire_collection_par_cote,
+    modifier_collection,
     valider_formulaire,
+    valider_modification,
 )
 from archives_tool.demo import peupler_base
 from archives_tool.models import Collection, PhaseChantier
@@ -202,6 +205,142 @@ def test_get_formulaire_parent_inconnu_silencieux(base_demo: Path) -> None:
     client = TestClient(app)
     resp = client.get("/collections/nouvelle?parent=NEXISTE_PAS")
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Service modification
+# ---------------------------------------------------------------------------
+
+
+def test_formulaire_depuis_collection(session: Session) -> None:
+    col = Collection(
+        cote_collection="X",
+        titre="X",
+        description="d",
+        responsable_archives="Marie",
+        personnalite_associee="Sand",
+        phase="catalogage",
+    )
+    session.add(col)
+    session.commit()
+    formulaire = formulaire_depuis_collection(col)
+    assert formulaire.cote == "X"
+    assert formulaire.titre == "X"
+    assert formulaire.description == "d"
+    assert formulaire.responsable_archives == "Marie"
+    assert formulaire.personnalite_associee == "Sand"
+
+
+def test_valider_modification_self_parent_rejete(session: Session) -> None:
+    col = Collection(cote_collection="X", titre="X", phase="catalogage")
+    session.add(col)
+    session.commit()
+    formulaire = formulaire_depuis_collection(col)
+    formulaire.parent_cote = "X"  # auto-référence
+    res = valider_modification(session, col, formulaire)
+    assert "parent_cote" in res.erreurs
+
+
+def test_valider_modification_doi_doublon_autre_collection(session: Session) -> None:
+    a = Collection(
+        cote_collection="A", titre="A", phase="catalogage", doi_nakala="10.x.y"
+    )
+    b = Collection(cote_collection="B", titre="B", phase="catalogage")
+    session.add_all([a, b])
+    session.commit()
+    formulaire = formulaire_depuis_collection(b)
+    formulaire.doi_nakala = "10.x.y"  # déjà sur A
+    res = valider_modification(session, b, formulaire)
+    assert "doi_nakala" in res.erreurs
+
+
+def test_valider_modification_doi_inchange_ok(session: Session) -> None:
+    """Un DOI déjà attribué à la même collection ne déclenche pas d'erreur."""
+    col = Collection(
+        cote_collection="C", titre="C", phase="catalogage", doi_nakala="10.x.z"
+    )
+    session.add(col)
+    session.commit()
+    formulaire = formulaire_depuis_collection(col)
+    res = valider_modification(session, col, formulaire)
+    assert res.ok
+
+
+def test_modifier_collection_persistance(session: Session) -> None:
+    col = Collection(cote_collection="M", titre="ancien", phase="catalogage")
+    session.add(col)
+    session.commit()
+    formulaire = formulaire_depuis_collection(col)
+    formulaire.titre = "nouveau"
+    formulaire.responsable_archives = "Hugo"
+    formulaire.personnalite_associee = "Anonyme"
+    formulaire.phase = "revision"
+    modifier_collection(session, col, formulaire, modifie_par="hugo")
+    relue = lire_collection_par_cote(session, "M")
+    assert relue.titre == "nouveau"
+    assert relue.responsable_archives == "Hugo"
+    assert relue.personnalite_associee == "Anonyme"
+    assert relue.phase == "revision"
+    assert relue.modifie_par == "hugo"
+
+
+# ---------------------------------------------------------------------------
+# Routes modification
+# ---------------------------------------------------------------------------
+
+
+def test_get_formulaire_modification(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.get("/collection/HK/modifier")
+    assert resp.status_code == 200
+    assert "Modifier" in resp.text
+    # Cote en lecture seule.
+    assert "ne peut pas être modifiée" in resp.text
+
+
+def test_get_modification_collection_inexistante_404(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.get("/collection/N_EXISTE_PAS/modifier")
+    assert resp.status_code == 404
+
+
+def test_post_modification_redirect(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/HK/modifier",
+        data={"titre": "Hara-Kiri (modifié)", "phase": "catalogage"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/collection/HK/items"
+
+
+def test_post_modification_titre_vide_re_render(base_demo: Path) -> None:
+    client = TestClient(app)
+    resp = client.post(
+        "/collection/HK/modifier",
+        data={"titre": "", "phase": "catalogage"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+    assert "titre est obligatoire" in resp.text
+
+
+def test_post_modification_cote_ignoree(base_demo: Path) -> None:
+    """Tentative de changer la cote via le POST → ignorée silencieusement."""
+    client = TestClient(app)
+    client.post(
+        "/collection/HK/modifier",
+        data={
+            "cote": "PIRATE",  # tentative — ignorée
+            "titre": "Hara-Kiri",
+            "phase": "catalogage",
+        },
+        follow_redirects=False,
+    )
+    # HK existe toujours, PIRATE non.
+    assert client.get("/collection/HK/items").status_code == 200
+    assert client.get("/collection/PIRATE/items").status_code == 404
 
 
 def test_post_creation_complete(base_demo: Path) -> None:

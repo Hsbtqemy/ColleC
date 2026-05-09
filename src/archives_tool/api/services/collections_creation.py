@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -67,6 +68,103 @@ def lire_collection_par_cote(db: Session, cote: str) -> Collection | None:
     d'édition. `None` si non trouvée.
     """
     return db.scalar(select(Collection).where(Collection.cote_collection == cote))
+
+
+def formulaire_depuis_collection(col: Collection) -> "FormulaireCollection":
+    """Pré-remplit un `FormulaireCollection` depuis une Collection
+    existante (pour la page de modification)."""
+    return FormulaireCollection(
+        cote=col.cote_collection,
+        titre=col.titre,
+        description=col.description or "",
+        description_interne=col.description_interne or "",
+        editeur=col.editeur or "",
+        lieu_edition=col.lieu_edition or "",
+        personnalite_associee=col.personnalite_associee or "",
+        responsable_archives=col.responsable_archives or "",
+        date_debut=col.date_debut or "",
+        date_fin=col.date_fin or "",
+        phase=col.phase or PhaseChantier.CATALOGAGE.value,
+        parent_cote=col.parent.cote_collection if col.parent else "",
+        doi_nakala=col.doi_nakala or "",
+    )
+
+
+def valider_modification(
+    db: Session, col: Collection, formulaire: FormulaireCollection
+) -> ResultatValidation:
+    """Validation pour la modification d'une collection existante.
+
+    La cote est lue seule (non modifiable) — toute valeur reçue dans
+    le formulaire est ignorée. Le DOI Nakala n'est rejeté que s'il
+    pointe vers une AUTRE collection (pas elle-même). Le parent ne
+    peut pas être la collection elle-même (anti-cycle).
+    """
+    res = ResultatValidation()
+
+    if not formulaire.titre.strip():
+        res.erreurs["titre"] = "Le titre est obligatoire."
+
+    if formulaire.phase and formulaire.phase not in _PHASES_VALIDES:
+        res.erreurs["phase"] = "Phase inconnue."
+
+    parent_cote = formulaire.parent_cote.strip()
+    if parent_cote:
+        if parent_cote == col.cote_collection:
+            res.erreurs["parent_cote"] = (
+                "Une collection ne peut pas être son propre parent."
+            )
+        else:
+            parent = lire_collection_par_cote(db, parent_cote)
+            if parent is None:
+                res.erreurs["parent_cote"] = (
+                    f"Aucune collection parente avec la cote {parent_cote!r}."
+                )
+            else:
+                res.parent_resolu = parent
+
+    if formulaire.doi_nakala:
+        existant = db.scalar(
+            select(Collection).where(Collection.doi_nakala == formulaire.doi_nakala)
+        )
+        if existant is not None and existant.id != col.id:
+            res.erreurs["doi_nakala"] = (
+                f"Le DOI Nakala est déjà associé à la collection "
+                f"{existant.cote_collection!r}."
+            )
+
+    return res
+
+
+def modifier_collection(
+    db: Session,
+    col: Collection,
+    formulaire: FormulaireCollection,
+    *,
+    modifie_par: str,
+    parent: Collection | None = None,
+) -> Collection:
+    """Met à jour la collection. La cote n'est jamais modifiée."""
+    if parent is None and formulaire.parent_cote.strip():
+        parent = lire_collection_par_cote(db, formulaire.parent_cote.strip())
+
+    col.titre = formulaire.titre.strip()
+    col.description = formulaire.description or None
+    col.description_interne = formulaire.description_interne or None
+    col.editeur = formulaire.editeur or None
+    col.lieu_edition = formulaire.lieu_edition or None
+    col.personnalite_associee = formulaire.personnalite_associee or None
+    col.responsable_archives = formulaire.responsable_archives or None
+    col.date_debut = formulaire.date_debut or None
+    col.date_fin = formulaire.date_fin or None
+    col.doi_nakala = formulaire.doi_nakala or None
+    col.phase = formulaire.phase or PhaseChantier.CATALOGAGE.value
+    col.parent_id = parent.id if parent else None
+    col.modifie_par = modifie_par
+    col.modifie_le = datetime.now()
+    db.commit()
+    db.refresh(col)
+    return col
 
 
 def valider_formulaire(

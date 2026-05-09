@@ -1010,16 +1010,13 @@ def cmd_demo_init(
         f"[succes]✓[/succes] Base de démonstration créée : "
         f"[valeur]{rapport.chemin_db}[/valeur]"
     )
+    console_mod.console.print(f"  {rapport.nb_fonds} fonds")
     console_mod.console.print(
         f"  {rapport.nb_collections} collections "
-        f"({rapport.nb_collections_racines} racines + "
-        f"{rapport.nb_collections - rapport.nb_collections_racines} sous)"
+        "(miroirs + libres + transversale)"
     )
-    console_mod.console.print(f"  {rapport.nb_items} items répartis")
+    console_mod.console.print(f"  {rapport.nb_items} items rattachés")
     console_mod.console.print(f"  {rapport.nb_fichiers} fichiers référencés")
-    console_mod.console.print(
-        f"  {rapport.nb_anomalies} points de vigilance synthétiques"
-    )
     console_mod.console.print(
         "Pour lancer l'interface sur cette base :\n"
         f"  ARCHIVES_DB={rapport.chemin_db} "

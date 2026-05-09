@@ -1,124 +1,70 @@
-"""Données factices pour la démo de l'interface.
+"""Génération de la base de démonstration V0.9.0+.
 
-Crée des collections (FA, HK, PF, RDM, LE), une hiérarchie pour FA,
-quelques dizaines d'items par collection, des fichiers, et une poignée
-d'événements de journal pour avoir une activité récente non vide. Pas
-d'écriture sur disque pour les fichiers : `derive_genere=False`,
-hash factices ; les contrôles de cohérence détecteront naturellement
-quelques anomalies (orphelins, doublons).
+5 fonds (HK, FA, RDM, MAR, CONC-1789) avec leurs collections miroirs
+auto-créées, 4 collections libres rattachées au fonds Aínsa, et une
+collection transversale « Témoignages d'exil » qui pioche dans deux
+fonds. ~330 items, ~1000 fichiers (entrées DB seulement, pas de
+fichier physique sur disque).
+
+Le seeder utilise exclusivement les services métier
+(`creer_fonds`, `creer_collection_libre`, `creer_item`,
+`ajouter_item_a_collection`, `ajouter_collaborateur`) — aucun INSERT
+direct. Cela garantit que les invariants V0.9.0 sont respectés
+(notamment l'auto-rattachement à la miroir).
+
+Reproductibilité : RNG local seedé à 42 par défaut. Deux appels
+consécutifs avec le même seed produisent des bases identiques.
 """
 
 from __future__ import annotations
 
 import random
-import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    ajouter_item_a_collection,
+    creer_collection_libre,
+)
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+)
+from archives_tool.api.services.items import (
+    FormulaireItem,
+    creer_item,
+)
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.models import (
     Base,
+    CollaborateurFonds,
     Collection,
     EtatCatalogage,
     Fichier,
+    Fonds,
     Item,
-    ModificationItem,
-    OperationFichier,
-    OperationImport,
-    PhaseChantier,
-    StatutOperation,
-    TypeOperationFichier,
+    RoleCollaborateur,
 )
 
 
 @dataclass
 class RapportDemo:
+    """Comptage de ce qui a été produit, pour affichage CLI."""
+
     chemin_db: Path
-    nb_collections: int
-    nb_collections_racines: int
+    nb_fonds: int
+    nb_collections: int  # toutes types confondus (miroirs + libres + transversale)
     nb_items: int
     nb_fichiers: int
-    nb_anomalies: int
 
 
-_COLLECTIONS_RACINES = [
-    {
-        "cote": "FA",
-        "titre": "Fonds Aínsa",
-        "phase": PhaseChantier.CATALOGAGE,
-        "editeur": None,
-        "items_titres": [
-            "Carta de don Pedro",
-            "Memoria del año 1923",
-            "Inventario de bienes",
-            "Cuaderno de campo",
-            "Correspondencia oficial",
-        ],
-    },
-    {
-        "cote": "HK",
-        "titre": "Hara-Kiri",
-        "phase": PhaseChantier.REVISION,
-        "editeur": "Cavanna",
-        "items_titres": [
-            "Numéro inaugural",
-            "Le scandale du jour",
-            "Sommaire de l'été",
-            "Planche centrale",
-            "Édition spéciale",
-        ],
-    },
-    {
-        "cote": "PF",
-        "titre": "Por Favor",
-        "phase": PhaseChantier.NUMERISATION,
-        "editeur": "Equipo Por Favor",
-        "items_titres": [
-            "Editorial de portada",
-            "Crónica política",
-            "Reportaje fotográfico",
-            "Sección humor",
-            "Cartas al director",
-        ],
-    },
-    {
-        "cote": "RDM",
-        "titre": "Revue des Deux Mondes",
-        "phase": PhaseChantier.FINALISATION,
-        "editeur": "Buloz",
-        "items_titres": [
-            "Chronique littéraire",
-            "Notes de voyage",
-            "Histoire contemporaine",
-            "Critique d'art",
-            "Économie politique",
-        ],
-    },
-    {
-        "cote": "LE",
-        "titre": "Lois sur l'engagement",
-        "phase": PhaseChantier.ARCHIVEE,
-        "editeur": None,
-        "items_titres": [
-            "Décret 1915-04",
-            "Annexe au registre",
-            "Délibération communale",
-            "Avis préfectoral",
-        ],
-    },
-]
-
-_SOUS_COLLECTIONS_FA = [
-    ("FA-AA", "Œuvres", PhaseChantier.CATALOGAGE),
-    ("FA-AB", "Correspondance", PhaseChantier.REVISION),
-    ("FA-AC", "Documentation", PhaseChantier.CATALOGAGE),
-    ("FA-AD", "Photographies", PhaseChantier.NUMERISATION),
-]
-
-_ETATS_DISTRIBUTION = [
+_ETATS_DISTRIBUTION: list[EtatCatalogage] = [
+    EtatCatalogage.VALIDE,
     EtatCatalogage.VALIDE,
     EtatCatalogage.VALIDE,
     EtatCatalogage.VERIFIE,
@@ -128,162 +74,380 @@ _ETATS_DISTRIBUTION = [
 ]
 
 
-def _hash_factice(seed: str) -> str:
-    return (
-        uuid.uuid5(uuid.NAMESPACE_OID, seed).hex
-        + uuid.uuid5(uuid.NAMESPACE_OID, seed[::-1]).hex[:32]
-    )
+def _etat_alea(alea: random.Random) -> str:
+    return alea.choice(_ETATS_DISTRIBUTION).value
 
 
-def _creer_collection(
-    session: Session,
-    cote: str,
-    titre: str,
-    phase: PhaseChantier,
-    alea: random.Random,
-    *,
-    parent: Collection | None = None,
-    editeur: str | None = None,
-) -> Collection:
-    col = Collection(
-        cote_collection=cote,
-        titre=titre,
-        editeur=editeur,
-        phase=phase.value,
-        parent=parent,
-        cree_par="Marie",
-        modifie_par="Marie",
-        modifie_le=datetime.now() - timedelta(days=alea.randint(0, 5)),
-    )
-    session.add(col)
-    session.flush()
-    return col
-
-
-def _creer_items(
-    session: Session,
-    collection: Collection,
-    titres: list[str],
-    alea: random.Random,
-    *,
-    nb_min: int = 30,
-    nb_max: int = 50,
-) -> list[Item]:
-    nb = alea.randint(nb_min, nb_max)
-    items: list[Item] = []
-    for i in range(1, nb + 1):
-        titre_base = alea.choice(titres)
-        item = Item(
-            collection_id=collection.id,
-            cote=f"{collection.cote_collection}-{i:03d}",
-            titre=f"{titre_base} #{i}",
-            annee=alea.randint(1890, 1985),
-            etat_catalogage=alea.choice(_ETATS_DISTRIBUTION).value,
-            cree_par="Marie",
-            modifie_par="Marie",
-            modifie_le=datetime.now() - timedelta(hours=alea.randint(0, 200)),
-        )
-        session.add(item)
-        items.append(item)
-    session.flush()
-    return items
-
-
-def _creer_fichiers(
-    session: Session,
+def _seed_fichiers(
+    db: Session,
     item: Item,
     alea: random.Random,
     *,
-    racine: str = "scans_revues",
-) -> list[Fichier]:
-    nb = alea.randint(5, 15)
-    fichiers: list[Fichier] = []
+    racine: str,
+    nb_min: int = 5,
+    nb_max: int = 12,
+    extension: str = "tif",
+) -> int:
+    """Crée des entrées Fichier pour un item (chemins fictifs ;
+    la base demo ne touche pas au disque). Retourne le compte."""
+    nb = alea.randint(nb_min, nb_max)
     for ordre in range(1, nb + 1):
-        nom = f"{item.cote}-{ordre:02d}.png"
-        fichier = Fichier(
-            item_id=item.id,
-            racine=racine,
-            chemin_relatif=f"{item.cote}/{nom}",
-            nom_fichier=nom,
-            ordre=ordre,
-            hash_sha256=_hash_factice(f"{item.id}-{ordre}"),
-            taille_octets=alea.randint(500_000, 5_000_000),
-            largeur_px=alea.randint(1500, 4000),
-            hauteur_px=alea.randint(2000, 5000),
-            format="png",
-            ajoute_par="Marie",
-        )
-        session.add(fichier)
-        fichiers.append(fichier)
-    session.flush()
-    return fichiers
-
-
-def _creer_journaux(session: Session, items: list[Item], alea: random.Random) -> None:
-    """Quelques entrées récentes pour peupler l'activité du dashboard."""
-    if not items:
-        return
-
-    batch_renommage = str(uuid.uuid4())
-    for item in alea.sample(items, k=min(3, len(items))):
-        if not item.fichiers:
-            continue
-        f = item.fichiers[0]
-        session.add(
-            OperationFichier(
-                batch_id=batch_renommage,
-                fichier_id=f.id,
-                type_operation=TypeOperationFichier.RENAME.value,
-                racine_avant=f.racine,
-                chemin_avant=f.chemin_relatif,
-                racine_apres=f.racine,
-                chemin_apres=f.chemin_relatif,
-                statut=StatutOperation.REUSSIE.value,
-                execute_par="Marie",
-                execute_le=datetime.now() - timedelta(hours=alea.randint(1, 12)),
-            )
-        )
-
-    for item in alea.sample(items, k=min(4, len(items))):
-        session.add(
-            ModificationItem(
+        nom = f"{item.cote}-{ordre:02d}.{extension}"
+        db.add(
+            Fichier(
                 item_id=item.id,
-                champ="titre",
-                valeur_avant=None,
-                valeur_apres=item.titre,
-                modifie_par="Marie",
-                modifie_le=datetime.now() - timedelta(hours=alea.randint(1, 24)),
+                racine=racine,
+                chemin_relatif=f"{item.cote}/{nom}",
+                nom_fichier=nom,
+                ordre=ordre,
+                taille_octets=alea.randint(500_000, 5_000_000),
+                largeur_px=alea.randint(2400, 3600),
+                hauteur_px=alea.randint(3000, 4800),
+                format=extension,
+                ajoute_par="seeder",
             )
         )
+    return nb
 
-    session.add(
-        OperationImport(
-            batch_id=str(uuid.uuid4()),
-            profil_chemin="profiles/demo.yaml",
-            collection_id=items[0].collection_id,
-            items_crees=len(items),
-            fichiers_ajoutes=sum(len(i.fichiers) for i in items),
-            execute_par="Marie",
-            execute_le=datetime.now() - timedelta(days=2),
+
+# ---------------------------------------------------------------------------
+# Fonds Hara-Kiri (HK) — 40 items
+# ---------------------------------------------------------------------------
+
+
+def _seed_fonds_hk(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+    fonds = creer_fonds(
+        db,
+        FormulaireFonds(
+            cote="HK",
+            titre="Hara-Kiri",
+            description="Revue satirique mensuelle fondée par Cavanna.",
+            description_publique=(
+                "Hara-Kiri, mensuel satirique français (1960-1985), "
+                "édité par Cavanna et le Professeur Choron."
+            ),
+            responsable_archives="Cavanna",
+            editeur="Éditions du Square",
+            lieu_edition="Paris",
+            periodicite="mensuel",
+            date_debut="1969",
+            date_fin="1985",
+        ),
+        cree_par="seeder",
+    )
+
+    nb_fichiers = 0
+    for i in range(1, 41):
+        annee = 1969 + (i // 4)
+        annee = min(annee, 1985)
+        item = creer_item(
+            db,
+            FormulaireItem(
+                cote=f"HK-{i:03d}",
+                titre=f"Numéro {i} de Hara-Kiri",
+                fonds_id=fonds.id,
+                description="Numéro mensuel — couvertures, dessins, textes.",
+                date=str(annee),
+                annee=annee,
+                etat_catalogage=_etat_alea(alea),
+            ),
+            cree_par="seeder",
         )
+        nb_fichiers += _seed_fichiers(
+            db, item, alea, racine="scans_revues", extension="tif"
+        )
+    return fonds, nb_fichiers
+
+
+# ---------------------------------------------------------------------------
+# Fonds Aínsa (FA) — 4 collections libres + miroir
+# ---------------------------------------------------------------------------
+
+
+_AINSA_COLLECTIONS = (
+    ("FA-OEUVRES", "Œuvres", "Manuscrit autographe", 39, "manuscrit"),
+    ("FA-CORRESP", "Correspondance", "Lettre", 32, "lettre"),
+    ("FA-DOCU", "Documentation", "Note de travail", 47, "note"),
+    ("FA-PHOTOS", "Photographies", "Photographie", 49, "photo"),
+)
+
+
+def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, int, list[Item]]:
+    fonds = creer_fonds(
+        db,
+        FormulaireFonds(
+            cote="FA",
+            titre="Fonds Aínsa",
+            description="Fonds personnel de l'écrivain uruguayen Fernando Aínsa.",
+            personnalite_associee="Aínsa, Fernando",
+            responsable_archives="Idmhand, Fatiha",
+            date_debut="1955",
+            date_fin="2019",
+        ),
+        cree_par="seeder",
+    )
+
+    nb_fichiers = 0
+    items_thematiques: list[Item] = []  # œuvres + correspondance, candidats transversale
+    for cote_libre, titre_libre, base_titre, nb_items, racine in _AINSA_COLLECTIONS:
+        libre = creer_collection_libre(
+            db,
+            FormulaireCollection(
+                cote=cote_libre,
+                titre=titre_libre,
+                fonds_id=fonds.id,
+                description=f"Sous-classement « {titre_libre} » du fonds Aínsa.",
+            ),
+            cree_par="seeder",
+        )
+        for i in range(1, nb_items + 1):
+            annee = alea.randint(1955, 2019)
+            item = creer_item(
+                db,
+                FormulaireItem(
+                    cote=f"{cote_libre}-{i:03d}",
+                    titre=f"{base_titre} n°{i}",
+                    fonds_id=fonds.id,
+                    description=f"{titre_libre} — pièce {i}.",
+                    date=str(annee),
+                    annee=annee,
+                    etat_catalogage=_etat_alea(alea),
+                ),
+                cree_par="seeder",
+            )
+            ajouter_item_a_collection(
+                db, item.id, libre.id, ajoute_par="seeder"
+            )
+            nb_fichiers += _seed_fichiers(
+                db, item, alea, racine=racine, nb_min=1, nb_max=4, extension="tif"
+            )
+            if cote_libre in ("FA-OEUVRES", "FA-CORRESP"):
+                items_thematiques.append(item)
+    return fonds, nb_fichiers, items_thematiques
+
+
+# ---------------------------------------------------------------------------
+# Fonds Revue des Deux Mondes (RDM) — 36 items
+# ---------------------------------------------------------------------------
+
+
+def _seed_fonds_rdm(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+    fonds = creer_fonds(
+        db,
+        FormulaireFonds(
+            cote="RDM",
+            titre="Revue des Deux Mondes",
+            description="Revue littéraire et politique bimensuelle.",
+            editeur="Buloz",
+            lieu_edition="Paris",
+            periodicite="bimensuel",
+            issn="0035-1962",
+            responsable_archives="Marie",
+            date_debut="1900",
+            date_fin="1929",
+        ),
+        cree_par="seeder",
+    )
+    nb_fichiers = 0
+    for i in range(1, 37):
+        annee = 1900 + i - 1
+        item = creer_item(
+            db,
+            FormulaireItem(
+                cote=f"RDM-{i:03d}",
+                titre=f"Livraison de {annee}",
+                fonds_id=fonds.id,
+                description="Numéro semestriel — articles, chroniques, critiques.",
+                date=str(annee),
+                annee=annee,
+                etat_catalogage=_etat_alea(alea),
+            ),
+            cree_par="seeder",
+        )
+        nb_fichiers += _seed_fichiers(
+            db, item, alea, racine="scans_revues", extension="tif"
+        )
+    return fonds, nb_fichiers
+
+
+# ---------------------------------------------------------------------------
+# Fonds Marges (MAR) — 40 items
+# ---------------------------------------------------------------------------
+
+
+def _seed_fonds_mar(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+    fonds = creer_fonds(
+        db,
+        FormulaireFonds(
+            cote="MAR",
+            titre="Marges",
+            description="Zine personnel auto-édité, fanzine littéraire.",
+            personnalite_associee="auteur du zine",
+            responsable_archives="Lucas",
+            periodicite="irrégulier",
+            date_debut="1990",
+            date_fin="1999",
+        ),
+        cree_par="seeder",
+    )
+    nb_fichiers = 0
+    for i in range(1, 41):
+        annee = 1990 + (i % 10)
+        item = creer_item(
+            db,
+            FormulaireItem(
+                cote=f"MAR-{i:03d}",
+                titre=f"Marges n°{i}",
+                fonds_id=fonds.id,
+                date=str(annee),
+                annee=annee,
+                etat_catalogage=_etat_alea(alea),
+            ),
+            cree_par="seeder",
+        )
+        nb_fichiers += _seed_fichiers(
+            db, item, alea, racine="scans_zines", nb_min=1, nb_max=3, extension="png"
+        )
+    return fonds, nb_fichiers
+
+
+# ---------------------------------------------------------------------------
+# Fonds Concorde 1789 (CONC-1789) — 50 items
+# ---------------------------------------------------------------------------
+
+
+def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, int, list[Item]]:
+    fonds = creer_fonds(
+        db,
+        FormulaireFonds(
+            cote="CONC-1789",
+            titre="Concorde 1789",
+            description="Almanachs et brochures de la période révolutionnaire.",
+            lieu_edition="Paris",
+            date_debut="1789",
+            date_fin="1791",
+        ),
+        cree_par="seeder",
+    )
+    nb_fichiers = 0
+    items: list[Item] = []
+    for i in range(1, 51):
+        annee = 1789 + (i % 3)
+        item = creer_item(
+            db,
+            FormulaireItem(
+                cote=f"CONC-1789-{i:03d}",
+                titre=f"Brochure révolutionnaire n°{i}",
+                fonds_id=fonds.id,
+                description="Pamphlet ou almanach révolutionnaire.",
+                date=str(annee),
+                annee=annee,
+                etat_catalogage=_etat_alea(alea),
+            ),
+            cree_par="seeder",
+        )
+        items.append(item)
+        nb_fichiers += _seed_fichiers(
+            db, item, alea, racine="scans_historiques", nb_min=1, nb_max=5, extension="tif"
+        )
+    return fonds, nb_fichiers, items
+
+
+# ---------------------------------------------------------------------------
+# Collection transversale Témoignages d'exil
+# ---------------------------------------------------------------------------
+
+
+def _seed_transversale(
+    db: Session,
+    items_ainsa: Iterable[Item],
+    items_conc: Iterable[Item],
+) -> tuple[int, int]:
+    """Collection transversale piochée dans Aínsa et Concorde 1789."""
+    coll = creer_collection_libre(
+        db,
+        FormulaireCollection(
+            cote="TEMOIG",
+            titre="Témoignages d'exil",
+            fonds_id=None,
+            description=(
+                "Sélection thématique transversale d'items qui parlent "
+                "d'exil et de bouleversement révolutionnaire."
+            ),
+        ),
+        cree_par="seeder",
+    )
+    selection_ainsa = sorted(items_ainsa, key=lambda i: i.cote)[:12]
+    selection_conc = sorted(items_conc, key=lambda i: i.cote)[:6]
+    for item in selection_ainsa + selection_conc:
+        ajouter_item_a_collection(db, item.id, coll.id, ajoute_par="seeder")
+    return 1, len(selection_ainsa) + len(selection_conc)
+
+
+# ---------------------------------------------------------------------------
+# Collaborateurs
+# ---------------------------------------------------------------------------
+
+
+def _seed_collaborateurs(
+    db: Session,
+    fonds_hk: Fonds,
+    fonds_fa: Fonds,
+    fonds_rdm: Fonds,
+) -> None:
+    """Crée les `CollaborateurFonds` directement (pas de service CRUD
+    dédié pour cette entité en V0.9.0-alpha.1 ; sera ajouté en V0.9.0-beta
+    avec les routes web de gestion des collaborateurs)."""
+    db.add_all(
+        [
+            CollaborateurFonds(
+                fonds_id=fonds_hk.id,
+                nom="Marie Dupont",
+                roles=[RoleCollaborateur.NUMERISATION.value],
+                periode="2022",
+            ),
+            CollaborateurFonds(
+                fonds_id=fonds_hk.id,
+                nom="Hugo Martin",
+                roles=[
+                    RoleCollaborateur.CATALOGAGE.value,
+                    RoleCollaborateur.INDEXATION.value,
+                ],
+                periode="2023",
+            ),
+            CollaborateurFonds(
+                fonds_id=fonds_fa.id,
+                nom="Idmhand, Fatiha",
+                roles=[RoleCollaborateur.CATALOGAGE.value],
+            ),
+            CollaborateurFonds(
+                fonds_id=fonds_fa.id,
+                nom="Marie Dupont",
+                roles=[
+                    RoleCollaborateur.NUMERISATION.value,
+                    RoleCollaborateur.INDEXATION.value,
+                ],
+                periode="2022-2023",
+            ),
+            CollaborateurFonds(
+                fonds_id=fonds_rdm.id,
+                nom="Lucas Bernard",
+                roles=[RoleCollaborateur.TRANSCRIPTION.value],
+            ),
+        ]
     )
 
 
-def _injecter_doublons(items: list[Item]) -> int:
-    """Force deux fichiers à partager un même hash pour le contrôle qa."""
-    if len(items) < 2 or not items[0].fichiers or not items[1].fichiers:
-        return 0
-    items[1].fichiers[0].hash_sha256 = items[0].fichiers[0].hash_sha256
-    return 1
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
 
 
 def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
     """Construit la base de démonstration (création + remplissage).
 
-    `seed` permet de rejouer la même base (pour les tests) ou d'en
-    générer une variante. Le RNG est local : appeler deux fois la
-    fonction sur le même seed produit deux bases identiques, alors
-    qu'un RNG module-level ferait dériver l'état entre appels.
+    `seed` permet de rejouer la même base (tests déterministes) ou
+    d'en générer une variante.
     """
     alea = random.Random(seed)
     chemin_db.parent.mkdir(parents=True, exist_ok=True)
@@ -293,58 +457,29 @@ def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
     factory = creer_session_factory(engine)
     nb_items_total = 0
     nb_fichiers_total = 0
-    anomalies = 0
 
     with factory() as session:
-        racines: dict[str, Collection] = {}
-        for cfg in _COLLECTIONS_RACINES:
-            col = _creer_collection(
-                session,
-                cfg["cote"],
-                cfg["titre"],
-                cfg["phase"],
-                alea,
-                editeur=cfg.get("editeur"),
-            )
-            racines[col.cote_collection] = col
-            items = _creer_items(session, col, cfg["items_titres"], alea)
-            for item in items:
-                _creer_fichiers(session, item, alea)
-            nb_items_total += len(items)
-            nb_fichiers_total += sum(len(it.fichiers) for it in items)
-            anomalies += _injecter_doublons(items)
-            _creer_journaux(session, items, alea)
-
-        for cote, titre, phase in _SOUS_COLLECTIONS_FA:
-            sous = _creer_collection(
-                session, cote, titre, phase, alea, parent=racines["FA"]
-            )
-            items = _creer_items(session, sous, ["Pièce", "Document", "Notice"], alea)
-            for item in items:
-                _creer_fichiers(session, item, alea)
-            nb_items_total += len(items)
-            nb_fichiers_total += sum(len(it.fichiers) for it in items)
-
-        # Anomalie supplémentaire : un item sans fichier dans HK.
-        hk = racines["HK"]
-        item_vide = Item(
-            collection_id=hk.id,
-            cote=f"{hk.cote_collection}-VIDE",
-            titre="Numéro disparu",
-            cree_par="Marie",
-        )
-        session.add(item_vide)
-        anomalies += 1
-        nb_items_total += 1
-
+        fonds_hk, n_fic_hk = _seed_fonds_hk(session, alea)
+        fonds_fa, n_fic_fa, items_ainsa_thematiques = _seed_fonds_fa(session, alea)
+        fonds_rdm, n_fic_rdm = _seed_fonds_rdm(session, alea)
+        _fonds_mar, n_fic_mar = _seed_fonds_mar(session, alea)
+        _fonds_conc, n_fic_conc, items_conc = _seed_fonds_conc(session, alea)
+        _seed_transversale(session, items_ainsa_thematiques, items_conc)
+        _seed_collaborateurs(session, fonds_hk, fonds_fa, fonds_rdm)
         session.commit()
+
+        nb_items_total = session.scalar(select(func.count()).select_from(Item)) or 0
+        nb_fichiers_total = n_fic_hk + n_fic_fa + n_fic_rdm + n_fic_mar + n_fic_conc
+        nb_collections = (
+            session.scalar(select(func.count()).select_from(Collection)) or 0
+        )
+        nb_fonds = session.scalar(select(func.count()).select_from(Fonds)) or 0
 
     engine.dispose()
     return RapportDemo(
         chemin_db=chemin_db,
-        nb_collections=len(_COLLECTIONS_RACINES) + len(_SOUS_COLLECTIONS_FA),
-        nb_collections_racines=len(_COLLECTIONS_RACINES),
+        nb_fonds=nb_fonds,
+        nb_collections=nb_collections,
         nb_items=nb_items_total,
         nb_fichiers=nb_fichiers_total,
-        nb_anomalies=anomalies,
     )

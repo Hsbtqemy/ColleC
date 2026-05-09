@@ -85,7 +85,7 @@
 
   <section style="margin-bottom:28px;">
     <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
-      Métadonnées de base (optionnel)
+      Description (optionnel)
     </h2>
     {{ textarea('description', 'Description publique',
                 formulaire.description,
@@ -93,16 +93,34 @@
     {{ textarea('description_interne', 'Description interne',
                 formulaire.description_interne,
                 help_text='Pour l’équipe — non exportée. Conventions, choix de catalogage, etc.') }}
-    <div class="grid grid-cols-2 gap-3">
-      {{ champ('editeur', 'Éditeur', formulaire.editeur) }}
-      {{ champ('lieu_edition', 'Lieu d’édition', formulaire.lieu_edition) }}
-    </div>
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Origine et responsabilité (optionnel)
+    </h2>
     {{ champ('personnalite_associee', 'Personnalité ou entité associée',
              formulaire.personnalite_associee,
-             help_text='Personne, mouvement ou institution autour duquel s’organise la collection. Optionnel.') }}
+             help_text='Personne, mouvement ou institution autour duquel s’organise la collection.') }}
     {{ champ('responsable_archives', 'Responsable Archives',
              formulaire.responsable_archives,
              help_text='Personne ou institution responsable de la constitution de la collection.') }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Édition <span style="font-size:11px;color:#9ca3af;font-weight:normal;text-transform:none;letter-spacing:0;">— pour les revues et périodiques</span>
+    </h2>
+    <div class="grid grid-cols-2 gap-3">
+      {{ champ('editeur', 'Éditeur (revues)', formulaire.editeur) }}
+      {{ champ('lieu_edition', 'Lieu d’édition (revues)', formulaire.lieu_edition) }}
+    </div>
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Période
+    </h2>
     <div class="grid grid-cols-2 gap-3">
       {{ champ('date_debut', 'Date début',
                formulaire.date_debut,

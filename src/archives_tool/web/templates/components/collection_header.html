@@ -24,16 +24,51 @@
         {% endif %}
       </p>
     </div>
-    <div class="flex gap-2 text-sm text-gray-500 shrink-0">
-      <span class="font-tabular">{{ detail.nb_items }} items</span>
-      <span aria-hidden="true">·</span>
-      <span class="font-tabular">{{ detail.nb_fichiers }} fichiers</span>
-      {% if detail.nb_sous_collections > 0 %}
+    <div class="flex flex-col items-end gap-2 shrink-0">
+      <div class="flex gap-2 text-sm text-gray-500">
+        <span class="font-tabular">{{ detail.nb_items }} items</span>
         <span aria-hidden="true">·</span>
-        <span class="font-tabular">{{ detail.nb_sous_collections }} sous-coll.</span>
-      {% endif %}
+        <span class="font-tabular">{{ detail.nb_fichiers }} fichiers</span>
+        {% if detail.nb_sous_collections > 0 %}
+          <span aria-hidden="true">·</span>
+          <span class="font-tabular">{{ detail.nb_sous_collections }} sous-coll.</span>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/import?collection={{ detail.cote }}"
+           class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+           style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M2 11 H12 M7 2 V8 M4 5 L7 8 L10 5" fill="none" stroke="currentColor"
+                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Importer dans cette collection
+        </a>
+        <a href="/collection/{{ detail.cote }}/modifier"
+           class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+           style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+          <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M2 12 L4 10 L11 3 L12 4 L5 11 L2.5 11.5 Z" fill="none" stroke="currentColor"
+                  stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Modifier la collection
+        </a>
+      </div>
     </div>
   </div>
+  {% if detail.personnalite_associee or detail.responsable_archives %}
+    <p class="text-xs text-gray-500 mt-2">
+      {% if detail.personnalite_associee %}
+        <span class="text-gray-400">Personnalité :</span> {{ detail.personnalite_associee }}
+      {% endif %}
+      {% if detail.personnalite_associee and detail.responsable_archives %}
+        <span aria-hidden="true">·</span>
+      {% endif %}
+      {% if detail.responsable_archives %}
+        <span class="text-gray-400">Responsable Archives :</span> {{ detail.responsable_archives }}
+      {% endif %}
+    </p>
+  {% endif %}
   {% if detail.repartition_etats %}
     <div class="mt-4">
       {{ avancement_detaille(detail.repartition_etats) }}

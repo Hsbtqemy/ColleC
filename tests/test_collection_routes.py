@@ -141,3 +141,16 @@ def test_empty_state_sous_collections_avec_lien_parent(base_demo: Path) -> None:
     assert resp.status_code == 200
     assert "Créer une sous-collection" in resp.text
     assert "/collections/nouvelle?parent=HK" in resp.text
+
+
+def test_bandeau_collection_a_les_boutons_modifier_et_importer(
+    base_demo: Path,
+) -> None:
+    client = TestClient(app)
+    resp = client.get("/collection/HK/items")
+    assert resp.status_code == 200
+    # Boutons d'action sur le bandeau (V0.7.x).
+    assert 'href="/collection/HK/modifier"' in resp.text
+    assert "Modifier la collection" in resp.text
+    assert 'href="/import?collection=HK"' in resp.text
+    assert "Importer dans cette collection" in resp.text

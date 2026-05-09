@@ -62,8 +62,12 @@ class Collection(Base, TracabiliteMixin):
         default=TypeCollection.LIBRE.value,
     )
 
+    # ON DELETE SET NULL : les collections libres rattachées au fonds
+    # supprimé deviennent transversales. La miroir, qui ne peut pas
+    # avoir fonds_id NULL (CHECK), doit être supprimée explicitement
+    # par le service avant le fonds.
     fonds_id: Mapped[int | None] = mapped_column(
-        ForeignKey("fonds.id", ondelete="CASCADE"),
+        ForeignKey("fonds.id", ondelete="SET NULL"),
         nullable=True,
     )
 

@@ -55,9 +55,14 @@ class Fonds(Base, TracabiliteMixin):
         cascade="all, delete-orphan",
         order_by="Item.cote",
     )
+    # `passive_deletes=True` : déléguer au FK `ON DELETE SET NULL` sur
+    # les collections libres. Le service `supprimer_fonds` supprime la
+    # miroir explicitement (sans quoi le CHECK miroir↔fonds_id serait
+    # violé par l'auto-NULL d'SQLAlchemy).
     collections: Mapped[list[Collection]] = relationship(
         back_populates="fonds",
         order_by="Collection.titre",
+        passive_deletes=True,
     )
     collaborateurs: Mapped[list[CollaborateurFonds]] = relationship(
         back_populates="fonds",

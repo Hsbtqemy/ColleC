@@ -27,6 +27,7 @@ from archives_tool.exporters.selection import CritereSelection, SelectionErreur
 from archives_tool.importers.ecrivain import RapportImport, importer as importer_profil
 from archives_tool.profils import (
     ProfilInvalide,
+    ProfilObsoleteV1,
     analyser_tableur,
     charger_profil,
     generer_squelette,
@@ -79,18 +80,14 @@ def _charger_config_ou_sortie(chemin: Path) -> ConfigLocale:
 def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
     mode = "DRY-RUN" if rapport.dry_run else "RÉEL"
     typer.echo(f"Import {mode} — durée {rapport.duree_secondes:.2f}s")
-    if rapport.collection_id is not None:
-        verbe = "créée" if rapport.collection_creee else "existante"
-        typer.echo(f"  Collection #{rapport.collection_id} ({verbe})")
-    typer.echo(
-        f"  Items : {rapport.items_crees} créés, "
-        f"{rapport.items_mis_a_jour} mis à jour, "
-        f"{rapport.items_inchanges} inchangés"
-    )
-    typer.echo(
-        f"  Fichiers : {rapport.fichiers_ajoutes} ajoutés, "
-        f"{rapport.fichiers_deja_connus} déjà connus"
-    )
+    if rapport.fonds_cote:
+        verbe = "créé" if rapport.fonds_cree else "existant"
+        suffixe = (
+            f" + miroir personnalisée" if rapport.miroir_personnalisee else ""
+        )
+        typer.echo(f"  Fonds {rapport.fonds_cote} ({verbe}){suffixe}")
+    typer.echo(f"  Items créés : {rapport.items_crees}")
+    typer.echo(f"  Fichiers ajoutés : {rapport.fichiers_ajoutes}")
     if rapport.batch_id:
         typer.echo(f"  batch_id : {rapport.batch_id}")
 
@@ -149,11 +146,20 @@ def cmd_importer(
         help="Chemin de la config locale (racines + identité).",
     ),
 ) -> None:
-    """Importer un profil YAML en base (dry-run par défaut)."""
+    """Importer un profil YAML v2 en base (dry-run par défaut).
+
+    Les profils v1 (avec section `collection:` racine) sont rejetés
+    avec un message de migration vers v2 et exit code 2.
+    """
     config = _charger_config_ou_sortie(config_path)
 
     try:
         profil = charger_profil(chemin_profil)
+    except ProfilObsoleteV1 as e:
+        # Exit code 2 distinct pour signaler explicitement le format
+        # obsolète (vs. erreur de validation v2 qui exit aussi avec 2).
+        typer.echo(str(e), err=True)
+        raise typer.Exit(2) from None
     except ProfilInvalide as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(2) from None
@@ -1022,6 +1028,233 @@ def cmd_demo_init(
         f"  ARCHIVES_DB={rapport.chemin_db} "
         "uv run uvicorn archives_tool.api.main:app --reload"
     )
+
+
+# ---------------------------------------------------------------------------
+# Sous-groupe `collections` : gestion des collections libres en CLI
+# (pendant CLI de l'UI V0.9.0-beta.2.1).
+# ---------------------------------------------------------------------------
+
+collections_app = typer.Typer(
+    help="Gestion des collections libres (création, listage, suppression).",
+    no_args_is_help=True,
+)
+app.add_typer(collections_app, name="collections")
+
+
+def _ouvrir_session(db_path: Path):
+    """Crée une session sur une base SQLite existante."""
+    if not db_path.is_file():
+        typer.echo(f"Erreur : base introuvable ({db_path}).", err=True)
+        raise typer.Exit(2)
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    return factory()
+
+
+@collections_app.command("creer-libre")
+def cmd_collections_creer_libre(
+    cote: str = typer.Argument(..., help="Cote de la nouvelle collection."),
+    titre: str = typer.Argument(..., help="Titre de la nouvelle collection."),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds parent. Omettre pour une collection transversale.",
+    ),
+    description: str | None = typer.Option(
+        None, "--description", "-d", help="Description courte (libre)."
+    ),
+    description_publique: str | None = typer.Option(
+        None,
+        "--description-publique",
+        help="Description publique (exports DC / Nakala).",
+    ),
+    phase: str = typer.Option(
+        "catalogage",
+        "--phase",
+        help="Phase de chantier (numerisation/catalogage/revision/finalisation/archivee/en_pause).",
+    ),
+    db_path: Path = typer.Option(
+        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
+    ),
+) -> None:
+    """Créer une collection libre, transversale (sans --fonds) ou
+    rattachée (avec --fonds COTE).
+    """
+    from archives_tool.api.services.collections import (
+        CollectionInvalide,
+        FormulaireCollection,
+        creer_collection_libre,
+    )
+    from archives_tool.api.services.fonds import (
+        FondsIntrouvable,
+        lire_fonds_par_cote,
+    )
+    from archives_tool.models import PhaseChantier
+
+    if phase not in {p.value for p in PhaseChantier}:
+        typer.echo(
+            f"Erreur : phase {phase!r} invalide. "
+            f"Valides : {sorted(p.value for p in PhaseChantier)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    with _ouvrir_session(db_path) as session:
+        fonds_id: int | None = None
+        if fonds:
+            try:
+                fonds_obj = lire_fonds_par_cote(session, fonds)
+            except FondsIntrouvable:
+                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            fonds_id = fonds_obj.id
+
+        formulaire = FormulaireCollection(
+            cote=cote,
+            titre=titre,
+            description=description or "",
+            description_publique=description_publique or "",
+            phase=phase,
+            fonds_id=fonds_id,
+        )
+        try:
+            col = creer_collection_libre(session, formulaire)
+        except CollectionInvalide as e:
+            typer.echo(f"Erreur : {e.erreurs}", err=True)
+            raise typer.Exit(1) from None
+
+        rattachement = (
+            f"rattachée au fonds {fonds}"
+            if fonds_id is not None
+            else "transversale (sans fonds)"
+        )
+        typer.echo(f"✓ Collection libre créée : {col.cote} — {col.titre}")
+        typer.echo(f"  {rattachement}")
+
+
+@collections_app.command("lister")
+def cmd_collections_lister(
+    fonds: str | None = typer.Option(
+        None, "--fonds", "-f", help="Limiter aux collections du fonds COTE."
+    ),
+    transversales: bool = typer.Option(
+        False,
+        "--transversales",
+        "-t",
+        help="N'afficher que les collections transversales (sans fonds).",
+    ),
+    db_path: Path = typer.Option(
+        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
+    ),
+) -> None:
+    """Lister les collections (toutes, par fonds, ou transversales)."""
+    from sqlalchemy import select as sa_select
+
+    from archives_tool.api.services.fonds import (
+        FondsIntrouvable,
+        lire_fonds_par_cote,
+    )
+    from archives_tool.models import Collection, Fonds, TypeCollection
+
+    with _ouvrir_session(db_path) as session:
+        stmt = sa_select(Collection, Fonds.cote.label("fonds_cote")).join(
+            Fonds, Fonds.id == Collection.fonds_id, isouter=True
+        )
+        if transversales:
+            stmt = stmt.where(Collection.fonds_id.is_(None))
+        elif fonds:
+            try:
+                fonds_obj = lire_fonds_par_cote(session, fonds)
+            except FondsIntrouvable:
+                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            stmt = stmt.where(Collection.fonds_id == fonds_obj.id)
+        stmt = stmt.order_by(Collection.cote)
+
+        rows = session.execute(stmt).all()
+        if not rows:
+            typer.echo("Aucune collection trouvée.")
+            return
+
+        for col, fonds_cote in rows:
+            type_str = (
+                "[miroir]"
+                if col.type_collection == TypeCollection.MIROIR.value
+                else "[libre]"
+            )
+            rattachement = f"— {fonds_cote}" if fonds_cote else "— transversale"
+            typer.echo(
+                f"  {col.cote:20} {col.titre[:40]:40} {type_str:10}{rattachement}"
+            )
+
+
+@collections_app.command("supprimer")
+def cmd_collections_supprimer(
+    cote: str = typer.Argument(..., help="Cote de la collection à supprimer."),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds (pour désambiguïser une cote partagée).",
+    ),
+    confirme: bool = typer.Option(
+        False, "--yes", "-y", help="Sauter la confirmation interactive."
+    ),
+    db_path: Path = typer.Option(
+        Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
+    ),
+) -> None:
+    """Supprimer une collection libre. Refuse les miroirs (gérées par
+    leur fonds parent — utiliser `archives-tool fonds supprimer`)."""
+    from archives_tool.api.services.collections import (
+        CollectionIntrouvable,
+        OperationCollectionInterdite,
+        lire_collection_par_cote,
+        supprimer_collection_libre,
+    )
+    from archives_tool.api.services.fonds import (
+        FondsIntrouvable,
+        lire_fonds_par_cote,
+    )
+    from archives_tool.models import TypeCollection
+
+    with _ouvrir_session(db_path) as session:
+        fonds_id: int | None = None
+        if fonds:
+            try:
+                fonds_obj = lire_fonds_par_cote(session, fonds)
+            except FondsIntrouvable:
+                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            fonds_id = fonds_obj.id
+
+        try:
+            col = lire_collection_par_cote(session, cote, fonds_id=fonds_id)
+        except CollectionIntrouvable as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+
+        if col.type_collection == TypeCollection.MIROIR.value:
+            typer.echo(
+                f"Erreur : la collection {cote} est une miroir, "
+                f"elle est gérée par son fonds.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        if not confirme:
+            typer.echo(f"Supprimer la collection {col.cote} — {col.titre} ?")
+            if not typer.confirm("Confirmer ?", default=False):
+                raise typer.Abort()
+
+        try:
+            supprimer_collection_libre(session, col.id)
+        except OperationCollectionInterdite as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        typer.echo(f"✓ Collection {cote} supprimée.")
 
 
 def main() -> None:

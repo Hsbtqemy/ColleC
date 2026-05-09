@@ -87,9 +87,9 @@ def _seed_fichiers(
     nb_min: int = 5,
     nb_max: int = 12,
     extension: str = "tif",
-) -> int:
+) -> None:
     """Crée des entrées Fichier pour un item (chemins fictifs ;
-    la base demo ne touche pas au disque). Retourne le compte."""
+    la base demo ne touche pas au disque)."""
     nb = alea.randint(nb_min, nb_max)
     for ordre in range(1, nb + 1):
         nom = f"{item.cote}-{ordre:02d}.{extension}"
@@ -107,7 +107,6 @@ def _seed_fichiers(
                 ajoute_par="seeder",
             )
         )
-    return nb
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +114,7 @@ def _seed_fichiers(
 # ---------------------------------------------------------------------------
 
 
-def _seed_fonds_hk(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+def _seed_fonds_hk(db: Session, alea: random.Random) -> Fonds:
     fonds = creer_fonds(
         db,
         FormulaireFonds(
@@ -136,10 +135,8 @@ def _seed_fonds_hk(db: Session, alea: random.Random) -> tuple[Fonds, int]:
         cree_par="seeder",
     )
 
-    nb_fichiers = 0
     for i in range(1, 41):
-        annee = 1969 + (i // 4)
-        annee = min(annee, 1985)
+        annee = min(1969 + (i // 4), 1985)
         item = creer_item(
             db,
             FormulaireItem(
@@ -153,10 +150,8 @@ def _seed_fonds_hk(db: Session, alea: random.Random) -> tuple[Fonds, int]:
             ),
             cree_par="seeder",
         )
-        nb_fichiers += _seed_fichiers(
-            db, item, alea, racine="scans_revues", extension="tif"
-        )
-    return fonds, nb_fichiers
+        _seed_fichiers(db, item, alea, racine="scans_revues", extension="tif")
+    return fonds
 
 
 # ---------------------------------------------------------------------------
@@ -170,9 +165,13 @@ _AINSA_COLLECTIONS = (
     ("FA-DOCU", "Documentation", "Note de travail", 47, "note"),
     ("FA-PHOTOS", "Photographies", "Photographie", 49, "photo"),
 )
+# Sélection candidate pour la collection transversale « Témoignages
+# d'exil » : chacune de ces deux libres contribue ses items à la
+# transversale au-delà de leur miroir habituelle (cf. _seed_transversale).
+_AINSA_THEMATIQUES: frozenset[str] = frozenset({"FA-OEUVRES", "FA-CORRESP"})
 
 
-def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, int, list[Item]]:
+def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, list[Item]]:
     fonds = creer_fonds(
         db,
         FormulaireFonds(
@@ -187,8 +186,7 @@ def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, int, list[I
         cree_par="seeder",
     )
 
-    nb_fichiers = 0
-    items_thematiques: list[Item] = []  # œuvres + correspondance, candidats transversale
+    items_thematiques: list[Item] = []
     for cote_libre, titre_libre, base_titre, nb_items, racine in _AINSA_COLLECTIONS:
         libre = creer_collection_libre(
             db,
@@ -215,15 +213,13 @@ def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, int, list[I
                 ),
                 cree_par="seeder",
             )
-            ajouter_item_a_collection(
-                db, item.id, libre.id, ajoute_par="seeder"
-            )
-            nb_fichiers += _seed_fichiers(
+            ajouter_item_a_collection(db, item.id, libre.id, ajoute_par="seeder")
+            _seed_fichiers(
                 db, item, alea, racine=racine, nb_min=1, nb_max=4, extension="tif"
             )
-            if cote_libre in ("FA-OEUVRES", "FA-CORRESP"):
+            if cote_libre in _AINSA_THEMATIQUES:
                 items_thematiques.append(item)
-    return fonds, nb_fichiers, items_thematiques
+    return fonds, items_thematiques
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +227,7 @@ def _seed_fonds_fa(db: Session, alea: random.Random) -> tuple[Fonds, int, list[I
 # ---------------------------------------------------------------------------
 
 
-def _seed_fonds_rdm(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+def _seed_fonds_rdm(db: Session, alea: random.Random) -> Fonds:
     fonds = creer_fonds(
         db,
         FormulaireFonds(
@@ -248,7 +244,6 @@ def _seed_fonds_rdm(db: Session, alea: random.Random) -> tuple[Fonds, int]:
         ),
         cree_par="seeder",
     )
-    nb_fichiers = 0
     for i in range(1, 37):
         annee = 1900 + i - 1
         item = creer_item(
@@ -264,10 +259,8 @@ def _seed_fonds_rdm(db: Session, alea: random.Random) -> tuple[Fonds, int]:
             ),
             cree_par="seeder",
         )
-        nb_fichiers += _seed_fichiers(
-            db, item, alea, racine="scans_revues", extension="tif"
-        )
-    return fonds, nb_fichiers
+        _seed_fichiers(db, item, alea, racine="scans_revues", extension="tif")
+    return fonds
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +268,7 @@ def _seed_fonds_rdm(db: Session, alea: random.Random) -> tuple[Fonds, int]:
 # ---------------------------------------------------------------------------
 
 
-def _seed_fonds_mar(db: Session, alea: random.Random) -> tuple[Fonds, int]:
+def _seed_fonds_mar(db: Session, alea: random.Random) -> Fonds:
     fonds = creer_fonds(
         db,
         FormulaireFonds(
@@ -290,7 +283,6 @@ def _seed_fonds_mar(db: Session, alea: random.Random) -> tuple[Fonds, int]:
         ),
         cree_par="seeder",
     )
-    nb_fichiers = 0
     for i in range(1, 41):
         annee = 1990 + (i % 10)
         item = creer_item(
@@ -305,10 +297,10 @@ def _seed_fonds_mar(db: Session, alea: random.Random) -> tuple[Fonds, int]:
             ),
             cree_par="seeder",
         )
-        nb_fichiers += _seed_fichiers(
+        _seed_fichiers(
             db, item, alea, racine="scans_zines", nb_min=1, nb_max=3, extension="png"
         )
-    return fonds, nb_fichiers
+    return fonds
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +308,7 @@ def _seed_fonds_mar(db: Session, alea: random.Random) -> tuple[Fonds, int]:
 # ---------------------------------------------------------------------------
 
 
-def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, int, list[Item]]:
+def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, list[Item]]:
     fonds = creer_fonds(
         db,
         FormulaireFonds(
@@ -329,7 +321,6 @@ def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, int, list
         ),
         cree_par="seeder",
     )
-    nb_fichiers = 0
     items: list[Item] = []
     for i in range(1, 51):
         annee = 1789 + (i % 3)
@@ -347,10 +338,10 @@ def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, int, list
             cree_par="seeder",
         )
         items.append(item)
-        nb_fichiers += _seed_fichiers(
+        _seed_fichiers(
             db, item, alea, racine="scans_historiques", nb_min=1, nb_max=5, extension="tif"
         )
-    return fonds, nb_fichiers, items
+    return fonds, items
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +353,7 @@ def _seed_transversale(
     db: Session,
     items_ainsa: Iterable[Item],
     items_conc: Iterable[Item],
-) -> tuple[int, int]:
+) -> None:
     """Collection transversale piochée dans Aínsa et Concorde 1789."""
     coll = creer_collection_libre(
         db,
@@ -381,7 +372,6 @@ def _seed_transversale(
     selection_conc = sorted(items_conc, key=lambda i: i.cote)[:6]
     for item in selection_ainsa + selection_conc:
         ajouter_item_a_collection(db, item.id, coll.id, ajoute_par="seeder")
-    return 1, len(selection_ainsa) + len(selection_conc)
 
 
 # ---------------------------------------------------------------------------
@@ -455,31 +445,27 @@ def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
     Base.metadata.create_all(engine)
 
     factory = creer_session_factory(engine)
-    nb_items_total = 0
-    nb_fichiers_total = 0
-
     with factory() as session:
-        fonds_hk, n_fic_hk = _seed_fonds_hk(session, alea)
-        fonds_fa, n_fic_fa, items_ainsa_thematiques = _seed_fonds_fa(session, alea)
-        fonds_rdm, n_fic_rdm = _seed_fonds_rdm(session, alea)
-        _fonds_mar, n_fic_mar = _seed_fonds_mar(session, alea)
-        _fonds_conc, n_fic_conc, items_conc = _seed_fonds_conc(session, alea)
+        fonds_hk = _seed_fonds_hk(session, alea)
+        fonds_fa, items_ainsa_thematiques = _seed_fonds_fa(session, alea)
+        fonds_rdm = _seed_fonds_rdm(session, alea)
+        _seed_fonds_mar(session, alea)
+        _, items_conc = _seed_fonds_conc(session, alea)
         _seed_transversale(session, items_ainsa_thematiques, items_conc)
         _seed_collaborateurs(session, fonds_hk, fonds_fa, fonds_rdm)
         session.commit()
 
-        nb_items_total = session.scalar(select(func.count()).select_from(Item)) or 0
-        nb_fichiers_total = n_fic_hk + n_fic_fa + n_fic_rdm + n_fic_mar + n_fic_conc
-        nb_collections = (
-            session.scalar(select(func.count()).select_from(Collection)) or 0
+        rapport = RapportDemo(
+            chemin_db=chemin_db,
+            nb_fonds=session.scalar(select(func.count()).select_from(Fonds)) or 0,
+            nb_collections=session.scalar(
+                select(func.count()).select_from(Collection)
+            )
+            or 0,
+            nb_items=session.scalar(select(func.count()).select_from(Item)) or 0,
+            nb_fichiers=session.scalar(select(func.count()).select_from(Fichier))
+            or 0,
         )
-        nb_fonds = session.scalar(select(func.count()).select_from(Fonds)) or 0
 
     engine.dispose()
-    return RapportDemo(
-        chemin_db=chemin_db,
-        nb_fonds=nb_fonds,
-        nb_collections=nb_collections,
-        nb_items=nb_items_total,
-        nb_fichiers=nb_fichiers_total,
-    )
+    return rapport

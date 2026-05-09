@@ -52,7 +52,6 @@ collect_ignore = [
     "test_renamer_template.py",
     "test_roundtrip.py",
     "test_selection.py",
-    "test_session_import_model.py",
 ]
 
 

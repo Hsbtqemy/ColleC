@@ -40,7 +40,7 @@ def test_statut_hors_whitelist_rejete(session: Session) -> None:
 
 def test_collection_supprimee_set_null(session: Session) -> None:
     """ON DELETE SET NULL : la session survit à la suppression de la cible."""
-    col = Collection(cote_collection="X", titre="X", phase="catalogage")
+    col = Collection(cote="X", titre="X", phase="catalogage")
     session.add(col)
     session.flush()
     s = SessionImport(utilisateur="u", collection_cible_id=col.id)

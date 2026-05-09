@@ -1,134 +1,107 @@
-"""Tests de l'export Dublin Core XML."""
+"""Tests de l'export Dublin Core XML (V0.9.0-gamma.2)."""
 
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import pytest
 from sqlalchemy.orm import Session
 
-from archives_tool.config import ConfigLocale
-from archives_tool.exporters.dublin_core import NS_DC, exporter_dc_xml
-from archives_tool.exporters.selection import CritereSelection
-from archives_tool.importers.ecrivain import importer as importer_profil
-from archives_tool.profils import charger_profil
+from archives_tool.api.services.collections import lire_collection_par_cote
+from archives_tool.api.services.fonds import lire_fonds_par_cote
+from archives_tool.exporters.dublin_core import exporter_dublin_core
 
-FIXTURES = Path(__file__).parent / "fixtures" / "profils"
+NS = {"dc": "http://purl.org/dc/terms/"}
 
 
-@pytest.fixture
-def base_uri_dc(session: Session) -> Session:
-    chemin = FIXTURES / "cas_uri_dc" / "profil.yaml"
-    profil = charger_profil(chemin)
-    config = ConfigLocale(
-        utilisateur="T",
-        racines={"scans_nakala": FIXTURES / "cas_uri_dc" / "arbre"},
-    )
-    importer_profil(profil, chemin, session, config, dry_run=False, cree_par="T")
-    return session
+def test_export_dc_miroir(session_avec_export: Session, tmp_path: Path) -> None:
+    """Export d'une miroir : 1 notice collection + 3 notices items."""
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
 
+    sortie = tmp_path / "hk_dc.xml"
+    rapport = exporter_dublin_core(session_avec_export, miroir, sortie)
 
-def test_export_agrege(base_uri_dc: Session, tmp_path: Path) -> None:
-    sortie = tmp_path / "dc.xml"
-    rapport = exporter_dc_xml(
-        base_uri_dc,
-        CritereSelection(collection_cote="NKLDC"),
-        sortie,
-        mode="agrege",
-    )
-    assert rapport.nb_items_selectionnes == 2
     assert sortie.is_file()
+    assert rapport.nb_items_selectionnes == 3
+    assert rapport.format == "dc_xml"
 
-    tree = ET.parse(sortie)
-    racine = tree.getroot()
+    arbre = ET.parse(sortie)
+    racine = arbre.getroot()
     assert racine.tag == "collection"
+    assert racine.get("cote") == "HK"
+
     notices = racine.findall("notice")
-    assert len(notices) == 2
-
-    # Premier item : Étude café
-    titres = notices[0].findall(f"{{{NS_DC}}}title")
-    assert [e.text for e in titres] == ["Étude café"]
-    ids = notices[0].findall(f"{{{NS_DC}}}identifier")
-    assert [e.text for e in ids] == ["NKLDC-001"]
+    assert len(notices) == 4  # 1 collection + 3 items
+    assert notices[0].get("role") == "collection"
 
 
-def test_export_un_fichier_par_item(base_uri_dc: Session, tmp_path: Path) -> None:
-    dossier = tmp_path / "par_item"
-    rapport = exporter_dc_xml(
-        base_uri_dc,
-        CritereSelection(collection_cote="NKLDC"),
-        dossier,
-        mode="un_fichier_par_item",
-    )
-    assert rapport.nb_items_selectionnes == 2
-    fichiers = sorted(dossier.glob("*.xml"))
-    assert len(fichiers) == 2
-    noms = {f.name for f in fichiers}
-    assert noms == {"NKLDC-001.xml", "NKLDC-002.xml"}
-
-
-def test_champs_absents_pas_d_elements_vides(
-    base_uri_dc: Session, tmp_path: Path
+def test_export_dc_libre_rattachee(
+    session_avec_export: Session, tmp_path: Path
 ) -> None:
-    sortie = tmp_path / "dc.xml"
-    exporter_dc_xml(
-        base_uri_dc,
-        CritereSelection(collection_cote="NKLDC"),
-        sortie,
-        mode="agrege",
+    """Une libre rattachée référence son fonds parent via dc:source."""
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    libre = lire_collection_par_cote(
+        session_avec_export, "HK-FAVORIS", fonds_id=fonds.id
     )
-    xml = sortie.read_text(encoding="utf-8")
-    # NKLDC-002 n'a pas de date (s.d. → valeur nulle) : pas d'élément
-    # dc:date vide.
-    assert "<dc:date></dc:date>" not in xml
-    assert "<dc:date />" not in xml
+
+    sortie = tmp_path / "hk_favoris_dc.xml"
+    rapport = exporter_dublin_core(session_avec_export, libre, sortie)
+    assert rapport.nb_items_selectionnes == 2
+
+    arbre = ET.parse(sortie)
+    notice_collection = arbre.getroot().find("notice[@role='collection']")
+    sources = notice_collection.findall("dc:source", NS)
+    assert len(sources) == 1
+    assert "Hara-Kiri" in sources[0].text
+    assert "(HK)" in sources[0].text
 
 
-def test_slugification_cote_avec_slash(session: Session, tmp_path: Path) -> None:
-    # On attache directement des items avec une cote contenant des
-    # caractères sûrs (le transformateur rejette / et \n, donc on
-    # teste ici la slugification sur des espaces ou deux-points).
-    from archives_tool.models import Collection, Item
+def test_export_dc_transversale_inclut_plusieurs_fonds(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Une transversale liste tous les fonds représentés en tête."""
+    transv = lire_collection_par_cote(session_avec_export, "TRANSV")
 
-    col = Collection(cote_collection="SLUG", titre="Slug")
-    session.add(col)
-    session.flush()
-    session.add(Item(collection_id=col.id, cote="COTE: avec espaces", titre="T"))
-    session.commit()
+    sortie = tmp_path / "transv_dc.xml"
+    rapport = exporter_dublin_core(session_avec_export, transv, sortie)
+    assert rapport.nb_items_selectionnes == 2
 
-    dossier = tmp_path / "par_item"
-    rapport = exporter_dc_xml(
-        session,
-        CritereSelection(collection_cote="SLUG"),
-        dossier,
-        mode="un_fichier_par_item",
+    arbre = ET.parse(sortie)
+    notice_collection = arbre.getroot().find("notice[@role='collection']")
+    sources = [s.text for s in notice_collection.findall("dc:source", NS)]
+    assert any("(HK)" in s for s in sources)
+    assert any("(FA)" in s for s in sources)
+
+
+def test_export_dc_metadonnees_collection_presentes(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Cote, titre et description publique de la collection sont
+    écrits dans la notice de tête."""
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    libre = lire_collection_par_cote(
+        session_avec_export, "HK-FAVORIS", fonds_id=fonds.id
     )
-    fichiers = list(dossier.glob("*.xml"))
-    assert len(fichiers) == 1
-    # Espaces et : remplacés par -, pas de chemin échappé.
-    assert fichiers[0].name == "COTE-avec-espaces.xml"
-    assert any("slug" in a.lower() or "non sûr" in a for a in rapport.avertissements)
+
+    sortie = tmp_path / "hk_favoris_dc.xml"
+    exporter_dublin_core(session_avec_export, libre, sortie)
+    contenu = sortie.read_text(encoding="utf-8")
+    assert "HK-FAVORIS" in contenu
+    assert "Hara-Kiri favoris" in contenu
+    assert "Sélection éditoriale" in contenu
 
 
-def test_items_incomplets_signales(base_uri_dc: Session, tmp_path: Path) -> None:
-    # Ajout d'un item sans titre dans la collection NKLDC.
-    from sqlalchemy import select as sqla_select
+def test_export_dc_titres_items_presents(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Le titre de chaque item est exporté en dc:title."""
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
 
-    from archives_tool.models import Collection, Item
-
-    col = base_uri_dc.scalar(
-        sqla_select(Collection).where(Collection.cote_collection == "NKLDC")
-    )
-    base_uri_dc.add(Item(collection_id=col.id, cote="NKLDC-SANSTITRE"))
-    base_uri_dc.commit()
-
-    sortie = tmp_path / "dc.xml"
-    rapport = exporter_dc_xml(
-        base_uri_dc,
-        CritereSelection(collection_cote="NKLDC"),
-        sortie,
-        mode="agrege",
-        dry_run=True,
-    )
-    assert ("NKLDC-SANSTITRE", ["titre"]) in rapport.items_incomplets
+    sortie = tmp_path / "hk_dc.xml"
+    exporter_dublin_core(session_avec_export, miroir, sortie)
+    contenu = sortie.read_text(encoding="utf-8")
+    assert "Numéro 1" in contenu
+    assert "Numéro 2" in contenu
+    assert "Numéro 3" in contenu

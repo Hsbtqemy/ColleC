@@ -1,195 +1,167 @@
-"""Tests de la commande CLI `archives-tool exporter`."""
+"""Tests de `archives-tool exporter <format>` (V0.9.0-gamma.2)."""
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-import pandas as pd
-import pytest
 from typer.testing import CliRunner
 
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    creer_collection_libre,
+)
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+)
+from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.cli import app
 from archives_tool.db import creer_engine, creer_session_factory
-from archives_tool.importers.ecrivain import importer as importer_profil
 from archives_tool.models import Base
-from archives_tool.profils import charger_profil
 
-FIXTURES = Path(__file__).parent / "fixtures" / "profils"
 runner = CliRunner()
 
 
-@pytest.fixture
-def base(tmp_path: Path) -> Path:
-    """Base temporaire avec cas_item_simple importé."""
+def _base_avec_collection(tmp_path: Path) -> Path:
+    """Petite base SQLite avec un fonds HK + 2 items + une libre rattachée."""
     db = tmp_path / "test.db"
     engine = creer_engine(db)
     Base.metadata.create_all(engine)
-
-    dossier = tmp_path / "profils" / "cas_item_simple"
-    shutil.copytree(FIXTURES / "cas_item_simple", dossier)
-
-    from archives_tool.config import ConfigLocale
-
-    config = ConfigLocale(
-        utilisateur="T",
-        racines={"scans_revues": dossier / "arbre"},
-    )
     factory = creer_session_factory(engine)
-    with factory() as session:
-        profil = charger_profil(dossier / "profil.yaml")
-        importer_profil(profil, dossier / "profil.yaml", session, config, dry_run=False)
+    with factory() as s:
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        fonds = lire_fonds_par_cote(s, "HK")
+        creer_item(
+            s,
+            FormulaireItem(cote="HK-001", titre="N°1", fonds_id=fonds.id),
+        )
+        creer_item(
+            s,
+            FormulaireItem(cote="HK-002", titre="N°2", fonds_id=fonds.id),
+        )
+        creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="HK-FAVORIS", titre="Favoris", fonds_id=fonds.id
+            ),
+        )
     engine.dispose()
     return db
 
 
-def test_cli_export_xlsx(base: Path, tmp_path: Path) -> None:
-    sortie = tmp_path / "out.xlsx"
-    result = runner.invoke(
-        app,
-        [
-            "exporter",
-            "xlsx",
-            "--collection",
-            "HK",
-            "--sortie",
-            str(sortie),
-            "--db-path",
-            str(base),
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert sortie.is_file()
-    df = pd.read_excel(sortie)
-    assert len(df) == 5
-
-
-def test_cli_export_dc_xml(base: Path, tmp_path: Path) -> None:
+def test_cli_exporter_dublin_core(tmp_path: Path) -> None:
+    db = _base_avec_collection(tmp_path)
     sortie = tmp_path / "out.xml"
     result = runner.invoke(
         app,
         [
             "exporter",
-            "dc-xml",
-            "--collection",
+            "dublin-core",
+            "HK",
+            "--fonds",
             "HK",
             "--sortie",
             str(sortie),
             "--db-path",
-            str(base),
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
     assert sortie.is_file()
-    assert sortie.read_text(encoding="utf-8").startswith("<?xml")
+    assert "2 items" in result.output
 
 
-def test_cli_export_nakala_csv(base: Path, tmp_path: Path) -> None:
+def test_cli_exporter_nakala(tmp_path: Path) -> None:
+    db = _base_avec_collection(tmp_path)
     sortie = tmp_path / "out.csv"
     result = runner.invoke(
         app,
         [
             "exporter",
-            "nakala-csv",
-            "--collection",
+            "nakala",
+            "HK-FAVORIS",
+            "--fonds",
             "HK",
             "--sortie",
             str(sortie),
             "--db-path",
-            str(base),
-            "--licence",
-            "CC-BY-4.0",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
     assert sortie.is_file()
-    df = pd.read_csv(sortie, sep=";", encoding="utf-8-sig")
-    assert (df["http://nakala.fr/terms#license"] == "CC-BY-4.0").all()
 
 
-def test_cli_dry_run_ne_cree_pas_le_fichier(base: Path, tmp_path: Path) -> None:
-    sortie = tmp_path / "dry.xlsx"
-    result = runner.invoke(
-        app,
-        [
-            "exporter",
-            "xlsx",
-            "--collection",
-            "HK",
-            "--sortie",
-            str(sortie),
-            "--db-path",
-            str(base),
-            "--dry-run",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert not sortie.exists()
-
-
-def test_cli_collection_inexistante(base: Path, tmp_path: Path) -> None:
+def test_cli_exporter_xlsx(tmp_path: Path) -> None:
+    db = _base_avec_collection(tmp_path)
     sortie = tmp_path / "out.xlsx"
     result = runner.invoke(
         app,
         [
             "exporter",
             "xlsx",
-            "--collection",
-            "N_EXISTE_PAS",
-            "--sortie",
-            str(sortie),
-            "--db-path",
-            str(base),
-        ],
-    )
-    assert result.exit_code == 2
-    assert "introuvable" in (result.output + (result.stderr or "")).lower()
-
-
-def test_cli_format_inconnu(base: Path, tmp_path: Path) -> None:
-    sortie = tmp_path / "out.zzz"
-    result = runner.invoke(
-        app,
-        [
-            "exporter",
-            "xml-custom",
-            "--collection",
+            "HK",
+            "--fonds",
             "HK",
             "--sortie",
             str(sortie),
             "--db-path",
-            str(base),
+            str(db),
         ],
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 0, result.output
+    assert sortie.is_file()
 
 
-def test_cli_strict_remonte_items_incomplets(base: Path, tmp_path: Path) -> None:
-    # Ajout d'un item incomplet pour DC (sans titre).
-    from sqlalchemy import select
-    from archives_tool.models import Collection, Item
-
-    engine = creer_engine(base)
-    factory = creer_session_factory(engine)
-    with factory() as s:
-        col = s.scalar(select(Collection).where(Collection.cote_collection == "HK"))
-        s.add(Item(collection_id=col.id, cote="HK-sans-titre"))
-        s.commit()
-    engine.dispose()
-
-    sortie = tmp_path / "out.xml"
+def test_cli_exporter_sortie_par_defaut(tmp_path: Path, monkeypatch) -> None:
+    """Sans --sortie, fichier créé dans le cwd avec un nom dérivé de la cote."""
+    db = _base_avec_collection(tmp_path)
+    monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
         [
             "exporter",
-            "dc-xml",
-            "--collection",
+            "dublin-core",
             "HK",
-            "--sortie",
-            str(sortie),
+            "--fonds",
+            "HK",
             "--db-path",
-            str(base),
-            "--strict",
+            str(db),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "HK_dc.xml").is_file()
+
+
+def test_cli_exporter_collection_inexistante(tmp_path: Path) -> None:
+    db = _base_avec_collection(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "exporter",
+            "dublin-core",
+            "INEXISTANTE",
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
+    assert "introuvable" in result.output.lower()
+
+
+def test_cli_exporter_db_inexistante(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "exporter",
+            "dublin-core",
+            "HK",
+            "--db-path",
+            str(tmp_path / "absente.db"),
+        ],
+    )
+    assert result.exit_code == 2
+    assert "introuvable" in result.output.lower()

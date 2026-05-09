@@ -567,7 +567,8 @@ archives-tool/
   d'erreurs partagées (`EntiteIntrouvable`, `FormulaireInvalide`,
   `OperationInterdite`), création-item auto-rattachée à la miroir
   (invariant 6), liaisons N-N idempotentes — V0.9.0-alpha.1.
-- Demo seeder reconstruit pour le nouveau modèle — V0.9.0-alpha.2.
+- ✅ Demo seeder reconstruit (5 fonds, 10 collections, 333 items,
+  ~1300 fichiers, 1 transversale, collaborateurs) — V0.9.0-alpha.2.
 - Importers v2 (profil avec section `fonds:` + `collection_miroir:`) — V0.9.0-gamma.
 - Adaptation routes web + UI dashboard / collection / item — V0.9.0-beta.
 - Adaptation CLI exporter / controler / montrer / renommer / deriver

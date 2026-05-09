@@ -644,6 +644,43 @@ pour les `try/except` typés et des messages contextualisés.
 
 ---
 
+## Base de démonstration (V0.9.0-alpha.2)
+
+`archives-tool demo init` produit `data/demo.db` via le seeder
+`archives_tool.demo.peupler_base`. Composition reproductible (RNG
+seedé à 42 par défaut) :
+
+| Fonds | Cote | Items | Caractéristique |
+|---|---|---|---|
+| Hara-Kiri | `HK` | 40 | Revue satirique, Cavanna |
+| Fonds Aínsa | `FA` | 167 | Fonds personnel + 4 libres rattachées |
+| Revue des Deux Mondes | `RDM` | 36 | Bimensuel, ISSN 0035-1962 |
+| Marges | `MAR` | 40 | Zine personnel |
+| Concorde 1789 | `CONC-1789` | 50 | Fonds historique révolutionnaire |
+
+**Collections libres rattachées au fonds Aínsa** :
+`FA-OEUVRES` (39), `FA-CORRESP` (32), `FA-DOCU` (47),
+`FA-PHOTOS` (49). Chaque item est dans la miroir **et** dans sa
+libre (multi-appartenance, invariant 6).
+
+**Collection transversale** : `TEMOIG` (« Témoignages d'exil »),
+sans fonds_id. Pioche 12 items dans Aínsa (œuvres + correspondance)
+et 6 dans Concorde — démontre la transversalité possible des
+collections libres.
+
+**Collaborateurs** seedés sur HK, FA, RDM via `CollaborateurFonds`
+(insertion directe — pas de service CRUD dédié pour l'instant ;
+suivra avec les routes web V0.9.0-beta).
+
+Total : **5 fonds, 10 collections, 333 items, ~1300 fichiers**.
+Les fichiers sont des entrées DB seulement (pas de scan physique sur
+disque) ; l'UI V0.9.0-beta gérera le cas « fichier référencé absent ».
+
+Tests d'intégrité (composition + invariants 1, 4, 6 +
+reproductibilité) dans `tests/test_demo_seeder.py`.
+
+---
+
 ## Sources externes (V2+)
 
 ### `source_externe`

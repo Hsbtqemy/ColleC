@@ -1,0 +1,36 @@
+{# Liste sobre des fonds (alternative au dashboard).
+   Variable : `fonds` (list[FondsResume] from services.fonds). #}
+{% extends "base.html" %}
+{% block title %}Fonds — archives-tool{% endblock %}
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <span>Fonds</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">Fonds ({{ fonds | length }})</h1>
+</header>
+
+<table class="w-full text-sm">
+  <thead class="text-xs text-gray-500 uppercase tracking-wide border-b">
+    <tr>
+      <th class="text-left py-2">Cote</th>
+      <th class="text-left py-2">Titre</th>
+      <th class="text-right py-2">Items</th>
+      <th class="text-right py-2">Collections</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in fonds %}
+      <tr class="border-b border-gray-100">
+        <td class="py-2 font-mono">
+          <a href="/fonds/{{ f.cote }}" class="hover:underline">{{ f.cote }}</a>
+        </td>
+        <td class="py-2">{{ f.titre }}</td>
+        <td class="py-2 text-right font-tabular">{{ f.nb_items }}</td>
+        <td class="py-2 text-right font-tabular">{{ f.nb_collections }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

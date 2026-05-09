@@ -1,59 +1,178 @@
-"""Route du tableau de bord."""
+"""Routes web V0.9.0-beta.1 — dashboard + placeholders fonds/collection/item.
+
+Le dashboard (`/`) affiche l'arborescence dépliable fonds → collections.
+Les pages détail (`/fonds/{cote}`, `/collection/{cote}`,
+`/item/{cote}`) sont des placeholders en V0.9.0-beta.1 : titre,
+breadcrumb minimal, lien retour. Elles seront étoffées en
+V0.9.0-beta.2 et beta.3.
+
+Précédence sur les cotes ambiguës :
+- `/fonds/{cote}` : recherche stricte par fonds.cote.
+- `/collection/{cote}` : si la cote correspond à un fonds existant
+  ET aucun `?fonds=` n'est précisé, redirige vers `/fonds/{cote}`.
+  Le param `?fonds=COTE_FONDS` désambiguïse explicitement.
+- `/item/{cote}` : `?fonds=COTE` est obligatoire (les cotes d'items
+  ne sont uniques que par fonds).
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
-
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from archives_tool.api.deps import (
-    get_db,
-    get_nom_base,
-    get_racines,
-    get_utilisateur_courant,
+from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.services.collections import (
+    CollectionIntrouvable,
+    lire_collection_par_cote,
 )
-from archives_tool.api.services.dashboard import (
-    calculer_statistiques_globales,
-    lister_activite_recente,
-    lister_collections_dashboard,
-    lister_points_vigilance,
+from archives_tool.api.services.dashboard import composer_dashboard
+from archives_tool.api.services.fonds import (
+    FondsIntrouvable,
+    lire_fonds_par_cote,
+    lister_fonds,
+)
+from archives_tool.api.services.items import (
+    ItemIntrouvable,
+    lire_item_par_cote,
 )
 from archives_tool.api.templating import templates
+from archives_tool.models import Fonds
 
 router = APIRouter()
+
+
+def _contexte_base(
+    nom_base: str, utilisateur: str, **extra: object
+) -> dict[str, object]:
+    return {"nom_base": nom_base, "utilisateur": utilisateur, **extra}
 
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
-    tri: str | None = None,
-    ordre: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
-    utilisateur: str = Depends(get_utilisateur_courant),
     nom_base: str = Depends(get_nom_base),
-    racines: dict[str, Path] = Depends(get_racines),
+    utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    statistiques = calculer_statistiques_globales(db)
-    collections = lister_collections_dashboard(db, tri=tri, ordre=ordre)
-    activite = lister_activite_recente(db)
-    vigilance = lister_points_vigilance(db, racines=racines)
+    resume = composer_dashboard(db)
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        _contexte_base(nom_base, utilisateur, resume=resume),
+    )
 
-    contexte = {
-        "utilisateur": utilisateur,
-        "nom_base": nom_base,
-        "statistiques": statistiques,
-        "collections": collections,
-        "activite": activite,
-        "vigilance": vigilance,
-    }
 
-    # Sur HX-Request, renvoie le partial du tableau (swap interne au
-    # dashboard quand l'utilisateur clique sur un en-tête de colonne).
-    if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(
-            request, "partials/dashboard_collections.html", contexte
-        )
-    return templates.TemplateResponse(request, "dashboard.html", contexte)
+@router.get("/fonds", response_class=HTMLResponse)
+def liste_fonds(
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Vue liste sobre des fonds (alternative au dashboard)."""
+    fonds = lister_fonds(db)
+    return templates.TemplateResponse(
+        request,
+        "pages/fonds_liste.html",
+        _contexte_base(nom_base, utilisateur, fonds=fonds),
+    )
+
+
+@router.get("/fonds/{cote}", response_class=HTMLResponse)
+def page_fonds(
+    cote: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Placeholder page fonds (V0.9.0-beta.2 livrera la page complète)."""
+    try:
+        fonds = lire_fonds_par_cote(db, cote)
+    except FondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds {cote!r} introuvable."
+        ) from e
+    return templates.TemplateResponse(
+        request,
+        "pages/_placeholder_fonds.html",
+        _contexte_base(nom_base, utilisateur, fonds=fonds),
+    )
+
+
+@router.get("/collection/{cote}", response_class=HTMLResponse, response_model=None)
+def page_collection(
+    cote: str,
+    request: Request,
+    fonds: str | None = Query(
+        None, description="Cote du fonds pour désambiguïser une cote partagée."
+    ),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Placeholder page collection (V0.9.0-beta.2 livrera la page complète).
+
+    Précédence cote ambiguë : si `cote` matche un fonds et qu'aucun
+    `?fonds=` n'est passé, redirige vers `/fonds/{cote}` (le cas
+    typique : la cote d'une miroir = la cote de son fonds).
+    """
+    if fonds is None:
+        fonds_meme_cote = db.scalar(select(Fonds).where(Fonds.cote == cote))
+        if fonds_meme_cote is not None:
+            return RedirectResponse(f"/fonds/{cote}", status_code=303)
+
+    fonds_id: int | None = None
+    if fonds is not None:
+        try:
+            fonds_id = lire_fonds_par_cote(db, fonds).id
+        except FondsIntrouvable as e:
+            raise HTTPException(
+                status_code=404, detail=f"Fonds {fonds!r} introuvable."
+            ) from e
+    try:
+        collection = lire_collection_par_cote(db, cote, fonds_id=fonds_id)
+    except CollectionIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Collection {cote!r} introuvable."
+        ) from e
+    return templates.TemplateResponse(
+        request,
+        "pages/_placeholder_collection.html",
+        _contexte_base(nom_base, utilisateur, collection=collection),
+    )
+
+
+@router.get("/item/{cote}", response_class=HTMLResponse)
+def page_item(
+    cote: str,
+    request: Request,
+    fonds: str = Query(
+        ..., description="Cote du fonds (obligatoire : les cotes d'items ne sont uniques que par fonds)."
+    ),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Placeholder page item (V0.9.0-beta.3 livrera la page complète)."""
+    try:
+        fonds_obj = lire_fonds_par_cote(db, fonds)
+    except FondsIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds {fonds!r} introuvable."
+        ) from e
+    try:
+        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Item {cote!r} introuvable."
+        ) from e
+    return templates.TemplateResponse(
+        request,
+        "pages/_placeholder_item.html",
+        _contexte_base(
+            nom_base, utilisateur, item=item, fonds_cote=fonds_obj.cote
+        ),
+    )

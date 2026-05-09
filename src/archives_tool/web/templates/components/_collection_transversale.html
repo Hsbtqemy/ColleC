@@ -1,0 +1,23 @@
+{# Composant pour une collection libre transversale (sans fonds_id).
+   Variable : `col` (TransversaleResume). #}
+<li class="border-b border-gray-100 pb-2">
+  <div class="flex items-baseline gap-2">
+    <span class="grow">
+      <a href="/collection/{{ col.cote }}"
+         class="text-gray-900 hover:underline font-medium">
+        {{ col.titre }}
+      </a>
+      <span class="text-gray-500 font-mono text-sm ml-2">{{ col.cote }}</span>
+    </span>
+    <span class="text-gray-700 font-tabular">{{ col.nb_items }} items</span>
+  </div>
+  {% if col.fonds_representes %}
+    <p class="text-gray-500 text-sm ml-1 mt-1">
+      Pioche dans :
+      {% for f in col.fonds_representes -%}
+        <a href="/fonds/{{ f.cote }}" class="hover:underline">{{ f.titre }}</a>
+        {%- if not loop.last %}, {% endif -%}
+      {%- endfor %}
+    </p>
+  {% endif %}
+</li>

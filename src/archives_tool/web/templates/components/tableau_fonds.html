@@ -1,0 +1,44 @@
+{# Composant fonds dépliable pour le dashboard.
+   Variable : `fonds` (FondsResume).
+   Utilise <details> natif (pas de JS), tous dépliés par défaut. #}
+<li>
+  <details open class="border-b border-gray-100 pb-2">
+    <summary class="flex items-baseline gap-2 cursor-pointer py-1 list-none">
+      <span class="grow">
+        <a href="/fonds/{{ fonds.cote }}"
+           class="text-gray-900 hover:underline font-medium">
+          {{ fonds.titre }}
+        </a>
+        <span class="text-gray-500 font-mono text-sm ml-2">{{ fonds.cote }}</span>
+      </span>
+      <span class="text-gray-700 font-tabular">{{ fonds.nb_items }} items</span>
+    </summary>
+    <ul class="ml-6 mt-1 space-y-1">
+      {% if fonds.collection_miroir %}
+        <li class="flex items-baseline gap-2">
+          <span class="grow">
+            <a href="/collection/{{ fonds.collection_miroir.cote }}?fonds={{ fonds.cote }}"
+               class="text-gray-700 hover:underline">
+              {{ fonds.collection_miroir.titre }}
+            </a>
+            <span class="ml-2 inline-block text-xs italic text-gray-400">miroir</span>
+          </span>
+          <span class="text-gray-500 font-tabular text-sm">
+            {{ fonds.collection_miroir.nb_items }} items
+          </span>
+        </li>
+      {% endif %}
+      {% for col in fonds.collections_libres %}
+        <li class="flex items-baseline gap-2">
+          <span class="grow">
+            <a href="/collection/{{ col.cote }}?fonds={{ fonds.cote }}"
+               class="text-gray-700 hover:underline">
+              {{ col.titre }}
+            </a>
+          </span>
+          <span class="text-gray-500 font-tabular text-sm">{{ col.nb_items }} items</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </details>
+</li>

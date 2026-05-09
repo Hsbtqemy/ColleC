@@ -35,7 +35,6 @@ collect_ignore = [
     "test_collection_services.py",
     "test_collections_creation.py",
     "test_contraintes.py",
-    "test_dashboard_routes.py",
     "test_dashboard_services.py",
     "test_derivatives_generateur.py",
     "test_derives_route.py",

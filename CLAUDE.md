@@ -248,19 +248,30 @@ Référence complète : [`docs/exports.md`](docs/exports.md).
 
 ### Affichage CLI
 
-`src/archives_tool/affichage/` regroupe le sous-groupe de commandes
-`archives-tool montrer ...` (Rich) :
+`src/archives_tool/affichage/` regroupe les rendus Rich + formatteurs
+neutres (lecture seule) :
 
-- `console.py` : instance Console partagée, thème (états colorés,
-  succès/avertissement/erreur), helper `silencer_pour_tests`.
-- `formatters.py` : utilitaires `formater_date`, `formater_etat`,
-  `formater_taille_octets`, `tronquer`, `barre_progression`.
-- `collections.py`, `items.py`, `fichiers.py`, `statistiques.py` :
-  un module par vue. Lecture seule, pas d'écriture en base.
+- `console.py` : instance Console partagée, `THEME` (succès, avertissement,
+  erreur, états par enum), helper `silencer_pour_tests`.
+- `formatters.py` : helpers neutres (`formater_etat`,
+  `formater_taille_octets`, `temps_relatif`, `panel_kv`, …).
+- `montrer.py` : 12 rendus pour la CLI `montrer` — 6 entités/cas
+  (fonds liste/détail, collection liste/détail, item détail, fichier
+  détail) × 2 formats (text Rich, JSON typé par champ `type`).
 
-Commandes : `montrer collections`, `montrer collection COTE`,
-`montrer item COTE`, `montrer fichier ID`, `montrer statistiques`.
-Référence complète dans
+CLI `archives-tool montrer {fonds,collection,item,fichier}` :
+- `montrer fonds [--cote COTE]` : liste tous les fonds ou détaille
+  un fonds (collections, items récents, collaborateurs, traçabilité).
+- `montrer collection [--cote COTE] [--fonds COTE]` : liste (filtrable)
+  ou détail. Gère les 3 variantes (miroir, libre rattachée, transversale
+  avec section fonds représentés).
+- `montrer item COTE_ITEM --fonds COTE_FONDS` : détail (métadonnées
+  custom, fichiers, modifications, traçabilité).
+- `montrer fichier ID` : détail par id global (source, dérivés,
+  technique, opérations).
+
+`--format text|json` partagé avec `controler` via l'enum
+`_FormatRapport`. Référence complète :
 [`docs/commandes_montrer.md`](docs/commandes_montrer.md).
 
 ### Contrôles de cohérence
@@ -658,8 +669,15 @@ archives-tool/
   avec sortie text Rich (couleurs ✓⚠✗) ou JSON stable (intégration CI).
   Codes de sortie : 0 (RAS), 1 (erreur ou strict avec avertissement),
   2 (saisie invalide). — V0.9.0-gamma.3.
-- Adaptation CLI montrer / renommer / deriver + renamer / derivatives
-  — V0.9.0-gamma.4.
+- ✅ CLI `montrer` refondue : 4 sous-commandes (`fonds`, `collection`,
+  `item`, `fichier`). Liste si pas de `--cote` (sauf `item` et
+  `fichier` qui sont uniquement détail). Format `text|json` partagé
+  avec `controler` via l'enum `_FormatRapport`. Réutilise les
+  composeurs `composer_page_*` de `services/dashboard.py`. Suppression
+  des modules legacy `affichage/{collections,items,fichiers,
+  statistiques}.py` qui assumaient l'ancien modèle. — V0.9.0-gamma.4.1.
+- Adaptation CLI renommer / deriver + renamer / derivatives —
+  V0.9.0-gamma.4.2 et 4.3.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
@@ -1023,12 +1041,14 @@ uv run archives-tool renommer appliquer \
 uv run archives-tool renommer annuler --batch-id <UUID> --no-dry-run
 uv run archives-tool renommer historique
 
-# Visualisation (lecture seule, Rich)
-uv run archives-tool montrer collections
-uv run archives-tool montrer collections --recursif
-uv run archives-tool montrer collection FA
-uv run archives-tool montrer item HK-1960-01 --metadonnees-completes
+# Visualisation (lecture seule, Rich ou JSON)
+uv run archives-tool montrer fonds                       # liste
+uv run archives-tool montrer fonds --cote HK             # détail
+uv run archives-tool montrer collection --fonds FA       # liste filtrée
+uv run archives-tool montrer collection --cote TEMOIG    # transversale
+uv run archives-tool montrer item HK-001 --fonds HK
 uv run archives-tool montrer fichier 142
+uv run archives-tool montrer item HK-001 --fonds HK --format json
 uv run archives-tool montrer statistiques
 
 # Migration base

@@ -1,201 +1,139 @@
 # Commandes `montrer`
 
-Sous-groupe `archives-tool montrer ...` : visualisation en lecture
-seule de ce qui se trouve en base, avec mise en forme Rich.
+Sous-groupe `archives-tool montrer ...` : consultation en lecture
+seule. Quatre sous-commandes alignées sur le modèle Fonds /
+Collection / Item / Fichier.
 
-Ces commandes ne modifient jamais la base. Elles servent à :
-- vérifier qu'un import s'est bien passé ;
-- inspecter un item ou un fichier précis avant édition ;
-- suivre l'avancement du catalogage ;
-- diagnostiquer un fichier qui aurait disparu du disque.
+| Sous-commande   | Avec / sans cote                  | Service utilisé          |
+|-----------------|-----------------------------------|---------------------------|
+| `montrer fonds`      | liste si pas de `--cote`, détail sinon | `lister_fonds` / `composer_page_fonds` |
+| `montrer collection` | liste (filtrable par `--fonds`), détail si `--cote`. Désambiguïse via `--fonds` si cote partagée | `lister_collections` / `composer_page_collection` |
+| `montrer item`       | détail uniquement, `--fonds` obligatoire (cote item unique par fonds) | `composer_page_item` |
+| `montrer fichier`    | détail uniquement, par id global  | accès ORM direct (`session.get(Fichier, id)`) |
 
-Elles resteront utiles même quand l'interface web sera là, pour le
-travail rapide en ligne de commande et le debug.
+Tous les rendus sont **lecture seule** (aucun `db.commit`). Le
+sous-groupe partage l'enum `_FormatRapport` avec `controler` :
+`--format text` (défaut, Rich) ou `--format json`.
 
-## Vue d'ensemble
-
-| Commande | Rôle |
-|---|---|
-| `montrer collections` | Lister toutes les collections (plat ou arbre). |
-| `montrer collection COTE` | Fiche d'une collection + tableau de ses items. |
-| `montrer item COTE` | Fiche détaillée d'un item, métadonnées, fichiers. |
-| `montrer fichier ID` | Fiche d'un fichier + diagnostic disque. |
-| `montrer statistiques` | Vue d'ensemble globale ou par collection. |
-
-Toutes les commandes acceptent `--db-path PATH` (défaut
-`data/archives.db`).
-
-## `montrer collections`
+## `montrer fonds`
 
 ```bash
-archives-tool montrer collections [OPTIONS]
+# Liste tous les fonds.
+uv run archives-tool montrer fonds
+
+# Détail d'un fonds.
+uv run archives-tool montrer fonds --cote HK
+
+# JSON pour outillage / CI.
+uv run archives-tool montrer fonds --format json
+uv run archives-tool montrer fonds --cote HK --format json
 ```
 
-| Option | Défaut | Effet |
-|---|---|---|
-| `--recursif` / `--pas-recursif` | plat | Arbre `rich.Tree` au lieu d'un tableau plat. |
-| `--vide` / `--avec-items` | toutes | Filtrer les collections sans items (mode plat). |
+Détail (text) : titre, cote, descriptions, responsable archives,
+métadonnées de revue (si applicables), période, collections,
+items récents, collaborateurs par rôle, traçabilité.
 
-**Mode plat** — tableau trié par cote :
-
-```
-        Collections
-┌──────┬───────────────┬───────┬──────────┬───────────────┬─────────────────────┐
-│ Cote │ Titre         │ Items │ Fichiers │ Avancement    │ Modifié le          │
-├──────┼───────────────┼───────┼──────────┼───────────────┼─────────────────────┤
-│ FA   │ Fonds Aínsa   │   380 │   1 245  │ ▓▓▓▓░░░░░░ 38% │ 2026-04-18 11:02   │
-│ HK   │ Hara-Kiri     │    72 │     189  │ ▓▓▓▓▓▓▓░░░ 71% │ 2026-04-12 14:32   │
-│ RDM  │ Revue 2 Mondes│    95 │     280  │ ▓▓▓▓▓▓▓▓▓░ 94% │ 2026-04-20 09:15   │
-└──────┴───────────────┴───────┴──────────┴───────────────┴─────────────────────┘
-```
-
-L'avancement est le ratio d'items en état `valide` ou `verifie`.
-
-**Mode récursif** — `rich.Tree` :
-
-```
-Collections
-├── FA — Fonds Aínsa (380 items, 1245 fichiers, ▓▓▓▓░░░░░░  38%)
-│   ├── FA-AA — Sous-fonds AA (120 items, 350 fichiers, ▓▓▓▓▓░░░░░  52%)
-│   └── FA-BB — Sous-fonds BB (260 items, 895 fichiers, ▓▓▓░░░░░░░  31%)
-└── HK — Hara-Kiri (72 items, 189 fichiers, ▓▓▓▓▓▓▓░░░  71%)
-```
-
-## `montrer collection COTE`
+## `montrer collection`
 
 ```bash
-archives-tool montrer collection COTE [OPTIONS]
+# Liste toutes les collections (miroirs + libres + transversales).
+uv run archives-tool montrer collection
+
+# Liste limitée à un fonds.
+uv run archives-tool montrer collection --fonds FA
+
+# Détail d'une collection rattachée.
+uv run archives-tool montrer collection --cote FA-OEUVRES --fonds FA
+
+# Détail d'une transversale (pas de --fonds).
+uv run archives-tool montrer collection --cote TEMOIG
 ```
 
-| Option | Défaut | Effet |
-|---|---|---|
-| `--items` / `--pas-items` | items | Affiche le tableau d'items (sinon fiche seule). |
-| `--limite N` | 50 | Nombre max d'items dans le tableau (0 = illimité). |
-| `--tri-par CHAMP` | cote | Tri par `cote`, `date`, `etat`, `modifie`. |
+Le détail change selon les 3 variantes :
+- **miroir** : étiquette « miroir », fonds parent affiché.
+- **libre rattachée** : étiquette « libre rattachée », fonds parent
+  affiché.
+- **transversale** : étiquette « transversale », section « Fonds
+  représentés » (vide si la transversale n'a pas encore d'items).
 
-Sortie : un panneau Rich avec les métadonnées de la collection, suivi
-d'un tableau des items avec leur cote, numéro, date, titre tronqué,
-état coloré et nombre de fichiers. Footer indique si la liste a été
-tronquée par `--limite`.
-
-Codes de sortie : `0` succès, `1` collection introuvable.
-
-## `montrer item COTE`
+## `montrer item`
 
 ```bash
-archives-tool montrer item COTE [OPTIONS]
+# Détail d'un item (--fonds obligatoire).
+uv run archives-tool montrer item HK-001 --fonds HK
+
+# JSON.
+uv run archives-tool montrer item HK-001 --fonds HK --format json
 ```
 
-| Option | Défaut | Effet |
-|---|---|---|
-| `--collection COTE_COLLECTION` | — | À fournir si la cote item n'est pas unique globalement. |
-| `--metadonnees-completes` | off | Affiche tout le JSON `metadonnees` (sinon résumé une-ligne-par-champ). |
-| `--fichiers` / `--pas-fichiers` | fichiers | Affiche le tableau des fichiers rattachés. |
+Détail : identification (cote, numéro, date/année, type COAR,
+langue, état), DOI Nakala, descriptions, **métadonnées custom**
+(itéré sur le JSON `Item.metadonnees`), collections d'appartenance,
+fichiers, dernières modifications (depuis le journal
+`ModificationItem`), traçabilité.
 
-Sortie en trois panneaux : fiche principale (cote, collection,
-numéro, date, titre, type COAR, langue, état, DOI Nakala),
-métadonnées étendues, tableau des fichiers (ordre, type, folio, nom,
-taille humaine, état).
-
-Codes de sortie : `0` succès, `1` introuvable ou ambigu sans
-`--collection`.
-
-## `montrer fichier ID`
+## `montrer fichier`
 
 ```bash
-archives-tool montrer fichier ID [OPTIONS]
+# Détail d'un fichier par id global.
+uv run archives-tool montrer fichier 42
+
+# JSON.
+uv run archives-tool montrer fichier 42 --format json
 ```
 
-| Option | Défaut | Effet |
-|---|---|---|
-| `--config PATH` | `config_local.yaml` | Config locale pour le diagnostic disque (optionnelle). |
+Détail : contexte item + fonds, source originale (racine + chemin
+relatif local *ou* URL Nakala IIIF), dérivés (aperçu, vignette,
+DZI) avec ✓/✗ selon présence, métadonnées techniques (format,
+taille, dimensions, SHA-256, état), opérations récentes (depuis
+le journal `OperationFichier`), traçabilité.
 
-Sortie en deux panneaux :
+## Format JSON
 
-1. **Fiche du fichier** : item parent, ordre, type de page, folio,
-   nom, racine logique, chemin relatif POSIX, format, taille,
-   dimensions, hash SHA-256, état, timestamp d'ajout, ajouté par.
+Chaque rendu inclut un champ `type` en tête pour distinguer les
+sortes de réponses sans ambiguïté :
 
-2. **Chemin résolu** (si la config est valide) : résolution de la
-   racine logique vers un chemin disque absolu, et trois
-   vérifications :
-   - `✓ existe sur disque` ou `✗ absent sur disque` ;
-   - `✓ hash inchangé` ou `⚠ hash modifié depuis l'import` (avec les
-     deux hashes affichés pour diff) ;
-   - `vérification hash impossible` si pas de hash en base.
+| `type`               | Contenu principal                          |
+|----------------------|--------------------------------------------|
+| `fonds_liste`        | `fonds: [{cote, titre, nb_items, ...}]`    |
+| `fonds_detail`       | `fonds: {…, collections, items_recents, collaborateurs_par_role, tracabilite}` |
+| `collection_liste`   | `collections: [{cote, titre, type_collection, fonds_cote, phase}]` |
+| `collection_detail`  | `collection: {…, est_miroir, est_transversale, fonds_parent, fonds_representes, tracabilite}` |
+| `item_detail`        | `item: {…, fonds, collections, fichiers, metadonnees, tracabilite}` |
+| `fichier_detail`     | `fichier: {…, item, fonds, source, derives, technique, tracabilite}` |
 
-Si la racine n'est pas configurée localement, le diagnostic est
-sauté avec un avertissement.
+Format moins strict que `controler --format json` (pas de garantie
+de stabilité forte avant V1.0). Les noms de champs reflètent le
+modèle ORM directement.
 
-Codes de sortie : `0` succès, `1` fichier introuvable en base.
+## Codes de sortie
 
-## `montrer statistiques`
+| Code | Sens                                                        |
+|------|-------------------------------------------------------------|
+| `0`  | Succès.                                                     |
+| `1`  | Entité introuvable (`--cote=INEXISTANT`, fichier absent).   |
+| `2`  | Saisie invalide (base absente, `--fonds` manquant pour item). |
 
-```bash
-archives-tool montrer statistiques [--collection COTE]
+## Couleurs Rich
+
+Le format text utilise le `THEME` global du projet
+(`affichage/console.py`). Couleurs visibles uniquement en TTY ;
+Rich gère automatiquement la dégradation pour les pipes et fichiers.
+
+## Composabilité depuis Python
+
+Les fonctions de rendu sont importables individuellement :
+
+```python
+from archives_tool.affichage.montrer import (
+    rendu_text_item_detail,
+    rendu_json_item_detail,
+)
+from archives_tool.api.services.dashboard import composer_page_item
+
+detail = composer_page_item(session, "HK-001", fonds_id=fonds.id)
+print(rendu_text_item_detail(detail))
 ```
 
-Vue globale par défaut, périmètre restreint avec `--collection` (la
-collection cible et ses sous-collections, parcours descendant).
-
-Sortie : un panneau avec
-- compteurs (collections racines, sous-collections, items, fichiers,
-  volume disque référencé) ;
-- répartition des items par état avec mini-graphes ▓▓▓░░ + pourcentage ;
-- top 5 collections par items (vue globale uniquement).
-
-Codes de sortie : `0` succès (y compris base vide → message
-bienveillant), `1` collection introuvable.
-
-## Cas d'usage typiques
-
-### Vérifier qu'un import s'est bien passé
-
-```bash
-archives-tool importer profils/ainsa.yaml --no-dry-run
-archives-tool montrer collections
-archives-tool montrer collection FA --limite 10
-archives-tool montrer statistiques --collection FA
-```
-
-### Inspecter un item avant édition
-
-```bash
-archives-tool montrer item FA-AA-01-01 --metadonnees-completes
-```
-
-### Suivre l'avancement du catalogage
-
-```bash
-archives-tool montrer statistiques
-```
-
-Ratio par état + barre de progression visible en un coup d'œil.
-
-### Diagnostiquer un fichier disparu
-
-```bash
-archives-tool montrer fichier 142 --config config_local.yaml
-```
-
-Les `✗ absent sur disque` ou `⚠ hash modifié` apparaissent dans le
-panneau Chemin résolu.
-
-## Sortie redirigée vers un fichier
-
-Rich détecte automatiquement le mode non-tty quand la sortie est
-redirigée :
-
-```bash
-archives-tool montrer collection FA > inventaire.txt
-```
-
-Pas de codes ANSI dans le fichier, mise en forme simplifiée mais
-lisible.
-
-## Largeur du terminal
-
-Rich adapte automatiquement les colonnes à la largeur disponible
-(`COLUMNS` env). Tester sur 80 et 200 colonnes : pas de débordement,
-les colonnes longues (titre, description) sont tronquées avec `…` ou
-repliées (`overflow="fold"`).
+Toutes les fonctions retournent une `str` ; à charge de l'appelant
+de l'écrire vers stdout, un fichier ou une autre destination.

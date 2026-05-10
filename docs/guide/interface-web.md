@@ -70,32 +70,12 @@ Filtres Jinja exposés par `templating.py` :
 
 ## Bibliothèque de composants
 
-Les dix composants Jinja2 de [Composants UI](../developpeurs/composants-ui.md)
-sont la **référence visuelle de vérité** (validés en design). Aucune
-réinterprétation : si une décision de markup ou de classe Tailwind
-semble inhabituelle, elle est intentionnelle.
-
-| Macro                  | Fichier                                        | Usage                                  |
-| ---------------------- | ---------------------------------------------- | -------------------------------------- |
-| `badge_etat`           | `components/badge_etat.html`                   | Badge état item ou fichier             |
-| `avancement_compact`   | `components/avancement.html`                   | Stack chart 6 px (dashboard)           |
-| `avancement_detaille`  | `components/avancement.html`                   | Stack chart 8 px + légende (collection)|
-| `cellule_modifie`      | `components/cellule_modifie.html`              | Cellule « Marie · il y a 2h »          |
-| `phase_chantier`       | `components/phase_chantier.html`               | Sous-titre phase                       |
-| `cartouche_*`          | `components/cartouche_metadonnees.html`        | Cartouche style Zotero                 |
-| `panneau_colonnes`     | `components/panneau_colonnes.html`             | Drawer config colonnes (V0.7+)         |
-| `tableau_collections`  | `components/tableau_collections.html`          | Dashboard, sous-collections            |
-| `tableau_items`        | `components/tableau_items.html`                | Onglet items d'une collection          |
-| `bandeau_item`         | `components/bandeau_item.html`                 | En-tête vue item                       |
-| `panneau_fichiers`     | `components/panneau_fichiers.html`             | Panneau gauche escamotable             |
-
-Composants existants antérieurs (`header.html`, `breadcrumb.html`,
-`metric_card.html`, `collection_header.html`, `tabs.html`,
-`collection_row.html`) sont conservés. `collection_row.html` n'est
-plus référencé après le refactor V0.6.0.1 mais reste disponible.
-
-Schémas attendus, exemples d'usage et détails des hooks `data-…` :
-voir [Composants UI](../developpeurs/composants-ui.md).
+Les pages web utilisent une bibliothèque de macros Jinja2
+partagées sous `web/templates/components/` (badges d'état,
+tableaux, panneaux de filtres et de colonnes, bandeau de
+collaborateurs, etc.). La référence détaillée est
+[Composants UI](../developpeurs/composants-ui.md) (section
+développeurs).
 
 ## Service des dérivés
 

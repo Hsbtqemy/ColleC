@@ -40,20 +40,24 @@ ColleC suit une architecture en couches classique :
 src/archives_tool/
 ├── api/
 │   ├── routes/         # FastAPI routes web
-│   ├── services/       # Logique métier (couche centrale)
+│   ├── services/       # Logique métier (fonds, collections, items, dashboard, _erreurs, …)
 │   ├── deps.py         # Sessions, racines, identité
 │   └── templating.py   # Jinja2 + filtres
+├── affichage/          # Rendus Rich pour la CLI (montrer, controler)
 ├── cli.py              # Commandes typer
 ├── config.py           # Chargement config_local.yaml
 ├── db.py               # Engine SQLite + pragmas WAL/FK
+├── demo/               # Génération d'une base de démonstration
 ├── derivatives/        # Génération vignettes/aperçus
 ├── exporters/          # Dublin Core, Nakala CSV, xlsx
+├── external/           # Connecteurs externes (V2+ : Nakala, IIIF)
 ├── files/              # Résolution chemins + hash
 ├── importers/          # Profils v2 + écrivain transactionnel
 ├── models/             # SQLAlchemy ORM par domaine
 ├── profils/            # Schéma Pydantic + loader + générateur
 ├── qa/                 # 14 contrôles de cohérence
 ├── renamer/            # Renommage transactionnel + annulation
+├── schemas/            # Schemas Pydantic transverses
 └── web/                # Templates Jinja2 + statiques
 ```
 

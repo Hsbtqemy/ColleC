@@ -25,17 +25,22 @@ Quand SQLite le permet, les invariants sont exprimés au niveau
 schéma :
 
 - `fonds.cote` UNIQUE.
-- `collection.cote` UNIQUE par `fonds_id` (NULL inclus pour les
-  transversales — clé partielle).
+- `collection.cote` UNIQUE par `fonds_id`. SQLite traite les
+  `NULL` comme distincts dans un index UNIQUE composite — donc
+  plusieurs collections transversales (`fonds_id IS NULL`)
+  peuvent partager une cote, ce qui est volontaire (les
+  transversales se distinguent par leur titre, pas leur cote).
 - `item.cote` UNIQUE par `fonds_id`.
 - `item.fonds_id` NOT NULL, FK avec `ON DELETE CASCADE` (la
   suppression d'un fonds emporte ses items).
 - `collection.fonds_id` :
-  - NOT NULL pour les miroirs (CHECK applicatif),
-  - NULL autorisé pour les libres transversales,
-  - `ON DELETE SET NULL` pour les libres rattachées (la
-    suppression du fonds bascule la libre en transversale,
-    cf. [invariant 9](../guide/concepts.md#invariants-du-modèle)).
+  - FK avec `ON DELETE SET NULL` au niveau schéma (uniforme
+    pour toutes les collections) ;
+  - une miroir avec `fonds_id IS NULL` est interdite par CHECK
+    applicatif — conséquence : la suppression d'un fonds
+    emporte sa miroir (cascade), tandis que ses libres
+    rattachées basculent simplement en transversales (`fonds_id`
+    devient NULL), cf. [invariant 9](../guide/concepts.md#invariants-du-modèle).
 - `item_collection` : PK composite `(item_id, collection_id)`.
 - `fichier.item_id` NOT NULL, FK avec `ON DELETE CASCADE`.
 

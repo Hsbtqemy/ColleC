@@ -1,8 +1,8 @@
-# Composants UI
+﻿# Composants UI
 
 Les pages web de ColleC sont composées de macros Jinja2
 réutilisables dans
-[`web/templates/components/`](https://github.com/Hsbtqemy/ColleC/tree/main/src/archives_tool/web/templates/components).
+[`web/templates/components/`]({{ repo_tree }}/src/archives_tool/web/templates/components).
 Cette page liste les composants disponibles et leur rôle, pour
 faciliter la création d'une nouvelle page cohérente avec
 l'existant.
@@ -112,4 +112,4 @@ l'existant.
 - [Interface web](../guide/interface-web.md) — vue côté
   utilisateur.
 - Code source des composants :
-  [`web/templates/components/`](https://github.com/Hsbtqemy/ColleC/tree/main/src/archives_tool/web/templates/components).
+  [`web/templates/components/`]({{ repo_tree }}/src/archives_tool/web/templates/components).

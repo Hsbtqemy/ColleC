@@ -20,18 +20,8 @@ cd ColleC
 uv sync --all-extras
 ```
 
-Lancer les tests :
-
-```bash
-uv run pytest
-uv run ruff check .
-```
-
-Lancer la doc en local (live reload) :
-
-```bash
-uv run mkdocs serve
-```
+Pour lancer les tests, le linter, et prévisualiser la doc en
+local : voir [Tests](tests.md).
 
 ## Patterns du projet
 

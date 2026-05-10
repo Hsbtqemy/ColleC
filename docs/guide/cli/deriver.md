@@ -91,22 +91,13 @@ rien automatiquement.
 
 Les formats inconnus de Pillow remontent en erreur dans le rapport.
 
-## Limites V1
+## Spécificités
 
-- Une seule page par PDF (la première). Les PDF multi-pages perdent
-  leurs pages 2+ dans la prévisualisation.
-- TIFF multi-pages : seule la première frame est dérivée. Cas usuel
-  pour les scans de documents en pages séparées : OK ; cas TIFF
-  pyramidaux : à investiguer.
-- **Mémoire sur très grosses sources** : Pillow charge l'image
-  entière en RAM avant de redimensionner. Un TIFF 60 MP en RGB
-  consomme ~200 MB ; avec une copie pour le redimensionnement, prévoir
-  jusqu'à ~500 MB de pic par fichier traité. La génération est
-  séquentielle, donc on ne multiplie pas ce pic. Au-delà
-  (TIFF >100 MP, scans archivistiques très haute résolution),
-  envisager pyvips qui travaille en streaming et est listé comme
-  alternative dans CLAUDE.md.
-- Pas d'optimisation pyvips pour les TIFF lourds. À ajouter si la
-  performance devient un goulot.
-- Le DPI de rasterisation des PDF est figé à 200 ; ajustable par
-  édition de la constante `DPI_PDF` dans `generateur.py`.
+- **PDF** : seule la première page est rasterisée (DPI figé à
+  200, ajustable via la constante `DPI_PDF` dans `generateur.py`).
+- **TIFF multi-pages** : seule la première frame est dérivée.
+  Pour les TIFF pyramidaux et les sources très lourdes
+  (>100 MP), envisager `pyvips` (à ajouter si nécessaire).
+
+Pour les autres limitations transverses (formats non supportés,
+mémoire, etc.) voir [Limites connues](../../annexes/limites.md).

@@ -143,11 +143,12 @@ L'annulation est idempotente : un batch déjà annulé ne peut pas
 l'être à nouveau (les opérations originales ont
 `annule_par_batch_id` non nul, donc sont filtrées).
 
-## Limites connues V1
+## Spécificités
 
 - Le template est obligatoire en argument CLI ; la lecture depuis
-  le profil de la collection (`profil_import.contenu.fichiers.
-  template_nommage_canonique`) est prévue mais l'importer n'alimente
-  pas encore `Collection.profil_import_id`.
-- L'exécution charge en mémoire la totalité du plan. Pour des fonds
-  géants (>100k fichiers), envisager un streaming par lot.
+  le profil de la collection (`template_nommage_canonique`) est
+  prévue mais l'importer n'alimente pas encore
+  `Collection.profil_import_id`.
+
+Limitations transverses (perf, formats) :
+[Limites connues](../../annexes/limites.md).

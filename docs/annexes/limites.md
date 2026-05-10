@@ -69,8 +69,9 @@ levées dans des versions ultérieures — voir
 - **Bases > 50 000 items** : non testé en production. Les
   contrôles qa et le dashboard peuvent ralentir.
 - **Renommage massif** : pour des renames > 5 000 fichiers, le
-  rapport Rich peut devenir verbeux. Utiliser `--format json`
-  pour parser facilement (à venir).
+  rapport Rich peut devenir verbeux. Le format JSON (`controler
+  --format json`) est disponible pour le contrôle ; idem pour
+  `montrer`. Pour `renommer`, le format JSON est prévu en V0.9.1.
 - **Hash SHA-256 à l'import** : calculés sur le binaire complet,
   ce qui peut être lent pour des fichiers très lourds (TIFF
   >100 MP). En dry-run, les hash ne sont pas calculés.

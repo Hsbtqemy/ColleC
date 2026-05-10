@@ -100,6 +100,7 @@ with factory() as db:
         cote="TEST", titre="Fonds test",
     ))
     # La collection miroir est créée automatiquement (INV1).
+    # creer_fonds commit la transaction lui-même.
 
     item = creer_item(db, FormulaireItem(
         fonds_id=fonds.id,
@@ -107,8 +108,7 @@ with factory() as db:
         titre="Item de test",
     ))
     # L'item est ajouté automatiquement à la miroir (INV6).
-
-    db.commit()
+    # creer_item commit aussi.
 ```
 
 ### Gérer les erreurs métier
@@ -134,21 +134,24 @@ Les services **ne font jamais** :
 - d'`INSERT` / `UPDATE` / `DELETE` brut hors d'une fonction CRUD
   documentée ;
 - d'écriture sur le système de fichiers (réservé à `files/`,
-  `derivatives/`, `renamer/`) ;
-- de `commit` implicite — c'est au caller de décider du moment
-  (les services font `db.flush()` quand nécessaire pour récupérer
-  un id, mais laissent le `commit` au caller pour permettre la
-  composition transactionnelle).
+  `derivatives/`, `renamer/`).
 
 Les services **font toujours** :
 
 - valider les entrées via Pydantic (formulaires) ;
 - lever des erreurs métier nommées (pas `Exception` générique) ;
-- respecter les invariants (idempotence, transactions atomiques).
+- respecter les invariants en une seule transaction
+  (`creer_fonds` crée le fonds + sa miroir + commit ; idem pour
+  `creer_item` qui ajoute aussi l'entrée `ItemCollection`).
+  Conséquence : appeler un service exécute une opération
+  atomique complète. Pour composer plusieurs services dans une
+  même transaction, il faut désactiver explicitement le commit
+  via le paramètre kwarg correspondant — ou réécrire la logique
+  dans un nouveau service.
 
 ## Voir aussi
 
 - [Modèle de données](modele.md) — tables, invariants, FK.
 - [Tests](tests.md) — comment les invariants sont validés.
 - Code source :
-  [`src/archives_tool/api/services/`](https://github.com/Hsbtqemy/ColleC/tree/main/src/archives_tool/api/services).
+  [`src/archives_tool/api/services/`]({{ repo_tree }}/src/archives_tool/api/services).

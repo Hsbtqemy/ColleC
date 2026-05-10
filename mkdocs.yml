@@ -42,12 +42,12 @@ plugins:
   - search
   - macros:
       on_undefined: strict
-      include_dir: docs
 
 # Variables disponibles dans les pages via {{ ... }} (mkdocs-macros).
-# Utilité : éviter de hardcoder l'URL du dépôt à 13+ endroits.
+# Utilité : éviter de hardcoder l'URL du dépôt à 14+ endroits.
 extra:
   repo_main: https://github.com/Hsbtqemy/ColleC/blob/main
+  repo_tree: https://github.com/Hsbtqemy/ColleC/tree/main
 
 markdown_extensions:
   - admonition

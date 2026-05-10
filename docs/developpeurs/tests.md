@@ -12,12 +12,6 @@ uv run pytest --lf                     # last failed
 uv run pytest -x                       # arrêter au 1er échec
 ```
 
-Avec couverture :
-
-```bash
-uv run pytest --cov=archives_tool
-```
-
 Lint et format :
 
 ```bash
@@ -46,9 +40,11 @@ tests/
 └── ...
 ```
 
-L'arborescence est plate (pas de sous-dossiers par couche). Le
-préfixe (`test_cli_`, `test_export_`, etc.) suffit pour
-naviguer.
+L'arborescence est majoritairement plate (pas de sous-dossiers
+par couche métier) — le préfixe (`test_cli_`, `test_export_`,
+etc.) suffit à naviguer. Seuls `tests/docs/` (garde-fous
+documentation) et `tests/fixtures/` (données YAML d'exemple) sont
+des sous-dossiers.
 
 ## Conventions
 

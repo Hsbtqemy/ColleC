@@ -1,348 +1,367 @@
-"""Tests des commandes `archives-tool montrer ...`."""
+"""Tests de `archives-tool montrer` (V0.9.0-gamma.4.1)."""
 
 from __future__ import annotations
 
-import shutil
+import json
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
-import archives_tool.affichage.console as console_module
-from archives_tool.affichage.console import silencer_pour_tests
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    creer_collection_libre,
+)
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+)
+from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.cli import app
-from archives_tool.config import ConfigLocale
 from archives_tool.db import creer_engine, creer_session_factory
-from archives_tool.importers.ecrivain import importer as importer_profil
-from archives_tool.models import Base, Collection
-from archives_tool.profils import charger_profil
+from archives_tool.models import Base, Fichier, Item, ItemCollection
+from sqlalchemy import select as sa_select
 
-FIXTURES = Path(__file__).parent / "fixtures" / "profils"
 runner = CliRunner()
 
 
-@pytest.fixture(autouse=True)
-def _silencer_console() -> None:
-    """Forcer la console en mode déterministe pour tous les tests."""
-    silencer_pour_tests()
-
-
-@pytest.fixture
-def base_avec_items(tmp_path: Path) -> Path:
-    """DB de test peuplée avec les fixtures cas_item_simple et
-    cas_hierarchie_cote (pour avoir une hiérarchie réelle)."""
+def _base_demo_petite(tmp_path: Path) -> Path:
+    """Base avec 2 fonds + items + 1 libre + 1 transversale + 2 fichiers
+    sur HK-001. Suffisant pour couvrir les 4 sous-commandes."""
     db = tmp_path / "test.db"
     engine = creer_engine(db)
     Base.metadata.create_all(engine)
-
-    factory = creer_session_factory(engine)
-    for cas in ("cas_item_simple", "cas_hierarchie_cote"):
-        dossier = tmp_path / "profils" / cas
-        shutil.copytree(FIXTURES / cas, dossier)
-        config = ConfigLocale(
-            utilisateur="T",
-            racines={
-                "scans_revues": dossier / "arbre",
-                "scans_archives": dossier / "arbre",
-            },
-        )
-        with factory() as session:
-            profil = charger_profil(dossier / "profil.yaml")
-            importer_profil(
-                profil, dossier / "profil.yaml", session, config, dry_run=False
-            )
-
-    # Ajouter une sous-collection vide pour tester l'arbre.
-    with factory() as session:
-        from sqlalchemy import select
-
-        fa = session.scalar(
-            select(Collection).where(Collection.cote_collection == "FA")
-        )
-        sous = Collection(cote_collection="FA-SOUS", titre="Sous-fonds A", parent=fa)
-        session.add(sous)
-        session.commit()
-
-    engine.dispose()
-    return db
-
-
-@pytest.fixture
-def base_vide(tmp_path: Path) -> Path:
-    db = tmp_path / "vide.db"
-    engine = creer_engine(db)
-    Base.metadata.create_all(engine)
-    engine.dispose()
-    return db
-
-
-def _invoquer(args: list[str]) -> tuple[int, str]:
-    # Capture la sortie via la console partagée. La fixture autouse
-    # `silencer_pour_tests` rebind `console_module.console` avant
-    # chaque test ; les modules `affichage.*` accèdent à la console
-    # par `cons.console`, donc voient la nouvelle instance sans qu'on
-    # ait à ré-importer le CLI.
-    with console_module.console.capture() as cap:
-        result = runner.invoke(app, args, catch_exceptions=False)
-    return result.exit_code, cap.get()
-
-
-def test_montrer_collections_plat(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "collections", "--db-path", str(base_avec_items)]
-    )
-    assert code == 0
-    assert "HK" in sortie
-    assert "FA" in sortie
-    assert "Hara-Kiri" in sortie
-
-    # Vérification précise des compteurs : on cherche la ligne du
-    # tableau qui commence par la cote, et on vérifie que le compte
-    # d'items y figure. Évite les faux positifs sur "5" ou "4" qui
-    # pourraient apparaître ailleurs (dates, pourcentages, etc.).
-    lignes = [ligne for ligne in sortie.splitlines() if "│ HK " in ligne]
-    assert lignes, f"Pas de ligne HK trouvée dans :\n{sortie}"
-    assert " 5 " in lignes[0], f"Compteur 5 items absent de la ligne HK : {lignes[0]}"
-
-    lignes_fa = [
-        ligne
-        for ligne in sortie.splitlines()
-        if "│ FA " in ligne and "FA-SOUS" not in ligne
-    ]
-    assert lignes_fa, f"Pas de ligne FA trouvée dans :\n{sortie}"
-    assert " 4 " in lignes_fa[0]
-
-
-def test_montrer_collections_arbre(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        [
-            "montrer",
-            "collections",
-            "--recursif",
-            "--db-path",
-            str(base_avec_items),
-        ]
-    )
-    assert code == 0
-    # Le parent et l'enfant doivent tous deux apparaître dans l'arbre.
-    assert "FA" in sortie
-    assert "FA-SOUS" in sortie
-
-
-def test_montrer_collections_avec_items_seulement(base_avec_items: Path) -> None:
-    # FA-SOUS est vide : avec --avec-items elle ne doit pas apparaître
-    # en mode plat.
-    code, sortie = _invoquer(
-        [
-            "montrer",
-            "collections",
-            "--avec-items",
-            "--db-path",
-            str(base_avec_items),
-        ]
-    )
-    assert code == 0
-    assert "FA-SOUS" not in sortie
-    assert "HK" in sortie
-    assert "FA" in sortie
-
-
-def test_montrer_collection_existante(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "collection", "HK", "--db-path", str(base_avec_items)]
-    )
-    assert code == 0
-    # Fiche : titre + champs.
-    assert "Hara-Kiri" in sortie
-    assert "Périodicité" in sortie
-    assert "mensuel" in sortie
-    # Tableau d'items : au moins une cote.
-    assert "HK-1960-01" in sortie
-    # Description publique présente.
-    assert "satirique" in sortie.lower()
-
-
-def test_montrer_collection_inexistante(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "collection", "QUI_NEXISTE_PAS", "--db-path", str(base_avec_items)]
-    )
-    assert code == 1
-    assert "introuvable" in sortie.lower()
-
-
-def test_montrer_collection_sans_items(base_avec_items: Path) -> None:
-    # FA-SOUS est vide.
-    code, sortie = _invoquer(
-        ["montrer", "collection", "FA-SOUS", "--db-path", str(base_avec_items)]
-    )
-    assert code == 0
-    assert "Sous-fonds A" in sortie
-    assert "Aucun item" in sortie
-
-
-def test_montrer_collection_pas_items(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        [
-            "montrer",
-            "collection",
-            "HK",
-            "--pas-items",
-            "--db-path",
-            str(base_avec_items),
-        ]
-    )
-    assert code == 0
-    assert "Hara-Kiri" in sortie
-    # Pas de tableau d'items affiché.
-    assert "HK-1960-01" not in sortie
-
-
-def test_montrer_item_existant(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "item", "HK-1960-01", "--db-path", str(base_avec_items)]
-    )
-    assert code == 0
-    assert "HK-1960-01" in sortie
-    assert "Premier numéro" in sortie
-    # Métadonnées étendues présentes : collaborateurs.
-    assert "collaborateurs" in sortie
-    # Tableau des fichiers : un PNG rattaché à l'item HK-1960-01.
-    assert "01.png" in sortie
-
-
-def test_montrer_item_inexistant(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "item", "INTROUVABLE", "--db-path", str(base_avec_items)]
-    )
-    assert code == 1
-    assert "introuvable" in sortie.lower()
-
-
-def test_montrer_item_pas_fichiers(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        [
-            "montrer",
-            "item",
-            "HK-1961-02",
-            "--pas-fichiers",
-            "--db-path",
-            str(base_avec_items),
-        ]
-    )
-    assert code == 0
-    assert "HK-1961-02" in sortie
-    # Pas de tableau Fichiers.
-    assert "Aucun fichier" not in sortie
-
-
-def test_montrer_item_sans_fichiers(base_avec_items: Path) -> None:
-    # HK-1961-02 a numero=4 → pas de PNG (uniquement 01,02,03)
-    code, sortie = _invoquer(
-        ["montrer", "item", "HK-1961-02", "--db-path", str(base_avec_items)]
-    )
-    assert code == 0
-    assert "Aucun fichier" in sortie
-
-
-def test_montrer_fichier_existant(base_avec_items: Path, tmp_path: Path) -> None:
-    # Premier fichier en base = ordre 1.
-    from sqlalchemy import select as sqla_select
-
-    from archives_tool.db import creer_session_factory
-    from archives_tool.models import Fichier
-
-    engine = creer_engine(base_avec_items)
     factory = creer_session_factory(engine)
     with factory() as s:
-        fichier_id = s.scalar(sqla_select(Fichier.id))
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        creer_fonds(s, FormulaireFonds(cote="FA", titre="Fonds Aínsa"))
+        fonds_hk = lire_fonds_par_cote(s, "HK")
+        fonds_fa = lire_fonds_par_cote(s, "FA")
+        item_hk1 = creer_item(
+            s,
+            FormulaireItem(
+                cote="HK-001",
+                titre="Numéro 1",
+                fonds_id=fonds_hk.id,
+                date="1969-09",
+                annee=1969,
+                metadonnees={"auteurs": ["Cavanna"], "thematiques": ["satire"]},
+            ),
+        )
+        creer_item(
+            s,
+            FormulaireItem(cote="HK-002", titre="Numéro 2", fonds_id=fonds_hk.id),
+        )
+        creer_item(
+            s,
+            FormulaireItem(cote="FA-001", titre="Manuscrit 1", fonds_id=fonds_fa.id),
+        )
+        creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="FA-OEUVRES",
+                titre="Œuvres",
+                fonds_id=fonds_fa.id,
+            ),
+        )
+        creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="TRANSV", titre="Transversale", fonds_id=None
+            ),
+        )
+        s.add_all(
+            [
+                Fichier(
+                    item_id=item_hk1.id,
+                    racine="s",
+                    chemin_relatif="HK-001/01.tif",
+                    nom_fichier="01.tif",
+                    ordre=1,
+                    taille_octets=1_000_000,
+                    largeur_px=3000,
+                    hauteur_px=4000,
+                    format="tif",
+                ),
+                Fichier(
+                    item_id=item_hk1.id,
+                    racine="s",
+                    chemin_relatif="HK-001/02.tif",
+                    nom_fichier="02.tif",
+                    ordre=2,
+                    format="tif",
+                ),
+            ]
+        )
+        # Lier HK-001 et FA-001 à la transversale.
+        from archives_tool.api.services.collections import lire_collection_par_cote
+
+        transv = lire_collection_par_cote(s, "TRANSV")
+        item_fa1 = s.scalar(
+            sa_select(Item).where(Item.cote == "FA-001", Item.fonds_id == fonds_fa.id)
+        )
+        s.add_all(
+            [
+                ItemCollection(item_id=item_hk1.id, collection_id=transv.id),
+                ItemCollection(item_id=item_fa1.id, collection_id=transv.id),
+            ]
+        )
+        s.commit()
     engine.dispose()
-    assert fichier_id is not None
+    return db
 
-    # Config bidon (la racine pointera vers tmp_path qui existe mais pas le fichier).
-    cfg = tmp_path / "cfg.yaml"
-    cfg.write_text(
-        f"utilisateur: T\nracines:\n  scans_revues: {tmp_path}\n",
-        encoding="utf-8",
+
+# ---------------------------------------------------------------------------
+# montrer fonds
+# ---------------------------------------------------------------------------
+
+
+def test_montrer_fonds_liste(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(app, ["montrer", "fonds", "--db-path", str(db)])
+    assert result.exit_code == 0, result.output
+    assert "HK" in result.output
+    assert "FA" in result.output
+    assert "Fonds (2)" in result.output
+
+
+def test_montrer_fonds_liste_json(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app, ["montrer", "fonds", "--format", "json", "--db-path", str(db)]
     )
-    code, sortie = _invoquer(
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["type"] == "fonds_liste"
+    assert len(data["fonds"]) == 2
+
+
+def test_montrer_fonds_detail(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app, ["montrer", "fonds", "--cote", "HK", "--db-path", str(db)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Hara-Kiri" in result.output
+    # Le détail mentionne la collection miroir + items récents.
+    assert "miroir" in result.output.lower()
+
+
+def test_montrer_fonds_detail_json(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
         [
-            "montrer",
-            "fichier",
-            str(fichier_id),
-            "--db-path",
-            str(base_avec_items),
-            "--config",
-            str(cfg),
-        ]
+            "montrer", "fonds",
+            "--cote", "HK",
+            "--format", "json",
+            "--db-path", str(db),
+        ],
     )
-    assert code == 0
-    assert f"Fichier #{fichier_id}" in sortie
-    # Diagnostic disque attendu : fichier absent (chemin relatif jamais
-    # créé sous tmp_path).
-    assert "absent" in sortie.lower() or "✗" in sortie
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["type"] == "fonds_detail"
+    assert data["fonds"]["cote"] == "HK"
+    assert data["fonds"]["nb_items"] == 2
 
 
-def test_montrer_fichier_inexistant(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "fichier", "99999", "--db-path", str(base_avec_items)]
+def test_montrer_fonds_inexistant(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app, ["montrer", "fonds", "--cote", "INEXISTANT", "--db-path", str(db)]
     )
-    assert code == 1
-    assert "introuvable" in sortie.lower()
+    assert result.exit_code == 1
+    assert "introuvable" in result.output.lower()
 
 
-def test_montrer_statistiques_globales(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
-        ["montrer", "statistiques", "--db-path", str(base_avec_items)]
+# ---------------------------------------------------------------------------
+# montrer collection
+# ---------------------------------------------------------------------------
+
+
+def test_montrer_collection_liste(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(app, ["montrer", "collection", "--db-path", str(db)])
+    assert result.exit_code == 0, result.output
+    # 2 miroirs (HK, FA) + 1 libre (FA-OEUVRES) + 1 transversale = 4.
+    assert "FA-OEUVRES" in result.output
+    assert "TRANSV" in result.output
+    assert "transversale" in result.output.lower()
+
+
+def test_montrer_collection_liste_filtre_par_fonds(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
+        ["montrer", "collection", "--fonds", "FA", "--db-path", str(db)],
     )
-    assert code == 0
-    assert "Statistiques" in sortie
-    assert "Items" in sortie
-    # 5 (HK) + 4 (FA) = 9 items.
-    assert "9" in sortie
-    # Top 5 collections présent.
-    assert "HK" in sortie
-    assert "FA" in sortie
+    assert result.exit_code == 0, result.output
+    assert "FA-OEUVRES" in result.output
+    assert "TRANSV" not in result.output  # transversale exclue
 
 
-def test_montrer_statistiques_par_collection(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
+def test_montrer_collection_detail_libre(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
         [
-            "montrer",
-            "statistiques",
-            "--collection",
-            "HK",
-            "--db-path",
-            str(base_avec_items),
-        ]
+            "montrer", "collection",
+            "--cote", "FA-OEUVRES",
+            "--fonds", "FA",
+            "--db-path", str(db),
+        ],
     )
-    assert code == 0
-    # 5 items HK, par état (tous brouillon car valeurs_par_defaut).
-    assert "5" in sortie
-    assert "brouillon" in sortie
+    assert result.exit_code == 0, result.output
+    assert "Œuvres" in result.output
+    assert "Fonds Aínsa" in result.output  # fonds parent visible
 
 
-def test_montrer_statistiques_collection_inexistante(base_avec_items: Path) -> None:
-    code, sortie = _invoquer(
+def test_montrer_collection_detail_transversale(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
+        ["montrer", "collection", "--cote", "TRANSV", "--db-path", str(db)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "transversale" in result.output.lower()
+    # Les 2 fonds représentés sont listés.
+    assert "HK" in result.output
+    assert "FA" in result.output
+
+
+def test_montrer_collection_detail_json_transversale(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
         [
-            "montrer",
-            "statistiques",
-            "--collection",
-            "XXX",
-            "--db-path",
-            str(base_avec_items),
-        ]
+            "montrer", "collection",
+            "--cote", "TRANSV",
+            "--format", "json",
+            "--db-path", str(db),
+        ],
     )
-    assert code == 1
-    assert "introuvable" in sortie.lower()
+    data = json.loads(result.output)
+    assert data["type"] == "collection_detail"
+    assert data["collection"]["est_transversale"] is True
+    cotes_fonds = {f["cote"] for f in data["collection"]["fonds_representes"]}
+    assert cotes_fonds == {"HK", "FA"}
 
 
-def test_montrer_statistiques_base_vide(base_vide: Path) -> None:
-    code, sortie = _invoquer(["montrer", "statistiques", "--db-path", str(base_vide)])
-    assert code == 0
-    assert "Aucune donnée" in sortie
+# ---------------------------------------------------------------------------
+# montrer item
+# ---------------------------------------------------------------------------
 
 
-def test_montrer_collections_base_vide(base_vide: Path) -> None:
-    code, sortie = _invoquer(["montrer", "collections", "--db-path", str(base_vide)])
-    assert code == 0
-    assert "Aucune collection" in sortie
+def test_montrer_item_detail(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "montrer", "item",
+            "HK-001",
+            "--fonds", "HK",
+            "--db-path", str(db),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "HK-001" in result.output
+    assert "Numéro 1" in result.output
+    # Métadonnées custom affichées.
+    assert "Cavanna" in result.output
+    # Les 2 fichiers sont listés.
+    assert "01.tif" in result.output
+    assert "02.tif" in result.output
+
+
+def test_montrer_item_sans_fonds_422(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app, ["montrer", "item", "HK-001", "--db-path", str(db)]
+    )
+    # `--fonds` requis (Typer renvoie 2 si argument requis manquant).
+    assert result.exit_code == 2
+
+
+def test_montrer_item_inexistant(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "montrer", "item",
+            "INEXISTANT",
+            "--fonds", "HK",
+            "--db-path", str(db),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "introuvable" in result.output.lower()
+
+
+def test_montrer_item_format_json(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "montrer", "item",
+            "HK-001",
+            "--fonds", "HK",
+            "--format", "json",
+            "--db-path", str(db),
+        ],
+    )
+    data = json.loads(result.output)
+    assert data["type"] == "item_detail"
+    assert data["item"]["cote"] == "HK-001"
+    assert len(data["item"]["fichiers"]) == 2
+    assert data["item"]["metadonnees"]["auteurs"] == ["Cavanna"]
+
+
+# ---------------------------------------------------------------------------
+# montrer fichier
+# ---------------------------------------------------------------------------
+
+
+def test_montrer_fichier_detail(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    # Récupère l'id du premier fichier en DB.
+    factory = creer_session_factory(creer_engine(db))
+    with factory() as s:
+        fichier_id = s.scalar(sa_select(Fichier.id).order_by(Fichier.id).limit(1))
+
+    result = runner.invoke(
+        app,
+        ["montrer", "fichier", str(fichier_id), "--db-path", str(db)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "01.tif" in result.output
+    assert "HK-001" in result.output  # contexte item
+    assert "Hara-Kiri" in result.output  # contexte fonds
+
+
+def test_montrer_fichier_inexistant(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    result = runner.invoke(
+        app, ["montrer", "fichier", "9999999", "--db-path", str(db)]
+    )
+    assert result.exit_code == 1
+    assert "introuvable" in result.output.lower()
+
+
+def test_montrer_fichier_format_json(tmp_path: Path) -> None:
+    db = _base_demo_petite(tmp_path)
+    factory = creer_session_factory(creer_engine(db))
+    with factory() as s:
+        fichier_id = s.scalar(sa_select(Fichier.id).order_by(Fichier.id).limit(1))
+
+    result = runner.invoke(
+        app,
+        [
+            "montrer", "fichier", str(fichier_id),
+            "--format", "json",
+            "--db-path", str(db),
+        ],
+    )
+    data = json.loads(result.output)
+    assert data["type"] == "fichier_detail"
+    assert data["fichier"]["nom_fichier"] == "01.tif"
+    assert data["fichier"]["item"]["cote"] == "HK-001"

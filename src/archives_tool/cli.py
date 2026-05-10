@@ -81,6 +81,7 @@ from archives_tool.qa import (
     formatter_rapport_text,
 )
 from archives_tool.renamer import (
+    Perimetre,
     annuler_batch,
     construire_plan,
     executer_plan,
@@ -834,21 +835,18 @@ def cmd_renommer_appliquer(
     ou d'item partagées entre fonds, --fonds peut accompagner
     --collection ou --item pour désambiguïser.
     """
-    cibles = sum(
-        [
-            collection is not None,
-            item is not None,
-            bool(fichier_id),
-            fonds is not None and collection is None and item is None,
-        ]
-    )
-    if cibles != 1:
-        typer.echo(
-            "Erreur : exactement un de --fonds (seul), --collection, "
-            "--item ou --fichier-id est requis.",
-            err=True,
+    try:
+        perimetre = Perimetre(
+            fonds_cote=fonds if collection is None and item is None and not fichier_id else None,
+            collection_cote=collection,
+            collection_fonds_cote=fonds if collection is not None else None,
+            item_cote=item,
+            item_fonds_cote=fonds if item is not None else None,
+            fichier_ids=tuple(fichier_id) if fichier_id else (),
         )
-        raise typer.Exit(2)
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
 
     config = _charger_config_ou_sortie(config_path)
     nom = utilisateur if utilisateur is not None else config.utilisateur
@@ -860,14 +858,9 @@ def cmd_renommer_appliquer(
                 session,
                 template=template,
                 racines=racines,
-                fonds_cote=fonds if collection is None and item is None and not fichier_id else None,
-                collection_cote=collection,
-                collection_fonds_cote=fonds if collection is not None else None,
-                item_cote=item,
-                item_fonds_cote=fonds if item is not None else None,
-                fichier_ids=list(fichier_id) if fichier_id else None,
+                perimetre=perimetre,
             )
-        except ValueError as e:
+        except (FondsIntrouvable, CollectionIntrouvable) as e:
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
 

@@ -1,4 +1,4 @@
-"""Tests du module renamer (V0.9.0-gamma.4.2).
+"""Tests du module renamer.
 
 Quatre familles de tests :
 - `template.py` : variables disponibles, validation, format spec.
@@ -41,6 +41,7 @@ from archives_tool.models import (
 )
 from archives_tool.renamer import (
     EchecTemplate,
+    Perimetre,
     annuler_batch,
     construire_plan,
     evaluer_template,
@@ -133,6 +134,7 @@ def test_template_variables_de_base(
         "{cote_fonds}/{cote}/{cote}-{ordre:03d}.{ext}",
         fichier,
         fichier.item,
+        fichier.item.fonds,
     )
     assert cible == "HK/HK-001/HK-001-001.tif"
 
@@ -144,7 +146,9 @@ def test_template_format_spec_padding(
     fichier = session_avec_fichiers.scalar(
         select(Fichier).where(Fichier.ordre == 1).limit(1)
     )
-    cible = evaluer_template("p{ordre:03d}.{ext}", fichier, fichier.item)
+    cible = evaluer_template(
+        "p{ordre:03d}.{ext}", fichier, fichier.item, fichier.item.fonds
+    )
     assert cible == "p001.tif"
 
 
@@ -153,13 +157,15 @@ def test_template_variable_inconnue_leve(
 ) -> None:
     fichier = session_avec_fichiers.scalar(select(Fichier).limit(1))
     with pytest.raises(EchecTemplate, match="inconnue"):
-        evaluer_template("{xxx}.tif", fichier, fichier.item)
+        evaluer_template(
+            "{xxx}.tif", fichier, fichier.item, fichier.item.fonds
+        )
 
 
 def test_template_vide_leve(session_avec_fichiers: Session) -> None:
     fichier = session_avec_fichiers.scalar(select(Fichier).limit(1))
     with pytest.raises(EchecTemplate, match="vide"):
-        evaluer_template("   ", fichier, fichier.item)
+        evaluer_template("   ", fichier, fichier.item, fichier.item.fonds)
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +180,7 @@ def test_plan_perimetre_fonds(
         session_avec_fichiers,
         template="{cote_fonds}/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     # 5 fichiers du fonds HK.
     assert len(plan.operations) == 5
@@ -194,8 +200,9 @@ def test_plan_perimetre_collection_libre(
         session_avec_fichiers,
         template="fav/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        collection_cote="HK-FAVORIS",
-        collection_fonds_cote="HK",
+        perimetre=Perimetre(
+            collection_cote="HK-FAVORIS", collection_fonds_cote="HK"
+        ),
     )
     assert len(plan.operations) == 3
 
@@ -207,8 +214,7 @@ def test_plan_perimetre_item(
         session_avec_fichiers,
         template="{cote}/{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        item_cote="HK-001",
-        item_fonds_cote="HK",
+        perimetre=Perimetre(item_cote="HK-001", item_fonds_cote="HK"),
     )
     assert len(plan.operations) == 3
 
@@ -222,7 +228,7 @@ def test_plan_collision_intra_batch(
         session_avec_fichiers,
         template="{cote}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     assert not plan.applicable
     codes = {c.code for c in plan.conflits}
@@ -238,7 +244,7 @@ def test_plan_no_op_si_template_identique(
         session_avec_fichiers,
         template="{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     no_op = [o for o in plan.operations if o.statut == StatutPlan.NO_OP]
     assert len(no_op) == 5
@@ -257,7 +263,7 @@ def test_execution_dry_run_ne_modifie_rien(
         session_avec_fichiers,
         template="renomme/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     rap = executer_plan(
         session_avec_fichiers, plan, racines=_racines(racine_scans), dry_run=True
@@ -275,7 +281,7 @@ def test_execution_appliquee_modifie_db_et_disque(
         session_avec_fichiers,
         template="renomme/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     rap = executer_plan(
         session_avec_fichiers, plan, racines=_racines(racine_scans), dry_run=False
@@ -319,7 +325,7 @@ def test_annulation_remet_chemins_initiaux(
         session_avec_fichiers,
         template="renomme/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        fonds_cote="HK",
+        perimetre=Perimetre(fonds_cote="HK"),
     )
     rap = executer_plan(
         session_avec_fichiers,

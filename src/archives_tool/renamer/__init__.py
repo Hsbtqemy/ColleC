@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from .annulation import annuler_batch
 from .execution import executer_plan
-from .plan import construire_plan
+from .plan import Perimetre, construire_plan
 from .rapport import (
     CodeConflit,
     Conflit,
@@ -34,6 +34,7 @@ __all__ = [
     "executer_plan",
     "construire_plan",
     "evaluer_template",
+    "Perimetre",
     "EchecTemplate",
     "CodeConflit",
     "Conflit",

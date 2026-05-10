@@ -19,11 +19,14 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collections import lire_collection_par_cote
+from archives_tool.api.services.fonds import lire_fonds_par_cote
 from archives_tool.files.paths import chemin_existe_nfc_ou_nfd, normaliser_nfc
 from archives_tool.models import (
     EtatFichier,
@@ -43,25 +46,60 @@ from .rapport import (
 from .template import EchecTemplate, evaluer_template
 
 
-def _selectionner_fichiers(
-    session: Session,
-    *,
-    fonds_cote: str | None,
-    collection_cote: str | None,
-    collection_fonds_cote: str | None,
-    item_cote: str | None,
-    item_fonds_cote: str | None,
-    fichier_ids: list[int] | None,
-) -> list[tuple[Fichier, Item, Fonds]]:
-    """Charge les fichiers du périmètre + leur item + fonds parent.
+@dataclass(frozen=True)
+class Perimetre:
+    """Périmètre d'un renommage. Quatre modes mutuellement exclusifs :
 
-    Quatre modes (mutex) :
     - `fichier_ids` : ids explicites.
-    - `item_cote` (+ `item_fonds_cote` pour désambiguïsation).
+    - `item_cote` (+ `item_fonds_cote` pour désambiguïser).
     - `collection_cote` (+ `collection_fonds_cote` si la cote est
-      partagée) : items rattachés à la collection via la junction
-      N-N `item_collection`.
-    - `fonds_cote` : tous les items du fonds.
+      partagée entre fonds).
+    - `fonds_cote` (seul) : tous les items du fonds.
+
+    La mutex est validée à la construction via `__post_init__` : un
+    appel programmatique passant deux modes lève `ValueError` au lieu
+    de silencieusement préférer l'un sur l'autre.
+    """
+
+    fonds_cote: str | None = None
+    collection_cote: str | None = None
+    collection_fonds_cote: str | None = None
+    item_cote: str | None = None
+    item_fonds_cote: str | None = None
+    fichier_ids: tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        modes = sum(
+            (
+                bool(self.fichier_ids),
+                self.item_cote is not None,
+                self.collection_cote is not None,
+                self.fonds_cote is not None
+                and self.collection_cote is None
+                and self.item_cote is None,
+            )
+        )
+        if modes != 1:
+            raise ValueError(
+                "Périmètre invalide : exactement un de fichier_ids, "
+                "item_cote, collection_cote ou fonds_cote (seul) requis."
+            )
+        # `*_fonds_cote` n'a de sens qu'avec son anchor.
+        if self.collection_fonds_cote is not None and self.collection_cote is None:
+            raise ValueError(
+                "collection_fonds_cote nécessite collection_cote."
+            )
+        if self.item_fonds_cote is not None and self.item_cote is None:
+            raise ValueError("item_fonds_cote nécessite item_cote.")
+
+
+def _selectionner_fichiers(
+    session: Session, perimetre: Perimetre
+) -> list[tuple[Fichier, Item, Fonds]]:
+    """Charge les fichiers du périmètre + leur item + fonds parent en
+    une seule requête (JOIN). Les exceptions métier (`FondsIntrouvable`,
+    `CollectionIntrouvable`) remontent telles quelles — au caller de
+    décider quoi en faire.
     """
     base_stmt = (
         select(Fichier, Item, Fonds)
@@ -70,45 +108,29 @@ def _selectionner_fichiers(
         .where(Fichier.etat == EtatFichier.ACTIF.value)
     )
 
-    if fichier_ids is not None:
-        stmt = base_stmt.where(Fichier.id.in_(fichier_ids)).order_by(Fichier.id)
+    if perimetre.fichier_ids:
+        stmt = base_stmt.where(Fichier.id.in_(perimetre.fichier_ids)).order_by(
+            Fichier.id
+        )
         return list(session.execute(stmt).all())
 
-    if item_cote is not None:
-        stmt = base_stmt.where(Item.cote == item_cote)
-        if item_fonds_cote is not None:
-            stmt = stmt.where(Fonds.cote == item_fonds_cote)
+    if perimetre.item_cote is not None:
+        stmt = base_stmt.where(Item.cote == perimetre.item_cote)
+        if perimetre.item_fonds_cote is not None:
+            stmt = stmt.where(Fonds.cote == perimetre.item_fonds_cote)
         return list(
             session.execute(stmt.order_by(Fichier.ordre, Fichier.id)).all()
         )
 
-    if collection_cote is not None:
-        # Imports locaux pour éviter une dépendance circulaire potentielle
-        # avec les services (qui chargent renamer indirectement via cli.py).
-        from archives_tool.api.services.collections import (
-            CollectionIntrouvable,
-            lire_collection_par_cote,
-        )
-        from archives_tool.api.services.fonds import (
-            FondsIntrouvable,
-            lire_fonds_par_cote,
-        )
-
+    if perimetre.collection_cote is not None:
         fonds_id_filtre = None
-        if collection_fonds_cote is not None:
-            try:
-                fonds_id_filtre = lire_fonds_par_cote(
-                    session, collection_fonds_cote
-                ).id
-            except FondsIntrouvable as e:
-                raise ValueError(str(e)) from e
-        try:
-            col = lire_collection_par_cote(
-                session, collection_cote, fonds_id=fonds_id_filtre
-            )
-        except CollectionIntrouvable as e:
-            raise ValueError(str(e)) from e
-
+        if perimetre.collection_fonds_cote is not None:
+            fonds_id_filtre = lire_fonds_par_cote(
+                session, perimetre.collection_fonds_cote
+            ).id
+        col = lire_collection_par_cote(
+            session, perimetre.collection_cote, fonds_id=fonds_id_filtre
+        )
         stmt = base_stmt.where(
             Item.id.in_(
                 select(ItemCollection.item_id).where(
@@ -118,16 +140,12 @@ def _selectionner_fichiers(
         ).order_by(Item.cote, Fichier.ordre, Fichier.id)
         return list(session.execute(stmt).all())
 
-    if fonds_cote is not None:
-        stmt = base_stmt.where(Fonds.cote == fonds_cote).order_by(
-            Item.cote, Fichier.ordre, Fichier.id
-        )
-        return list(session.execute(stmt).all())
-
-    raise ValueError(
-        "Aucun périmètre fourni : précisez fonds_cote, collection_cote, "
-        "item_cote ou fichier_ids."
+    # `__post_init__` garantit qu'on arrive ici uniquement si fonds_cote
+    # est défini seul.
+    stmt = base_stmt.where(Fonds.cote == perimetre.fonds_cote).order_by(
+        Item.cote, Fichier.ordre, Fichier.id
     )
+    return list(session.execute(stmt).all())
 
 
 def _detecter_cycles(
@@ -167,12 +185,7 @@ def construire_plan(
     *,
     template: str,
     racines: Mapping[str, Path],
-    fonds_cote: str | None = None,
-    collection_cote: str | None = None,
-    collection_fonds_cote: str | None = None,
-    item_cote: str | None = None,
-    item_fonds_cote: str | None = None,
-    fichier_ids: list[int] | None = None,
+    perimetre: Perimetre,
 ) -> RapportPlan:
     """Construit le plan de renommage et signale les conflits.
 
@@ -184,15 +197,7 @@ def construire_plan(
     debut = time.perf_counter()
     rap = RapportPlan()
 
-    lignes = _selectionner_fichiers(
-        session,
-        fonds_cote=fonds_cote,
-        collection_cote=collection_cote,
-        collection_fonds_cote=collection_fonds_cote,
-        item_cote=item_cote,
-        item_fonds_cote=item_fonds_cote,
-        fichier_ids=fichier_ids,
-    )
+    lignes = _selectionner_fichiers(session, perimetre)
 
     operations: list[OperationRenommage] = []
     for fichier, item, fonds in lignes:

@@ -59,7 +59,7 @@ def evaluer_template(
     template: str,
     fichier: Fichier,
     item: Item,
-    fonds: Fonds | None = None,
+    fonds: Fonds,
     collection: Collection | None = None,
 ) -> str:
     """Évalue le template et retourne un chemin relatif POSIX/NFC.
@@ -71,10 +71,7 @@ def evaluer_template(
     if not template.strip():
         raise EchecTemplate("Template vide.")
 
-    # `fonds` peut être déduit de `item.fonds` (relation N-1) si non
-    # fourni — facilite l'usage en tests sans charger le fonds en amont.
-    fonds_eff = fonds if fonds is not None else item.fonds
-    variables = _construire_variables(fichier, item, fonds_eff, collection)
+    variables = _construire_variables(fichier, item, fonds, collection)
     try:
         rendu = template.format_map(variables)
     except KeyError as e:

@@ -1,4 +1,4 @@
-"""Tests de `archives-tool renommer` (V0.9.0-gamma.4.2)."""
+"""Tests de `archives-tool renommer`."""
 
 from __future__ import annotations
 

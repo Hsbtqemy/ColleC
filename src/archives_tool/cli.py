@@ -50,8 +50,12 @@ from archives_tool.derivatives import generer_derives, nettoyer_derives
 from archives_tool.derivatives.affichage import (
     afficher_rapport as afficher_rapport_derives,
 )
-from archives_tool.qa.affichage import afficher_rapport_qa
-from archives_tool.qa.controles import CODES_CONTROLES, controler_tout
+from archives_tool.qa import (
+    composer_perimetre,
+    executer_controles,
+    formatter_rapport_json,
+    formatter_rapport_text,
+)
 from archives_tool.renamer import (
     annuler_batch,
     construire_plan,
@@ -516,85 +520,104 @@ def cmd_montrer_collections(
 
 @app.command("controler")
 def cmd_controler(
-    collection: str = typer.Option(
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds à contrôler (sinon : base entière).",
+    ),
+    collection: str | None = typer.Option(
         None,
         "--collection",
-        help="Limite les contrôles à une collection (sinon : toutes).",
+        "-c",
+        help="Cote de la collection à contrôler (sinon : base entière).",
     ),
-    recursif: bool = typer.Option(
+    format_sortie: str = typer.Option(
+        "text",
+        "--format",
+        help="Format de sortie : 'text' (lisible) ou 'json' (CI).",
+    ),
+    strict: bool = typer.Option(
         False,
-        "--recursif/--non-recursif",
-        help="Inclure les sous-collections lors d'un filtre par collection.",
+        "--strict",
+        help="Exit 1 dès qu'il y a un problème (avertissement compris).",
     ),
-    check: list[str] = typer.Option(
-        None,
-        "--check",
-        help=(
-            "Restreindre aux contrôles indiqués (multi). Codes : "
-            f"{', '.join(CODES_CONTROLES)}."
-        ),
+    max_exemples: int = typer.Option(
+        5,
+        "--max-exemples",
+        help="Nombre maximum d'exemples affichés par contrôle (text).",
     ),
-    extensions: str = typer.Option(
-        None,
-        "--extensions",
-        help=(
-            "Liste d'extensions (séparées par virgule) pour le contrôle "
-            "des orphelins disque. Défaut : png,jpg,jpeg,tif,tiff,pdf."
-        ),
-    ),
-    limite_details: int = typer.Option(
-        20,
-        "--limite-details",
-        help="Nombre max de lignes affichées par contrôle (0 = illimité).",
-    ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
     config_path: Path = typer.Option(
         Path("config_local.yaml"),
         "--config",
         help=(
-            "Config locale (racines). Optionnelle : sans elle, le contrôle "
-            "des orphelins et des fichiers manquants se contente d'avertir."
+            "Config locale (racines). Optionnelle : sans elle, "
+            "FILE-MISSING signale les racines comme non configurées."
         ),
     ),
 ) -> None:
-    """Contrôler la cohérence base ↔ disque (lecture seule)."""
-    # Config locale optionnelle : si elle manque, on continue sans
-    # racines — les contrôles concernés se déclareront non vérifiables.
+    """Contrôler la cohérence d'une base archives-tool (lecture seule)."""
+    if fonds and collection:
+        typer.echo(
+            "Erreur : --fonds et --collection sont mutuellement exclusifs.",
+            err=True,
+        )
+        raise typer.Exit(2)
+    if format_sortie not in ("text", "json"):
+        typer.echo(
+            f"Erreur : format {format_sortie!r} inconnu (attendu : text ou json).",
+            err=True,
+        )
+        raise typer.Exit(2)
+
     racines: dict[str, Path] = {}
     try:
         config = charger_config(config_path)
         racines = dict(config.racines)
     except FileNotFoundError:
-        typer.echo(
-            f"Config absente ({config_path}) : contrôles disque ignorés.",
-            err=True,
-        )
+        if format_sortie == "text":
+            typer.echo(
+                f"Config absente ({config_path}) : "
+                "FILE-MISSING signalera les racines non configurées.",
+                err=True,
+            )
     except Exception as e:
         typer.echo(f"Config invalide : {e}", err=True)
         raise typer.Exit(2) from None
 
-    exts: set[str] | None = None
-    if extensions is not None:
-        exts = {e.strip() for e in extensions.split(",") if e.strip()}
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        fonds_id = fonds_obj.id if fonds_obj else None
+        collection_id: int | None = None
+        if collection:
+            try:
+                col = lire_collection_par_cote(
+                    session, collection, fonds_id=fonds_id
+                )
+            except CollectionIntrouvable:
+                typer.echo(
+                    f"Erreur : collection {collection!r} introuvable.",
+                    err=True,
+                )
+                raise typer.Exit(1) from None
+            collection_id = col.id
+            fonds_id = None  # collection prend le pas
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    try:
-        with factory() as session:
-            rapport = controler_tout(
-                session,
-                racines=racines,
-                collection_cote=collection,
-                recursif=recursif,
-                checks=check or None,
-                extensions_orphelins=exts,
-            )
-    except ValueError as e:
-        typer.echo(f"Erreur : {e}", err=True)
-        raise typer.Exit(2) from None
+        perimetre = composer_perimetre(
+            session, fonds_id=fonds_id, collection_id=collection_id
+        )
+        rapport = executer_controles(session, perimetre, racines=racines)
 
-    afficher_rapport_qa(rapport, limite_details=limite_details)
-    raise typer.Exit(1 if rapport.nb_anomalies > 0 else 0)
+    if format_sortie == "json":
+        typer.echo(formatter_rapport_json(rapport))
+    else:
+        typer.echo(formatter_rapport_text(rapport, max_exemples=max_exemples))
+
+    if rapport.nb_erreurs > 0:
+        raise typer.Exit(1)
+    if strict and (rapport.nb_avertissements > 0 or rapport.nb_infos > 0):
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

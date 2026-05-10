@@ -41,7 +41,11 @@ theme:
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
@@ -50,15 +54,17 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - attr_list
   - md_in_html
 
-# Fichiers conservés en dépôt mais hors build (relocalisés en
-# V0.9.0-gamma.5.2). Évite les avertissements `omitted_files` du
-# mode strict sans perdre le contenu.
+# `composants_ui.md` est conservé en dépôt mais hors build :
+# il sera relocalisé en V0.9.0-gamma.5.3 vers
+# `developpeurs/composants-ui.md` avec la section Pour développeurs.
 exclude_docs: |
   composants_ui.md
-  profils_creation.md
 
 nav:
   - Accueil: index.md

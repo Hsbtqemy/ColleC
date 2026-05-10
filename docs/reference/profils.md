@@ -1,8 +1,9 @@
 # Profils d'import
 
 Un profil d'import est un fichier YAML qui décrit **comment lire un
-tableur existant et une arborescence de scans** pour amorcer une
-collection en base.
+tableur existant et une arborescence de scans** pour amorcer un
+fonds (et sa [collection miroir auto-créée](../guide/concepts.md#collection-miroir))
+en base.
 
 > **Vous écrivez votre premier profil ?** Voir le guide pas-à-pas
 > dans [Premier import](../premiers-pas/premier-import.md). Ce

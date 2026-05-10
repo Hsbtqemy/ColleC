@@ -5,6 +5,11 @@ archives-tool. Tous les contrôles sont **en lecture seule** : aucun
 `db.add` ni `db.commit`. On peut les exécuter sur une base de
 production sans risque.
 
+Pour la **référence détaillée** des 14 contrôles (ce qui est
+vérifié, pourquoi, comment résoudre) voir
+[reference/controles.md](../../reference/controles.md). Cette
+page-ci documente l'usage de la CLI.
+
 ## Familles de contrôles
 
 | Famille        | Contrôles                                  | Sévérités principales |

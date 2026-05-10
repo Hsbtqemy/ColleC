@@ -1,9 +1,9 @@
 # Exporter
 
 L'outil produit trois formats d'export, tous **par collection** (au
-sens Nakala : miroir, libre rattachée, ou transversale). On n'exporte
-pas un fonds directement : si l'on veut tous ses items, on exporte sa
-miroir.
+sens Nakala : miroir, libre rattachée, ou transversale — voir
+[Concepts](../concepts.md#collection)). On n'exporte pas un fonds
+directement : si l'on veut tous ses items, on exporte sa miroir.
 
 ## Granularité d'export
 

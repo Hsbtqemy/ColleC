@@ -31,7 +31,10 @@ mise en production.
   deriver, invalidation automatique de `derive_genere` après
   rename ou annulation.
 - **Documentation** : mise en place MkDocs Material, déploiement
-  GitHub Pages automatique.
+  GitHub Pages automatique. Pages utilisateur complètes
+  (V0.9.0-gamma.5.2) — Concepts du modèle (avec diagramme
+  Mermaid), conventions transversales CLI, référence des
+  formats d'export et des 14 contrôles qa.
 
 ## V0.8.0
 

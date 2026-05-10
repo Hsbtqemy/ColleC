@@ -113,7 +113,8 @@ archives-tool exporter nakala VOTRE_COLLECTION --fonds VOTRE_FONDS \
     --licence "CC-BY-4.0" --statut publié
 ```
 
-Trois choix de granularité — toujours **par collection** :
+Trois choix de granularité — toujours **par collection** (cf.
+[Concepts → Collection](../guide/concepts.md#collection)) :
 
 - la **miroir** d'un fonds (cote = cote du fonds) pour exporter
   tout le fonds ;

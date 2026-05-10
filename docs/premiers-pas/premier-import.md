@@ -189,8 +189,8 @@ uv run archives-tool controler --fonds HK
 Sur un fonds tout neuf vous verrez probablement des
 `FILE-HASH-MANQUANT` (le seeder ne calcule pas encore les hash en
 dry-run) ou des avertissements `INV6` si vous avez retiré un
-item de la miroir. C'est documenté dans
-[Contrôles qa](../reference/controles.md).
+item de la [collection miroir](../guide/concepts.md#collection-miroir).
+C'est documenté dans [Contrôles qa](../reference/controles.md).
 
 ## Et ensuite ?
 

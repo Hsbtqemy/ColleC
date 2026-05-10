@@ -24,8 +24,12 @@ FICHIERS_REQUIS = [
     "premiers-pas/configuration.md",
     "premiers-pas/premier-import.md",
     "premiers-pas/workflow-type.md",
+    "guide/concepts.md",
     "guide/cli/index.md",
+    "guide/cli/collections.md",
     "reference/index.md",
+    "reference/exports.md",
+    "reference/controles.md",
     "developpeurs/contribuer.md",
     "annexes/changelog.md",
 ]

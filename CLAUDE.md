@@ -195,10 +195,8 @@ commentés :
   avec heuristique pour les champs structurants.
 
 CLI : `archives-tool profil init` et `archives-tool profil analyser`.
-Guide utilisateur (gamma.5.2) : à reprendre dans
+Guide utilisateur dans
 [`docs/premiers-pas/premier-import.md`](docs/premiers-pas/premier-import.md).
-Source historique conservée : [`docs/profils_creation.md`](docs/profils_creation.md)
-(exclu du build MkDocs).
 
 ### Importer
 
@@ -455,19 +453,20 @@ Structure :
 - `docs/index.md` : page d'accueil.
 - `docs/premiers-pas/` : Installation / Configuration / Premier
   import / Workflow type (gamma.5.1, complets).
-- `docs/guide/` : Concepts (stub), Interface web, CLI/* (les 7
-  sous-commandes — importer, exporter, controler, montrer,
-  renommer, deriver complets ; collections en stub).
-- `docs/reference/` : Profils d'import (complet), Schéma de
-  données (complet), Formats d'export et Contrôles qa (stubs
-  gamma.5.2).
+- `docs/guide/` : Concepts (complet, définition canonique +
+  diagramme Mermaid), Interface web, CLI/* (index transversal +
+  les 7 sous-commandes complètes).
+- `docs/reference/` : Profils d'import, Schéma de données,
+  Formats d'export et Contrôles qa, tous complets.
 - `docs/developpeurs/` : Contribuer (complet), reste en stubs
-  gamma.5.2.
-- `docs/annexes/` : Changelog (initial), Limites (stub).
+  gamma.5.3.
+- `docs/annexes/` : Changelog, Limites (stub gamma.5.3).
 
-Fichiers conservés en dépôt mais hors build (relocalisés en
-gamma.5.2) : `docs/composants_ui.md`, `docs/profils_creation.md`
-(via `exclude_docs` dans `mkdocs.yml`).
+Fichier conservé en dépôt mais hors build :
+`docs/composants_ui.md` (relocalisé en gamma.5.3 vers
+`developpeurs/composants-ui.md`, via `exclude_docs` dans
+`mkdocs.yml`). `docs/profils_creation.md` a été supprimé en
+gamma.5.2 (contenu obsolète v1 couvert par les nouvelles pages).
 
 Tests garde-fous : `tests/docs/test_structure.py` vérifie la
 présence et le non-vide des fichiers documentaires essentiels.
@@ -753,6 +752,21 @@ archives-tool/
   Workflow type), section Contribuer + Changelog initial.
   Workflow `.github/workflows/docs.yml` build + déploie sur
   push main. — V0.9.0-gamma.5.1.
+- ✅ Pages utilisateur complétées : `guide/concepts.md`
+  (définition canonique Fonds/Collection/Item/multi-appartenance,
+  diagramme Mermaid, vocabulaire), `guide/cli/index.md`
+  (conventions transversales : périmètres, désambiguïsation,
+  codes de sortie, format text/json), `guide/cli/collections.md`
+  (3 sous-commandes documentées), `reference/exports.md`
+  (mapping DC + colonnes Nakala + structure xlsx),
+  `reference/controles.md` (référence détaillée des 14 contrôles
+  avec « ce qui est vérifié / pourquoi / comment résoudre »).
+  Mermaid configuré via `pymdownx.superfences.custom_fences`.
+  `profils_creation.md` supprimé (contenu obsolète v1, déjà
+  couvert par `premier-import.md` + `reference/profils.md`).
+  `composants_ui.md` reste dans `exclude_docs` jusqu'à
+  V0.9.0-gamma.5.3 (relocation vers `developpeurs/composants-ui.md`).
+  — V0.9.0-gamma.5.2.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection

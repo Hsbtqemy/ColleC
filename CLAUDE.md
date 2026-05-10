@@ -18,7 +18,16 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** projet en cours de conception. Pas encore de code.
+**Statut :** **V0.9.0 stable livré** (449 tests verts, doc déployée
+sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
+Fonds / Collection / Item, CLI complète, interface web,
+documentation utilisateur + référence + développeurs. Mode actuel :
+local mono-utilisateur. La V0.9.1 prépare le test d'usage (verrou
+optimiste, lecture seule, WAL explicite) ; la V1.0 ajoutera le
+déploiement VPS et l'auth multi-utilisateurs simples — voir la
+section *Roadmap* plus bas et le document interne
+[`docs/developpeurs/deploiement-future.md`](docs/developpeurs/deploiement-future.md)
+pour les décisions d'infrastructure.
 
 ---
 
@@ -807,6 +816,57 @@ archives-tool/
 - ✅ Fichiers sur disque sans référence en base.
 - ✅ Items sans fichier.
 - ✅ Doublons potentiels (même hash).
+
+### V0.9.1 — Renforcement mode local (préparation test d'usage)
+
+Cible : 1 session ~6h. Pas de nouvelles fonctionnalités majeures —
+durcissement avant test d'usage sur un mini-fonds réel.
+
+- Activation explicite de SQLite en mode WAL (vérification du
+  pragma dans `db.py`).
+- Verrou optimiste sur `Item`, `Collection`, `Fonds` : le champ
+  `version` existe déjà via `TracabiliteMixin`, à exploiter au
+  save (compare → conflit éventuel → message « modifié par X
+  depuis votre ouverture, recharger ou forcer ? »).
+- Mode lecture seule activable via `config_local.yaml`
+  (`mode: lecture_seule`) : désactive tous les boutons d'édition.
+- Format JSON pour `archives-tool renommer` (parité avec
+  `controler` et `montrer`).
+- Documentation : « Installation locale + ShareDocs en WebDAV »
+  pas-à-pas (Windows, macOS, Linux).
+
+### V1.0 — Déploiement VPS + multi-utilisateurs
+
+Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si
+frictions bloquantes identifiées au test d'usage, V0.9.2 avant
+V1.0.
+
+**Session 1 — auth et adaptation modèle**
+
+- Variable `ARCHIVES_MODE` (`local` | `serveur`) détectée au
+  démarrage.
+- Table `Utilisateur` (id, nom, actif, peut_editer) +
+  migration Alembic.
+- Page de login simple (sélection dans liste, cookie de session,
+  pas de mot de passe).
+- Middleware FastAPI pour la session.
+- Adaptation des services pour utiliser l'utilisateur de session
+  en mode serveur, `config_local.yaml` en mode local.
+- CLI `archives-tool utilisateurs` (ajouter, lister, modifier,
+  désactiver).
+
+**Session 2 — déploiement**
+
+- Dockerfile multi-stage + docker-compose (ColleC + Caddy/nginx).
+- Mount WebDAV ShareDocs (`davfs2`).
+- TLS Let's Encrypt.
+- Sauvegarde quotidienne automatique (cron + `restic`).
+- Documentation `docs/deploiement/{vps,maj,restore}.md`.
+
+Décisions d'infrastructure préservées dans le document interne
+[`docs/developpeurs/deploiement-future.md`](docs/developpeurs/deploiement-future.md)
+(exclu du build MkDocs, accessible aux contributeurs et à
+Claude Code).
 
 ### V2 — Confort du chantier vivant
 

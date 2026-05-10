@@ -76,16 +76,43 @@ levées dans des versions ultérieures — voir
   ce qui peut être lent pour des fichiers très lourds (TIFF
   >100 MP). En dry-run, les hash ne sont pas calculés.
 
-## Web UI
+## Multi-utilisateurs
 
-- **Pas d'authentification ni de gestion de droits.** Conçu pour
-  usage local ou réseau interne de confiance.
-- **Édition concurrente** : pas de verrou sur les items. Deux
-  utilisateurs qui modifient simultanément le même item ont un
-  comportement « last write wins ».
-- **Édition inline** : les métadonnées s'éditent via formulaire
-  de page (pattern PRG). L'édition cellule-par-cellule dans les
-  tableaux est prévue mais reportée à V0.9.1+.
+- **V0.9.0 est mono-utilisateur.** Pas d'authentification ni de
+  gestion de droits. L'utilisateur est lu de
+  `config_local.yaml` (champ informatif sur les écritures :
+  `cree_par`, `modifie_par`).
+- **V1.0 ajoutera une auth simple** (table `Utilisateur`, page
+  de login par sélection, cookie de session) — destinée à un
+  réseau interne de confiance, pas à une exposition publique.
+  Pas de mot de passe : c'est de l'attribution, pas de la
+  sécurité forte.
+- **Édition concurrente V0.9.0** : pas de verrou sur les items.
+  Deux utilisateurs (ou deux onglets) qui modifient
+  simultanément le même item ont un comportement
+  « last write wins ». Le verrou optimiste basé sur le champ
+  `version` (déjà présent dans `TracabiliteMixin`) est prévu
+  pour V0.9.1.
+- **Édition inline** : les métadonnées s'éditent via
+  formulaire de page (pattern PRG). L'édition cellule-par-cellule
+  dans les tableaux est prévue mais reportée à V0.9.1+.
+
+## Stockage des fichiers
+
+- Le modèle `Fichier` stocke `(racine, chemin_relatif)`. La
+  **racine est une clé logique** configurée dans
+  `config_local.yaml`. Conséquence : une racine peut pointer
+  vers un disque local **ou un mount WebDAV**, sans modification
+  du modèle.
+- **ShareDocs (Huma-Num)** est validé comme cible de stockage
+  partagé pour V1.0 (300 Go par compte projet). Test de
+  faisabilité de la latence WebDAV à faire avant déploiement.
+- **Pas de partage de base SQLite entre instances.** Chaque
+  contexte (poste local, VPS) a sa propre base. SQLite n'est
+  pas conçu pour l'écriture concurrente sur réseau partagé.
+
+## Visionneuse
+
 - **OpenSeadragon** : la visionneuse riche IIIF/DZI est prévue
   pour une version future. V0.9.0 utilise un `<img>` direct
   pour les formats raster supportés navigateur.

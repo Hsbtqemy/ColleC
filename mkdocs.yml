@@ -49,6 +49,12 @@ extra:
   repo_main: https://github.com/Hsbtqemy/ColleC/blob/main
   repo_tree: https://github.com/Hsbtqemy/ColleC/tree/main
 
+# Documents de travail interne (préservés en dépôt mais non publiés
+# sur le site MkDocs, pour rester accessibles à Claude Code et aux
+# contributeurs sans encombrer l'utilisateur).
+exclude_docs: |
+  developpeurs/deploiement-future.md
+
 markdown_extensions:
   - admonition
   - pymdownx.details

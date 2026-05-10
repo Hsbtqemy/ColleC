@@ -3,6 +3,39 @@
 Les jalons notables. Le détail commit-par-commit est dans
 [l'historique GitHub](https://github.com/Hsbtqemy/ColleC/commits/main).
 
+## Roadmap
+
+### V0.9.1 — Renforcement mode local
+
+- Activation explicite de SQLite en mode WAL.
+- Verrou optimiste sur l'édition (champ `version` exploité au
+  save, message de conflit en cas de modification concurrente).
+- Mode lecture seule activable via `config_local.yaml` (pour
+  exposer ColleC à un consultant occasionnel sans risque de
+  modification).
+- Format JSON pour `archives-tool renommer` (parité avec
+  `controler` et `montrer`).
+- Documentation : « Installation locale + ShareDocs en WebDAV »
+  pas-à-pas (Windows, macOS, Linux).
+
+Cible : 1 session ~6h. Préparation du test d'usage sur un mini-
+fonds réel avant de basculer en mode serveur partagé.
+
+### V1.0 — Déploiement VPS + multi-utilisateurs
+
+- Variable `ARCHIVES_MODE` (`local` | `serveur`) détectée au
+  démarrage.
+- Table `Utilisateur` avec auth simple (sélection dans liste +
+  cookie de session, pas de mot de passe — réseau interne).
+- CLI `archives-tool utilisateurs` (ajouter, lister, désactiver).
+- Empaquetage Docker, reverse proxy Caddy/nginx avec HTTPS
+  Let's Encrypt, mount WebDAV ShareDocs sur le VPS.
+- Sauvegarde quotidienne automatique de la base SQLite.
+- Documentation déploiement : `docs/deploiement/{vps,maj,restore}.md`.
+
+Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si
+frictions bloquantes identifiées, V0.9.2 avant V1.0.
+
 ## V0.9.0 (stable)
 
 Cycle de refonte majeur. Modèle pivoté autour du triptyque

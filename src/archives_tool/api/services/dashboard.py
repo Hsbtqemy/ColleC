@@ -210,6 +210,31 @@ def _agreger_repartition(
     return par_groupe
 
 
+def _tracabilite_fusionnee_avec_dernier_item(
+    db: Session,
+    *,
+    portee_items,
+    propre_le: datetime | None,
+    propre_par: str | None,
+) -> tuple[datetime | None, str | None]:
+    """Pour une entité (fonds ou collection), fusionne sa propre
+    dernière modif avec celle du plus récent de ses items, en
+    propageant `modifie_par`.
+
+    `portee_items` est un filtre SQLAlchemy (par ex.
+    `Item.fonds_id == X` ou `Item.id.in_(...)`). 1 query émise.
+    """
+    derniere = db.execute(
+        select(Item.modifie_le, Item.modifie_par)
+        .where(portee_items, Item.modifie_le.is_not(None))
+        .order_by(Item.modifie_le.desc())
+        .limit(1)
+    ).first()
+    if derniere is None:
+        return propre_le, propre_par
+    return _plus_recent(propre_le, propre_par, derniere[0], derniere[1])
+
+
 def composer_dashboard(db: Session) -> DashboardResume:
     """Charge fonds + collections + transversales + stats globales +
     activité récente en agrégats SQL.
@@ -589,25 +614,13 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         or 0
     )
 
-    # ---- Dernier item modifié du fonds (1 query) --------------------
-    # Pour propager `modifie_par` quand la modif la plus récente vient
-    # d'un item — sinon la cellule modifié du bandeau afficherait « — ».
-    derniere_modif_item = db.execute(
-        select(Item.modifie_le, Item.modifie_par)
-        .where(Item.fonds_id == fonds.id, Item.modifie_le.is_not(None))
-        .order_by(Item.modifie_le.desc())
-        .limit(1)
-    ).first()
-
-    if derniere_modif_item is None:
-        f_mod_le, f_mod_par = fonds.modifie_le, fonds.modifie_par
-    else:
-        f_mod_le, f_mod_par = _plus_recent(
-            fonds.modifie_le,
-            fonds.modifie_par,
-            derniere_modif_item[0],
-            derniere_modif_item[1],
-        )
+    # ---- Traçabilité fusionnée avec le dernier item du fonds (1 query)
+    f_mod_le, f_mod_par = _tracabilite_fusionnee_avec_dernier_item(
+        db,
+        portee_items=Item.fonds_id == fonds.id,
+        propre_le=fonds.modifie_le,
+        propre_par=fonds.modifie_par,
+    )
 
     # ---- Construction des CollectionResume enrichies ----------------
     collections_resume = tuple(
@@ -786,26 +799,17 @@ def composer_page_collection(
         annee_max=annee_max,
     )
 
-    # ---- Traçabilité : merge propre collection + dernier item -------
-    derniere_modif_item = db.execute(
-        select(Item.modifie_le, Item.modifie_par)
-        .join(ItemCollection, ItemCollection.item_id == Item.id)
-        .where(
-            ItemCollection.collection_id == collection.id,
-            Item.modifie_le.is_not(None),
-        )
-        .order_by(Item.modifie_le.desc())
-        .limit(1)
-    ).first()
-    if derniere_modif_item is None:
-        c_mod_le, c_mod_par = collection.modifie_le, collection.modifie_par
-    else:
-        c_mod_le, c_mod_par = _plus_recent(
-            collection.modifie_le,
-            collection.modifie_par,
-            derniere_modif_item[0],
-            derniere_modif_item[1],
-        )
+    # ---- Traçabilité fusionnée avec le dernier item de la collection
+    c_mod_le, c_mod_par = _tracabilite_fusionnee_avec_dernier_item(
+        db,
+        portee_items=Item.id.in_(
+            select(ItemCollection.item_id).where(
+                ItemCollection.collection_id == collection.id
+            )
+        ),
+        propre_le=collection.modifie_le,
+        propre_par=collection.modifie_par,
+    )
 
     fonds_parent: Fonds | None = None
     fonds_representes: tuple[FondsRepresente, ...] = ()

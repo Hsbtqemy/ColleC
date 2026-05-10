@@ -38,7 +38,7 @@ from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-from archives_tool.models import Base, Collection, EtatCatalogage, Item
+from archives_tool.models import Base, Collection, EtatCatalogage, Item, ItemCollection
 
 
 # ---------------------------------------------------------------------------
@@ -371,9 +371,7 @@ def test_page_fonds_n_emet_pas_plus_de_9_requetes(session_demo: Session) -> None
 # ---------------------------------------------------------------------------
 
 
-def _charger_collection(session: Session, cote: str):
-    from archives_tool.models import Collection
-
+def _charger_collection(session: Session, cote: str) -> Collection | None:
     return session.scalar(select(Collection).where(Collection.cote == cote))
 
 
@@ -412,7 +410,6 @@ def test_page_collection_modifie_par_propage_depuis_item(
         creer_collection_libre,
         lire_collection_par_cote,
     )
-    from archives_tool.models import ItemCollection
 
     fonds = creer_fonds(session_neuve, FormulaireFonds(cote="X", titre="Fonds X"))
     item = creer_item(

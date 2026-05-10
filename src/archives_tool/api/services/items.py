@@ -20,7 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from archives_tool.affichage.formatters import temps_relatif
+from archives_tool.affichage.formatters import (
+    date_incertaine as _date_incertaine,
+    temps_relatif,
+)
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -137,7 +140,9 @@ class ItemResume:
 
     @property
     def date_incertaine(self) -> bool:
-        return bool(self.date) and any(c in self.date for c in "?~XU")
+        # Délègue au helper canonique de `affichage/formatters` qui
+        # reconnaît `?`, `vers`, `c.`/`ca.`, `s.d.` (insensible à la casse).
+        return _date_incertaine(self.date)
 
     @property
     def type_chaine(self) -> str | None:

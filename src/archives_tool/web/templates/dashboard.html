@@ -50,7 +50,7 @@
 {# ----- Section Fonds (arborescence dépliable enrichie) ------------- #}
 <section class="mb-10">
   <h2 class="text-lg font-medium mb-3">
-    Fonds <span class="text-gray-400 text-base">({{ resume.nb_fonds }})</span>
+    Fonds <span class="text-gray-400 text-base">({{ resume.stats.nb_fonds }})</span>
   </h2>
   {% if resume.fonds %}
     <ul class="space-y-3">
@@ -70,7 +70,7 @@
   <section class="mb-10">
     <h2 class="text-lg font-medium mb-3">
       Collections transversales
-      <span class="text-gray-400 text-base">({{ resume.nb_transversales }})</span>
+      <span class="text-gray-400 text-base">({{ resume.transversales | length }})</span>
     </h2>
     <ul class="space-y-3">
       {% for col in resume.transversales %}
@@ -88,7 +88,7 @@
     <ul class="space-y-1.5 text-sm">
       {% for a in resume.activite_recente %}
         <li class="flex items-baseline gap-2 border-b border-gray-100 pb-1.5">
-          <span class="text-xs uppercase text-gray-400 shrink-0 w-20 font-mono">{{ a.type }}</span>
+          <span class="text-xs uppercase text-gray-400 shrink-0 w-20 font-mono">{{ a.type | capitalize }}</span>
           <span class="grow">
             {% if a.type == 'item' and a.fonds_cote %}
               <a href="/item/{{ a.cote }}?fonds={{ a.fonds_cote }}" class="hover:underline">

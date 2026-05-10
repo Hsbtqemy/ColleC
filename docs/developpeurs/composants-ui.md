@@ -38,7 +38,7 @@ l'existant.
 
 | Macro                  | Fichier                                | Rôle                                                     |
 | ---------------------- | -------------------------------------- | -------------------------------------------------------- |
-| `tableau_fonds`        | `tableau_fonds.html`                   | Liste des fonds (dashboard).                             |
+| `tableau_fonds_enrichi` | `tableau_fonds_enrichi.html`           | Fonds dépliable enrichi (avancement + traçabilité, dashboard). |
 | `tableau_collections`  | `tableau_collections.html`             | Liste des collections d'un fonds.                        |
 | `tableau_items`        | `tableau_items.html`                   | Liste des items (page collection).                       |
 | `pagination`           | `pagination.html`                      | Contrôles de pagination (prev/next, sauter à la page).   |

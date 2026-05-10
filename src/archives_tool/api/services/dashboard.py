@@ -145,14 +145,6 @@ class DashboardResume:
     stats: DashboardStats
     activite_recente: tuple[ActiviteRecente, ...]
 
-    @property
-    def nb_fonds(self) -> int:
-        return len(self.fonds)
-
-    @property
-    def nb_transversales(self) -> int:
-        return len(self.transversales)
-
 
 def _agreger_repartition(
     rows: list[tuple[int | None, str, int]],
@@ -179,20 +171,10 @@ def composer_dashboard(db: Session) -> DashboardResume:
     fonds_rows = list(db.scalars(select(Fonds).order_by(Fonds.cote)).all())
     collection_rows = list(db.scalars(select(Collection).order_by(Collection.titre)).all())
 
-    # ---- Compteurs simples (1 query par dimension) ------------------
-    nb_items_par_fonds: dict[int, int] = dict(
-        db.execute(
-            select(Item.fonds_id, func.count(Item.id)).group_by(Item.fonds_id)
-        ).all()
-    )
-    nb_items_par_collection: dict[int, int] = dict(
-        db.execute(
-            select(ItemCollection.collection_id, func.count(ItemCollection.item_id))
-            .group_by(ItemCollection.collection_id)
-        ).all()
-    )
-
     # ---- Répartitions d'états (1 query par dimension) ---------------
+    # Les compteurs `nb_items` par fonds / par collection sont dérivés
+    # directement des répartitions (somme sur les états), pas
+    # re-querysés.
     repartition_par_fonds = _agreger_repartition(
         [
             (fonds_id, etat, n)
@@ -217,27 +199,37 @@ def composer_dashboard(db: Session) -> DashboardResume:
         ]
     )
 
-    # ---- Dernière modification par fonds (date la plus récente parmi
-    # le fonds lui-même + ses items). On récupère la date max et la
-    # personne associée à cette date — sous-requête sur Item pour
-    # éviter un N+1.
-    max_modif_item_par_fonds: dict[int, datetime] = dict(
-        db.execute(
-            select(Item.fonds_id, func.max(Item.modifie_le))
-            .where(Item.modifie_le.is_not(None))
-            .group_by(Item.fonds_id)
-        ).all()
-    )
+    nb_items_par_fonds: dict[int, int] = {
+        fid: sum(rep.values()) for fid, rep in repartition_par_fonds.items()
+    }
+    nb_items_par_collection: dict[int, int] = {
+        cid: sum(rep.values()) for cid, rep in repartition_par_collection.items()
+    }
 
-    # ---- Stats globales (1 query) -----------------------------------
+    # ---- Dernière modification d'un item par fonds : on garde le
+    # tuple (modifie_le, modifie_par) du plus récent — pour pouvoir
+    # afficher « modifié par Marie · il y a 2h » sur la carte fonds
+    # même quand le timestamp le plus récent vient d'un de ses items.
+    # 1 query : on récupère tous les couples (fonds_id, le, par)
+    # triés par date DESC, et on garde le premier vu par fonds.
+    max_modif_item_par_fonds: dict[int, tuple[datetime, str | None]] = {}
+    for fid, le, par in db.execute(
+        select(Item.fonds_id, Item.modifie_le, Item.modifie_par)
+        .where(Item.modifie_le.is_not(None))
+        .order_by(Item.modifie_le.desc())
+    ).all():
+        if fid not in max_modif_item_par_fonds:
+            max_modif_item_par_fonds[fid] = (le, par)
+
+    # ---- Stats globales ---------------------------------------------
+    # `nb_fichiers` et `nb_items_valides` ne se dérivent pas des
+    # répartitions précédentes (elles agrègent par fonds, pas
+    # globalement), mais `nb_items_valides` se dérive lui de la
+    # répartition par fonds en sommant l'état VALIDE.
     nb_fichiers: int = db.scalar(select(func.count(Fichier.id))) or 0
-    nb_items_valides: int = (
-        db.scalar(
-            select(func.count(Item.id)).where(
-                Item.etat_catalogage == EtatCatalogage.VALIDE.value
-            )
-        )
-        or 0
+    nb_items_valides = sum(
+        rep.get(EtatCatalogage.VALIDE.value, 0)
+        for rep in repartition_par_fonds.values()
     )
 
     nb_items_total = sum(nb_items_par_fonds.values())
@@ -290,16 +282,19 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 libres.append(resume)
 
         # Pour le fonds, on prend le plus récent entre sa propre modif
-        # et la modif la plus récente d'un de ses items.
+        # et la modif la plus récente d'un de ses items (avec
+        # leur `modifie_par` respectif, pour ne pas afficher « — »
+        # quand la modif vient d'un item).
         modif_item = max_modif_item_par_fonds.get(f.id)
         if f.modifie_le is None and modif_item is None:
             f_mod_par, f_mod_le = None, None
-        elif f.modifie_le is None:
-            f_mod_par, f_mod_le = None, modif_item
-        elif modif_item is None or f.modifie_le >= modif_item:
+        elif modif_item is None:
             f_mod_par, f_mod_le = f.modifie_par, f.modifie_le
+        elif f.modifie_le is None or f.modifie_le < modif_item[0]:
+            f_mod_le_item, f_mod_par_item = modif_item
+            f_mod_par, f_mod_le = f_mod_par_item, f_mod_le_item
         else:
-            f_mod_par, f_mod_le = None, modif_item
+            f_mod_par, f_mod_le = f.modifie_par, f.modifie_le
 
         fonds_resumes.append(
             FondsArborescence(

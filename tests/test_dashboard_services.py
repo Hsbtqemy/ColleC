@@ -197,13 +197,13 @@ def test_dashboard_activite_recente_limite_10_par_defaut(
 # ---------------------------------------------------------------------------
 
 
-def test_dashboard_n_emet_pas_plus_de_14_requetes(session_demo: Session) -> None:
-    """Garde-fou : `composer_dashboard` reste sous 14 requêtes SQL sur la
+def test_dashboard_n_emet_pas_plus_de_11_requetes(session_demo: Session) -> None:
+    """Garde-fou : `composer_dashboard` reste sous 11 requêtes SQL sur la
     base demo (5 fonds, 10 collections, 333 items, ~1300 fichiers).
 
     Indépendamment du volume — toute boucle Python ne fait
     qu'attacher des agrégats déjà calculés. Si ce test régresse,
-    quelqu'un a réintroduit un N+1.
+    quelqu'un a réintroduit un N+1 ou une query dérivable.
     """
     queries: list[str] = []
 
@@ -217,9 +217,9 @@ def test_dashboard_n_emet_pas_plus_de_14_requetes(session_demo: Session) -> None
     finally:
         event.remove(engine, "before_cursor_execute", _on_execute)
 
-    assert len(queries) <= 14, (
+    assert len(queries) <= 11, (
         f"composer_dashboard a émis {len(queries)} requêtes "
-        f"(limite : 14). Première requête : {queries[0][:80]}"
+        f"(limite : 11). Première requête : {queries[0][:80]}"
     )
 
 

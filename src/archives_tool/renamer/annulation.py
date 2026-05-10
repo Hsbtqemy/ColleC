@@ -26,6 +26,7 @@ from archives_tool.models import (
     TypeOperationFichier,
 )
 
+from .execution import invalider_derives
 from .rapport import RapportAnnulation
 
 
@@ -177,6 +178,7 @@ def annuler_batch(
             phase2 += 1
             m.fichier.chemin_relatif = m.op.chemin_avant
             m.fichier.nom_fichier = PurePosixPath(m.op.chemin_avant).name
+            invalider_derives(m.fichier)
             m.op.annule_par_batch_id = nouveau_batch
             session.add(
                 OperationFichier(

@@ -173,6 +173,12 @@ def test_template_vide_leve(session_avec_fichiers: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_perimetre_aucun_mode_leve() -> None:
+    """`Perimetre()` sans aucun sélecteur est rejeté à la construction."""
+    with pytest.raises(ValueError, match="exactement un"):
+        Perimetre()
+
+
 def test_plan_perimetre_fonds(
     session_avec_fichiers: Session, racine_scans: Path
 ) -> None:

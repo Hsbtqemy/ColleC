@@ -15,13 +15,23 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.collections import lire_collection_par_cote
+from archives_tool.api.services.fonds import lire_fonds_par_cote
 from archives_tool.files.paths import resoudre_chemin
-from archives_tool.models import Collection, EtatFichier, Fichier, Item
+from archives_tool.models import (
+    EtatFichier,
+    Fichier,
+    Fonds,
+    Item,
+    ItemCollection,
+)
+from archives_tool.renamer import Perimetre
 
 from .chemins import chemin_derive
 from .rapport import RapportDerivation, ResultatDerive, StatutDerive
 
 TAILLES_PAR_DEFAUT: dict[str, int] = {"vignette": 300, "apercu": 1200}
+RACINE_CIBLE_DEFAUT = "miniatures"
 QUALITE_JPEG = 85
 DPI_PDF = 200
 
@@ -143,46 +153,54 @@ def generer_derives_pour_fichier(
 
 
 def _selectionner_fichiers(
-    session: Session,
-    *,
-    collection_cote: str | None,
-    item_cote: str | None,
-    fichier_ids: list[int] | None,
-    recursif: bool,
+    session: Session, perimetre: Perimetre
 ) -> list[Fichier]:
-    stmt = select(Fichier).where(Fichier.etat == EtatFichier.ACTIF.value)
+    """Charge les fichiers du périmètre. Les exceptions métier
+    (`FondsIntrouvable`, `CollectionIntrouvable`) remontent telles
+    quelles — au caller de décider quoi en faire.
+    """
+    base_stmt = (
+        select(Fichier)
+        .join(Item, Fichier.item_id == Item.id)
+        .join(Fonds, Item.fonds_id == Fonds.id)
+        .where(Fichier.etat == EtatFichier.ACTIF.value)
+        .order_by(Fichier.id)
+    )
 
-    if fichier_ids is not None:
-        stmt = stmt.where(Fichier.id.in_(fichier_ids))
-    elif item_cote is not None:
-        stmt = stmt.join(Item, Fichier.item_id == Item.id).where(Item.cote == item_cote)
-    elif collection_cote is not None:
-        col = session.scalar(
-            select(Collection).where(Collection.cote_collection == collection_cote)
+    if perimetre.fichier_ids:
+        stmt = base_stmt.where(Fichier.id.in_(perimetre.fichier_ids))
+    elif perimetre.item_cote is not None:
+        stmt = base_stmt.where(Item.cote == perimetre.item_cote)
+        if perimetre.item_fonds_cote is not None:
+            stmt = stmt.where(Fonds.cote == perimetre.item_fonds_cote)
+    elif perimetre.collection_cote is not None:
+        fonds_id_filtre = None
+        if perimetre.collection_fonds_cote is not None:
+            fonds_id_filtre = lire_fonds_par_cote(
+                session, perimetre.collection_fonds_cote
+            ).id
+        col = lire_collection_par_cote(
+            session, perimetre.collection_cote, fonds_id=fonds_id_filtre
         )
-        if col is None:
-            raise ValueError(f"Collection {collection_cote!r} introuvable.")
-        ids = col.ids_descendants() if recursif else [col.id]
-        stmt = stmt.join(Item, Fichier.item_id == Item.id).where(
-            Item.collection_id.in_(ids)
+        stmt = base_stmt.where(
+            Item.id.in_(
+                select(ItemCollection.item_id).where(
+                    ItemCollection.collection_id == col.id
+                )
+            )
         )
     else:
-        raise ValueError(
-            "Aucun périmètre fourni : précisez collection_cote, item_cote ou fichier_ids."
-        )
-    stmt = stmt.order_by(Fichier.id)
+        stmt = base_stmt.where(Fonds.cote == perimetre.fonds_cote)
+
     return list(session.scalars(stmt).all())
 
 
 def generer_derives(
     session: Session,
     *,
+    perimetre: Perimetre,
     racines: Mapping[str, Path],
-    racine_cible: str = "miniatures",
-    collection_cote: str | None = None,
-    item_cote: str | None = None,
-    fichier_ids: list[int] | None = None,
-    recursif: bool = False,
+    racine_cible: str = RACINE_CIBLE_DEFAUT,
     force: bool = False,
     dry_run: bool = False,
     tailles: Mapping[str, int] | None = None,
@@ -191,13 +209,7 @@ def generer_derives(
     debut = time.perf_counter()
     rapport = RapportDerivation(dry_run=dry_run, racine_cible=racine_cible)
 
-    fichiers = _selectionner_fichiers(
-        session,
-        collection_cote=collection_cote,
-        item_cote=item_cote,
-        fichier_ids=fichier_ids,
-        recursif=recursif,
-    )
+    fichiers = _selectionner_fichiers(session, perimetre)
 
     for fichier in fichiers:
         res = generer_derives_pour_fichier(
@@ -219,12 +231,9 @@ def generer_derives(
 def nettoyer_derives(
     session: Session,
     *,
+    perimetre: Perimetre,
     racines: Mapping[str, Path],
-    racine_cible: str = "miniatures",
-    collection_cote: str | None = None,
-    item_cote: str | None = None,
-    fichier_ids: list[int] | None = None,
-    recursif: bool = False,
+    racine_cible: str = RACINE_CIBLE_DEFAUT,
     tailles: Mapping[str, int] | None = None,
     dry_run: bool = False,
 ) -> RapportDerivation:
@@ -237,13 +246,7 @@ def nettoyer_derives(
     base_cible = racines[racine_cible]
     tailles_eff = tailles or TAILLES_PAR_DEFAUT
 
-    fichiers = _selectionner_fichiers(
-        session,
-        collection_cote=collection_cote,
-        item_cote=item_cote,
-        fichier_ids=fichier_ids,
-        recursif=recursif,
-    )
+    fichiers = _selectionner_fichiers(session, perimetre)
 
     for fichier in fichiers:
         res = ResultatDerive(fichier_id=fichier.id, statut=StatutDerive.NETTOYE)

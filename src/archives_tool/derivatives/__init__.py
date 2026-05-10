@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from .chemins import chemin_derive
 from .generateur import (
+    RACINE_CIBLE_DEFAUT,
     TAILLES_PAR_DEFAUT,
     generer_derives,
     generer_derives_pour_fichier,
@@ -20,6 +21,7 @@ from .rapport import RapportDerivation, ResultatDerive, StatutDerive
 
 __all__ = [
     "chemin_derive",
+    "RACINE_CIBLE_DEFAUT",
     "TAILLES_PAR_DEFAUT",
     "generer_derives",
     "generer_derives_pour_fichier",

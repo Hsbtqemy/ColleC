@@ -70,7 +70,11 @@ from archives_tool.profils import (
     generer_squelette,
 )
 from archives_tool.demo import peupler_base
-from archives_tool.derivatives import generer_derives, nettoyer_derives
+from archives_tool.derivatives import (
+    RACINE_CIBLE_DEFAUT,
+    generer_derives,
+    nettoyer_derives,
+)
 from archives_tool.derivatives.affichage import (
     afficher_rapport as afficher_rapport_derives,
 )
@@ -676,57 +680,90 @@ deriver = typer.Typer(
 app.add_typer(deriver, name="deriver")
 
 
-def _options_perimetre_deriver(
+def _construire_perimetre_cli(
+    fonds: str | None,
     collection: str | None,
     item: str | None,
     fichier_id: list[int] | None,
-) -> None:
-    n = sum(x is not None and x != [] for x in (collection, item, fichier_id))
-    if n == 0:
-        typer.echo("Erreur : précisez --collection, --item ou --fichier-id.", err=True)
-        raise typer.Exit(2)
+) -> Perimetre:
+    """Construit un `Perimetre` à partir des 4 options CLI mutuellement
+    exclusives partagées par `archives-tool renommer` et `deriver`.
+    Sortie code 2 si la combinaison est invalide.
+
+    Convention : --fonds (seul) cible tous les fichiers d'un fonds ;
+    --fonds combiné à --collection ou --item désambiguïse une cote
+    partagée entre fonds.
+    """
+    fonds_seul = (
+        fonds if collection is None and item is None and not fichier_id else None
+    )
+    try:
+        return Perimetre(
+            fonds_cote=fonds_seul,
+            collection_cote=collection,
+            collection_fonds_cote=fonds if collection is not None else None,
+            item_cote=item,
+            item_fonds_cote=fonds if item is not None else None,
+            fichier_ids=tuple(fichier_id) if fichier_id else (),
+        )
+    except ValueError as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
 
 
 @deriver.command("appliquer")
 def cmd_deriver_appliquer(
-    collection: str = typer.Option(None, "--collection"),
-    item: str = typer.Option(None, "--item"),
-    fichier_id: list[int] = typer.Option(None, "--fichier-id"),
-    recursif: bool = typer.Option(False, "--recursif/--non-recursif"),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help=(
+            "Cote du fonds. Avec --collection ou --item : désambiguïse "
+            "la cote partagée. Seul : couvre tous les fichiers du fonds."
+        ),
+    ),
+    collection: str | None = typer.Option(
+        None, "--collection", "-c", help="Cote de la collection à cibler."
+    ),
+    item: str | None = typer.Option(
+        None, "--item", "-i", help="Cote de l'item à cibler."
+    ),
+    fichier_id: list[int] = typer.Option(
+        None, "--fichier-id", help="ID(s) de fichier à cibler (option répétable)."
+    ),
     force: bool = typer.Option(
         False, "--force", help="Régénérer même si derive_genere est déjà True."
     ),
     dry_run: bool = typer.Option(False, "--dry-run/--no-dry-run"),
     racine_cible: str = typer.Option(
-        "miniatures",
+        RACINE_CIBLE_DEFAUT,
         "--racine-cible",
         help="Racine logique où écrire les dérivés.",
     ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
     config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
 ) -> None:
-    """Générer les dérivés des fichiers ciblés."""
-    _options_perimetre_deriver(collection, item, fichier_id)
+    """Générer les dérivés des fichiers ciblés.
+
+    Périmètre : exactement un de --fonds (seul), --collection, --item
+    ou --fichier-id (multiple).
+    """
+    perimetre = _construire_perimetre_cli(fonds, collection, item, fichier_id)
     config = _charger_config_ou_sortie(config_path)
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    try:
-        with factory() as session:
+    with _ouvrir_session_existante(db_path) as session:
+        try:
             rapport = generer_derives(
                 session,
+                perimetre=perimetre,
                 racines=dict(config.racines),
                 racine_cible=racine_cible,
-                collection_cote=collection,
-                item_cote=item,
-                fichier_ids=list(fichier_id) if fichier_id else None,
-                recursif=recursif,
                 force=force,
                 dry_run=dry_run,
             )
-    except ValueError as e:
-        typer.echo(f"Erreur : {e}", err=True)
-        raise typer.Exit(2) from None
+        except (FondsIntrouvable, CollectionIntrouvable) as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
 
     afficher_rapport_derives(rapport)
     raise typer.Exit(1 if rapport.nb_erreurs else 0)
@@ -734,36 +771,49 @@ def cmd_deriver_appliquer(
 
 @deriver.command("nettoyer")
 def cmd_deriver_nettoyer(
-    collection: str = typer.Option(None, "--collection"),
-    item: str = typer.Option(None, "--item"),
-    fichier_id: list[int] = typer.Option(None, "--fichier-id"),
-    recursif: bool = typer.Option(False, "--recursif/--non-recursif"),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help=(
+            "Cote du fonds. Avec --collection ou --item : désambiguïse "
+            "la cote partagée. Seul : couvre tous les fichiers du fonds."
+        ),
+    ),
+    collection: str | None = typer.Option(
+        None, "--collection", "-c", help="Cote de la collection à cibler."
+    ),
+    item: str | None = typer.Option(
+        None, "--item", "-i", help="Cote de l'item à cibler."
+    ),
+    fichier_id: list[int] = typer.Option(
+        None, "--fichier-id", help="ID(s) de fichier à cibler (option répétable)."
+    ),
     dry_run: bool = typer.Option(False, "--dry-run/--no-dry-run"),
-    racine_cible: str = typer.Option("miniatures", "--racine-cible"),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    racine_cible: str = typer.Option(RACINE_CIBLE_DEFAUT, "--racine-cible"),
+    db_path: Path = _DB_PATH_OPTION,
     config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
 ) -> None:
-    """Supprimer les dérivés des fichiers ciblés."""
-    _options_perimetre_deriver(collection, item, fichier_id)
+    """Supprimer les dérivés des fichiers ciblés.
+
+    Périmètre : exactement un de --fonds (seul), --collection, --item
+    ou --fichier-id (multiple).
+    """
+    perimetre = _construire_perimetre_cli(fonds, collection, item, fichier_id)
     config = _charger_config_ou_sortie(config_path)
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    try:
-        with factory() as session:
+    with _ouvrir_session_existante(db_path) as session:
+        try:
             rapport = nettoyer_derives(
                 session,
+                perimetre=perimetre,
                 racines=dict(config.racines),
                 racine_cible=racine_cible,
-                collection_cote=collection,
-                item_cote=item,
-                fichier_ids=list(fichier_id) if fichier_id else None,
-                recursif=recursif,
                 dry_run=dry_run,
             )
-    except ValueError as e:
-        typer.echo(f"Erreur : {e}", err=True)
-        raise typer.Exit(2) from None
+        except (FondsIntrouvable, CollectionIntrouvable) as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
 
     afficher_rapport_derives(rapport)
 
@@ -835,19 +885,7 @@ def cmd_renommer_appliquer(
     ou d'item partagées entre fonds, --fonds peut accompagner
     --collection ou --item pour désambiguïser.
     """
-    try:
-        perimetre = Perimetre(
-            fonds_cote=fonds if collection is None and item is None and not fichier_id else None,
-            collection_cote=collection,
-            collection_fonds_cote=fonds if collection is not None else None,
-            item_cote=item,
-            item_fonds_cote=fonds if item is not None else None,
-            fichier_ids=tuple(fichier_id) if fichier_id else (),
-        )
-    except ValueError as e:
-        typer.echo(f"Erreur : {e}", err=True)
-        raise typer.Exit(2) from None
-
+    perimetre = _construire_perimetre_cli(fonds, collection, item, fichier_id)
     config = _charger_config_ou_sortie(config_path)
     nom = utilisateur if utilisateur is not None else config.utilisateur
     racines = dict(config.racines)

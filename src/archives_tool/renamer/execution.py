@@ -51,6 +51,22 @@ class _Mouvement:
     tmp_relatif: str
 
 
+def invalider_derives(fichier: Fichier) -> None:
+    """Marque les dérivés d'un fichier comme à régénérer.
+
+    Appelé après chaque rename/restore phase 2 réussi : le chemin a
+    changé, donc tout JPEG déjà produit pointe vers un emplacement
+    obsolète. Les `if` guards évitent des UPDATE columns inutiles
+    quand le fichier n'a jamais eu de dérivés.
+    """
+    if fichier.derive_genere:
+        fichier.derive_genere = False
+    if fichier.apercu_chemin is not None:
+        fichier.apercu_chemin = None
+    if fichier.vignette_chemin is not None:
+        fichier.vignette_chemin = None
+
+
 def _operations_a_appliquer(plan: RapportPlan) -> list[OperationRenommage]:
     return [
         op
@@ -191,6 +207,7 @@ def executer_plan(
             phase2_appliquees += 1
             m.fichier.chemin_relatif = m.op.chemin_apres
             m.fichier.nom_fichier = PurePosixPath(m.op.chemin_apres).name
+            invalider_derives(m.fichier)
             session.add(
                 OperationFichier(
                     batch_id=batch_id,

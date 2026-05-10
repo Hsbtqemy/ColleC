@@ -7,16 +7,28 @@ Les jalons notables. Le détail commit-par-commit est dans
 
 ### V0.9.2 — Restauration ergonomique (3 sous-sessions)
 
-- **V0.9.2-alpha** *(en cours)* : page Fonds restaurée avec
+- **V0.9.2-alpha** : page Fonds restaurée avec
   `tableau_collections` + `avancement_detaille` + `cellule_modifie`.
   Composant `phase_chantier` branché sur dashboard et page Fonds.
   Service `composer_page_fonds` enrichi (répartition d'états par
   fonds + par collection, `modifie_par`/`le` propagé depuis les
-  items, `nb_fichiers` par fonds + par collection). Garde-fou SQL :
-  ≤ 10 requêtes par rendu.
-- **V0.9.2-beta** *(à venir)* : page Collection avec onglets et
-  filtres riches (réutilise `panneau_filtres` + `panneau_colonnes`
-  orphelins).
+  items, `nb_fichiers` par fonds + par collection). Garde-fou SQL
+  ≤ 9 requêtes.
+- **V0.9.2-beta** *(en cours)* : page Collection restaurée avec
+  bandeau enrichi (`avancement_detaille`, `phase_chantier`,
+  `cellule_modifie`, compteurs items/fichiers/langues) et
+  `tableau_items` avec pagination intégrée. Service
+  `composer_page_collection` enrichi (répartition d'états,
+  `modifie_par`/`le` propagé depuis les items,
+  `OptionsFiltresCollection` dynamiques pour le futur panneau
+  filtres). `ItemResume` étendu avec `nb_fichiers`,
+  `modifie_par`, `description`, `langue`, `doi_*`, `metadonnees`
+  + propriétés alias (`href`, `date_incertaine`, `modifie_depuis`,
+  `meta`) attendues par la macro `tableau_items`. Bug pré-existant
+  `phase` enum brut dans `tableau_collections` corrigé. Garde-fou
+  SQL ≤ 7 requêtes pour la page. Filtres riches via
+  `panneau_filtres` et configurateur de colonnes via
+  `panneau_colonnes` reportés à V0.9.2-beta.2.
 - **V0.9.2-gamma** *(à venir)* : page Item — recréation des
   composants absents (`bandeau_item`, `cartouche_metadonnees`,
   `panneau_fichiers`) et branchement de la visionneuse

@@ -871,11 +871,22 @@ pages Fonds, Collection et Item.
   les items, `nb_fichiers` par fonds + par collection). Bandeau
   avec `avancement_detaille` + `cellule_modifie`. Liste collections
   via `tableau_collections`. Composant `phase_chantier` branché sur
-  dashboard et page Fonds. Garde-fou SQL ≤ 10 requêtes par rendu.
-  +8 tests.
-- **V0.9.2-beta** : page Collection avec onglets, filtres riches
-  (`panneau_filtres` orphelin), configurateur colonnes
-  (`panneau_colonnes`).
+  dashboard et page Fonds. Garde-fou SQL ≤ 9 requêtes par rendu.
+  Helpers `_agreger_repartition` et `_plus_recent` factorés.
+- ✅ **V0.9.2-beta** : page Collection restaurée. Bandeau enrichi
+  (`avancement_detaille`, `phase_chantier`, `cellule_modifie`,
+  compteurs items/fichiers/langues). Tableau d'items via
+  `tableau_items` (pagination intégrée + boutons
+  Filtrer/Colonnes/Exporter). Service
+  `composer_page_collection` enrichi avec `repartition_etats`,
+  traçabilité, `nb_fichiers`, `OptionsFiltresCollection`
+  dynamiques. `ItemResume` étendu (`nb_fichiers`, `modifie_par`,
+  `description`, `langue`, `doi_*`, `metadonnees`) + propriétés
+  alias attendues par `tableau_items`. Bug pré-existant `phase`
+  enum brut dans `tableau_collections` corrigé. Garde-fou SQL
+  ≤ 7 requêtes pour la page. Filtres riches (`panneau_filtres`)
+  et configurateur de colonnes (`panneau_colonnes`) reportés à
+  V0.9.2-beta.2.
 - **V0.9.2-gamma** : page Item — recréation des composants absents
   (`bandeau_item`, `cartouche_metadonnees`, `panneau_fichiers`),
   branchement de la visionneuse OpenSeadragon.

@@ -25,10 +25,13 @@ from archives_tool.api.services.collections import (
 )
 from archives_tool.api.services.dashboard import (
     ActiviteRecente,
+    CollectionDetail,
     DashboardResume,
     DashboardStats,
     FondsDetail,
+    OptionsFiltresCollection,
     composer_dashboard,
+    composer_page_collection,
     composer_page_fonds,
 )
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
@@ -360,4 +363,101 @@ def test_page_fonds_n_emet_pas_plus_de_9_requetes(session_demo: Session) -> None
     assert len(queries) <= 9, (
         f"composer_page_fonds a émis {len(queries)} requêtes "
         f"(limite : 9). Première requête : {queries[0][:80]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# composer_page_collection : page détail enrichie
+# ---------------------------------------------------------------------------
+
+
+def _charger_collection(session: Session, cote: str):
+    from archives_tool.models import Collection
+
+    return session.scalar(select(Collection).where(Collection.cote == cote))
+
+
+def test_page_collection_demo_charge(session_demo: Session) -> None:
+    """Sur la base demo, une miroir charge correctement avec ses
+    compteurs et sa répartition."""
+    col = _charger_collection(session_demo, "HK")
+    detail: CollectionDetail = composer_page_collection(session_demo, col)
+    assert detail.collection.cote == "HK"
+    assert detail.nb_items > 0
+    assert detail.nb_fichiers > 0
+    cles = {e.value for e in EtatCatalogage}
+    assert set(detail.repartition_etats.keys()) == cles
+    assert sum(detail.repartition_etats.values()) == detail.nb_items
+
+
+def test_page_collection_options_filtres_dynamiques(session_demo: Session) -> None:
+    """Les options du panneau filtres sont calculées sur les items
+    présents dans la collection (langues, types, plage d'années)."""
+    col = _charger_collection(session_demo, "HK")
+    detail = composer_page_collection(session_demo, col)
+    assert isinstance(detail.options_filtres, OptionsFiltresCollection)
+    # Au moins un item du fonds HK a une année.
+    assert detail.options_filtres.annee_min is not None
+    assert detail.options_filtres.annee_max is not None
+    assert detail.options_filtres.annee_min <= detail.options_filtres.annee_max
+
+
+def test_page_collection_modifie_par_propage_depuis_item(
+    session_neuve: Session,
+) -> None:
+    """Si l'item de la collection est plus récemment modifié que la
+    collection, son `modifie_par` remonte sur le bandeau."""
+    from archives_tool.api.services.collections import (
+        FormulaireCollection,
+        creer_collection_libre,
+        lire_collection_par_cote,
+    )
+    from archives_tool.models import ItemCollection
+
+    fonds = creer_fonds(session_neuve, FormulaireFonds(cote="X", titre="Fonds X"))
+    item = creer_item(
+        session_neuve,
+        FormulaireItem(cote="X-001", titre="Un", fonds_id=fonds.id),
+    )
+    creer_collection_libre(
+        session_neuve,
+        FormulaireCollection(cote="X-LIB", titre="Libre X", fonds_id=fonds.id),
+    )
+    libre = lire_collection_par_cote(session_neuve, "X-LIB", fonds_id=fonds.id)
+    session_neuve.add(ItemCollection(item_id=item.id, collection_id=libre.id))
+
+    ref = datetime(2026, 1, 1, 12, 0, 0)
+    libre.modifie_le = ref
+    libre.modifie_par = "Hugo"
+    item.modifie_le = ref + timedelta(hours=2)
+    item.modifie_par = "Marie"
+    session_neuve.commit()
+
+    detail = composer_page_collection(session_neuve, libre)
+    assert detail.modifie_par == "Marie"
+
+
+def test_page_collection_n_emet_pas_plus_de_7_requetes(
+    session_demo: Session,
+) -> None:
+    """Garde-fou : `composer_page_collection` reste sous 7 requêtes
+    SQL sur la base demo. Indépendamment du volume — toute boucle
+    Python ne fait qu'attacher des agrégats déjà calculés.
+    """
+    col = _charger_collection(session_demo, "HK")
+    queries: list[str] = []
+
+    def _on_execute(_conn, _cur, statement, *_args, **_kwargs):
+        queries.append(statement)
+
+    engine = session_demo.get_bind()
+    event.listen(engine, "before_cursor_execute", _on_execute)
+    try:
+        composer_page_collection(session_demo, col)
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_execute)
+
+    assert len(queries) <= 7, (
+        f"composer_page_collection a émis {len(queries)} requêtes "
+        f"(limite : 7). Première requête : {queries[0][:80]}"
     )

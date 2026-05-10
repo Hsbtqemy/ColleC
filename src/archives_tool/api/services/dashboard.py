@@ -686,11 +686,29 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
 
 
 @dataclass(frozen=True)
+class OptionsFiltresCollection:
+    """Valeurs distinctes présentes dans la collection, pour alimenter
+    les sélecteurs du panneau de filtres."""
+
+    langues: tuple[str, ...] = ()
+    types_coar: tuple[str, ...] = ()
+    annee_min: int | None = None
+    annee_max: int | None = None
+
+
+@dataclass(frozen=True)
 class CollectionDetail:
     collection: Collection  # modèle ORM
     nb_items: int
+    nb_fichiers: int
     fonds_parent: Fonds | None  # None pour transversale
     fonds_representes: tuple[FondsRepresente, ...]  # vide si rattachée à un fonds
+    repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
+    options_filtres: OptionsFiltresCollection = field(
+        default_factory=OptionsFiltresCollection
+    )
 
     @property
     def est_miroir(self) -> bool:
@@ -708,18 +726,86 @@ class CollectionDetail:
 def composer_page_collection(
     db: Session, collection: Collection
 ) -> CollectionDetail:
-    """Charge le contexte d'affichage d'une collection.
+    """Charge le contexte d'affichage d'une collection : compteurs,
+    répartition d'états, traçabilité, options de filtres dynamiques.
 
     `collection` doit déjà être chargée (la route fait le lookup +
-    désambiguïsation, ce service ne re-lit pas la DB pour ça)."""
-    nb_items = (
+    désambiguïsation, ce service ne re-lit pas la DB pour ça).
+
+    Coût SQL : ~7 queries indépendamment du volume."""
+    # ---- Répartition d'états sur les items de la collection ---------
+    repartition: dict[str, int] = _agreger_repartition(
+        [
+            (None, etat, n)
+            for etat, n in db.execute(
+                select(Item.etat_catalogage, func.count(Item.id))
+                .join(ItemCollection, ItemCollection.item_id == Item.id)
+                .where(ItemCollection.collection_id == collection.id)
+                .group_by(Item.etat_catalogage)
+            ).all()
+        ]
+    ).get(None, _repartition_vide())
+    nb_items = sum(repartition.values())
+
+    # ---- Compteurs fichiers (1 query) -------------------------------
+    nb_fichiers: int = (
         db.scalar(
-            select(func.count(ItemCollection.item_id)).where(
-                ItemCollection.collection_id == collection.id
-            )
+            select(func.count(Fichier.id))
+            .join(Item, Item.id == Fichier.item_id)
+            .join(ItemCollection, ItemCollection.item_id == Item.id)
+            .where(ItemCollection.collection_id == collection.id)
         )
         or 0
     )
+
+    # ---- Options dynamiques pour le panneau filtres -----------------
+    # Une seule query récupère langues + types distincts + bornes
+    # d'année. Le résultat est petit (≤ ~20 valeurs distinctes par
+    # collection en pratique).
+    langues_set: set[str] = set()
+    types_set: set[str] = set()
+    annee_min: int | None = None
+    annee_max: int | None = None
+    for lang, type_coar, annee in db.execute(
+        select(Item.langue, Item.type_coar, Item.annee)
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(ItemCollection.collection_id == collection.id)
+        .distinct()
+    ).all():
+        if lang:
+            langues_set.add(lang)
+        if type_coar:
+            types_set.add(type_coar)
+        if annee is not None:
+            annee_min = annee if annee_min is None else min(annee_min, annee)
+            annee_max = annee if annee_max is None else max(annee_max, annee)
+    options_filtres = OptionsFiltresCollection(
+        langues=tuple(sorted(langues_set)),
+        types_coar=tuple(sorted(types_set)),
+        annee_min=annee_min,
+        annee_max=annee_max,
+    )
+
+    # ---- Traçabilité : merge propre collection + dernier item -------
+    derniere_modif_item = db.execute(
+        select(Item.modifie_le, Item.modifie_par)
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(
+            ItemCollection.collection_id == collection.id,
+            Item.modifie_le.is_not(None),
+        )
+        .order_by(Item.modifie_le.desc())
+        .limit(1)
+    ).first()
+    if derniere_modif_item is None:
+        c_mod_le, c_mod_par = collection.modifie_le, collection.modifie_par
+    else:
+        c_mod_le, c_mod_par = _plus_recent(
+            collection.modifie_le,
+            collection.modifie_par,
+            derniere_modif_item[0],
+            derniere_modif_item[1],
+        )
 
     fonds_parent: Fonds | None = None
     fonds_representes: tuple[FondsRepresente, ...] = ()
@@ -743,8 +829,13 @@ def composer_page_collection(
     return CollectionDetail(
         collection=collection,
         nb_items=nb_items,
+        nb_fichiers=nb_fichiers,
         fonds_parent=fonds_parent,
         fonds_representes=fonds_representes,
+        repartition_etats=repartition,
+        modifie_par=c_mod_par,
+        modifie_le=c_mod_le,
+        options_filtres=options_filtres,
     )
 
 

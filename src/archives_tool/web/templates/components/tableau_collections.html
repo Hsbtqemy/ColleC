@@ -75,7 +75,7 @@
         <td style="padding:16px 14px;vertical-align:top;">
           <div style="font-size:13px;color:#1f1f1f;line-height:1.4;">{{ c.titre }}</div>
           <div style="font-size:12px;color:#9ca3af;margin-top:2px;">
-            {{ phase_chantier(c.phase) }}
+            {{ phase_chantier(c.phase | libelle_phase) }}
             {%- if c.sous_collections and c.sous_collections > 0 %}
               <span aria-hidden="true" style="margin:0 6px;">·</span>
               {{ c.sous_collections }} sous-collection{{ 's' if c.sous_collections > 1 else '' }}

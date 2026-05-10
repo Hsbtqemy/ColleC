@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -36,6 +37,7 @@ from archives_tool.api.services.tri import (
 from archives_tool.models import (
     Collection,
     EtatCatalogage,
+    Fichier,
     Fonds,
     Item,
     ItemCollection,
@@ -113,7 +115,49 @@ class ItemResume:
     annee: int | None = None
     type_coar: str | None = None
     nb_collections: int = 0
+    nb_fichiers: int = 0
     modifie_le: datetime | None = None
+    modifie_par: str | None = None
+    description: str | None = None
+    langue: str | None = None
+    doi_nakala: str | None = None
+    doi_collection_nakala: str | None = None
+    metadonnees: dict[str, Any] | None = None
+
+    # ---- Aliases attendus par la macro `tableau_items` (cf.
+    # `web/templates/components/tableau_items.html`) -----
+    # La macro accède : cote, href, titre, type_chaine, type_label,
+    # date, date_incertaine, etat, nb_fichiers, modifie_par,
+    # modifie_depuis, meta. Les passerelles ci-dessous évitent une
+    # dataclass jumelle.
+
+    @property
+    def href(self) -> str:
+        return f"/item/{self.cote}?fonds={self.fonds_cote}"
+
+    @property
+    def date_incertaine(self) -> bool:
+        return bool(self.date) and any(c in self.date for c in "?~XU")
+
+    @property
+    def type_chaine(self) -> str | None:
+        # V0.9.0 : pas de hiérarchie de type chaînée (modèle plat).
+        return None
+
+    @property
+    def type_label(self) -> str | None:
+        # Le label COAR n'est pas résolu ici (pas de table de
+        # libellés en V0.9.0). On expose l'URI brut, le template
+        # rend `type_label or type_coar or '—'`.
+        return None
+
+    @property
+    def modifie_depuis(self) -> str:
+        return temps_relatif(self.modifie_le)
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        return self.metadonnees or {}
 
 
 def _valider_formulaire(formulaire: FormulaireItem) -> dict[str, str]:
@@ -302,6 +346,7 @@ def _lister_items(
 
     rows = db.execute(stmt).all()
     nb_coll_par_item: dict[int, int] = {}
+    nb_fich_par_item: dict[int, int] = {}
     if rows:
         ids = [r[0].id for r in rows]
         nb_coll_par_item = dict(
@@ -309,6 +354,13 @@ def _lister_items(
                 select(ItemCollection.item_id, func.count())
                 .where(ItemCollection.item_id.in_(ids))
                 .group_by(ItemCollection.item_id)
+            ).all()
+        )
+        nb_fich_par_item = dict(
+            db.execute(
+                select(Fichier.item_id, func.count(Fichier.id))
+                .where(Fichier.item_id.in_(ids))
+                .group_by(Fichier.item_id)
             ).all()
         )
 
@@ -324,7 +376,14 @@ def _lister_items(
             annee=item.annee,
             type_coar=item.type_coar,
             nb_collections=nb_coll_par_item.get(item.id, 0),
+            nb_fichiers=nb_fich_par_item.get(item.id, 0),
             modifie_le=item.modifie_le,
+            modifie_par=item.modifie_par,
+            description=item.description,
+            langue=item.langue,
+            doi_nakala=item.doi_nakala,
+            doi_collection_nakala=item.doi_collection_nakala,
+            metadonnees=item.metadonnees,
         )
         for item, fonds_cote in rows
     ]

@@ -513,14 +513,32 @@ def test_collection_miroir_pas_de_bouton_ajouter(
     assert "items/picker" not in response.text
 
 
+def test_collection_lecture_composants_riches(client_demo: TestClient) -> None:
+    """V0.9.2-beta : la page Collection rend bandeau enrichi
+    (avancement_detaille + traçabilité + compteurs) + tableau_items
+    avec pagination intégrée."""
+    response = client_demo.get("/collection/HK?fonds=HK")
+    assert response.status_code == 200
+    # Bandeau enrichi.
+    assert "Avancement du catalogage" in response.text
+    # tableau_items inclut la barre d'actions Filtrer / Colonnes /
+    # Exporter, et son id de wrapper.
+    assert "Filtrer" in response.text
+    assert "Colonnes" in response.text
+    assert 'id="tableau-items"' in response.text
+    # Pagination intégrée par tableau_items.
+    assert "1–40 sur 40" in response.text or "1-40 sur 40" in response.text
+
+
 def test_collection_pagination(client_demo: TestClient) -> None:
     response = client_demo.get(
         "/collection/FA?fonds=FA&par_page=50&page=1"
     )
     assert response.status_code == 200
-    # FA a 167 items dans sa miroir → pagination active.
+    # FA a 167 items dans sa miroir → pagination active. Le composant
+    # `pagination.html` rend « 1–50 sur 167 ».
     texte = _texte_visible(response.text)
-    assert "Page 1" in texte
+    assert "1–50 sur 167" in texte or "1-50 sur 167" in texte
 
 
 def test_collection_filtre_etat(client_demo: TestClient) -> None:

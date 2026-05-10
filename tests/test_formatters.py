@@ -7,6 +7,7 @@ from datetime import datetime
 from archives_tool.affichage.formatters import (
     ABSENT,
     barre_progression,
+    date_incertaine,
     formater_date,
     formater_etat,
     formater_liste,
@@ -71,3 +72,49 @@ def test_barre_progression() -> None:
     # Bornes : valeurs hors [0,1] → clampées.
     assert barre_progression(-1, 10) == "░" * 10
     assert barre_progression(2, 10) == "▓" * 10
+
+
+def test_date_incertaine_marqueurs() -> None:
+    """Régression V0.9.2-beta passe : `ItemResume.date_incertaine`
+    avait forké la regex en `?~XU` et manquait `vers`/`c.`/`s.d.`.
+    Les tests ci-dessous documentent les marqueurs canoniques."""
+    # Cas positifs : marqueurs d'incertitude reconnus.
+    assert date_incertaine("vers 1969") is True
+    assert date_incertaine("Vers 1923") is True  # insensible à la casse
+    assert date_incertaine("1923 ?") is True
+    assert date_incertaine("c. 1925") is True
+    assert date_incertaine("ca. 1925") is True
+    assert date_incertaine("s.d.") is True
+    assert date_incertaine("S.D.") is True
+    # Cas négatifs : dates précises.
+    assert date_incertaine("1969") is False
+    assert date_incertaine("1969-03-15") is False
+    assert date_incertaine("2026-05-10") is False
+    # None / vide.
+    assert date_incertaine(None) is False
+    assert date_incertaine("") is False
+
+
+def test_item_resume_date_incertaine_via_property() -> None:
+    """Vérifie que ItemResume.date_incertaine délègue au helper
+    canonique (régression V0.9.2-beta passe simplification)."""
+    from archives_tool.api.services.items import ItemResume
+
+    # Cas archivistique typique : « vers 1969 » est incertain.
+    item = ItemResume(
+        id=1, cote="X-001", titre="T", fonds_id=1, fonds_cote="X",
+        etat="brouillon", date="vers 1969",
+    )
+    assert item.date_incertaine is True
+    # Date précise.
+    item2 = ItemResume(
+        id=2, cote="X-002", titre="T", fonds_id=1, fonds_cote="X",
+        etat="brouillon", date="1969-03-15",
+    )
+    assert item2.date_incertaine is False
+    # None.
+    item3 = ItemResume(
+        id=3, cote="X-003", titre="T", fonds_id=1, fonds_cote="X",
+        etat="brouillon",
+    )
+    assert item3.date_incertaine is False

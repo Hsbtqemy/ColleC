@@ -548,6 +548,39 @@ def test_collection_filtre_etat(client_demo: TestClient) -> None:
     assert response.status_code == 200
 
 
+def test_collection_filtre_etat_multi_csv(client_demo: TestClient) -> None:
+    """V0.9.2-beta.2 : le filtre état accepte des valeurs multiples
+    en CSV (cumul OR), et les pastilles s'affichent."""
+    response = client_demo.get(
+        "/collection/FA?fonds=FA&etat=brouillon,a_verifier"
+    )
+    assert response.status_code == 200
+    # Pastilles présentes : « État: Brouillon ✕ » + « État: À vérifier ✕ »
+    assert "Filtres actifs" in response.text
+    # Compteur dans le bouton « Filtrer · 1 »
+    assert "Filtrer" in response.text
+
+
+def test_collection_filtre_etat_invalide_ignore(client_demo: TestClient) -> None:
+    """Un état hors enum est silencieusement ignoré (pas de 400)."""
+    response = client_demo.get(
+        "/collection/FA?fonds=FA&etat=inexistant"
+    )
+    assert response.status_code == 200
+    # Aucune pastille rendue puisque le filtre est invalide.
+    assert "Filtres actifs" not in response.text
+
+
+def test_collection_filtre_periode(client_demo: TestClient) -> None:
+    """Filtre par plage d'années."""
+    response = client_demo.get(
+        "/collection/HK?fonds=HK&annee_de=1969&annee_a=1972"
+    )
+    assert response.status_code == 200
+    assert "Filtres actifs" in response.text
+    assert "Période" in response.text
+
+
 def test_collection_transversale_montre_colonne_fonds(
     client_demo: TestClient,
 ) -> None:

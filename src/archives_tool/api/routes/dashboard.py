@@ -49,6 +49,7 @@ from archives_tool.api.services.dashboard import (
     composer_page_collection,
     composer_page_fonds,
     composer_page_item,
+    parser_filtres_collection,
 )
 from archives_tool.api.services.fonds import (
     FondsIntrouvable,
@@ -281,6 +282,14 @@ def page_collection(
     etat: str | None = Query(
         None, description="Filtre par état (CSV : brouillon,valide,…)"
     ),
+    langue: str | None = Query(
+        None, description="Filtre par langue (CSV : fra,eng,…)"
+    ),
+    type_coar: str | None = Query(
+        None, description="Filtre par type COAR (CSV : URI,URI,…)"
+    ),
+    annee_de: int | None = Query(None, ge=1000, le=2100),
+    annee_a: int | None = Query(None, ge=1000, le=2100),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -294,7 +303,15 @@ def page_collection(
 
     collection = _resoudre_collection(db, cote, fonds)
     detail = composer_page_collection(db, collection)
-    filtres_etat = [e.strip() for e in (etat or "").split(",") if e.strip()]
+    # Parsing + validation des filtres contre les options dynamiques.
+    filtres = parser_filtres_collection(
+        etat=etat,
+        langue=langue,
+        type_coar=type_coar,
+        annee_de=annee_de,
+        annee_a=annee_a,
+        options=detail.options_filtres,
+    )
     listage = lister_items_collection(
         db,
         collection.id,
@@ -302,7 +319,11 @@ def page_collection(
         ordre=ordre if ordre in ("asc", "desc") else "asc",
         page=page,
         par_page=par_page,
-        etat=filtres_etat[0] if filtres_etat else None,
+        etats=filtres.etats,
+        langues=filtres.langues,
+        types_coar=filtres.types_coar,
+        annee_de=filtres.annee_de,
+        annee_a=filtres.annee_a,
     )
     return templates.TemplateResponse(
         request,
@@ -313,8 +334,10 @@ def page_collection(
             detail=detail,
             listage=listage,
             fonds_query=fonds,
-            etat_actif=filtres_etat[0] if filtres_etat else None,
+            filtres=filtres,
             etats_disponibles=list(EtatCatalogage),
+            # Conservé pour rétro-compatibilité du `<form>` simple.
+            etat_actif=filtres.etats[0] if filtres.etats else None,
         ),
     )
 

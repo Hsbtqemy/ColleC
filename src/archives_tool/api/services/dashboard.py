@@ -710,6 +710,108 @@ class OptionsFiltresCollection:
 
 
 @dataclass(frozen=True)
+class FiltresCollection:
+    """Filtres effectivement actifs sur la page Collection.
+
+    Construits par `parser_filtres_collection` à partir de la query
+    string + des `OptionsFiltresCollection` de la collection. Les
+    valeurs hors whitelist sont silencieusement ignorées (jamais
+    de 400 sur paramètre invalide).
+    """
+
+    etats: tuple[str, ...] = ()
+    langues: tuple[str, ...] = ()
+    types_coar: tuple[str, ...] = ()
+    annee_de: int | None = None
+    annee_a: int | None = None
+
+    @property
+    def actifs(self) -> bool:
+        return bool(
+            self.etats
+            or self.langues
+            or self.types_coar
+            or self.annee_de is not None
+            or self.annee_a is not None
+        )
+
+    @property
+    def nb_filtres_actifs(self) -> int:
+        n = (
+            (1 if self.etats else 0)
+            + (1 if self.langues else 0)
+            + (1 if self.types_coar else 0)
+        )
+        if self.annee_de is not None or self.annee_a is not None:
+            n += 1
+        return n
+
+
+def _csv_to_liste(valeur: str | None) -> list[str]:
+    """Parse `a,b,c` → `['a', 'b', 'c']`. Strip + dédoublonne. Vide
+    sur entrée None ou vide."""
+    if not valeur:
+        return []
+    vu: set[str] = set()
+    sortie: list[str] = []
+    for part in valeur.split(","):
+        v = part.strip()
+        if v and v not in vu:
+            vu.add(v)
+            sortie.append(v)
+    return sortie
+
+
+def parser_filtres_collection(
+    *,
+    etat: str | None,
+    langue: str | None,
+    type_coar: str | None,
+    annee_de: int | None,
+    annee_a: int | None,
+    options: OptionsFiltresCollection,
+) -> FiltresCollection:
+    """Parse les filtres reçus en query string + valide contre les
+    options dynamiques de la collection. Les valeurs hors whitelist
+    sont silencieusement ignorées.
+
+    - `etat=brouillon,a_verifier` → tuple des états reconnus dans
+      `EtatCatalogage`.
+    - `langue=fra,eng` → tuple des langues qui existent dans la
+      collection (selon `options.langues`).
+    - `type_coar=...` → idem.
+    - `annee_de` / `annee_a` : entiers, clampés à
+      `[options.annee_min, options.annee_max]` ; rejet si hors plage
+      ou non-entier.
+    """
+    etats_valides = {e.value for e in EtatCatalogage}
+    etats = tuple(e for e in _csv_to_liste(etat) if e in etats_valides)
+    langues = tuple(
+        lang for lang in _csv_to_liste(langue) if lang in options.langues
+    )
+    types_coar = tuple(
+        t for t in _csv_to_liste(type_coar) if t in options.types_coar
+    )
+
+    def _valider_annee(v: int | None) -> int | None:
+        if v is None:
+            return None
+        if options.annee_min is None or options.annee_max is None:
+            return None
+        if v < options.annee_min or v > options.annee_max:
+            return None
+        return v
+
+    return FiltresCollection(
+        etats=etats,
+        langues=langues,
+        types_coar=types_coar,
+        annee_de=_valider_annee(annee_de),
+        annee_a=_valider_annee(annee_a),
+    )
+
+
+@dataclass(frozen=True)
 class CollectionDetail:
     collection: Collection  # modèle ORM
     nb_items: int

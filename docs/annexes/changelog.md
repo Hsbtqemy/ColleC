@@ -14,21 +14,32 @@ Les jalons notables. Le détail commit-par-commit est dans
   fonds + par collection, `modifie_par`/`le` propagé depuis les
   items, `nb_fichiers` par fonds + par collection). Garde-fou SQL
   ≤ 9 requêtes.
-- **V0.9.2-beta** *(en cours)* : page Collection restaurée avec
+- **V0.9.2-beta** : page Collection restaurée avec
   bandeau enrichi (`avancement_detaille`, `phase_chantier`,
   `cellule_modifie`, compteurs items/fichiers/langues) et
   `tableau_items` avec pagination intégrée. Service
   `composer_page_collection` enrichi (répartition d'états,
   `modifie_par`/`le` propagé depuis les items,
-  `OptionsFiltresCollection` dynamiques pour le futur panneau
-  filtres). `ItemResume` étendu avec `nb_fichiers`,
-  `modifie_par`, `description`, `langue`, `doi_*`, `metadonnees`
-  + propriétés alias (`href`, `date_incertaine`, `modifie_depuis`,
-  `meta`) attendues par la macro `tableau_items`. Bug pré-existant
-  `phase` enum brut dans `tableau_collections` corrigé. Garde-fou
-  SQL ≤ 7 requêtes pour la page. Filtres riches via
-  `panneau_filtres` et configurateur de colonnes via
-  `panneau_colonnes` reportés à V0.9.2-beta.2.
+  `OptionsFiltresCollection` dynamiques). `ItemResume` étendu
+  avec `nb_fichiers`, `modifie_par`, `description`, `langue`,
+  `doi_*`, `metadonnees` + propriétés alias attendues par la
+  macro `tableau_items`. Bug pré-existant `phase` enum brut
+  dans `tableau_collections` corrigé. Garde-fou SQL ≤ 7
+  requêtes pour la page.
+- **V0.9.2-beta.2** *(en cours)* : filtres multi-valeurs
+  branchés sur la page Collection. Nouveau parseur
+  `parser_filtres_collection` qui valide silencieusement contre
+  `OptionsFiltresCollection` (état, langue, type COAR, période).
+  `lister_items_collection` étendu pour supporter les filtres
+  multi (état IN, langue IN, type IN, plage d'années). Le
+  formulaire de filtres expose les 4 dimensions ; pastilles de
+  filtres actifs sous le bandeau, retrait individuel par lien ;
+  compteur de filtres dans le résumé du tableau. La pagination
+  préserve tous les filtres actifs dans ses liens. Drawer
+  `panneau_filtres` riche et `panneau_colonnes` drag-drop
+  reportés à V0.9.2-beta.3 (JS plumbing). Test de régression
+  `date_incertaine` ajouté pour le bug HIGH corrigé en passe
+  V0.9.2-beta.
 - **V0.9.2-gamma** *(à venir)* : page Item — recréation des
   composants absents (`bandeau_item`, `cartouche_metadonnees`,
   `panneau_fichiers`) et branchement de la visionneuse

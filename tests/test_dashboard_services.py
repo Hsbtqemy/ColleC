@@ -28,11 +28,13 @@ from archives_tool.api.services.dashboard import (
     CollectionDetail,
     DashboardResume,
     DashboardStats,
+    FiltresCollection,
     FondsDetail,
     OptionsFiltresCollection,
     composer_dashboard,
     composer_page_collection,
     composer_page_fonds,
+    parser_filtres_collection,
 )
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
@@ -458,3 +460,100 @@ def test_page_collection_n_emet_pas_plus_de_7_requetes(
         f"composer_page_collection a émis {len(queries)} requêtes "
         f"(limite : 7). Première requête : {queries[0][:80]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# parser_filtres_collection
+# ---------------------------------------------------------------------------
+
+
+def _options_demo() -> OptionsFiltresCollection:
+    return OptionsFiltresCollection(
+        langues=("fra", "eng"),
+        types_coar=("http://purl.org/coar/resource_type/c_2659",),
+        annee_min=1960,
+        annee_max=1985,
+    )
+
+
+def test_parser_filtres_vide_donne_filtres_inactifs() -> None:
+    f = parser_filtres_collection(
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert isinstance(f, FiltresCollection)
+    assert not f.actifs
+    assert f.nb_filtres_actifs == 0
+
+
+def test_parser_filtres_csv_etats_valides() -> None:
+    f = parser_filtres_collection(
+        etat="brouillon,a_verifier",
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert f.etats == ("brouillon", "a_verifier")
+    assert f.actifs
+    assert f.nb_filtres_actifs == 1
+
+
+def test_parser_filtres_etats_invalides_silencieusement_ignores() -> None:
+    """Un état hors EtatCatalogage est dropé sans erreur."""
+    f = parser_filtres_collection(
+        etat="brouillon,inexistant,a_verifier",
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert f.etats == ("brouillon", "a_verifier")
+
+
+def test_parser_filtres_langues_filtrees_contre_options() -> None:
+    """Les langues hors `options.langues` sont silencieusement écartées."""
+    f = parser_filtres_collection(
+        etat=None,
+        langue="fra,deu",  # `deu` n'est pas dans options.langues
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert f.langues == ("fra",)
+
+
+def test_parser_filtres_annee_hors_plage_ignoree() -> None:
+    """Une année hors de [annee_min, annee_max] est rejetée."""
+    f = parser_filtres_collection(
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_de=1900,  # < 1960 → rejeté
+        annee_a=1970,
+        options=_options_demo(),
+    )
+    assert f.annee_de is None
+    assert f.annee_a == 1970
+
+
+def test_parser_filtres_compteur_actifs() -> None:
+    """`nb_filtres_actifs` compte 1 par dimension activée
+    (les multi-valeurs comptent pour 1 seul filtre)."""
+    f = parser_filtres_collection(
+        etat="brouillon,a_verifier",
+        langue="fra",
+        type_coar=None,
+        annee_de=1969,
+        annee_a=1985,
+        options=_options_demo(),
+    )
+    # 3 dimensions actives : etats + langues + période.
+    assert f.nb_filtres_actifs == 3

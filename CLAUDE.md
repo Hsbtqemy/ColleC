@@ -880,13 +880,23 @@ pages Fonds, Collection et Item.
   Filtrer/Colonnes/Exporter). Service
   `composer_page_collection` enrichi avec `repartition_etats`,
   traçabilité, `nb_fichiers`, `OptionsFiltresCollection`
-  dynamiques. `ItemResume` étendu (`nb_fichiers`, `modifie_par`,
-  `description`, `langue`, `doi_*`, `metadonnees`) + propriétés
-  alias attendues par `tableau_items`. Bug pré-existant `phase`
-  enum brut dans `tableau_collections` corrigé. Garde-fou SQL
-  ≤ 7 requêtes pour la page. Filtres riches (`panneau_filtres`)
-  et configurateur de colonnes (`panneau_colonnes`) reportés à
-  V0.9.2-beta.2.
+  dynamiques. `ItemResume` étendu + propriétés alias attendues
+  par `tableau_items`. Bug pré-existant `phase` enum brut dans
+  `tableau_collections` corrigé. Garde-fou SQL ≤ 7 requêtes.
+- ✅ **V0.9.2-beta.2** : filtres multi-valeurs branchés sur la
+  page Collection. `parser_filtres_collection` (dataclass
+  `FiltresCollection`, validation silencieuse contre les options
+  dynamiques de la collection — états hors enum, langues
+  inexistantes, types inconnus, années hors plage sont écartés
+  sans erreur). `lister_items_collection` étendu (état IN,
+  langue IN, type IN, plage d'années). Formulaire de filtres
+  étendu (4 dimensions, multi-select), pastilles de filtres
+  actifs avec retrait individuel, compteur dans le bouton
+  « Filtrer ». Pagination préserve les filtres dans tous les
+  liens (`cible_url` injecté avec query string complète).
+  Test de régression `date_incertaine` ajouté pour le bug HIGH
+  V0.9.2-beta. Drawer `panneau_filtres` riche et `panneau_colonnes`
+  drag-drop reportés à V0.9.2-beta.3 (JS plumbing).
 - **V0.9.2-gamma** : page Item — recréation des composants absents
   (`bandeau_item`, `cartouche_metadonnees`, `panneau_fichiers`),
   branchement de la visionneuse OpenSeadragon.

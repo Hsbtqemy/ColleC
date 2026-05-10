@@ -287,12 +287,18 @@ def lister_items_collection(
     collection_id: int,
     *,
     etat: str | None = None,
+    etats: list[str] | tuple[str, ...] | None = None,
+    langues: list[str] | tuple[str, ...] | None = None,
+    types_coar: list[str] | tuple[str, ...] | None = None,
+    annee_de: int | None = None,
+    annee_a: int | None = None,
     tri: str | None = None,
     ordre: Ordre = "asc",
     page: int = 1,
     par_page: int = 50,
 ) -> Listage[ItemResume]:
-    """Liste paginée des items d'une collection (via la junction N-N)."""
+    """Liste paginée des items d'une collection (via la junction N-N)
+    avec filtres multi-valeurs optionnels."""
     return _lister_items(
         db,
         scope_filtre=Item.id.in_(
@@ -301,6 +307,11 @@ def lister_items_collection(
             )
         ),
         etat=etat,
+        etats=etats,
+        langues=langues,
+        types_coar=types_coar,
+        annee_de=annee_de,
+        annee_a=annee_a,
         tri=tri,
         ordre=ordre,
         page=page,
@@ -313,6 +324,11 @@ def _lister_items(
     *,
     scope_filtre,
     etat: str | None,
+    etats: list[str] | tuple[str, ...] | None = None,
+    langues: list[str] | tuple[str, ...] | None = None,
+    types_coar: list[str] | tuple[str, ...] | None = None,
+    annee_de: int | None = None,
+    annee_a: int | None = None,
     tri: str | None,
     ordre: Ordre,
     page: int,
@@ -324,9 +340,29 @@ def _lister_items(
         .where(scope_filtre)
     )
     filtres: dict[str, object] = {}
-    if etat and etat in _ETATS_VALIDES:
+    # `etat` (singulier) reste pour rétro-compatibilité avec la
+    # signature de lister_items_fonds. `etats` (pluriel) prend le
+    # pas s'il est fourni.
+    if etats:
+        valides = [e for e in etats if e in _ETATS_VALIDES]
+        if valides:
+            base_stmt = base_stmt.where(Item.etat_catalogage.in_(valides))
+            filtres["etats"] = list(valides)
+    elif etat and etat in _ETATS_VALIDES:
         base_stmt = base_stmt.where(Item.etat_catalogage == etat)
         filtres["etat"] = etat
+    if langues:
+        base_stmt = base_stmt.where(Item.langue.in_(list(langues)))
+        filtres["langues"] = list(langues)
+    if types_coar:
+        base_stmt = base_stmt.where(Item.type_coar.in_(list(types_coar)))
+        filtres["types_coar"] = list(types_coar)
+    if annee_de is not None:
+        base_stmt = base_stmt.where(Item.annee >= annee_de)
+        filtres["annee_de"] = annee_de
+    if annee_a is not None:
+        base_stmt = base_stmt.where(Item.annee <= annee_a)
+        filtres["annee_a"] = annee_a
 
     mapping_tri = {
         "cote": Item.cote,
@@ -341,8 +377,20 @@ def _lister_items(
     )
 
     count_stmt = select(func.count(Item.id)).where(scope_filtre)
-    if "etat" in filtres:
+    if "etats" in filtres:
+        count_stmt = count_stmt.where(
+            Item.etat_catalogage.in_(filtres["etats"])
+        )
+    elif "etat" in filtres:
         count_stmt = count_stmt.where(Item.etat_catalogage == etat)
+    if "langues" in filtres:
+        count_stmt = count_stmt.where(Item.langue.in_(filtres["langues"]))
+    if "types_coar" in filtres:
+        count_stmt = count_stmt.where(Item.type_coar.in_(filtres["types_coar"]))
+    if annee_de is not None:
+        count_stmt = count_stmt.where(Item.annee >= annee_de)
+    if annee_a is not None:
+        count_stmt = count_stmt.where(Item.annee <= annee_a)
     total = db.scalar(count_stmt) or 0
 
     page_eff = max(1, page)

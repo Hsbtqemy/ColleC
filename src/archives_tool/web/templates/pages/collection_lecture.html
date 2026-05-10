@@ -107,24 +107,173 @@
   </div>
 </header>
 
-{# Filtre par état (formulaire simple, restant en attendant le
-   panneau_filtres riche d'une mini-session ultérieure). #}
-<form method="get" class="flex items-center gap-2 mb-3 text-sm">
-  {% if fonds_query %}
-    <input type="hidden" name="fonds" value="{{ fonds_query }}">
-  {% endif %}
-  <label class="text-gray-500" for="etat-filter">État :</label>
-  <select id="etat-filter" name="etat" onchange="this.form.submit()"
-          class="px-2 py-1 border border-gray-300 rounded">
-    <option value="">Tous</option>
-    {% for e in etats_disponibles %}
-      <option value="{{ e.value }}"
-              {% if etat_actif == e.value %}selected{% endif %}>
-        {{ e.value | libelle_etat }}
-      </option>
+{# Filtres multi-valeurs (formulaire GET, query string parsée par
+   le service). Le drawer `panneau_filtres.html` riche est prévu
+   en mini-session V0.9.2-beta.3 avec son JS toggle ; ici on a
+   l'équivalent fonctionnel sans drawer. #}
+<details class="mb-3 text-sm" {% if filtres.actifs %}open{% endif %}>
+  <summary class="inline-flex items-center gap-1.5 cursor-pointer rounded hover:bg-gray-50"
+           style="padding:4px 10px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M2 3 h8 M3.5 6 h5 M5 9 h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Filtrer{% if filtres.actifs %}
+      <span class="font-tabular text-gray-500" style="margin-left:2px;">· {{ filtres.nb_filtres_actifs }}</span>
+    {% endif %}
+  </summary>
+
+  <form method="get" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border border-gray-200 rounded">
+    {% if fonds_query %}
+      <input type="hidden" name="fonds" value="{{ fonds_query }}">
+    {% endif %}
+
+    {# État (multi via select multiple) #}
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">État</label>
+      <select name="etat" multiple size="5"
+              class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+        {% for e in etats_disponibles %}
+          <option value="{{ e.value }}"
+                  {% if e.value in filtres.etats %}selected{% endif %}>
+            {{ e.value | libelle_etat }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {# Période #}
+    {% if detail.options_filtres.annee_min is not none %}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">
+          Période
+          <span class="text-gray-400">
+            ({{ detail.options_filtres.annee_min }}–{{ detail.options_filtres.annee_max }})
+          </span>
+        </label>
+        <div class="flex items-center gap-2">
+          <input type="number" name="annee_de" placeholder="De"
+                 min="{{ detail.options_filtres.annee_min }}"
+                 max="{{ detail.options_filtres.annee_max }}"
+                 value="{{ filtres.annee_de if filtres.annee_de is not none else '' }}"
+                 class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+          <span class="text-gray-400">→</span>
+          <input type="number" name="annee_a" placeholder="À"
+                 min="{{ detail.options_filtres.annee_min }}"
+                 max="{{ detail.options_filtres.annee_max }}"
+                 value="{{ filtres.annee_a if filtres.annee_a is not none else '' }}"
+                 class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+        </div>
+      </div>
+    {% endif %}
+
+    {# Langues (multi) #}
+    {% if detail.options_filtres.langues %}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Langue</label>
+        <select name="langue" multiple size="5"
+                class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+          {% for lang in detail.options_filtres.langues %}
+            <option value="{{ lang }}"
+                    {% if lang in filtres.langues %}selected{% endif %}>{{ lang }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    {# Types COAR (multi) #}
+    {% if detail.options_filtres.types_coar %}
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Type</label>
+        <select name="type_coar" multiple size="5"
+                class="w-full px-2 py-1 border border-gray-300 rounded text-sm font-mono"
+                style="font-size:11px;">
+          {% for t in detail.options_filtres.types_coar %}
+            <option value="{{ t }}"
+                    {% if t in filtres.types_coar %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    <div class="md:col-span-2 lg:col-span-4 flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+      {% if filtres.actifs %}
+        <a href="/collection/{{ col.cote }}{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+           class="text-xs text-gray-500 hover:underline mr-2">
+          Tout effacer
+        </a>
+      {% endif %}
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Appliquer
+      </button>
+    </div>
+  </form>
+</details>
+
+{# Pastilles de filtres actifs : retrait individuel par lien. #}
+{% if filtres.actifs %}
+  {% set base = '/collection/' ~ col.cote ~ ('?fonds=' ~ fonds_query if fonds_query else '?fonds=') %}
+  <div class="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+    <span class="text-gray-500">Filtres actifs :</span>
+    {% set _csv = (filtres.langues | join(',')) %}
+    {% set _tcsv = (filtres.types_coar | join(',')) %}
+    {% for e in filtres.etats %}
+      {% set _autres_etats = filtres.etats | reject('equalto', e) | list %}
+      {% set _params = [] %}
+      {% if _autres_etats %}{% set _ = _params.append('etat=' ~ (_autres_etats | join(','))) %}{% endif %}
+      {% if filtres.langues %}{% set _ = _params.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
+      {% if filtres.types_coar %}{% set _ = _params.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
+      {% if filtres.annee_de is not none %}{% set _ = _params.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
+      {% if filtres.annee_a is not none %}{% set _ = _params.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
+      <a href="{{ base }}{% if _params %}&{{ _params | join('&') }}{% endif %}"
+         class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
+         style="padding:3px 8px;color:#374151;">
+        État: {{ e | libelle_etat }} <span aria-hidden="true">×</span>
+      </a>
     {% endfor %}
-  </select>
-</form>
+    {% if filtres.annee_de is not none or filtres.annee_a is not none %}
+      {% set _params2 = [] %}
+      {% if filtres.etats %}{% set _ = _params2.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
+      {% if filtres.langues %}{% set _ = _params2.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
+      {% if filtres.types_coar %}{% set _ = _params2.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
+      <a href="{{ base }}{% if _params2 %}&{{ _params2 | join('&') }}{% endif %}"
+         class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
+         style="padding:3px 8px;color:#374151;">
+        Période: {{ filtres.annee_de or '?' }}–{{ filtres.annee_a or '?' }}
+        <span aria-hidden="true">×</span>
+      </a>
+    {% endif %}
+    {% for lang in filtres.langues %}
+      {% set _autres_lang = filtres.langues | reject('equalto', lang) | list %}
+      {% set _params3 = [] %}
+      {% if filtres.etats %}{% set _ = _params3.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
+      {% if _autres_lang %}{% set _ = _params3.append('langue=' ~ (_autres_lang | join(','))) %}{% endif %}
+      {% if filtres.types_coar %}{% set _ = _params3.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
+      {% if filtres.annee_de is not none %}{% set _ = _params3.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
+      {% if filtres.annee_a is not none %}{% set _ = _params3.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
+      <a href="{{ base }}{% if _params3 %}&{{ _params3 | join('&') }}{% endif %}"
+         class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
+         style="padding:3px 8px;color:#374151;">
+        Langue: {{ lang }} <span aria-hidden="true">×</span>
+      </a>
+    {% endfor %}
+    {% for t in filtres.types_coar %}
+      {% set _autres_t = filtres.types_coar | reject('equalto', t) | list %}
+      {% set _params4 = [] %}
+      {% if filtres.etats %}{% set _ = _params4.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
+      {% if filtres.langues %}{% set _ = _params4.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
+      {% if _autres_t %}{% set _ = _params4.append('type_coar=' ~ (_autres_t | join(','))) %}{% endif %}
+      {% if filtres.annee_de is not none %}{% set _ = _params4.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
+      {% if filtres.annee_a is not none %}{% set _ = _params4.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
+      <a href="{{ base }}{% if _params4 %}&{{ _params4 | join('&') }}{% endif %}"
+         class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200 font-mono"
+         style="padding:3px 8px;color:#374151;font-size:11px;">
+        Type: {{ t.split('/')[-1] if '/' in t else t }} <span aria-hidden="true">×</span>
+      </a>
+    {% endfor %}
+  </div>
+{% endif %}
 
 <section class="mb-8">
   <div class="flex items-baseline justify-between mb-2">
@@ -149,11 +298,21 @@
     {% if est_transversale %}
       {% set noms_cols = noms_cols + ['langue'] %}
     {% endif %}
+    {# Compose la cible_url avec les filtres actifs, pour que les
+       liens de pagination et de tri préservent l'état du filtre. #}
+    {% set _params = [] %}
+    {% if fonds_query %}{% set _ = _params.append('fonds=' ~ fonds_query) %}{% endif %}
+    {% if filtres.etats %}{% set _ = _params.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
+    {% if filtres.langues %}{% set _ = _params.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
+    {% if filtres.types_coar %}{% set _ = _params.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
+    {% if filtres.annee_de is not none %}{% set _ = _params.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
+    {% if filtres.annee_a is not none %}{% set _ = _params.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
+    {% set _cible = '/collection/' ~ col.cote ~ ('?' ~ (_params | join('&')) if _params else '') %}
     {{ tableau_items({
       'colonnes': noms_cols,
       'sort': listage.tri,
       'ordre': listage.ordre,
-      'cible_url': '/collection/' ~ col.cote ~ ('?fonds=' ~ fonds_query if fonds_query else ''),
+      'cible_url': _cible,
       'id': 'tableau-items',
       'items': listage.items,
       'pagination': {
@@ -162,7 +321,7 @@
         'total': listage.total,
         'pages': listage.pages,
       },
-      'compteur_filtres': '1 actif' if etat_actif else 'aucun',
+      'compteur_filtres': (filtres.nb_filtres_actifs | string ~ ' actif' ~ ('s' if filtres.nb_filtres_actifs > 1 else '')) if filtres.actifs else 'aucun',
       'nb_colonnes_actives': noms_cols | length,
     }) }}
   {% else %}

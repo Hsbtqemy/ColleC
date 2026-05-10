@@ -1,12 +1,17 @@
 {# Tableau de bord. Variables : `resume` (DashboardResume).
-   Structure : section Fonds (arborescence dépliable) + section
-   Transversales (conditionnelle, masquée si aucune). #}
+   Structure :
+     1. Header (nom_base + utilisateur)
+     2. Cartes de stats globales
+     3. Section Fonds (arborescence dépliable enrichie)
+     4. Section Transversales (conditionnelle)
+     5. Section Activité récente (conditionnelle)
+   #}
 {% extends "base.html" %}
 
 {% block title %}Tableau de bord — archives-tool{% endblock %}
 
 {% block content %}
-<section class="mb-10">
+<section class="mb-8">
   <div class="flex items-start justify-between mb-1">
     <h1 class="text-2xl font-medium">Tableau de bord</h1>
   </div>
@@ -17,14 +22,40 @@
   </p>
 </section>
 
+{# ----- Cartes de stats globales ------------------------------------ #}
+<section class="mb-10">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+    {% with label="Fonds", value=resume.stats.nb_fonds, detail="" %}
+      {% include "components/metric_card.html" %}
+    {% endwith %}
+    {% with label="Collections", value=resume.stats.nb_collections, detail="miroirs + libres + transversales" %}
+      {% include "components/metric_card.html" %}
+    {% endwith %}
+    {% with label="Items", value=resume.stats.nb_items, detail="" %}
+      {% include "components/metric_card.html" %}
+    {% endwith %}
+    {% with label="Fichiers", value=resume.stats.nb_fichiers, detail="" %}
+      {% include "components/metric_card.html" %}
+    {% endwith %}
+    {% with
+      label="Items validés",
+      value=("%.0f" % resume.stats.pct_valides) + " %",
+      detail=(resume.stats.nb_items_valides | string) + " / " + (resume.stats.nb_items | string) + " items"
+    %}
+      {% include "components/metric_card.html" %}
+    {% endwith %}
+  </div>
+</section>
+
+{# ----- Section Fonds (arborescence dépliable enrichie) ------------- #}
 <section class="mb-10">
   <h2 class="text-lg font-medium mb-3">
     Fonds <span class="text-gray-400 text-base">({{ resume.nb_fonds }})</span>
   </h2>
   {% if resume.fonds %}
-    <ul class="space-y-2">
+    <ul class="space-y-3">
       {% for fonds in resume.fonds %}
-        {% include "components/tableau_fonds.html" %}
+        {% include "components/tableau_fonds_enrichi.html" %}
       {% endfor %}
     </ul>
   {% else %}
@@ -34,15 +65,54 @@
   {% endif %}
 </section>
 
+{# ----- Section Transversales --------------------------------------- #}
 {% if resume.transversales %}
   <section class="mb-10">
     <h2 class="text-lg font-medium mb-3">
       Collections transversales
       <span class="text-gray-400 text-base">({{ resume.nb_transversales }})</span>
     </h2>
-    <ul class="space-y-2">
+    <ul class="space-y-3">
       {% for col in resume.transversales %}
         {% include "components/_collection_transversale.html" %}
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+{# ----- Section Activité récente ------------------------------------ #}
+{% if resume.activite_recente %}
+  {% from 'components/cellule_modifie.html' import cellule_modifie %}
+  <section class="mb-10">
+    <h2 class="text-lg font-medium mb-3">Activité récente</h2>
+    <ul class="space-y-1.5 text-sm">
+      {% for a in resume.activite_recente %}
+        <li class="flex items-baseline gap-2 border-b border-gray-100 pb-1.5">
+          <span class="text-xs uppercase text-gray-400 shrink-0 w-20 font-mono">{{ a.type }}</span>
+          <span class="grow">
+            {% if a.type == 'item' and a.fonds_cote %}
+              <a href="/item/{{ a.cote }}?fonds={{ a.fonds_cote }}" class="hover:underline">
+            {% elif a.type == 'collection' and a.fonds_cote %}
+              <a href="/collection/{{ a.cote }}?fonds={{ a.fonds_cote }}" class="hover:underline">
+            {% elif a.type == 'collection' %}
+              <a href="/collection/{{ a.cote }}" class="hover:underline">
+            {% elif a.type == 'fonds' %}
+              <a href="/fonds/{{ a.cote }}" class="hover:underline">
+            {% else %}
+              <span>
+            {% endif %}
+              <span class="text-gray-900">{{ a.titre or a.cote }}</span>
+              <span class="text-gray-500 font-mono text-xs ml-2">{{ a.cote }}</span>
+            {% if a.type in ('item', 'collection', 'fonds') %}
+              </a>
+            {% else %}
+              </span>
+            {% endif %}
+          </span>
+          <span class="text-right shrink-0">
+            {{ cellule_modifie(a.modifie_par, a.modifie_le | temps_relatif) }}
+          </span>
+        </li>
       {% endfor %}
     </ul>
   </section>

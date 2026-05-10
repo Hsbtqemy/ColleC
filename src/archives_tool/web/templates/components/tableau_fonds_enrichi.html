@@ -1,0 +1,84 @@
+{# tableau_fonds_enrichi.html — fonds dépliable enrichi pour le dashboard.
+   Variable : `fonds` (FondsArborescence avec repartition_etats, modifie_*).
+   Macros utilisées :
+     - avancement_compact (composants/avancement.html)
+     - cellule_modifie     (composants/cellule_modifie.html)
+   Pas de JS : <details> natif, ouvert par défaut. #}
+{% from 'components/avancement.html' import avancement_compact %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+
+<li>
+  <details open class="border-b border-gray-100 pb-3">
+    <summary class="cursor-pointer py-1 list-none">
+      <div class="flex items-baseline gap-2">
+        <span class="grow">
+          <a href="/fonds/{{ fonds.cote }}"
+             class="text-gray-900 hover:underline font-medium">
+            {{ fonds.titre }}
+          </a>
+          <span class="text-gray-500 font-mono text-sm ml-2">{{ fonds.cote }}</span>
+        </span>
+        <span class="text-gray-700 font-tabular">{{ fonds.nb_items }} items</span>
+      </div>
+      <div class="grid grid-cols-[1fr_auto] items-center gap-3 mt-1.5 ml-1">
+        <div>{{ avancement_compact(fonds.repartition_etats) }}</div>
+        <div class="text-right shrink-0">
+          {{ cellule_modifie(fonds.modifie_par, fonds.modifie_le | temps_relatif) }}
+        </div>
+      </div>
+    </summary>
+
+    <ul class="ml-6 mt-2 space-y-2">
+      {% if fonds.collection_miroir %}
+        {% set col = fonds.collection_miroir %}
+        <li>
+          <div class="flex items-baseline gap-2">
+            <span class="grow">
+              <a href="/collection/{{ col.cote }}?fonds={{ fonds.cote }}"
+                 class="text-gray-700 hover:underline">
+                {{ col.titre }}
+              </a>
+              <span class="ml-2 inline-block text-xs italic text-gray-400">miroir</span>
+              {% if col.phase %}
+                <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+              {% endif %}
+            </span>
+            <span class="text-gray-500 font-tabular text-sm shrink-0">
+              {{ col.nb_items }} items
+            </span>
+          </div>
+          <div class="grid grid-cols-[1fr_auto] items-center gap-3 mt-1 ml-1">
+            <div>{{ avancement_compact(col.repartition_etats) }}</div>
+            <div class="text-right shrink-0 text-xs">
+              {{ cellule_modifie(col.modifie_par, col.modifie_le | temps_relatif) }}
+            </div>
+          </div>
+        </li>
+      {% endif %}
+      {% for col in fonds.collections_libres %}
+        <li>
+          <div class="flex items-baseline gap-2">
+            <span class="grow">
+              <a href="/collection/{{ col.cote }}?fonds={{ fonds.cote }}"
+                 class="text-gray-700 hover:underline">
+                {{ col.titre }}
+              </a>
+              {% if col.phase %}
+                <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+              {% endif %}
+            </span>
+            <span class="text-gray-500 font-tabular text-sm shrink-0">
+              {{ col.nb_items }} items
+            </span>
+          </div>
+          <div class="grid grid-cols-[1fr_auto] items-center gap-3 mt-1 ml-1">
+            <div>{{ avancement_compact(col.repartition_etats) }}</div>
+            <div class="text-right shrink-0 text-xs">
+              {{ cellule_modifie(col.modifie_par, col.modifie_le | temps_relatif) }}
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </details>
+</li>

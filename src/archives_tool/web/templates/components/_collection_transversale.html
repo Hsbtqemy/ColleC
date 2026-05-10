@@ -1,6 +1,10 @@
 {# Composant pour une collection libre transversale (sans fonds_id).
-   Variable : `col` (TransversaleResume). #}
-<li class="border-b border-gray-100 pb-2">
+   Variable : `col` (TransversaleResume avec repartition_etats, modifie_*).
+   Réutilise les macros avancement_compact + cellule_modifie. #}
+{% from 'components/avancement.html' import avancement_compact %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+
+<li class="border-b border-gray-100 pb-3">
   <div class="flex items-baseline gap-2">
     <span class="grow">
       <a href="/collection/{{ col.cote }}"
@@ -8,11 +12,20 @@
         {{ col.titre }}
       </a>
       <span class="text-gray-500 font-mono text-sm ml-2">{{ col.cote }}</span>
+      {% if col.phase %}
+        <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+      {% endif %}
     </span>
-    <span class="text-gray-700 font-tabular">{{ col.nb_items }} items</span>
+    <span class="text-gray-700 font-tabular shrink-0">{{ col.nb_items }} items</span>
+  </div>
+  <div class="grid grid-cols-[1fr_auto] items-center gap-3 mt-1.5 ml-1">
+    <div>{{ avancement_compact(col.repartition_etats) }}</div>
+    <div class="text-right shrink-0">
+      {{ cellule_modifie(col.modifie_par, col.modifie_le | temps_relatif) }}
+    </div>
   </div>
   {% if col.fonds_representes %}
-    <p class="text-gray-500 text-sm ml-1 mt-1">
+    <p class="text-gray-500 text-sm ml-1 mt-2">
       Pioche dans :
       {% for f in col.fonds_representes -%}
         <a href="/fonds/{{ f.cote }}" class="hover:underline">{{ f.titre }}</a>

@@ -16,7 +16,9 @@ Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -29,6 +31,7 @@ from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
 from archives_tool.models import (
     Collection,
+    EtatCatalogage,
     Fichier,
     Fonds,
     Item,
@@ -36,6 +39,17 @@ from archives_tool.models import (
     RoleCollaborateur,
     TypeCollection,
 )
+
+# Clés de répartition des états de catalogage utilisées par le composant
+# `avancement.html`. L'ordre n'a pas d'importance ici (le template les
+# itère lui-même dans son ordre de présentation), mais on garantit que
+# toutes les clés sont présentes (à 0) pour éviter les `KeyError`
+# côté Jinja.
+_ETATS_REPARTITION: tuple[str, ...] = tuple(e.value for e in EtatCatalogage)
+
+
+def _repartition_vide() -> dict[str, int]:
+    return {k: 0 for k in _ETATS_REPARTITION}
 
 
 @dataclass(frozen=True)
@@ -45,6 +59,10 @@ class CollectionResume:
     type_collection: str  # "miroir" ou "libre"
     nb_items: int
     fonds_id: int | None  # None pour transversale
+    repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
+    phase: str | None = None  # PhaseChantier (libelle court côté Collection)
 
     @property
     def est_miroir(self) -> bool:
@@ -67,12 +85,16 @@ class TransversaleResume:
     titre: str
     nb_items: int
     fonds_representes: tuple[FondsRepresente, ...]
+    repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
+    phase: str | None = None
 
 
 @dataclass(frozen=True)
 class FondsArborescence:
     """Vue arborescente d'un fonds pour le dashboard : ses compteurs +
-    sa miroir + ses libres rattachées.
+    sa miroir + ses libres rattachées + traçabilité.
 
     Distinct de `services.fonds.FondsResume` qui sert le listing
     table simple — les deux entités ont des shapes différents. La
@@ -84,12 +106,44 @@ class FondsArborescence:
     nb_items: int
     collection_miroir: CollectionResume | None
     collections_libres: tuple[CollectionResume, ...]
+    repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
+
+
+@dataclass(frozen=True)
+class DashboardStats:
+    """Compteurs globaux affichés en haut du dashboard."""
+
+    nb_fonds: int
+    nb_collections: int  # toutes confondues (miroirs + libres + transversales)
+    nb_items: int
+    nb_fichiers: int
+    nb_items_valides: int
+
+    @property
+    def pct_valides(self) -> float:
+        return (self.nb_items_valides / self.nb_items * 100) if self.nb_items else 0.0
+
+
+@dataclass(frozen=True)
+class ActiviteRecente:
+    """Dernière modification d'une entité, pour le bandeau d'activité."""
+
+    type: Literal["item", "collection", "fonds"]
+    cote: str
+    titre: str
+    fonds_cote: str | None  # cote du fonds parent pour les items et collections rattachées
+    modifie_par: str | None
+    modifie_le: datetime
 
 
 @dataclass(frozen=True)
 class DashboardResume:
     fonds: tuple[FondsArborescence, ...]
     transversales: tuple[TransversaleResume, ...]
+    stats: DashboardStats
+    activite_recente: tuple[ActiviteRecente, ...]
 
     @property
     def nb_fonds(self) -> int:
@@ -100,17 +154,32 @@ class DashboardResume:
         return len(self.transversales)
 
 
-def composer_dashboard(db: Session) -> DashboardResume:
-    """Charge fonds + collections + transversales en agrégats SQL.
+def _agreger_repartition(
+    rows: list[tuple[int | None, str, int]],
+) -> dict[int | None, dict[str, int]]:
+    """Convertit un résultat `(group_key, etat, count)` en dict imbriqué
+    `{group_key: {etat: count, …}}` avec toutes les clés `_ETATS_REPARTITION`
+    présentes (à 0)."""
+    par_groupe: dict[int | None, dict[str, int]] = {}
+    for cle, etat, n in rows:
+        cible = par_groupe.setdefault(cle, _repartition_vide())
+        if etat in cible:
+            cible[etat] = n
+    return par_groupe
 
-    Coût indépendant du nombre de fonds : ~4-5 queries (select Fonds,
-    select Collection, GROUP BY items par fonds, GROUP BY items par
-    collection, plus un join pour les fonds représentés dans les
-    transversales — uniquement si ≥1 transversale).
+
+def composer_dashboard(db: Session) -> DashboardResume:
+    """Charge fonds + collections + transversales + stats globales +
+    activité récente en agrégats SQL.
+
+    Coût indépendant du nombre de fonds : ~9-10 queries quel que soit
+    le volume (un seul GROUP BY par dimension métier). Les boucles
+    Python ne font qu'attacher les agrégats préalablement calculés.
     """
     fonds_rows = list(db.scalars(select(Fonds).order_by(Fonds.cote)).all())
     collection_rows = list(db.scalars(select(Collection).order_by(Collection.titre)).all())
 
+    # ---- Compteurs simples (1 query par dimension) ------------------
     nb_items_par_fonds: dict[int, int] = dict(
         db.execute(
             select(Item.fonds_id, func.count(Item.id)).group_by(Item.fonds_id)
@@ -123,10 +192,77 @@ def composer_dashboard(db: Session) -> DashboardResume:
         ).all()
     )
 
-    # Index des collections par fonds_id pour l'attache rapide.
+    # ---- Répartitions d'états (1 query par dimension) ---------------
+    repartition_par_fonds = _agreger_repartition(
+        [
+            (fonds_id, etat, n)
+            for fonds_id, etat, n in db.execute(
+                select(Item.fonds_id, Item.etat_catalogage, func.count(Item.id))
+                .group_by(Item.fonds_id, Item.etat_catalogage)
+            ).all()
+        ]
+    )
+    repartition_par_collection = _agreger_repartition(
+        [
+            (col_id, etat, n)
+            for col_id, etat, n in db.execute(
+                select(
+                    ItemCollection.collection_id,
+                    Item.etat_catalogage,
+                    func.count(Item.id),
+                )
+                .join(Item, Item.id == ItemCollection.item_id)
+                .group_by(ItemCollection.collection_id, Item.etat_catalogage)
+            ).all()
+        ]
+    )
+
+    # ---- Dernière modification par fonds (date la plus récente parmi
+    # le fonds lui-même + ses items). On récupère la date max et la
+    # personne associée à cette date — sous-requête sur Item pour
+    # éviter un N+1.
+    max_modif_item_par_fonds: dict[int, datetime] = dict(
+        db.execute(
+            select(Item.fonds_id, func.max(Item.modifie_le))
+            .where(Item.modifie_le.is_not(None))
+            .group_by(Item.fonds_id)
+        ).all()
+    )
+
+    # ---- Stats globales (1 query) -----------------------------------
+    nb_fichiers: int = db.scalar(select(func.count(Fichier.id))) or 0
+    nb_items_valides: int = (
+        db.scalar(
+            select(func.count(Item.id)).where(
+                Item.etat_catalogage == EtatCatalogage.VALIDE.value
+            )
+        )
+        or 0
+    )
+
+    nb_items_total = sum(nb_items_par_fonds.values())
+    stats = DashboardStats(
+        nb_fonds=len(fonds_rows),
+        nb_collections=len(collection_rows),
+        nb_items=nb_items_total,
+        nb_fichiers=nb_fichiers,
+        nb_items_valides=nb_items_valides,
+    )
+
+    # ---- Index collections par fonds_id pour l'attache rapide.
     collections_par_fonds: dict[int | None, list[Collection]] = {}
     for c in collection_rows:
         collections_par_fonds.setdefault(c.fonds_id, []).append(c)
+
+    def _modifie_de_collection(c: Collection) -> tuple[str | None, datetime | None]:
+        """Pour une collection, prend le plus récent de sa propre modif
+        et de la dernière modif d'un de ses items."""
+        # Dernière modif d'item pour cette collection : on a déjà la
+        # répartition par collection mais pas le timestamp. Chercher
+        # par requête ciblée serait un N+1 ; on s'appuie ici sur
+        # `Collection.modifie_le` seulement (la modif d'un item se
+        # reflète sur le fonds, pas sur les collections).
+        return c.modifie_par, c.modifie_le
 
     fonds_resumes: list[FondsArborescence] = []
     for f in fonds_rows:
@@ -134,17 +270,37 @@ def composer_dashboard(db: Session) -> DashboardResume:
         miroir: CollectionResume | None = None
         libres: list[CollectionResume] = []
         for c in cols:
+            mod_par, mod_le = _modifie_de_collection(c)
             resume = CollectionResume(
                 cote=c.cote,
                 titre=c.titre,
                 type_collection=c.type_collection,
                 nb_items=nb_items_par_collection.get(c.id, 0),
                 fonds_id=c.fonds_id,
+                repartition_etats=repartition_par_collection.get(
+                    c.id, _repartition_vide()
+                ),
+                modifie_par=mod_par,
+                modifie_le=mod_le,
+                phase=c.phase,
             )
             if c.est_miroir:
                 miroir = resume
             else:
                 libres.append(resume)
+
+        # Pour le fonds, on prend le plus récent entre sa propre modif
+        # et la modif la plus récente d'un de ses items.
+        modif_item = max_modif_item_par_fonds.get(f.id)
+        if f.modifie_le is None and modif_item is None:
+            f_mod_par, f_mod_le = None, None
+        elif f.modifie_le is None:
+            f_mod_par, f_mod_le = None, modif_item
+        elif modif_item is None or f.modifie_le >= modif_item:
+            f_mod_par, f_mod_le = f.modifie_par, f.modifie_le
+        else:
+            f_mod_par, f_mod_le = None, modif_item
+
         fonds_resumes.append(
             FondsArborescence(
                 cote=f.cote,
@@ -152,11 +308,15 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 nb_items=nb_items_par_fonds.get(f.id, 0),
                 collection_miroir=miroir,
                 collections_libres=tuple(libres),
+                repartition_etats=repartition_par_fonds.get(
+                    f.id, _repartition_vide()
+                ),
+                modifie_par=f_mod_par,
+                modifie_le=f_mod_le,
             )
         )
 
-    # Transversales : collections sans fonds_id. Pour chacune, lister
-    # les fonds dont elles tirent leurs items via ItemCollection ⨝ Item.
+    # ---- Transversales (collections sans fonds_id) ------------------
     transversales_rows = [c for c in collection_rows if c.est_transversale]
     fonds_par_transv: dict[int, list[FondsRepresente]] = {}
     if transversales_rows:
@@ -181,14 +341,101 @@ def composer_dashboard(db: Session) -> DashboardResume:
             titre=c.titre,
             nb_items=nb_items_par_collection.get(c.id, 0),
             fonds_representes=tuple(fonds_par_transv.get(c.id, [])),
+            repartition_etats=repartition_par_collection.get(
+                c.id, _repartition_vide()
+            ),
+            modifie_par=c.modifie_par,
+            modifie_le=c.modifie_le,
+            phase=c.phase,
         )
         for c in transversales_rows
     ]
 
+    # ---- Activité récente : 10 dernières modifications mélangées ----
+    activite = _composer_activite_recente(db, limite=10)
+
     return DashboardResume(
         fonds=tuple(fonds_resumes),
         transversales=tuple(transversales),
+        stats=stats,
+        activite_recente=activite,
     )
+
+
+def _composer_activite_recente(
+    db: Session, *, limite: int = 10
+) -> tuple[ActiviteRecente, ...]:
+    """Mélange items + collections + fonds modifiés, garde les `limite`
+    plus récents.
+
+    Implémentation : trois requêtes (une par type) limitées à `limite`
+    chacune, puis tri Python. Volumétrie minuscule (3 × `limite` lignes)
+    et indépendante du volume total — pas la peine d'un UNION SQL plus
+    complexe.
+    """
+    candidats: list[ActiviteRecente] = []
+
+    # Items : on a besoin de la cote du fonds parent.
+    rows_items = db.execute(
+        select(Item, Fonds.cote)
+        .join(Fonds, Fonds.id == Item.fonds_id)
+        .where(Item.modifie_le.is_not(None))
+        .order_by(Item.modifie_le.desc())
+        .limit(limite)
+    ).all()
+    for item, fonds_cote in rows_items:
+        candidats.append(
+            ActiviteRecente(
+                type="item",
+                cote=item.cote,
+                titre=item.titre or "",
+                fonds_cote=fonds_cote,
+                modifie_par=item.modifie_par,
+                modifie_le=item.modifie_le,
+            )
+        )
+
+    # Collections : la cote du fonds parent peut être null (transversales).
+    rows_cols = db.execute(
+        select(Collection, Fonds.cote)
+        .outerjoin(Fonds, Fonds.id == Collection.fonds_id)
+        .where(Collection.modifie_le.is_not(None))
+        .order_by(Collection.modifie_le.desc())
+        .limit(limite)
+    ).all()
+    for col, fonds_cote in rows_cols:
+        candidats.append(
+            ActiviteRecente(
+                type="collection",
+                cote=col.cote,
+                titre=col.titre,
+                fonds_cote=fonds_cote,
+                modifie_par=col.modifie_par,
+                modifie_le=col.modifie_le,
+            )
+        )
+
+    # Fonds.
+    rows_fonds = db.execute(
+        select(Fonds)
+        .where(Fonds.modifie_le.is_not(None))
+        .order_by(Fonds.modifie_le.desc())
+        .limit(limite)
+    ).all()
+    for (fonds,) in rows_fonds:
+        candidats.append(
+            ActiviteRecente(
+                type="fonds",
+                cote=fonds.cote,
+                titre=fonds.titre,
+                fonds_cote=fonds.cote,
+                modifie_par=fonds.modifie_par,
+                modifie_le=fonds.modifie_le,
+            )
+        )
+
+    candidats.sort(key=lambda a: a.modifie_le, reverse=True)
+    return tuple(candidats[:limite])
 
 
 # ---------------------------------------------------------------------------

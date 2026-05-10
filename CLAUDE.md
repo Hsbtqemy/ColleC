@@ -374,7 +374,15 @@ déplacé, pour forcer la régénération à la prochaine passe
 `src/archives_tool/api/` (FastAPI) et `src/archives_tool/web/`
 (Jinja2 + Tailwind compilé) constituent le socle de l'UI.
 V0.6.0 livre dashboard + vue collection (3 onglets) + vue item
-avec visionneuse OpenSeadragon, en lecture seule.
+avec visionneuse OpenSeadragon, en lecture seule. Le dashboard
+a été enrichi en V0.9.1-dev avec : 5 cartes de stats globales
+(Fonds, Collections, Items, Fichiers, Items validés), barre
+d'avancement par fonds et par collection (composant
+`avancement_compact`), traçabilité « modifié par X · il y a Y »
+(composant `cellule_modifie`), section « Activité récente »
+listant les 10 dernières modifications mélangées
+(item / collection / fonds). Service composé en ≤14 requêtes
+SQL indépendamment du volume.
 
 - `api/main.py` : application FastAPI, mount `/static`, inclusion
   du router `dashboard` (unique depuis V0.9.0-beta : il porte

@@ -25,7 +25,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.files.paths import chemin_existe_nfc_ou_nfd, normaliser_nfc
-from archives_tool.models import Collection, EtatFichier, Fichier, Item
+from archives_tool.models import (
+    EtatFichier,
+    Fichier,
+    Fonds,
+    Item,
+    ItemCollection,
+)
 
 from .rapport import (
     CodeConflit,
@@ -40,52 +46,87 @@ from .template import EchecTemplate, evaluer_template
 def _selectionner_fichiers(
     session: Session,
     *,
+    fonds_cote: str | None,
     collection_cote: str | None,
+    collection_fonds_cote: str | None,
     item_cote: str | None,
+    item_fonds_cote: str | None,
     fichier_ids: list[int] | None,
-    recursif: bool,
-) -> list[tuple[Fichier, Item, Collection]]:
+) -> list[tuple[Fichier, Item, Fonds]]:
+    """Charge les fichiers du périmètre + leur item + fonds parent.
+
+    Quatre modes (mutex) :
+    - `fichier_ids` : ids explicites.
+    - `item_cote` (+ `item_fonds_cote` pour désambiguïsation).
+    - `collection_cote` (+ `collection_fonds_cote` si la cote est
+      partagée) : items rattachés à la collection via la junction
+      N-N `item_collection`.
+    - `fonds_cote` : tous les items du fonds.
+    """
+    base_stmt = (
+        select(Fichier, Item, Fonds)
+        .join(Item, Fichier.item_id == Item.id)
+        .join(Fonds, Item.fonds_id == Fonds.id)
+        .where(Fichier.etat == EtatFichier.ACTIF.value)
+    )
+
     if fichier_ids is not None:
-        stmt = (
-            select(Fichier, Item, Collection)
-            .join(Item, Fichier.item_id == Item.id)
-            .join(Collection, Item.collection_id == Collection.id)
-            .where(Fichier.id.in_(fichier_ids))
-            .where(Fichier.etat == EtatFichier.ACTIF.value)
-            .order_by(Fichier.id)
-        )
+        stmt = base_stmt.where(Fichier.id.in_(fichier_ids)).order_by(Fichier.id)
         return list(session.execute(stmt).all())
 
     if item_cote is not None:
-        stmt = (
-            select(Fichier, Item, Collection)
-            .join(Item, Fichier.item_id == Item.id)
-            .join(Collection, Item.collection_id == Collection.id)
-            .where(Item.cote == item_cote)
-            .where(Fichier.etat == EtatFichier.ACTIF.value)
-            .order_by(Fichier.ordre, Fichier.id)
+        stmt = base_stmt.where(Item.cote == item_cote)
+        if item_fonds_cote is not None:
+            stmt = stmt.where(Fonds.cote == item_fonds_cote)
+        return list(
+            session.execute(stmt.order_by(Fichier.ordre, Fichier.id)).all()
         )
-        return list(session.execute(stmt).all())
 
     if collection_cote is not None:
-        col = session.scalar(
-            select(Collection).where(Collection.cote_collection == collection_cote)
+        # Imports locaux pour éviter une dépendance circulaire potentielle
+        # avec les services (qui chargent renamer indirectement via cli.py).
+        from archives_tool.api.services.collections import (
+            CollectionIntrouvable,
+            lire_collection_par_cote,
         )
-        if col is None:
-            raise ValueError(f"Collection {collection_cote!r} introuvable.")
-        ids = col.ids_descendants() if recursif else [col.id]
-        stmt = (
-            select(Fichier, Item, Collection)
-            .join(Item, Fichier.item_id == Item.id)
-            .join(Collection, Item.collection_id == Collection.id)
-            .where(Item.collection_id.in_(ids))
-            .where(Fichier.etat == EtatFichier.ACTIF.value)
-            .order_by(Item.cote, Fichier.ordre, Fichier.id)
+        from archives_tool.api.services.fonds import (
+            FondsIntrouvable,
+            lire_fonds_par_cote,
+        )
+
+        fonds_id_filtre = None
+        if collection_fonds_cote is not None:
+            try:
+                fonds_id_filtre = lire_fonds_par_cote(
+                    session, collection_fonds_cote
+                ).id
+            except FondsIntrouvable as e:
+                raise ValueError(str(e)) from e
+        try:
+            col = lire_collection_par_cote(
+                session, collection_cote, fonds_id=fonds_id_filtre
+            )
+        except CollectionIntrouvable as e:
+            raise ValueError(str(e)) from e
+
+        stmt = base_stmt.where(
+            Item.id.in_(
+                select(ItemCollection.item_id).where(
+                    ItemCollection.collection_id == col.id
+                )
+            )
+        ).order_by(Item.cote, Fichier.ordre, Fichier.id)
+        return list(session.execute(stmt).all())
+
+    if fonds_cote is not None:
+        stmt = base_stmt.where(Fonds.cote == fonds_cote).order_by(
+            Item.cote, Fichier.ordre, Fichier.id
         )
         return list(session.execute(stmt).all())
 
     raise ValueError(
-        "Aucun périmètre fourni : précisez collection_cote, item_cote ou fichier_ids."
+        "Aucun périmètre fourni : précisez fonds_cote, collection_cote, "
+        "item_cote ou fichier_ids."
     )
 
 
@@ -126,10 +167,12 @@ def construire_plan(
     *,
     template: str,
     racines: Mapping[str, Path],
+    fonds_cote: str | None = None,
     collection_cote: str | None = None,
+    collection_fonds_cote: str | None = None,
     item_cote: str | None = None,
+    item_fonds_cote: str | None = None,
     fichier_ids: list[int] | None = None,
-    recursif: bool = False,
 ) -> RapportPlan:
     """Construit le plan de renommage et signale les conflits.
 
@@ -143,16 +186,18 @@ def construire_plan(
 
     lignes = _selectionner_fichiers(
         session,
+        fonds_cote=fonds_cote,
         collection_cote=collection_cote,
+        collection_fonds_cote=collection_fonds_cote,
         item_cote=item_cote,
+        item_fonds_cote=item_fonds_cote,
         fichier_ids=fichier_ids,
-        recursif=recursif,
     )
 
     operations: list[OperationRenommage] = []
-    for fichier, item, collection in lignes:
+    for fichier, item, fonds in lignes:
         try:
-            cible_brute = evaluer_template(template, fichier, item, collection)
+            cible_brute = evaluer_template(template, fichier, item, fonds)
         except EchecTemplate as e:
             op = OperationRenommage(
                 fichier_id=fichier.id,

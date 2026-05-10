@@ -36,7 +36,6 @@ from archives_tool.models import Base, Fonds, Item, ItemCollection
 collect_ignore = [
     "test_cli_deriver.py",
     "test_cli_importer.py",
-    "test_cli_renommer.py",
     "test_collaborateurs.py",
     "test_collection_routes.py",
     "test_collection_services.py",
@@ -49,10 +48,6 @@ collect_ignore = [
     "test_preferences.py",
     "test_profils_generateur.py",
     "test_rapport_export.py",
-    "test_renamer_annulation.py",
-    "test_renamer_execution.py",
-    "test_renamer_plan.py",
-    "test_renamer_template.py",
     "test_roundtrip.py",
 ]
 

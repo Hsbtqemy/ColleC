@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 
 from archives_tool.files.paths import normaliser_nfc, valider_chemin_relatif
-from archives_tool.models import Collection, Fichier, Item
+from archives_tool.models import Collection, Fichier, Fonds, Item
 
 
 class EchecTemplate(ValueError):
@@ -18,12 +18,24 @@ class EchecTemplate(ValueError):
 
 
 def _construire_variables(
-    fichier: Fichier, item: Item, collection: Collection | None
+    fichier: Fichier,
+    item: Item,
+    fonds: Fonds,
+    collection: Collection | None,
 ) -> dict[str, object]:
+    """Variables disponibles dans le template.
+
+    Toujours présentes : champs Item + Fichier + Fonds (`cote_fonds`,
+    `titre_fonds`). Si une `Collection` est passée (ex. miroir du
+    fonds, ou une libre choisie comme contexte), ses champs sont
+    également exposés.
+    """
     p = PurePosixPath(fichier.nom_fichier)
     ext = p.suffix.lstrip(".").lower()
     variables: dict[str, object] = {
         "cote": item.cote,
+        "cote_fonds": fonds.cote,
+        "titre_fonds": fonds.titre,
         "numero": item.numero,
         "titre": item.titre,
         "date": item.date,
@@ -38,7 +50,7 @@ def _construire_variables(
         "ext_majuscule": ext.upper(),
     }
     if collection is not None:
-        variables["cote_collection"] = collection.cote_collection
+        variables["cote_collection"] = collection.cote
         variables["titre_collection"] = collection.titre
     return {k: ("" if v is None else v) for k, v in variables.items()}
 
@@ -47,6 +59,7 @@ def evaluer_template(
     template: str,
     fichier: Fichier,
     item: Item,
+    fonds: Fonds | None = None,
     collection: Collection | None = None,
 ) -> str:
     """Évalue le template et retourne un chemin relatif POSIX/NFC.
@@ -58,7 +71,10 @@ def evaluer_template(
     if not template.strip():
         raise EchecTemplate("Template vide.")
 
-    variables = _construire_variables(fichier, item, collection)
+    # `fonds` peut être déduit de `item.fonds` (relation N-1) si non
+    # fourni — facilite l'usage en tests sans charger le fonds en amont.
+    fonds_eff = fonds if fonds is not None else item.fonds
+    variables = _construire_variables(fichier, item, fonds_eff, collection)
     try:
         rendu = template.format_map(variables)
     except KeyError as e:

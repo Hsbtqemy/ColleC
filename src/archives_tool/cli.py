@@ -785,17 +785,31 @@ def cmd_renommer_appliquer(
         "--template",
         help='Template au format Python (ex. "{cote}-{ordre:02d}.{ext}").',
     ),
-    collection: str = typer.Option(None, "--collection"),
-    item: str = typer.Option(
-        None, "--item", help="Cote de l'item à cibler (alternative à --collection)."
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help=(
+            "Cote du fonds. Avec --collection ou --item : désambiguïse "
+            "la cote partagée. Seul : renomme tous les fichiers du fonds."
+        ),
+    ),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help="Cote de la collection à cibler.",
+    ),
+    item: str | None = typer.Option(
+        None,
+        "--item",
+        "-i",
+        help="Cote de l'item à cibler.",
     ),
     fichier_id: list[int] = typer.Option(
         None,
         "--fichier-id",
         help="ID(s) de fichier à cibler (option répétable).",
-    ),
-    recursif: bool = typer.Option(
-        False, "--recursif/--non-recursif", help="Inclure les sous-collections."
     ),
     dry_run: bool = typer.Option(
         True,
@@ -810,45 +824,68 @@ def cmd_renommer_appliquer(
     limite: int = typer.Option(
         50, "--limite", help="Lignes max affichées (0 = illimité)."
     ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
     config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
 ) -> None:
-    """Construire un plan de renommage et l'appliquer (dry-run par défaut)."""
+    """Construire un plan de renommage et l'appliquer (dry-run par défaut).
+
+    Périmètre : exactement un de --fonds (seul), --collection,
+    --item, ou --fichier-id (multiple). Pour les cotes de collection
+    ou d'item partagées entre fonds, --fonds peut accompagner
+    --collection ou --item pour désambiguïser.
+    """
+    cibles = sum(
+        [
+            collection is not None,
+            item is not None,
+            bool(fichier_id),
+            fonds is not None and collection is None and item is None,
+        ]
+    )
+    if cibles != 1:
+        typer.echo(
+            "Erreur : exactement un de --fonds (seul), --collection, "
+            "--item ou --fichier-id est requis.",
+            err=True,
+        )
+        raise typer.Exit(2)
+
     config = _charger_config_ou_sortie(config_path)
     nom = utilisateur if utilisateur is not None else config.utilisateur
     racines = dict(config.racines)
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    try:
-        with factory() as session:
+    with _ouvrir_session_existante(db_path) as session:
+        try:
             plan = construire_plan(
                 session,
                 template=template,
                 racines=racines,
+                fonds_cote=fonds if collection is None and item is None and not fichier_id else None,
                 collection_cote=collection,
+                collection_fonds_cote=fonds if collection is not None else None,
                 item_cote=item,
+                item_fonds_cote=fonds if item is not None else None,
                 fichier_ids=list(fichier_id) if fichier_id else None,
-                recursif=recursif,
             )
-            afficher_plan(plan, limite=limite)
-            if not plan.applicable:
-                raise typer.Exit(1)
-            if plan.nb_renommages == 0:
-                raise typer.Exit(0)
+        except ValueError as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
 
-            rap = executer_plan(
-                session,
-                plan,
-                racines=racines,
-                dry_run=dry_run,
-                execute_par=nom,
-            )
-            afficher_execution(rap)
-            raise typer.Exit(1 if rap.erreurs else 0)
-    except ValueError as e:
-        typer.echo(f"Erreur : {e}", err=True)
-        raise typer.Exit(2) from None
+        afficher_plan(plan, limite=limite)
+        if not plan.applicable:
+            raise typer.Exit(1)
+        if plan.nb_renommages == 0:
+            raise typer.Exit(0)
+
+        rap = executer_plan(
+            session,
+            plan,
+            racines=racines,
+            dry_run=dry_run,
+            execute_par=nom,
+        )
+        afficher_execution(rap)
+        raise typer.Exit(1 if rap.erreurs else 0)
 
 
 @renommer.command("annuler")

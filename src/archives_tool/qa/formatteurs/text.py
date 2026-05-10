@@ -6,21 +6,19 @@ from io import StringIO
 
 from rich.console import Console
 
+from archives_tool.affichage.console import THEME
 from archives_tool.qa._commun import (
     RapportQa,
     ResultatControle,
     Severite,
 )
 
-# Mapping sévérité → (symbole, style Rich) ; le style est repris du
-# THEME global d'archives_tool.affichage.console.
-_SYMBOLES: dict[tuple[Severite, bool], tuple[str, str]] = {
-    (Severite.ERREUR, False): ("✗", "erreur"),
-    (Severite.ERREUR, True): ("✓", "succes"),
-    (Severite.AVERTISSEMENT, False): ("⚠", "avertissement"),
-    (Severite.AVERTISSEMENT, True): ("✓", "succes"),
-    (Severite.INFO, False): ("⚠", "avertissement"),
-    (Severite.INFO, True): ("✓", "succes"),
+# Symbole et style par sévérité quand un contrôle ne passe pas.
+# Quand il passe, on émet ✓ en `succes` quelle que soit la sévérité.
+_STYLE_PAR_SEVERITE: dict[Severite, tuple[str, str]] = {
+    Severite.ERREUR: ("✗", "erreur"),
+    Severite.AVERTISSEMENT: ("⚠", "avertissement"),
+    Severite.INFO: ("⚠", "avertissement"),
 }
 
 _LIBELLES_FAMILLE: dict[str, str] = {
@@ -33,7 +31,10 @@ _LIBELLES_FAMILLE: dict[str, str] = {
 
 def _ligne_controle(ctrl: ResultatControle) -> str:
     """Une ligne par contrôle avec symbole, id, libellé et compteurs."""
-    symbole, style = _SYMBOLES[(ctrl.severite, ctrl.passe)]
+    if ctrl.passe:
+        symbole, style = "✓", "succes"
+    else:
+        symbole, style = _STYLE_PAR_SEVERITE[ctrl.severite]
     statut = (
         f"{ctrl.compte_total - ctrl.compte_problemes}/{ctrl.compte_total} OK"
         if ctrl.compte_total
@@ -51,11 +52,16 @@ def formatter_rapport_text(rapport: RapportQa, *, max_exemples: int = 5) -> str:
     Couleurs émises uniquement si la sortie est un TTY (Rich gère
     automatiquement la dégradation pour les pipes / fichiers)."""
     buf = StringIO()
-    console = Console(file=buf, force_terminal=False, width=100)
+    # `theme=THEME` : sans lui, les styles `succes`/`avertissement`/
+    # `erreur` du markup seraient silencieusement ignorés.
+    console = Console(file=buf, theme=THEME, force_terminal=False, width=100)
 
     p = rapport.perimetre
+    # Les compteurs décrivent toujours la base entière (`composer_perimetre`).
+    # On le précise explicitement pour ne pas laisser croire qu'ils
+    # sont scopés au périmètre.
     console.print(
-        f"[bold]Contrôle qa[/bold] — {p.fonds_count} fonds, "
+        f"[bold]Contrôle qa[/bold] — base : {p.fonds_count} fonds, "
         f"{p.collections_count} collections, {p.items_count} items, "
         f"{p.fichiers_count} fichiers"
     )

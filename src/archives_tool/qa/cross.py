@@ -17,7 +17,7 @@ from archives_tool.qa._commun import (
     PerimetreControle,
     ResultatControle,
     Severite,
-    borner_exemples,
+    construire_resultat,
 )
 
 FAMILLE = "cross"
@@ -29,8 +29,7 @@ def controler_cross_cote_dupliquee_fonds(
     """CROSS-COTE-DUPLIQUEE-FONDS : deux fonds avec la même cote.
 
     L'index UNIQUE sur Fonds.cote rend ce cas impossible via API ; ce
-    contrôle est un filet pour les bases manipulées hors API. Toujours
-    sur la base entière (l'unicité est globale)."""
+    contrôle est un filet pour les bases manipulées hors API."""
     rows = db.execute(
         select(Fonds.cote, func.count(Fonds.id).label("nb"))
         .group_by(Fonds.cote)
@@ -45,25 +44,20 @@ def controler_cross_cote_dupliquee_fonds(
         )
         for cote, nb in rows
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="CROSS-COTE-DUPLIQUEE-FONDS",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Cotes de fonds uniques globalement",
-        passe=not problemes,
-        compte_total=nb_fonds,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=nb_fonds,
+        problemes=problemes,
     )
 
 
 def controler_cross_fonds_vide(
     db: Session, perimetre: PerimetreControle
 ) -> ResultatControle:
-    """CROSS-FONDS-VIDE : fonds sans aucun item (info).
-
-    Cas légitime (fonds en cours d'import, fonds réservé à l'avance)
-    mais signalé pour information."""
+    """CROSS-FONDS-VIDE : fonds sans aucun item (info)."""
     rows = db.execute(
         select(Fonds.id, Fonds.cote, func.count(Item.id).label("nb"))
         .outerjoin(Item, Item.fonds_id == Fonds.id)
@@ -78,13 +72,11 @@ def controler_cross_fonds_vide(
         for fid, cote, nb in rows
         if nb == 0
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="CROSS-FONDS-VIDE",
         famille=FAMILLE,
         severite=Severite.INFO,
         libelle="Fonds peuplé d'au moins un item",
-        passe=not problemes,
-        compte_total=len(rows),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(rows),
+        problemes=problemes,
     )

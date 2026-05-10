@@ -23,7 +23,7 @@ from archives_tool.qa._commun import (
     PerimetreControle,
     ResultatControle,
     Severite,
-    borner_exemples,
+    construire_resultat,
 )
 
 FAMILLE = "invariants"
@@ -66,15 +66,13 @@ def controler_inv1_miroir_unique(
         problemes.append(
             Exemple(message=msg, references={"fonds_cote": cote, "fonds_id": fonds_id})
         )
-    return ResultatControle(
+    return construire_resultat(
         id="INV1",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Collection miroir unique par fonds",
-        passe=not problemes,
-        compte_total=len(rows),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(rows),
+        problemes=problemes,
     )
 
 
@@ -106,15 +104,13 @@ def controler_inv2_miroir_avec_fonds(
         )
         for cid, cote in rows
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="INV2",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Collection miroir avec fonds parent",
-        passe=not problemes,
-        compte_total=nb_miroirs,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=nb_miroirs,
+        problemes=problemes,
     )
 
 
@@ -135,15 +131,13 @@ def controler_inv4_item_avec_fonds(
         )
         for iid, cote in rows
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="INV4",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Item rattaché à un fonds",
-        passe=not problemes,
-        compte_total=perimetre.items_count,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=perimetre.items_count,
+        problemes=problemes,
     )
 
 
@@ -172,11 +166,19 @@ def controler_inv6_item_dans_miroir(
         items_stmt = items_stmt.where(Item.fonds_id == perimetre.fonds_id)
     items = db.execute(items_stmt).all()
 
-    liaisons = set(
-        db.execute(
-            select(ItemCollection.item_id, ItemCollection.collection_id)
-        ).all()
+    # Restreindre la junction aux miroirs visées : si le périmètre
+    # cible un fonds, on ne charge que la junction des miroirs concernées
+    # — économise mémoire et IO sur grosse base.
+    miroir_ids_relevants = (
+        {miroirs_par_fonds[perimetre.fonds_id]}
+        if perimetre.fonds_id is not None
+        and perimetre.fonds_id in miroirs_par_fonds
+        else set(miroirs_par_fonds.values())
     )
+    liaisons_stmt = select(ItemCollection.item_id, ItemCollection.collection_id).where(
+        ItemCollection.collection_id.in_(miroir_ids_relevants)
+    )
+    liaisons = set(db.execute(liaisons_stmt).all())
 
     problemes: list[Exemple] = []
     for iid, item_cote, fonds_id, fc in items:
@@ -197,13 +199,11 @@ def controler_inv6_item_dans_miroir(
                 )
             )
 
-    return ResultatControle(
+    return construire_resultat(
         id="INV6",
         famille=FAMILLE,
         severite=Severite.AVERTISSEMENT,
         libelle="Item dans la collection miroir de son fonds",
-        passe=not problemes,
-        compte_total=len(items),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(items),
+        problemes=problemes,
     )

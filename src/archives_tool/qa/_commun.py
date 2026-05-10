@@ -12,11 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+from sqlalchemy import select
 
-class Severite(str, enum.Enum):
+from archives_tool.models import Item, ItemCollection
+
+
+class Severite(enum.StrEnum):
     """Gravité d'un contrôle qui ne passe pas.
 
     L'ordre de déclaration sert au tri des rapports (erreurs d'abord).
+    `StrEnum` (Python 3.11+) : les membres sont des `str` natifs, donc
+    sérialisables JSON sans handler custom.
     """
 
     ERREUR = "erreur"
@@ -53,7 +59,12 @@ class ResultatControle:
 
 @dataclass(frozen=True)
 class PerimetreControle:
-    """Périmètre du contrôle + compteurs globaux pour le bandeau de tête."""
+    """Périmètre du contrôle + compteurs globaux pour le bandeau de tête.
+
+    Les compteurs sont **toujours globaux** (décrivent la base entière)
+    quel que soit le périmètre : ce sont les contrôles qui filtrent
+    selon `fonds_id` / `collection_id`.
+    """
 
     type: Literal["base_complete", "fonds", "collection"]
     fonds_id: int | None
@@ -102,3 +113,82 @@ def borner_exemples(
     """Convertit la liste mutable construite par les contrôles en tuple
     figé, en bornant la taille."""
     return tuple(exemples[:max_exemples])
+
+
+def construire_resultat(
+    *,
+    id: str,
+    famille: str,
+    severite: Severite,
+    libelle: str,
+    total: int,
+    problemes: list[Exemple],
+    compte_problemes: int | None = None,
+) -> ResultatControle:
+    """Assemble un `ResultatControle` à partir des conventions usuelles :
+
+    - `passe = not problemes`
+    - `compte_problemes = len(problemes)` (override possible si un
+      contrôle compte différemment, ex. FILE-HASH-DUPLIQUE qui compte
+      les fichiers concernés, pas les groupes)
+    - `exemples` bornés à `MAX_EXEMPLES_DEFAUT`
+    """
+    return ResultatControle(
+        id=id,
+        famille=famille,
+        severite=severite,
+        libelle=libelle,
+        passe=not problemes,
+        compte_total=total,
+        compte_problemes=compte_problemes if compte_problemes is not None else len(problemes),
+        exemples=borner_exemples(problemes),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Filtrage par périmètre — partagé par les 4 familles de contrôles
+# ---------------------------------------------------------------------------
+
+
+def restreindre_aux_items(stmt, perimetre: PerimetreControle):
+    """Restreint un `select(Item.…)` au périmètre.
+
+    - fonds : `Item.fonds_id == perimetre.fonds_id`.
+    - collection : `Item.id IN itemcollection(collection_id)`.
+    - base : pas de filtre.
+    """
+    if perimetre.fonds_id is not None:
+        return stmt.where(Item.fonds_id == perimetre.fonds_id)
+    if perimetre.collection_id is not None:
+        return stmt.where(
+            Item.id.in_(
+                select(ItemCollection.item_id).where(
+                    ItemCollection.collection_id == perimetre.collection_id
+                )
+            )
+        )
+    return stmt
+
+
+def restreindre_aux_fichiers(stmt, perimetre: PerimetreControle):
+    """Restreint un `select(Fichier.…)` aux fichiers des items du périmètre.
+
+    Utilise `Fichier.item_id IN (items du périmètre)` — pas de JOIN, pour
+    rester compatible avec les SELECT agrégés et préserver le `GROUP BY`."""
+    from archives_tool.models import Fichier  # noqa: PLC0415 — évite cycle
+
+    if perimetre.fonds_id is not None:
+        return stmt.where(
+            Fichier.item_id.in_(
+                select(Item.id).where(Item.fonds_id == perimetre.fonds_id)
+            )
+        )
+    if perimetre.collection_id is not None:
+        return stmt.where(
+            Fichier.item_id.in_(
+                select(ItemCollection.item_id).where(
+                    ItemCollection.collection_id == perimetre.collection_id
+                )
+            )
+        )
+    return stmt

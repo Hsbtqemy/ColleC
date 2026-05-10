@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 from pathlib import Path
 
 import typer
@@ -518,6 +519,14 @@ def cmd_montrer_collections(
 # ---------------------------------------------------------------------------
 
 
+class _FormatRapport(str, enum.Enum):
+    """Formats de sortie de `archives-tool controler`. Typer reconnaît
+    les `Enum(str, ...)` et génère un Choice automatiquement."""
+
+    TEXT = "text"
+    JSON = "json"
+
+
 @app.command("controler")
 def cmd_controler(
     fonds: str | None = typer.Option(
@@ -532,10 +541,10 @@ def cmd_controler(
         "-c",
         help="Cote de la collection à contrôler (sinon : base entière).",
     ),
-    format_sortie: str = typer.Option(
-        "text",
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT,
         "--format",
-        help="Format de sortie : 'text' (lisible) ou 'json' (CI).",
+        help="Format de sortie.",
     ),
     strict: bool = typer.Option(
         False,
@@ -564,19 +573,13 @@ def cmd_controler(
             err=True,
         )
         raise typer.Exit(2)
-    if format_sortie not in ("text", "json"):
-        typer.echo(
-            f"Erreur : format {format_sortie!r} inconnu (attendu : text ou json).",
-            err=True,
-        )
-        raise typer.Exit(2)
 
     racines: dict[str, Path] = {}
     try:
         config = charger_config(config_path)
         racines = dict(config.racines)
     except FileNotFoundError:
-        if format_sortie == "text":
+        if format_sortie is _FormatRapport.TEXT:
             typer.echo(
                 f"Config absente ({config_path}) : "
                 "FILE-MISSING signalera les racines non configurées.",
@@ -609,7 +612,7 @@ def cmd_controler(
         )
         rapport = executer_controles(session, perimetre, racines=racines)
 
-    if format_sortie == "json":
+    if format_sortie is _FormatRapport.JSON:
         typer.echo(formatter_rapport_json(rapport))
     else:
         typer.echo(formatter_rapport_text(rapport, max_exemples=max_exemples))

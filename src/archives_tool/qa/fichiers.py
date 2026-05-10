@@ -25,33 +25,11 @@ from archives_tool.qa._commun import (
     ResultatControle,
     Severite,
     borner_exemples,
+    construire_resultat,
+    restreindre_aux_fichiers,
 )
 
 FAMILLE = "fichiers"
-
-
-def _filtrer_par_perimetre(stmt, perimetre: PerimetreControle):
-    """Restreint une requête sur Fichier au périmètre donné.
-
-    - fonds : items du fonds → fichiers de ces items.
-    - collection : items liés à la collection → fichiers.
-    - base : pas de filtre.
-    """
-    if perimetre.fonds_id is not None:
-        stmt = stmt.where(
-            Fichier.item_id.in_(
-                select(Item.id).where(Item.fonds_id == perimetre.fonds_id)
-            )
-        )
-    elif perimetre.collection_id is not None:
-        stmt = stmt.where(
-            Fichier.item_id.in_(
-                select(ItemCollection.item_id).where(
-                    ItemCollection.collection_id == perimetre.collection_id
-                )
-            )
-        )
-    return stmt
 
 
 def controler_file_missing(
@@ -67,24 +45,18 @@ def controler_file_missing(
     None, on remonte juste un avertissement de configuration.
     """
     racines = racines or {}
-    stmt = (
-        _filtrer_par_perimetre(
-            select(Fichier.id, Fichier.racine, Fichier.chemin_relatif).where(
-                Fichier.etat == EtatFichier.ACTIF.value,
-                Fichier.chemin_relatif.is_not(None),
-            ),
-            perimetre,
-        )
-        .order_by(Fichier.racine, Fichier.chemin_relatif)
-    )
+    stmt = restreindre_aux_fichiers(
+        select(Fichier.id, Fichier.racine, Fichier.chemin_relatif).where(
+            Fichier.etat == EtatFichier.ACTIF.value,
+            Fichier.chemin_relatif.is_not(None),
+        ),
+        perimetre,
+    ).order_by(Fichier.racine, Fichier.chemin_relatif)
     rows = db.execute(stmt).all()
 
     problemes: list[Exemple] = []
-    racines_inconnues: set[str] = set()
     for fid, racine, chemin_rel in rows:
         if racine not in racines:
-            if racine and racine not in racines_inconnues:
-                racines_inconnues.add(racine)
             problemes.append(
                 Exemple(
                     message=f"Racine {racine!r} non configurée pour {chemin_rel}",
@@ -114,15 +86,13 @@ def controler_file_missing(
                 )
             )
 
-    return ResultatControle(
+    return construire_resultat(
         id="FILE-MISSING",
         famille=FAMILLE,
         severite=Severite.AVERTISSEMENT,
         libelle="Fichier référencé en base mais absent du disque",
-        passe=not problemes,
-        compte_total=len(rows),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(rows),
+        problemes=problemes,
     )
 
 
@@ -146,7 +116,7 @@ def controler_file_item_vide(
     item_ids_avec_fichiers = {
         iid
         for (iid,) in db.execute(
-            _filtrer_par_perimetre(
+            restreindre_aux_fichiers(
                 select(Fichier.item_id)
                 .where(Fichier.etat == EtatFichier.ACTIF.value)
                 .distinct(),
@@ -163,15 +133,13 @@ def controler_file_item_vide(
         for iid, cote in items
         if iid not in item_ids_avec_fichiers
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="FILE-ITEM-VIDE",
         famille=FAMILLE,
         severite=Severite.INFO,
         libelle="Item avec au moins un fichier",
-        passe=not problemes,
-        compte_total=len(items),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(items),
+        problemes=problemes,
     )
 
 
@@ -184,7 +152,7 @@ def controler_file_hash_duplique(
     Agrégation SQL — pas de boucle Python sur tous les fichiers.
     """
     stmt = (
-        _filtrer_par_perimetre(
+        restreindre_aux_fichiers(
             select(
                 Fichier.hash_sha256,
                 func.count(Fichier.id).label("nb"),
@@ -201,7 +169,7 @@ def controler_file_hash_duplique(
     duplicats = db.execute(stmt).all()
     nb_total = (
         db.scalar(
-            _filtrer_par_perimetre(
+            restreindre_aux_fichiers(
                 select(func.count(Fichier.id)).where(
                     Fichier.etat == EtatFichier.ACTIF.value,
                     Fichier.hash_sha256.is_not(None),
@@ -229,6 +197,8 @@ def controler_file_hash_duplique(
             )
         )
 
+    # Compte particulier : on remonte le total des fichiers concernés
+    # par les groupes de doublons (pas le nombre de groupes).
     return ResultatControle(
         id="FILE-HASH-DUPLIQUE",
         famille=FAMILLE,
@@ -249,7 +219,7 @@ def controler_file_hash_manquant(
     Attendu sur la base demo (fichiers fictifs). Sur une base réelle,
     c'est un signal d'import incomplet.
     """
-    stmt = _filtrer_par_perimetre(
+    stmt = restreindre_aux_fichiers(
         select(Fichier.id, Fichier.racine, Fichier.chemin_relatif).where(
             Fichier.etat == EtatFichier.ACTIF.value,
             Fichier.hash_sha256.is_(None),
@@ -264,13 +234,11 @@ def controler_file_hash_manquant(
         )
         for fid, racine, chemin_rel in rows
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="FILE-HASH-MANQUANT",
         famille=FAMILLE,
         severite=Severite.INFO,
         libelle="Fichier avec hash SHA-256 calculé",
-        passe=not problemes,
-        compte_total=perimetre.fichiers_count,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=perimetre.fichiers_count,
+        problemes=problemes,
     )

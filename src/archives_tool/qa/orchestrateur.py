@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -46,8 +47,8 @@ from archives_tool.qa.metadonnees import (
 VERSION_QA = "0.9.0"
 
 # Type d'un contrôle qa : (db, perimetre) → ResultatControle.
-# Certains contrôles acceptent des kwargs (racines, plages d'année) ;
-# `executer_controles` les passe via une closure quand fournis.
+# Les contrôles avec configuration spécifique (ex. racines) sont liés
+# via `functools.partial` au moment d'exécuter la suite.
 ControleSimple = Callable[[Session, PerimetreControle], ResultatControle]
 
 
@@ -81,15 +82,14 @@ def composer_perimetre(
     décrivent la base, pas la portion contrôlée. Les contrôles eux
     filtrent par `perimetre.fonds_id` / `collection_id`.
     """
+    if fonds_id is not None and collection_id is not None:
+        raise ValueError("fonds_id et collection_id sont mutuellement exclusifs.")
+
     nb_fonds = db.scalar(select(func.count(Fonds.id))) or 0
     nb_collections = db.scalar(select(func.count(Collection.id))) or 0
     nb_items = db.scalar(select(func.count(Item.id))) or 0
     nb_fichiers = db.scalar(select(func.count(Fichier.id))) or 0
 
-    if fonds_id is not None and collection_id is not None:
-        raise ValueError(
-            "fonds_id et collection_id sont mutuellement exclusifs."
-        )
     type_perimetre = (
         "fonds"
         if fonds_id is not None
@@ -117,19 +117,19 @@ def executer_controles(
 ) -> RapportQa:
     """Exécute la suite de contrôles sur le périmètre donné.
 
-    `racines` est passé à `controler_file_missing` quand fourni — sinon
-    le contrôle remonte les fichiers comme « racine non configurée ».
+    `racines` est lié à `controler_file_missing` via `functools.partial` —
+    la signature uniforme `(db, perimetre)` reste préservée pour le reste
+    de la suite.
     """
     suite = controles or CONTROLES_DISPONIBLES
-    resultats: list[ResultatControle] = []
-    for ctrl in suite:
-        if ctrl is controler_file_missing:
-            resultats.append(ctrl(db, perimetre, racines=racines))  # type: ignore[call-arg]
-        else:
-            resultats.append(ctrl(db, perimetre))
+    suite = tuple(
+        partial(ctrl, racines=racines) if ctrl is controler_file_missing else ctrl
+        for ctrl in suite
+    )
+    resultats = tuple(ctrl(db, perimetre) for ctrl in suite)
     return RapportQa(
         version_qa=VERSION_QA,
         horodatage=datetime.now(timezone.utc),
         perimetre=perimetre,
-        controles=tuple(resultats),
+        controles=resultats,
     )

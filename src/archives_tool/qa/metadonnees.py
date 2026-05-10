@@ -12,14 +12,15 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from archives_tool.api.services._erreurs import PATTERN_COTE
-from archives_tool.models import Collection, Fonds, Item, ItemCollection
+from archives_tool.api.services._erreurs import PATTERN_COTE, chaine_ou_none
+from archives_tool.models import Collection, Fonds, Item
 from archives_tool.qa._commun import (
     Exemple,
     PerimetreControle,
     ResultatControle,
     Severite,
-    borner_exemples,
+    construire_resultat,
+    restreindre_aux_items,
 )
 
 FAMILLE = "metadonnees"
@@ -44,58 +45,55 @@ ANNEE_MAX_DEFAUT = 2100
 
 
 def _items_filtres(perimetre: PerimetreControle):
-    stmt = select(Item.id, Item.cote, Item.titre, Item.date, Item.annee)
+    """Items du périmètre, projection commune (id, cote, titre, date, annee)."""
+    return restreindre_aux_items(
+        select(Item.id, Item.cote, Item.titre, Item.date, Item.annee), perimetre
+    ).order_by(Item.cote)
+
+
+def _collections_filtrees(perimetre: PerimetreControle):
+    stmt = select(Collection.id, Collection.cote, Collection.titre)
     if perimetre.fonds_id is not None:
-        stmt = stmt.where(Item.fonds_id == perimetre.fonds_id)
+        stmt = stmt.where(Collection.fonds_id == perimetre.fonds_id)
     elif perimetre.collection_id is not None:
-        stmt = stmt.where(
-            Item.id.in_(
-                select(ItemCollection.item_id).where(
-                    ItemCollection.collection_id == perimetre.collection_id
-                )
-            )
-        )
-    return stmt.order_by(Item.cote)
+        stmt = stmt.where(Collection.id == perimetre.collection_id)
+    return stmt
+
+
+def _fonds_filtres(perimetre: PerimetreControle):
+    """Fonds inclus dans le périmètre — vide si périmètre = collection
+    (la collection peut être transversale, pas de fonds défini)."""
+    if perimetre.collection_id is not None:
+        return None
+    stmt = select(Fonds.id, Fonds.cote, Fonds.titre)
+    if perimetre.fonds_id is not None:
+        stmt = stmt.where(Fonds.id == perimetre.fonds_id)
+    return stmt
 
 
 def controler_meta_cote_invalide(
     db: Session, perimetre: PerimetreControle
 ) -> ResultatControle:
-    """META-COTE-INVALIDE : fonds/collection/item dont la cote ne
-    respecte pas le pattern alphanumérique + tirets/underscores."""
-    fonds_rows: list = []
-    if perimetre.fonds_id is None and perimetre.collection_id is None:
-        fonds_rows = list(db.execute(select(Fonds.id, Fonds.cote)).all())
-    elif perimetre.fonds_id is not None:
-        fonds_rows = list(
-            db.execute(
-                select(Fonds.id, Fonds.cote).where(Fonds.id == perimetre.fonds_id)
-            ).all()
-        )
-
-    collections_stmt = select(Collection.id, Collection.cote)
-    if perimetre.fonds_id is not None:
-        collections_stmt = collections_stmt.where(
-            Collection.fonds_id == perimetre.fonds_id
-        )
-    elif perimetre.collection_id is not None:
-        collections_stmt = collections_stmt.where(
-            Collection.id == perimetre.collection_id
-        )
-    collections_rows = list(db.execute(collections_stmt).all())
-
-    items_rows = list(db.execute(_items_filtres(perimetre)).all())
-
+    """META-COTE-INVALIDE : cote hors du pattern alphanumérique."""
     problemes: list[Exemple] = []
-    for fid, cote in fonds_rows:
-        if not PATTERN_COTE.match(cote):
-            problemes.append(
-                Exemple(
-                    message=f"Cote de fonds invalide : {cote!r}",
-                    references={"fonds_cote": cote, "fonds_id": fid},
+    total = 0
+
+    fonds_stmt = _fonds_filtres(perimetre)
+    if fonds_stmt is not None:
+        for fid, cote in db.execute(
+            fonds_stmt.with_only_columns(Fonds.id, Fonds.cote)
+        ).all():
+            total += 1
+            if not PATTERN_COTE.match(cote):
+                problemes.append(
+                    Exemple(
+                        message=f"Cote de fonds invalide : {cote!r}",
+                        references={"fonds_cote": cote, "fonds_id": fid},
+                    )
                 )
-            )
-    for cid, cote in collections_rows:
+
+    for cid, cote, _ in db.execute(_collections_filtrees(perimetre)).all():
+        total += 1
         if not PATTERN_COTE.match(cote):
             problemes.append(
                 Exemple(
@@ -103,7 +101,9 @@ def controler_meta_cote_invalide(
                     references={"collection_cote": cote, "collection_id": cid},
                 )
             )
-    for iid, cote, *_ in items_rows:
+
+    for iid, cote, *_ in db.execute(_items_filtres(perimetre)).all():
+        total += 1
         if not PATTERN_COTE.match(cote):
             problemes.append(
                 Exemple(
@@ -111,21 +111,20 @@ def controler_meta_cote_invalide(
                     references={"item_cote": cote, "item_id": iid},
                 )
             )
-    total = len(fonds_rows) + len(collections_rows) + len(items_rows)
-    return ResultatControle(
+    return construire_resultat(
         id="META-COTE-INVALIDE",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Cote conforme au pattern alphanumérique",
-        passe=not problemes,
-        compte_total=total,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=total,
+        problemes=problemes,
     )
 
 
-def _titre_vide(titre: str | None) -> bool:
-    return not titre or not titre.strip()
+def _est_vide(titre: str | None) -> bool:
+    """Réutilise `chaine_ou_none` pour aligner la définition de « vide »
+    avec la validation côté services."""
+    return chaine_ou_none(titre) is None
 
 
 def controler_meta_titre_vide(
@@ -139,12 +138,11 @@ def controler_meta_titre_vide(
     problemes: list[Exemple] = []
     total = 0
 
-    if perimetre.fonds_id is None and perimetre.collection_id is None:
-        for fid, cote, titre in db.execute(
-            select(Fonds.id, Fonds.cote, Fonds.titre)
-        ).all():
+    fonds_stmt = _fonds_filtres(perimetre)
+    if fonds_stmt is not None:
+        for fid, cote, titre in db.execute(fonds_stmt).all():
             total += 1
-            if _titre_vide(titre):
+            if _est_vide(titre):
                 problemes.append(
                     Exemple(
                         message=f"Fonds {cote} sans titre",
@@ -152,14 +150,9 @@ def controler_meta_titre_vide(
                     )
                 )
 
-    cstmt = select(Collection.id, Collection.cote, Collection.titre)
-    if perimetre.fonds_id is not None:
-        cstmt = cstmt.where(Collection.fonds_id == perimetre.fonds_id)
-    elif perimetre.collection_id is not None:
-        cstmt = cstmt.where(Collection.id == perimetre.collection_id)
-    for cid, cote, titre in db.execute(cstmt).all():
+    for cid, cote, titre in db.execute(_collections_filtrees(perimetre)).all():
         total += 1
-        if _titre_vide(titre):
+        if _est_vide(titre):
             problemes.append(
                 Exemple(
                     message=f"Collection {cote} sans titre",
@@ -169,7 +162,7 @@ def controler_meta_titre_vide(
 
     for iid, cote, titre, *_ in db.execute(_items_filtres(perimetre)).all():
         total += 1
-        if _titre_vide(titre):
+        if _est_vide(titre):
             problemes.append(
                 Exemple(
                     message=f"Item {cote} sans titre",
@@ -177,15 +170,13 @@ def controler_meta_titre_vide(
                 )
             )
 
-    return ResultatControle(
+    return construire_resultat(
         id="META-TITRE-VIDE",
         famille=FAMILLE,
         severite=Severite.ERREUR,
         libelle="Titre non vide sur fonds, collection et item",
-        passe=not problemes,
-        compte_total=total,
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=total,
+        problemes=problemes,
     )
 
 
@@ -204,15 +195,13 @@ def controler_meta_date_invalide(
         for iid, cote, date in items_avec_date
         if not _RE_EDTF_TOLERANT.match(date.strip())
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="META-DATE-INVALIDE",
         famille=FAMILLE,
         severite=Severite.AVERTISSEMENT,
         libelle="Date Item respecte la syntaxe EDTF tolérante",
-        passe=not problemes,
-        compte_total=len(items_avec_date),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(items_avec_date),
+        problemes=problemes,
     )
 
 
@@ -235,13 +224,11 @@ def controler_meta_annee_implausible(
         for iid, cote, annee in items_avec_annee
         if annee < annee_min or annee > annee_max
     ]
-    return ResultatControle(
+    return construire_resultat(
         id="META-ANNEE-IMPLAUSIBLE",
         famille=FAMILLE,
         severite=Severite.AVERTISSEMENT,
         libelle=f"Item.annee dans la plage [{annee_min}, {annee_max}]",
-        passe=not problemes,
-        compte_total=len(items_avec_annee),
-        compte_problemes=len(problemes),
-        exemples=borner_exemples(problemes),
+        total=len(items_avec_annee),
+        problemes=problemes,
     )

@@ -81,16 +81,13 @@ archives-tool renommer annuler --batch-id <UUID> --no-dry-run
 archives-tool renommer historique --limite 20
 ```
 
-**Périmètre** : exactement un de `--fonds` (seul, pour renommer
-tout le fonds), `--collection`, `--item`, ou `--fichier-id` (multi).
-`--fonds` peut accompagner `--collection` ou `--item` quand la cote
-est partagée entre fonds (désambiguïsation).
+**Périmètre** : conventions standard à 4 sélecteurs — voir
+[Conventions CLI](index.md#conventions-de-périmètre).
 
-**Codes de sortie** :
-
-- `0` : aucune anomalie ; le plan a été affiché ou exécuté.
-- `1` : plan non applicable (conflits) ou échec à l'exécution.
-- `2` : erreur d'invocation (périmètre absent ou manquant).
+**Codes de sortie** : convention commune
+([guide/cli/index.md#codes-de-sortie](index.md#codes-de-sortie)).
+Spécifique à `renommer` : code `1` est aussi remonté quand le
+plan est non applicable (conflits).
 
 ## Conflits détectés
 

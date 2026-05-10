@@ -26,11 +26,8 @@ mapping facile pour un service web (un préfixe d'URL par taille).
 
 ## CLI
 
-Le périmètre est passé via exactement un de quatre sélecteurs
-(alignés sur `archives-tool renommer`) : `--fonds` (seul), `--collection`,
-`--item`, ou `--fichier-id` (répétable). `--fonds` peut accompagner
-`--collection` ou `--item` pour désambiguïser une cote partagée
-entre fonds.
+Périmètre : conventions standard à 4 sélecteurs — voir
+[Conventions CLI](index.md#conventions-de-périmètre).
 
 ```bash
 # Tous les fichiers d'un fonds.
@@ -55,13 +52,10 @@ archives-tool deriver appliquer --fonds HK --dry-run
 archives-tool deriver nettoyer --fonds HK
 ```
 
-**Codes de sortie** :
-
-- `0` : tous les dérivés générés (ou existants) sans erreur.
-- `1` : au moins une erreur de génération (source absente, format
-  non supporté, fonds/collection introuvable, …).
-- `2` : erreur d'invocation (périmètre absent ou invalide, base
-  introuvable, …).
+**Codes de sortie** : convention commune
+([index.md](index.md#codes-de-sortie)). Spécifique : code `1`
+remonté si au moins une erreur de génération (source absente,
+format non supporté).
 
 ## Effets en base
 

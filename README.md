@@ -12,9 +12,9 @@ Fonds / Collection / Item, interface web pour le travail
 quotidien, CLI pour l'automatisation, exports Dublin Core /
 Nakala / xlsx.
 
-**Statut** : V0.9.0 release candidate. Modèle stable,
-fonctionnalités complètes. La V1.0 marquera la stabilisation
-après usage en production sur plusieurs vrais fonds.
+**Statut** : V0.9.0 stable. Modèle stable, fonctionnalités
+complètes. La V1.0 marquera la stabilisation après usage en
+production sur plusieurs vrais fonds.
 
 ## Démarrage rapide
 

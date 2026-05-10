@@ -1,4 +1,4 @@
-# Importer
+﻿# Importer
 
 L'importer prend un [profil YAML validé](../../reference/profils.md), lit le tableur
 associé, résout les fichiers sur disque, et crée ou met à jour les
@@ -23,18 +23,18 @@ items et fichiers en base.
 
 Quatre modules découpés sous `src/archives_tool/importers/` :
 
-- [`lecteur_tableur.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/lecteur_tableur.py)
+- [`lecteur_tableur.py`]({{ repo_main }}/src/archives_tool/importers/lecteur_tableur.py)
   — lit un CSV/Excel avec pandas en `dtype=str`, normalise strip + NFC,
   convertit les sentinelles de `valeurs_nulles` et les `NaN` en `None`.
-- [`transformateur.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/transformateur.py)
+- [`transformateur.py`]({{ repo_main }}/src/archives_tool/importers/transformateur.py)
   — fonction pure ligne → `ItemPrepare`. Applique les trois formes de
   mapping, les `valeurs_par_defaut`, la décomposition de cote par
   regex et la décomposition de type par séparateur.
-- [`resolveur_fichiers.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/resolveur_fichiers.py)
+- [`resolveur_fichiers.py`]({{ repo_main }}/src/archives_tool/importers/resolveur_fichiers.py)
   — cherche les fichiers sur disque selon `profil.fichiers`. Mode
   template (`{champ}` substitué, résultat utilisé en glob) ou regex
   (liste + filtre par cohérence des groupes nommés avec l'item).
-- [`ecrivain.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/ecrivain.py)
+- [`ecrivain.py`]({{ repo_main }}/src/archives_tool/importers/ecrivain.py)
   — orchestre tout, écrit en base sous transaction, journalise dans
   `OperationImport`. Réutilise les services métier (`creer_fonds`,
   `modifier_collection`, `creer_item`) qui garantissent les

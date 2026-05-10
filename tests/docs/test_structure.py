@@ -30,8 +30,14 @@ FICHIERS_REQUIS = [
     "reference/index.md",
     "reference/exports.md",
     "reference/controles.md",
+    "developpeurs/architecture.md",
+    "developpeurs/modele.md",
+    "developpeurs/services.md",
+    "developpeurs/tests.md",
+    "developpeurs/composants-ui.md",
     "developpeurs/contribuer.md",
     "annexes/changelog.md",
+    "annexes/limites.md",
 ]
 
 

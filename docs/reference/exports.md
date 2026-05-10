@@ -1,4 +1,4 @@
-# Formats d'export
+﻿# Formats d'export
 
 Documentation technique des trois formats produits par
 [`archives-tool exporter`](../guide/cli/exporter.md). Cette page
@@ -47,7 +47,7 @@ Indentation propre. Échappement automatique via
 
 ### Mapping des champs
 
-Source de vérité : [`mapping_dc.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/exporters/mapping_dc.py).
+Source de vérité : [`mapping_dc.py`]({{ repo_main }}/src/archives_tool/exporters/mapping_dc.py).
 
 **Colonnes dédiées de `Item`** :
 
@@ -101,7 +101,7 @@ une ligne d'entête + une ligne par item.
 
 ### Colonnes
 
-Ordre exact (source : [`nakala.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/exporters/nakala.py)) :
+Ordre exact (source : [`nakala.py`]({{ repo_main }}/src/archives_tool/exporters/nakala.py)) :
 
 | #  | Colonne                                | Source ColleC                                  |
 | -- | -------------------------------------- | ---------------------------------------------- |

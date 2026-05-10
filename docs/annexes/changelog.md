@@ -3,38 +3,80 @@
 Les jalons notables. Le détail commit-par-commit est dans
 [l'historique GitHub](https://github.com/Hsbtqemy/ColleC/commits/main).
 
-## V0.9.0 (release candidate)
+## V0.9.0 (stable)
 
 Cycle de refonte majeur. Modèle pivoté autour du triptyque
 **Fonds / Collection / Item** avec multi-appartenance et
-distinction miroir / libre / transversale. Stable, en attente de
-mise en production.
+distinction miroir / libre / transversale. C'est la version qui
+sépare clairement les concepts de fonds (matériel) et de
+collection (regroupement publiable).
 
-- **Modèle** : refonte complète. Fonds (corpus brut), Collection
-  (classement publiable, miroir auto ou libre), Item
-  (multi-appartenance via `ItemCollection`).
-- **Importers v2** : profils YAML avec sections `fonds:` +
-  `collection_miroir:`. Rejet explicite des profils v1 obsolètes.
-- **Exporters refondus** : Dublin Core, Nakala, xlsx, tous par
-  collection. Helper partagé `composer_export`. Notice de tête
-  collection en sortie.
-- **CLI complète** : `archives-tool {importer, exporter, collections,
-  controler, montrer, renommer, deriver, profil, demo}`. Périmètre
-  unifié `--fonds` / `--collection` / `--item` / `--fichier-id`.
-- **Module qa refondu** : 14 contrôles répartis en 4 familles
-  (invariants, fichiers, métadonnées, cross), lecture seule,
-  formats text Rich + JSON stable pour CI.
-- **Interface web** : dashboard arborescent fonds → collections,
-  pages détail Fonds / Collection / Item, édition complète,
-  visionneuse navigable, gestion collaborateurs.
-- **Renommage transactionnel** : `Perimetre` partagé renamer/
-  deriver, invalidation automatique de `derive_genere` après
-  rename ou annulation.
-- **Documentation** : mise en place MkDocs Material, déploiement
-  GitHub Pages automatique. Pages utilisateur complètes
-  (V0.9.0-gamma.5.2) — Concepts du modèle (avec diagramme
-  Mermaid), conventions transversales CLI, référence des
-  formats d'export et des 14 contrôles qa.
+### Nouveau modèle
+
+- Introduction de l'entité `Fonds` (corpus brut, notion ColleC).
+- Trois types de Collection : miroir (auto-créée à la création
+  du fonds), libre rattachée, libre transversale (multi-fonds).
+- Multi-appartenance des items via la table N-N
+  `item_collection`.
+- 10 invariants documentés, dont 4 vérifiés par les contrôles
+  qa.
+
+### CLI complète refondue
+
+- `archives-tool importer` — profils YAML v2 (sections `fonds:`
+  + `collection_miroir:`).
+- `archives-tool collections` — gestion des libres
+  (`creer-libre`, `lister`, `supprimer`).
+- `archives-tool exporter` — Dublin Core XML, Nakala CSV, xlsx,
+  tous par collection.
+- `archives-tool controler` — 14 contrôles, 4 familles, formats
+  text/JSON.
+- `archives-tool montrer` — consultation rapide (4 sous-commandes
+  pour fonds/collection/item/fichier).
+- `archives-tool renommer` — transactionnel atomique, dry-run par
+  défaut, annulation par batch.
+- `archives-tool deriver` — génération vignettes/aperçus,
+  invalidation automatique au renommage.
+- Périmètre unifié `--fonds` / `--collection` / `--item` /
+  `--fichier-id` partagé entre commandes.
+
+### Interface web
+
+- Dashboard avec arborescence dépliable fonds → collections.
+- Pages détaillées Fonds, Collection (3 variantes), Item.
+- Visionneuse de fichiers avec navigation
+  Précédent/Suivant.
+- Édition de métadonnées (formulaires Pydantic, pattern PRG).
+- Gestion des collaborateurs par fonds (vocabulaire fermé,
+  multi-rôles).
+
+### Documentation
+
+- Site [MkDocs Material](https://hsbtqemy.github.io/ColleC/)
+  déployé sur GitHub Pages, mise à jour automatique sur push
+  `main`.
+- Guide « Premiers pas » complet : installation, configuration,
+  premier import, workflow type.
+- Pages Concepts (avec diagramme Mermaid), CLI (7 commandes
+  documentées), Référence (profils, formats d'export, schéma de
+  données, 14 contrôles qa).
+- Section Pour développeurs : architecture, modèle, services,
+  tests, composants UI, contribuer.
+
+### Performance
+
+- Pas de N+1 sur les routes principales (eager loading via
+  `selectinload`).
+- Index DB sur les champs critiques (`Fonds.cote`,
+  `Item.fonds_id`, `ItemCollection`).
+- Renamer en deux phases pour absorber les cycles de
+  renommage.
+
+## V0.9.0 (release candidate)
+
+Cycles `gamma.4.x` (CLI) puis `gamma.5.x` (documentation).
+Toutes les modifications sont consolidées dans la V0.9.0 stable
+ci-dessus.
 
 ## V0.8.0
 

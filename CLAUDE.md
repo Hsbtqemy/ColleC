@@ -390,7 +390,7 @@ avec visionneuse OpenSeadragon, en lecture seule.
   tableau_collections, tableau_items, header, tabs, metric_card,
   breadcrumb, collection_header, _champ_form). Le bundle handoff est
   la **référence visuelle de vérité** ; détails dans
-  [`docs/composants_ui.md`](docs/composants_ui.md).
+  [`docs/developpeurs/composants-ui.md`](docs/developpeurs/composants-ui.md).
 - `web/templates/{base.html,pages/,partials/}` : layout commun, pages
   pleines pour accès direct, partiels pour swap HTMX.
 - `web/static/css/{input.css,output.css}` : Tailwind compilé via
@@ -458,15 +458,18 @@ Structure :
   les 7 sous-commandes complètes).
 - `docs/reference/` : Profils d'import, Schéma de données,
   Formats d'export et Contrôles qa, tous complets.
-- `docs/developpeurs/` : Contribuer (complet), reste en stubs
-  gamma.5.3.
-- `docs/annexes/` : Changelog, Limites (stub gamma.5.3).
+- `docs/developpeurs/` : Architecture, Modèle, Services, Tests,
+  Composants UI, Contribuer, tous complets.
+- `docs/annexes/` : Changelog (V0.9.0 complète), Limites.
 
-Fichier conservé en dépôt mais hors build :
-`docs/composants_ui.md` (relocalisé en gamma.5.3 vers
-`developpeurs/composants-ui.md`, via `exclude_docs` dans
-`mkdocs.yml`). `docs/profils_creation.md` a été supprimé en
-gamma.5.2 (contenu obsolète v1 couvert par les nouvelles pages).
+Le plugin `mkdocs-macros-plugin` permet d'utiliser des variables
+dans les pages, dont `{{ repo_main }}` pour les liens GitHub
+(défini dans `mkdocs.yml` `extra:`). Les anciens fichiers
+historiques (`docs/composants_ui.md`, `docs/profils_creation.md`)
+ont été supprimés en gamma.5.3 et gamma.5.2 respectivement —
+leur contenu utile est intégré dans la nouvelle structure
+(`developpeurs/composants-ui.md`, `premiers-pas/premier-import.md`,
+`reference/profils.md`).
 
 Tests garde-fous : `tests/docs/test_structure.py` vérifie la
 présence et le non-vide des fichiers documentaires essentiels.
@@ -767,6 +770,20 @@ archives-tool/
   `composants_ui.md` reste dans `exclude_docs` jusqu'à
   V0.9.0-gamma.5.3 (relocation vers `developpeurs/composants-ui.md`).
   — V0.9.0-gamma.5.2.
+- ✅ Section Pour développeurs complète : `architecture.md`
+  (couches, arborescence, patterns), `modele.md` (tables ORM,
+  invariants base + code, champs notables), `services.md`
+  (composabilité Python avec exemples copiables), `tests.md`
+  (organisation, conventions, invariants), `composants-ui.md`
+  (intégration des macros Jinja2 réelles, remplaçant
+  `docs/composants_ui.md` supprimé). Refactos transverses :
+  centralisation des conventions de périmètre dans
+  `guide/cli/index.md` (renommer + deriver allégés), séparation
+  `guide/cli/exporter.md` vs `reference/exports.md` (la guide ne
+  duplique plus les structures). URLs GitHub factorisées via
+  `mkdocs-macros-plugin` (variable `{{ repo_main }}`).
+  `annexes/limites.md` complet. **V0.9.0 stable** (bump
+  `0.9.0rc8` → `0.9.0`). — V0.9.0-gamma.5.3.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection

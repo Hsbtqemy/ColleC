@@ -1,4 +1,4 @@
-# Exporter
+﻿# Exporter
 
 L'outil produit trois formats d'export, tous **par collection** (au
 sens Nakala : miroir, libre rattachée, ou transversale — voir
@@ -19,7 +19,7 @@ L'unité d'export est **la collection**. Selon son type :
   fonds d'origine.
 
 L'exporter charge le contexte d'export complet via
-[`composer_export`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/exporters/_commun.py)
+[`composer_export`]({{ repo_main }}/src/archives_tool/exporters/_commun.py)
 (une seule requête principale avec `selectinload(items.fichiers)` +
 JOIN fonds). Pas de N+1.
 
@@ -82,51 +82,13 @@ Produit par tous les exporters et affiché par le CLI :
 
 `--verbose` détaille les `items_incomplets` ligne par ligne.
 
-## Format Dublin Core (XML)
+## Détail des formats produits
 
-Racine `<collection cote="…">` avec :
-
-- une `<notice role="collection">` de tête : cote, titre,
-  description(s), DOI Nakala, et un ou plusieurs `dc:source` listant
-  le ou les fonds représentés (utile pour les transversales) ;
-- une `<notice>` par item, avec ses champs DC mappés via `MAPPING_DC`.
-
-Préfixe XML : `dc:` ↔ `http://purl.org/dc/terms/`. Encodage UTF-8.
-Indentation propre. Échappement automatique via
-`xml.etree.ElementTree`.
-
-## Format Nakala (CSV)
-
-Colonnes inspirées du format d'import Nakala standard (DC + prédicats
-`http://nakala.fr/terms#`). Séparateur `;`, encodage UTF-8 BOM.
-
-Particularités :
-
-- `Linked in collection` se rabat sur le DOI Nakala de la collection
-  (`Collection.doi_nakala`) si l'item n'a pas son propre
-  `Item.doi_collection_nakala` — utile quand on dépose une collection
-  d'un coup.
-- `fonds_cote` est ajoutée comme colonne informative — précieuse pour
-  les transversales où chaque ligne peut venir d'un fonds différent.
-- Licence et statut sont pris dans `metadonnees.licence` /
-  `metadonnees.statut_nakala` si renseignés, sinon des défauts CLI
-  (`CC-BY-NC-ND-4.0` / `pending`).
-- Les colonnes `IsDescribedBy` / `IsIdenticalTo` / `IsDerivedFrom` /
-  `IsPublishedIn` sont présentes mais laissées vides pour l'instant.
-
-## Format xlsx
-
-Une feuille avec :
-
-- lignes 1-4 : bandeau métadonnées (titre, cote, type, fonds parent
-  ou fonds représentés) ;
-- ligne 6 : entêtes (Cote, Titre, Fonds, État, Date, Année, Type,
-  Langue, Description, Notes internes, DOI Nakala, Nb fichiers) ;
-- ligne 7+ : un item par ligne.
-
-Le titre de feuille est dérivé du titre de la collection, tronqué à
-31 caractères (limite Excel) avec retrait des caractères interdits
-(`[]:*?/\`).
+Pour la **structure exacte** de chaque format (mapping complet
+Dublin Core, liste des 27 colonnes Nakala, structure xlsx
+détaillée, particularités d'encodage), voir
+[Formats d'export](../../reference/exports.md). La présente page
+documente uniquement l'usage de la CLI.
 
 ## CLI
 
@@ -150,24 +112,10 @@ archives-tool exporter dublin-core HK --fonds HK
 `--fonds COTE` désambiguïse quand une cote de collection est partagée
 entre plusieurs fonds (cohérent avec les routes web).
 
-## Reproductibilité
+## Voir aussi
 
-Les exports sont déterministes : deux appels successifs sur les mêmes
-données produisent des fichiers identiques. Items triés par
-`(fonds.cote, item.cote)`, fichiers d'un item par `ordre`, et listes
-de valeurs (auteurs, sujets) triées alphabétiquement avant
-sérialisation.
-
-## Limitations V1
-
-- **Pas de JSON-LD** : prévu pour une session ultérieure (contextes
-  COAR et Nakala).
-- **Type COAR non validé** contre la liste officielle. Le rapport
-  signale les valeurs hors `http://purl.org/coar/resource_type/`.
-- **Mapping DC évolutif** : `MAPPING_DC` est la source de vérité. Pour
-  ajouter un champ récurrent (ex. `metadonnees.orcid` → `dc:creator`),
-  éditer le dict et ajouter un test.
-- **Pas de dépôt automatique vers Nakala** via API : hors scope V1.
-- **Date EDTF** : `Item.date` est exporté littéralement (pas de
-  conversion EDTF → ISO 8601). Si l'item a `1969?`, c'est cette
-  chaîne qui sort. À évaluer en V2 selon les retours utilisateur.
+- [Formats d'export](../../reference/exports.md) — détail des
+  structures, mappings, particularités, reproductibilité et
+  limitations.
+- [Concepts → Collection](../concepts.md#collection) — pourquoi
+  l'unité d'export est la collection.

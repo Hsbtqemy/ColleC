@@ -70,7 +70,7 @@ Filtres Jinja exposés par `templating.py` :
 
 ## Bibliothèque de composants
 
-Les dix composants Jinja2 de [`composants_ui.md` dans le dépôt](https://github.com/Hsbtqemy/ColleC/blob/main/docs/composants_ui.md)
+Les dix composants Jinja2 de [Composants UI](../developpeurs/composants-ui.md)
 sont la **référence visuelle de vérité** (validés en design). Aucune
 réinterprétation : si une décision de markup ou de classe Tailwind
 semble inhabituelle, elle est intentionnelle.
@@ -95,7 +95,7 @@ Composants existants antérieurs (`header.html`, `breadcrumb.html`,
 plus référencé après le refactor V0.6.0.1 mais reste disponible.
 
 Schémas attendus, exemples d'usage et détails des hooks `data-…` :
-voir [`composants_ui.md` dans le dépôt](https://github.com/Hsbtqemy/ColleC/blob/main/docs/composants_ui.md).
+voir [Composants UI](../developpeurs/composants-ui.md).
 
 ## Service des dérivés
 

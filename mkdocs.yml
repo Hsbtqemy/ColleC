@@ -38,6 +38,17 @@ theme:
   icon:
     logo: material/folder-multiple-outline
 
+plugins:
+  - search
+  - macros:
+      on_undefined: strict
+      include_dir: docs
+
+# Variables disponibles dans les pages via {{ ... }} (mkdocs-macros).
+# Utilité : éviter de hardcoder l'URL du dépôt à 13+ endroits.
+extra:
+  repo_main: https://github.com/Hsbtqemy/ColleC/blob/main
+
 markdown_extensions:
   - admonition
   - pymdownx.details
@@ -60,11 +71,6 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
-# `composants_ui.md` est conservé en dépôt mais hors build :
-# il sera relocalisé en V0.9.0-gamma.5.3 vers
-# `developpeurs/composants-ui.md` avec la section Pour développeurs.
-exclude_docs: |
-  composants_ui.md
 
 nav:
   - Accueil: index.md
@@ -99,6 +105,7 @@ nav:
     - Modèle de données: developpeurs/modele.md
     - Services: developpeurs/services.md
     - Tests: developpeurs/tests.md
+    - Composants UI: developpeurs/composants-ui.md
     - Contribuer: developpeurs/contribuer.md
   - Annexes:
     - Limites connues: annexes/limites.md

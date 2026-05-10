@@ -1,4 +1,4 @@
-# Contribuer
+﻿# Contribuer
 
 ColleC a été développé pour les archives de l'Université de
 Poitiers. Le code est public et les contributions sont les
@@ -68,7 +68,7 @@ Le suivi peut prendre du temps (mainteneur unique).
 ## Déploiement de la documentation
 
 Le site MkDocs est déployé automatiquement sur GitHub Pages
-depuis `main` via [`.github/workflows/docs.yml`](https://github.com/Hsbtqemy/ColleC/blob/main/.github/workflows/docs.yml).
+depuis `main` via [`.github/workflows/docs.yml`]({{ repo_main }}/.github/workflows/docs.yml).
 
 **Configuration initiale du dépôt** (à faire une seule fois par
 quiconque cloue un fork ou re-déploie sur un autre repo) :

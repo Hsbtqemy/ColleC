@@ -23,6 +23,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.api.services.collaborateurs_fonds import (
     CollaborateurFondsResume,
     lister_collaborateurs_fonds_par_role,
@@ -59,6 +60,8 @@ class CollectionResume:
     type_collection: str  # "miroir" ou "libre"
     nb_items: int
     fonds_id: int | None  # None pour transversale
+    nb_fichiers: int = 0
+    href: str = ""
     repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
     modifie_par: str | None = None
     modifie_le: datetime | None = None
@@ -71,6 +74,25 @@ class CollectionResume:
     @property
     def est_transversale(self) -> bool:
         return self.fonds_id is None
+
+    # ---- Aliases attendus par la macro `tableau_collections` -----
+    # `tableau_collections` itère sur `c.repartition`, `c.modifie_depuis`,
+    # `c.sous_collections` ; on les expose ici comme propriétés pour
+    # éviter de dupliquer le résumé dans une seconde dataclass.
+
+    @property
+    def repartition(self) -> dict[str, int]:
+        return self.repartition_etats
+
+    @property
+    def modifie_depuis(self) -> str:
+        return temps_relatif(self.modifie_le)
+
+    @property
+    def sous_collections(self) -> int:
+        # Le modèle V0.9.0 est plat (pas de Collection.parent_id) ;
+        # toujours 0. La macro accepte 0 sans rendre la mention.
+        return 0
 
 
 @dataclass(frozen=True)
@@ -442,9 +464,13 @@ def _composer_activite_recente(
 class FondsDetail:
     fonds: Fonds  # modèle ORM (le template lit ses champs métadonnées)
     nb_items: int
+    nb_fichiers: int
     collections_resume: tuple[CollectionResume, ...]
     items_recents: tuple[ItemResume, ...]
     collaborateurs_par_role: dict[RoleCollaborateur, list[CollaborateurFondsResume]]
+    repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
+    modifie_par: str | None = None
+    modifie_le: datetime | None = None
 
     @property
     def miroir_resume(self) -> CollectionResume | None:
@@ -456,18 +482,18 @@ class FondsDetail:
 
 
 def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
-    """Charge un fonds + ses collections + 10 items les plus récents
-    + ses collaborateurs groupés par rôle.
+    """Charge un fonds + ses collections (enrichies de répartition d'états,
+    nb_fichiers, traçabilité) + 10 items les plus récents + collaborateurs
+    groupés par rôle.
+
+    Coût SQL borné (~9 queries) indépendamment du nombre de collections,
+    cf. test garde-fou `test_page_fonds_n_emet_pas_plus_de_10_requetes`.
 
     Lève `FondsIntrouvable` si la cote est inconnue.
     """
     fonds = db.scalar(select(Fonds).where(Fonds.cote == cote))
     if fonds is None:
         raise FondsIntrouvable(cote)
-
-    nb_items = (
-        db.scalar(select(func.count(Item.id)).where(Item.fonds_id == fonds.id)) or 0
-    )
 
     collections_rows = list(
         db.scalars(
@@ -476,17 +502,83 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
             .order_by(Collection.titre)
         ).all()
     )
-    nb_items_par_collection: dict[int, int] = dict(
-        db.execute(
-            select(ItemCollection.collection_id, func.count(ItemCollection.item_id))
-            .where(
-                ItemCollection.collection_id.in_([c.id for c in collections_rows])
-            )
-            .group_by(ItemCollection.collection_id)
-        ).all()
-    ) if collections_rows else {}
 
-    # Miroir d'abord, puis les libres triées par titre.
+    # ---- Répartition par collection (1 query) -----------------------
+    # `nb_items_par_collection` se dérive ensuite par `sum(rep.values())`
+    # — pas de requête séparée.
+    repartition_par_collection: dict[int, dict[str, int]] = {}
+    if collections_rows:
+        col_ids = [c.id for c in collections_rows]
+        for col_id, etat, n in db.execute(
+            select(
+                ItemCollection.collection_id,
+                Item.etat_catalogage,
+                func.count(Item.id),
+            )
+            .join(Item, Item.id == ItemCollection.item_id)
+            .where(ItemCollection.collection_id.in_(col_ids))
+            .group_by(ItemCollection.collection_id, Item.etat_catalogage)
+        ).all():
+            cible = repartition_par_collection.setdefault(col_id, _repartition_vide())
+            if etat in cible:
+                cible[etat] = n
+
+    # ---- Nb fichiers par collection (1 query) -----------------------
+    nb_fichiers_par_collection: dict[int, int] = {}
+    if collections_rows:
+        col_ids = [c.id for c in collections_rows]
+        nb_fichiers_par_collection = dict(
+            db.execute(
+                select(ItemCollection.collection_id, func.count(Fichier.id))
+                .join(Item, Item.id == ItemCollection.item_id)
+                .join(Fichier, Fichier.item_id == Item.id)
+                .where(ItemCollection.collection_id.in_(col_ids))
+                .group_by(ItemCollection.collection_id)
+            ).all()
+        )
+
+    # ---- Répartition fonds-level (1 query) --------------------------
+    # `nb_items` du fonds se dérive de la somme.
+    repartition_fonds: dict[str, int] = _repartition_vide()
+    for etat, n in db.execute(
+        select(Item.etat_catalogage, func.count(Item.id))
+        .where(Item.fonds_id == fonds.id)
+        .group_by(Item.etat_catalogage)
+    ).all():
+        if etat in repartition_fonds:
+            repartition_fonds[etat] = n
+    nb_items = sum(repartition_fonds.values())
+
+    # ---- Nb fichiers fonds-level (1 query) --------------------------
+    nb_fichiers_fonds: int = (
+        db.scalar(
+            select(func.count(Fichier.id))
+            .join(Item, Item.id == Fichier.item_id)
+            .where(Item.fonds_id == fonds.id)
+        )
+        or 0
+    )
+
+    # ---- Dernier item modifié du fonds (1 query) --------------------
+    # Pour propager `modifie_par` quand la modif la plus récente vient
+    # d'un item — sinon la cellule modifié du bandeau afficherait « — ».
+    derniere_modif_item = db.execute(
+        select(Item.modifie_le, Item.modifie_par)
+        .where(Item.fonds_id == fonds.id, Item.modifie_le.is_not(None))
+        .order_by(Item.modifie_le.desc())
+        .limit(1)
+    ).first()
+
+    if fonds.modifie_le is None and derniere_modif_item is None:
+        f_mod_par, f_mod_le = None, None
+    elif derniere_modif_item is None:
+        f_mod_par, f_mod_le = fonds.modifie_par, fonds.modifie_le
+    elif fonds.modifie_le is None or fonds.modifie_le < derniere_modif_item[0]:
+        f_mod_le, f_mod_par = derniere_modif_item
+    else:
+        f_mod_par, f_mod_le = fonds.modifie_par, fonds.modifie_le
+
+    # ---- Construction des CollectionResume enrichies ----------------
     collections_resume = tuple(
         sorted(
             (
@@ -494,8 +586,18 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
                     cote=c.cote,
                     titre=c.titre,
                     type_collection=c.type_collection,
-                    nb_items=nb_items_par_collection.get(c.id, 0),
+                    nb_items=sum(
+                        repartition_par_collection.get(c.id, {}).values()
+                    ),
                     fonds_id=c.fonds_id,
+                    nb_fichiers=nb_fichiers_par_collection.get(c.id, 0),
+                    href=f"/collection/{c.cote}?fonds={fonds.cote}",
+                    repartition_etats=repartition_par_collection.get(
+                        c.id, _repartition_vide()
+                    ),
+                    modifie_par=c.modifie_par,
+                    modifie_le=c.modifie_le,
+                    phase=c.phase,
                 )
                 for c in collections_rows
             ),
@@ -504,9 +606,7 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         )
     )
 
-    # « Récents » = ordre de modification effective si l'item a été
-    # modifié, sinon ordre de création (le plus récent d'abord). Cote
-    # DESC en tie-breaker pour offrir une vue stable et inversée.
+    # ---- Items récents (1 query) ------------------------------------
     items_rows = list(
         db.scalars(
             select(Item)
@@ -537,9 +637,13 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
     return FondsDetail(
         fonds=fonds,
         nb_items=nb_items,
+        nb_fichiers=nb_fichiers_fonds,
         collections_resume=collections_resume,
         items_recents=items_recents,
         collaborateurs_par_role=lister_collaborateurs_fonds_par_role(db, fonds.id),
+        repartition_etats=repartition_fonds,
+        modifie_par=f_mod_par,
+        modifie_le=f_mod_le,
     )
 
 

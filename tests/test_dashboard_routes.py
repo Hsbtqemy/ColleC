@@ -173,6 +173,19 @@ def test_fonds_lecture(client_demo: TestClient) -> None:
     assert "HK-040" in response.text
 
 
+def test_fonds_lecture_composants_riches(client_demo: TestClient) -> None:
+    """V0.9.2-alpha : la page Fonds rend tableau_collections + avancement
+    + cellule_modifie. Vérification par marqueurs HTML."""
+    response = client_demo.get("/fonds/HK")
+    assert response.status_code == 200
+    # Bandeau : section avancement + nb fichiers.
+    assert "Avancement du catalogage" in response.text
+    # tableau_collections injecte un id `collections-fonds-<cote>`.
+    assert 'id="collections-fonds-HK"' in response.text
+    # Header de tableau (l'une des colonnes attendues).
+    assert "Avancement" in response.text
+
+
 def test_fonds_inexistant_404(client_demo: TestClient) -> None:
     response = client_demo.get("/fonds/INEXISTANT")
     assert response.status_code == 404

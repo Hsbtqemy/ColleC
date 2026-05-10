@@ -3,6 +3,7 @@
    Réutilise les macros avancement_compact + cellule_modifie. #}
 {% from 'components/avancement.html' import avancement_compact %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/phase_chantier.html' import phase_chantier %}
 
 <li class="border-b border-gray-100 pb-3">
   <div class="flex items-baseline gap-2">
@@ -13,7 +14,7 @@
       </a>
       <span class="text-gray-500 font-mono text-sm ml-2">{{ col.cote }}</span>
       {% if col.phase %}
-        <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+        <span class="ml-2">· {{ phase_chantier(col.phase | libelle_phase) }}</span>
       {% endif %}
     </span>
     <span class="text-gray-700 font-tabular shrink-0">{{ col.nb_items }} items</span>

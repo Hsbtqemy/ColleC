@@ -8,6 +8,10 @@
      de validation au POST collaborateurs, ré-affichées ici
 #}
 {% extends "base.html" %}
+{% from 'components/avancement.html' import avancement_detaille %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/tableau_collections.html' import tableau_collections %}
+
 {% block title %}{{ detail.fonds.titre }} — archives-tool{% endblock %}
 
 {% block content %}
@@ -61,27 +65,41 @@
       <dd>{{ detail.fonds.date_debut or "?" }} – {{ detail.fonds.date_fin or "?" }}</dd>
     {% endif %}
   </dl>
+
+  {# Avancement + traçabilité du fonds, juste sous les métadonnées. #}
+  <div class="grid grid-cols-[1fr_auto] gap-6 mt-5 items-end">
+    <div>
+      <p class="text-xs text-gray-500 mb-1.5">
+        Avancement du catalogage
+        <span aria-hidden="true">·</span>
+        {{ detail.nb_items }} item{{ "s" if detail.nb_items != 1 else "" }}
+        <span aria-hidden="true">·</span>
+        {{ detail.nb_fichiers }} fichier{{ "s" if detail.nb_fichiers != 1 else "" }}
+      </p>
+      {{ avancement_detaille(detail.repartition_etats) }}
+    </div>
+    <div class="text-right text-sm">
+      {{ cellule_modifie(detail.modifie_par, detail.modifie_le | temps_relatif) }}
+    </div>
+  </div>
 </header>
 
 <section class="mb-8">
-  <h2 class="text-lg font-medium mb-2">
+  <h2 class="text-lg font-medium mb-3">
     Collections du fonds <span class="text-gray-400">({{ detail.collections_resume | length }})</span>
   </h2>
-  <ul class="space-y-1 text-sm">
-    {% for col in detail.collections_resume %}
-      <li class="flex items-baseline gap-2 border-b border-gray-100 py-1">
-        <span class="grow">
-          <a href="/collection/{{ col.cote }}?fonds={{ detail.fonds.cote }}"
-             class="hover:underline">{{ col.titre }}</a>
-          {% if col.est_miroir %}
-            <span class="ml-2 text-xs italic text-gray-400">miroir</span>
-          {% endif %}
-        </span>
-        <span class="text-gray-500 font-tabular text-sm">{{ col.nb_items }} items</span>
-      </li>
-    {% endfor %}
-  </ul>
-  <p class="mt-2 text-sm">
+  {% if detail.collections_resume %}
+    {{ tableau_collections({
+      'collections': detail.collections_resume,
+      'sort': 'titre',
+      'ordre': 'asc',
+      'cible_url': '/fonds/' ~ detail.fonds.cote,
+      'id': 'collections-fonds-' ~ detail.fonds.cote,
+    }) }}
+  {% else %}
+    <p class="text-sm text-gray-500">Aucune collection. (Anomalie : un fonds doit toujours avoir sa miroir.)</p>
+  {% endif %}
+  <p class="mt-3 text-sm">
     <a href="/collections/nouvelle?fonds={{ detail.fonds.cote }}"
        class="text-blue-600 hover:underline">+ Créer une collection libre</a>
   </p>

@@ -6,6 +6,7 @@
    Pas de JS : <details> natif, ouvert par défaut. #}
 {% from 'components/avancement.html' import avancement_compact %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/phase_chantier.html' import phase_chantier %}
 
 <li>
   <details open class="border-b border-gray-100 pb-3">
@@ -40,7 +41,7 @@
               </a>
               <span class="ml-2 inline-block text-xs italic text-gray-400">miroir</span>
               {% if col.phase %}
-                <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+                <span class="ml-2">· {{ phase_chantier(col.phase | libelle_phase) }}</span>
               {% endif %}
             </span>
             <span class="text-gray-500 font-tabular text-sm shrink-0">
@@ -64,7 +65,7 @@
                 {{ col.titre }}
               </a>
               {% if col.phase %}
-                <span class="ml-2 text-xs text-gray-400">· {{ col.phase | libelle_phase }}</span>
+                <span class="ml-2">· {{ phase_chantier(col.phase | libelle_phase) }}</span>
               {% endif %}
             </span>
             <span class="text-gray-500 font-tabular text-sm shrink-0">

@@ -5,6 +5,26 @@ Les jalons notables. Le détail commit-par-commit est dans
 
 ## Roadmap
 
+### V0.9.2 — Restauration ergonomique (3 sous-sessions)
+
+- **V0.9.2-alpha** *(en cours)* : page Fonds restaurée avec
+  `tableau_collections` + `avancement_detaille` + `cellule_modifie`.
+  Composant `phase_chantier` branché sur dashboard et page Fonds.
+  Service `composer_page_fonds` enrichi (répartition d'états par
+  fonds + par collection, `modifie_par`/`le` propagé depuis les
+  items, `nb_fichiers` par fonds + par collection). Garde-fou SQL :
+  ≤ 10 requêtes par rendu.
+- **V0.9.2-beta** *(à venir)* : page Collection avec onglets et
+  filtres riches (réutilise `panneau_filtres` + `panneau_colonnes`
+  orphelins).
+- **V0.9.2-gamma** *(à venir)* : page Item — recréation des
+  composants absents (`bandeau_item`, `cartouche_metadonnees`,
+  `panneau_fichiers`) et branchement de la visionneuse
+  OpenSeadragon.
+
+Audit complet de l'écart UI dans
+`audit_ui_v0_9_0.md` (à la racine du repo).
+
 ### V0.9.1 — Renforcement mode local
 
 - Activation explicite de SQLite en mode WAL.

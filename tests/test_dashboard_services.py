@@ -27,7 +27,9 @@ from archives_tool.api.services.dashboard import (
     ActiviteRecente,
     DashboardResume,
     DashboardStats,
+    FondsDetail,
     composer_dashboard,
+    composer_page_fonds,
 )
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
@@ -244,3 +246,118 @@ def test_dashboard_activite_recente_typage(session_demo: Session) -> None:
         assert a.type in ("item", "collection", "fonds")
         assert a.cote
         assert a.modifie_le is not None
+
+
+# ---------------------------------------------------------------------------
+# composer_page_fonds : page détail enrichie
+# ---------------------------------------------------------------------------
+
+
+def test_page_fonds_demo_charge(session_demo: Session) -> None:
+    """`composer_page_fonds("HK")` retourne un FondsDetail cohérent."""
+    detail: FondsDetail = composer_page_fonds(session_demo, "HK")
+    assert detail.fonds.cote == "HK"
+    assert detail.nb_items > 0
+    assert detail.nb_fichiers > 0
+    # Au moins la miroir doit exister.
+    assert len(detail.collections_resume) >= 1
+
+
+def test_page_fonds_repartition_etats_complete(session_demo: Session) -> None:
+    """Le fonds expose les 5 clés d'EtatCatalogage (zéros inclus) et la
+    somme égale `nb_items`."""
+    detail = composer_page_fonds(session_demo, "HK")
+    cles_attendues = {e.value for e in EtatCatalogage}
+    assert set(detail.repartition_etats.keys()) == cles_attendues
+    assert sum(detail.repartition_etats.values()) == detail.nb_items
+
+
+def test_page_fonds_collections_enrichies(session_demo: Session) -> None:
+    """Chaque CollectionResume a `nb_fichiers`, `href`, `repartition_etats`,
+    avec les bons aliases (`repartition`, `sous_collections`)."""
+    detail = composer_page_fonds(session_demo, "HK")
+    for col in detail.collections_resume:
+        assert col.nb_fichiers >= 0
+        assert col.href.startswith("/collection/")
+        assert "?fonds=HK" in col.href
+        # Aliases pour le composant `tableau_collections`.
+        assert col.repartition == col.repartition_etats
+        assert col.sous_collections == 0
+        # Somme cohérente avec nb_items.
+        assert sum(col.repartition_etats.values()) == col.nb_items
+
+
+def test_page_fonds_inconnu_leve(session_demo: Session) -> None:
+    """Cote inconnue → FondsIntrouvable."""
+    from archives_tool.api.services.fonds import FondsIntrouvable
+
+    with pytest.raises(FondsIntrouvable):
+        composer_page_fonds(session_demo, "INCONNU")
+
+
+def test_page_fonds_modifie_par_propage_depuis_item(session_neuve: Session) -> None:
+    """Si l'item est plus récemment modifié que le fonds, son
+    `modifie_par` remonte sur le bandeau du fonds (et pas « — »)."""
+    fonds = creer_fonds(session_neuve, FormulaireFonds(cote="X", titre="Fonds X"))
+    item = creer_item(
+        session_neuve,
+        FormulaireItem(cote="X-001", titre="Item un", fonds_id=fonds.id),
+    )
+    ref = datetime(2026, 1, 1, 12, 0, 0)
+    fonds.modifie_le = ref
+    fonds.modifie_par = "Hugo"
+    item.modifie_le = ref + timedelta(hours=1)
+    item.modifie_par = "Marie"
+    session_neuve.commit()
+
+    detail = composer_page_fonds(session_neuve, "X")
+    # L'item est plus récent : on remonte « Marie ».
+    assert detail.modifie_par == "Marie"
+    assert detail.modifie_le == item.modifie_le
+
+
+def test_page_fonds_modifie_par_garde_fonds_si_plus_recent(
+    session_neuve: Session,
+) -> None:
+    """Si le fonds est plus récemment modifié que ses items, on garde
+    le `modifie_par` du fonds."""
+    fonds = creer_fonds(session_neuve, FormulaireFonds(cote="X", titre="Fonds X"))
+    item = creer_item(
+        session_neuve,
+        FormulaireItem(cote="X-001", titre="Item un", fonds_id=fonds.id),
+    )
+    ref = datetime(2026, 1, 1, 12, 0, 0)
+    item.modifie_le = ref
+    item.modifie_par = "Marie"
+    fonds.modifie_le = ref + timedelta(hours=1)
+    fonds.modifie_par = "Hugo"
+    session_neuve.commit()
+
+    detail = composer_page_fonds(session_neuve, "X")
+    assert detail.modifie_par == "Hugo"
+
+
+def test_page_fonds_n_emet_pas_plus_de_10_requetes(session_demo: Session) -> None:
+    """Garde-fou : `composer_page_fonds` reste sous 10 requêtes SQL sur
+    la base demo (5 fonds, ~60 items pour le fonds HK).
+
+    Indépendant du nombre de collections du fonds — toute boucle Python
+    ne fait qu'attacher des agrégats déjà calculés. Si ce test régresse,
+    quelqu'un a réintroduit un N+1.
+    """
+    queries: list[str] = []
+
+    def _on_execute(_conn, _cur, statement, *_args, **_kwargs):
+        queries.append(statement)
+
+    engine = session_demo.get_bind()
+    event.listen(engine, "before_cursor_execute", _on_execute)
+    try:
+        composer_page_fonds(session_demo, "HK")
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_execute)
+
+    assert len(queries) <= 10, (
+        f"composer_page_fonds a émis {len(queries)} requêtes "
+        f"(limite : 10). Première requête : {queries[0][:80]}"
+    )

@@ -384,6 +384,21 @@ listant les 10 dernières modifications mélangées
 (item / collection / fonds). Service composé en ≤14 requêtes
 SQL indépendamment du volume.
 
+**V0.9.2-alpha** : page Fonds restaurée avec les composants
+existants. `composer_page_fonds` enrichi (`repartition_etats`,
+`modifie_par`/`le` propagé depuis les items, `nb_fichiers` par
+fonds et par collection) — coût SQL borné ≤ 10 requêtes par
+rendu. Le bandeau du fonds expose un `avancement_detaille` avec
+légende + `cellule_modifie`. La liste des collections passe par
+`tableau_collections` (réutilisé du bundle V0.6.0.1, restauré
+ici) qui rend nativement avancement, traçabilité et phase de
+chantier par ligne. Le composant `phase_chantier` est branché
+côté dashboard (via `tableau_fonds_enrichi` et
+`_collection_transversale`) et côté page Fonds (via
+`tableau_collections`). Pages Collection et Item restent
+dépouillées — V0.9.2-beta et gamma. Audit complet :
+`audit_ui_v0_9_0.md` à la racine du repo.
+
 - `api/main.py` : application FastAPI, mount `/static`, inclusion
   du router `dashboard` (unique depuis V0.9.0-beta : il porte
   dashboard, fonds, collection, item, collaborateurs).
@@ -842,6 +857,28 @@ durcissement avant test d'usage sur un mini-fonds réel.
   `controler` et `montrer`).
 - Documentation : « Installation locale + ShareDocs en WebDAV »
   pas-à-pas (Windows, macOS, Linux).
+
+### V0.9.2 — Restauration ergonomique des pages détail
+
+Cible : 3 sous-sessions courtes (alpha / beta / gamma). Lancée en
+parallèle de V0.9.1, déclenchée par l'audit ergonomique
+(`audit_ui_v0_9_0.md`) qui a constaté que les composants riches
+du bundle Claude Design V0.6.0.1 n'étaient plus utilisés sur les
+pages Fonds, Collection et Item.
+
+- ✅ **V0.9.2-alpha** : page Fonds restaurée. `composer_page_fonds`
+  enrichi (`repartition_etats`, `modifie_par`/`le` propagé depuis
+  les items, `nb_fichiers` par fonds + par collection). Bandeau
+  avec `avancement_detaille` + `cellule_modifie`. Liste collections
+  via `tableau_collections`. Composant `phase_chantier` branché sur
+  dashboard et page Fonds. Garde-fou SQL ≤ 10 requêtes par rendu.
+  +8 tests.
+- **V0.9.2-beta** : page Collection avec onglets, filtres riches
+  (`panneau_filtres` orphelin), configurateur colonnes
+  (`panneau_colonnes`).
+- **V0.9.2-gamma** : page Item — recréation des composants absents
+  (`bandeau_item`, `cartouche_metadonnees`, `panneau_fichiers`),
+  branchement de la visionneuse OpenSeadragon.
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 

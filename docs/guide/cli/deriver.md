@@ -26,30 +26,42 @@ mapping facile pour un service web (un préfixe d'URL par taille).
 
 ## CLI
 
+Le périmètre est passé via exactement un de quatre sélecteurs
+(alignés sur `archives-tool renommer`) : `--fonds` (seul), `--collection`,
+`--item`, ou `--fichier-id` (répétable). `--fonds` peut accompagner
+`--collection` ou `--item` pour désambiguïser une cote partagée
+entre fonds.
+
 ```bash
-# Générer pour une collection.
-archives-tool deriver appliquer --collection HK --recursif
+# Tous les fichiers d'un fonds.
+archives-tool deriver appliquer --fonds HK
+
+# Une collection (la miroir auto, ou une libre).
+archives-tool deriver appliquer --collection HK-FAVORIS --fonds HK
 
 # Pour un seul item.
-archives-tool deriver appliquer --item HK-1960-01
+archives-tool deriver appliquer --item HK-1960-01 --fonds HK
+
+# Pour des fichiers explicites.
+archives-tool deriver appliquer --fichier-id 12 --fichier-id 13
 
 # Forcer la régénération (par défaut, derive_genere=True est ignoré).
-archives-tool deriver appliquer --collection HK --force
+archives-tool deriver appliquer --fonds HK --force
 
 # Aperçu sans écrire.
-archives-tool deriver appliquer --collection HK --dry-run
+archives-tool deriver appliquer --fonds HK --dry-run
 
 # Nettoyer (supprime les dérivés et remet derive_genere=False).
-archives-tool deriver nettoyer --collection HK
+archives-tool deriver nettoyer --fonds HK
 ```
 
 **Codes de sortie** :
 
 - `0` : tous les dérivés générés (ou existants) sans erreur.
 - `1` : au moins une erreur de génération (source absente, format
-  non supporté, …).
-- `2` : erreur d'invocation (périmètre absent, racine cible non
-  configurée, …).
+  non supporté, fonds/collection introuvable, …).
+- `2` : erreur d'invocation (périmètre absent ou invalide, base
+  introuvable, …).
 
 ## Effets en base
 
@@ -62,6 +74,16 @@ Pour chaque fichier traité :
 
 `nettoyer` remet `derive_genere=False` et supprime les fichiers JPEG
 sous la racine cible.
+
+**Invalidation automatique au renommage** : lorsqu'un batch
+`archives-tool renommer appliquer` (ou `renommer annuler`) déplace
+un fichier, son `derive_genere` est remis à `False` et ses
+`apercu_chemin` / `vignette_chemin` à `NULL`. Les dérivés JPEG
+existants ne sont **pas** déplacés (ils gardent l'ancien chemin
+sous `miniatures/`) — il faut les régénérer (`deriver appliquer`)
+ou les nettoyer (`deriver nettoyer`) avec l'ancien chemin avant
+le rename, selon le besoin. Conservateur par défaut : on n'efface
+rien automatiquement.
 
 ## Modes et formats supportés
 

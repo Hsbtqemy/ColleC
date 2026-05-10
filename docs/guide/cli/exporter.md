@@ -1,4 +1,4 @@
-# Exports
+# Exporter
 
 L'outil produit trois formats d'export, tous **par collection** (au
 sens Nakala : miroir, libre rattachée, ou transversale). On n'exporte
@@ -19,17 +19,17 @@ L'unité d'export est **la collection**. Selon son type :
   fonds d'origine.
 
 L'exporter charge le contexte d'export complet via
-[`composer_export`](../src/archives_tool/exporters/_commun.py)
+[`composer_export`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/exporters/_commun.py)
 (une seule requête principale avec `selectinload(items.fichiers)` +
 JOIN fonds). Pas de N+1.
 
 ## Les trois formats
 
-| Format        | Cas d'usage                       | Sortie |
-|---------------|-----------------------------------|--------|
+| Format        | Cas d'usage                            | Sortie                  |
+| ------------- | -------------------------------------- | ----------------------- |
 | `dublin-core` | Archivage bibliothéconomique, OAI-PMH. | XML, un fichier agrégé. |
-| `nakala`      | Dépôt bulk Nakala.                | CSV `;`, UTF-8 BOM. |
-| `xlsx`        | Catalogage manuel, vérification.  | xlsx Excel/LibreOffice. |
+| `nakala`      | Dépôt bulk Nakala.                     | CSV `;`, UTF-8 BOM.     |
+| `xlsx`        | Catalogage manuel, vérification.       | xlsx Excel/LibreOffice. |
 
 Tous incluent les **métadonnées de la collection en tête** : cote,
 titre, type, fonds parent (rattachée) ou fonds représentés
@@ -55,11 +55,11 @@ manquants, type_coar non URI, langue non ISO 639-3).
 
 ## Champs obligatoires par format
 
-| Format        | Champs obligatoires sur les items |
-|---------------|------------------------------------|
-| `dublin-core` | `cote`, `titre` |
+| Format        | Champs obligatoires sur les items                                              |
+| ------------- | ------------------------------------------------------------------------------ |
+| `dublin-core` | `cote`, `titre`                                                                |
 | `nakala`      | `titre`, `date`, `type_coar`, créateur (`metadonnees.createurs` ou `.auteurs`) |
-| `xlsx`        | aucun |
+| `xlsx`        | aucun                                                                          |
 
 Les items qui manquent un champ obligatoire apparaissent dans
 `RapportExport.items_incomplets`. L'export n'est pas bloqué — c'est à
@@ -69,16 +69,16 @@ l'utilisateur d'arbitrer.
 
 Produit par tous les exporters et affiché par le CLI :
 
-| Champ | Sens |
-|---|---|
-| `format` | `dc_xml` / `nakala_csv` / `xlsx` |
-| `nb_items_selectionnes` | |
-| `nb_fichiers_selectionnes` | total des fichiers liés aux items |
-| `items_incomplets` | `[(cote, [champs_manquants]), …]` |
-| `valeurs_non_mappees` | `[(champ, valeur), …]` — type_coar hors URI COAR, langue hors ISO 639-3 |
-| `avertissements` | Liste libre |
-| `chemin_sortie` | Chemin du fichier produit |
-| `duree_secondes` | |
+| Champ                      | Sens                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `format`                   | `dc_xml` / `nakala_csv` / `xlsx`                                                |
+| `nb_items_selectionnes`    |                                                                                 |
+| `nb_fichiers_selectionnes` | total des fichiers liés aux items                                               |
+| `items_incomplets`         | `[(cote, [champs_manquants]), …]`                                               |
+| `valeurs_non_mappees`      | `[(champ, valeur), …]` — type_coar hors URI COAR, langue hors ISO 639-3         |
+| `avertissements`           | Liste libre                                                                     |
+| `chemin_sortie`            | Chemin du fichier produit                                                       |
+| `duree_secondes`           |                                                                                 |
 
 `--verbose` détaille les `items_incomplets` ligne par ligne.
 
@@ -132,19 +132,19 @@ Le titre de feuille est dérivé du titre de la collection, tronqué à
 
 ```bash
 # Dublin Core d'une miroir.
-uv run archives-tool exporter dublin-core HK --fonds HK \
+archives-tool exporter dublin-core HK --fonds HK \
     --sortie hk_dc.xml
 
 # Nakala d'une libre rattachée, avec licence personnalisée.
-uv run archives-tool exporter nakala HK-FAVORIS --fonds HK \
+archives-tool exporter nakala HK-FAVORIS --fonds HK \
     --licence "CC-BY-4.0" --statut publié
 
 # xlsx d'une transversale (pas de --fonds car cote unique).
-uv run archives-tool exporter xlsx TEMOIG
+archives-tool exporter xlsx TEMOIG
 
 # Sortie par défaut dans le cwd : <cote>_dc.xml / <cote>_nakala.csv /
 # <cote>.xlsx — pas besoin de --sortie pour un export ad-hoc.
-uv run archives-tool exporter dublin-core HK --fonds HK
+archives-tool exporter dublin-core HK --fonds HK
 ```
 
 `--fonds COTE` désambiguïse quand une cote de collection est partagée
@@ -168,6 +168,6 @@ sérialisation.
   ajouter un champ récurrent (ex. `metadonnees.orcid` → `dc:creator`),
   éditer le dict et ajouter un test.
 - **Pas de dépôt automatique vers Nakala** via API : hors scope V1.
-- **Date EDTF** : Item.date est exporté littéralement (pas de
+- **Date EDTF** : `Item.date` est exporté littéralement (pas de
   conversion EDTF → ISO 8601). Si l'item a `1969?`, c'est cette
   chaîne qui sort. À évaluer en V2 selon les retours utilisateur.

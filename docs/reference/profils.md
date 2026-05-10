@@ -5,9 +5,9 @@ tableur existant et une arborescence de scans** pour amorcer une
 collection en base.
 
 > **Vous écrivez votre premier profil ?** Voir le guide pas-à-pas
-> dans [`profils_creation.md`](profils_creation.md). Ce document-ci
-> est la référence complète du format, à consulter une fois les
-> bases acquises.
+> dans [Premier import](../premiers-pas/premier-import.md). Ce
+> document-ci est la référence complète du format, à consulter une
+> fois les bases acquises.
 
 ## Rôle
 

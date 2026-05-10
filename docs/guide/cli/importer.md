@@ -1,6 +1,6 @@
 # Importer
 
-L'importer prend un [profil YAML validé](profils.md), lit le tableur
+L'importer prend un [profil YAML validé](../../reference/profils.md), lit le tableur
 associé, résout les fichiers sur disque, et crée ou met à jour les
 items et fichiers en base.
 
@@ -23,20 +23,22 @@ items et fichiers en base.
 
 Quatre modules découpés sous `src/archives_tool/importers/` :
 
-- [`lecteur_tableur.py`](../src/archives_tool/importers/lecteur_tableur.py)
+- [`lecteur_tableur.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/lecteur_tableur.py)
   — lit un CSV/Excel avec pandas en `dtype=str`, normalise strip + NFC,
   convertit les sentinelles de `valeurs_nulles` et les `NaN` en `None`.
-- [`transformateur.py`](../src/archives_tool/importers/transformateur.py)
+- [`transformateur.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/transformateur.py)
   — fonction pure ligne → `ItemPrepare`. Applique les trois formes de
   mapping, les `valeurs_par_defaut`, la décomposition de cote par
   regex et la décomposition de type par séparateur.
-- [`resolveur_fichiers.py`](../src/archives_tool/importers/resolveur_fichiers.py)
+- [`resolveur_fichiers.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/resolveur_fichiers.py)
   — cherche les fichiers sur disque selon `profil.fichiers`. Mode
   template (`{champ}` substitué, résultat utilisé en glob) ou regex
   (liste + filtre par cohérence des groupes nommés avec l'item).
-- [`ecrivain.py`](../src/archives_tool/importers/ecrivain.py) — orchestre
-  tout, écrit en base sous transaction, journalise dans
-  `OperationImport`.
+- [`ecrivain.py`](https://github.com/Hsbtqemy/ColleC/blob/main/src/archives_tool/importers/ecrivain.py)
+  — orchestre tout, écrit en base sous transaction, journalise dans
+  `OperationImport`. Réutilise les services métier (`creer_fonds`,
+  `modifier_collection`, `creer_item`) qui garantissent les
+  invariants Fonds / Collection / Item.
 
 ## Dry-run par défaut
 
@@ -58,6 +60,7 @@ archives-tool importer profils/ma_collection.yaml --no-dry-run --utilisateur "Ma
 ```
 
 En mode réel :
+
 - les hash SHA-256 sont calculés pour chaque fichier ajouté ;
 - un `batch_id` UUID est généré ;
 - une entrée `OperationImport` est créée (table journal dédiée) avec
@@ -88,14 +91,16 @@ Sémantique :
 
 ## Ré-import
 
-Le ré-import se fait par `(collection_id, cote)` :
+Le ré-import se fait par `(fonds_id, cote)` (la cote est unique par
+fonds, pas globalement) :
 
 - Item existant avec mêmes valeurs → **inchangé** (compteur
   `items_inchanges`).
 - Item existant avec une différence sur une colonne ou dans
   `metadonnees` → **mis à jour** (`items_mis_a_jour`). `modifie_par`
   est écrit avec `cree_par` courant.
-- Item absent → **créé** (`items_crees`).
+- Item absent → **créé** (`items_crees`), automatiquement rattaché
+  à la miroir du fonds (invariant 6).
 
 La comparaison des colonnes numériques est tolérante : pandas lit en
 `str`, SQLite stocke en `int` pour les colonnes `Integer`, donc
@@ -120,37 +125,38 @@ items (PF-001 avec 2 fichiers, PF-002 avec 1 fichier).
 
 L'objet `RapportImport` retourné par `importer()` contient :
 
-| Champ | Type | Sens |
-|---|---|---|
-| `dry_run` | bool | Mode d'exécution. |
-| `batch_id` | str \| None | UUID de l'opération (None en dry-run). |
-| `collection_creee` | bool | True si c'est le premier import. |
-| `collection_id` | int \| None | id de la collection cible. |
-| `items_crees` | int | Nouveaux items. |
-| `items_mis_a_jour` | int | Items modifiés. |
-| `items_inchanges` | int | Items déjà identiques. |
-| `fichiers_ajoutes` | int | Nouveaux Fichier en base. |
-| `fichiers_deja_connus` | int | Fichiers déjà référencés. |
-| `fichiers_orphelins` | list[str] | Sur disque, pas référencés. |
-| `lignes_ignorees` | list[tuple[int, str]] | (n° ligne, raison). |
-| `warnings` | list[str] | Divergences non-bloquantes. |
-| `erreurs` | list[str] | Erreurs bloquantes en mode réel. |
-| `duree_secondes` | float | Temps total. |
+| Champ                 | Type                  | Sens                                          |
+| --------------------- | --------------------- | --------------------------------------------- |
+| `dry_run`             | bool                  | Mode d'exécution.                             |
+| `batch_id`            | str \| None           | UUID de l'opération (None en dry-run).        |
+| `fonds_cote`          | str \| None           | Cote du fonds importé.                        |
+| `fonds_cree`          | bool                  | True si c'est le premier import du fonds.     |
+| `miroir_personnalisee`| bool                  | True si le profil a override la miroir.       |
+| `items_crees`         | int                   | Nouveaux items.                               |
+| `items_mis_a_jour`    | int                   | Items modifiés.                               |
+| `items_inchanges`     | int                   | Items déjà identiques.                        |
+| `fichiers_ajoutes`    | int                   | Nouveaux Fichier en base.                     |
+| `fichiers_deja_connus`| int                   | Fichiers déjà référencés.                     |
+| `fichiers_orphelins`  | list[str]             | Sur disque, pas référencés.                   |
+| `lignes_ignorees`     | list[tuple[int, str]] | (n° ligne, raison).                           |
+| `warnings`            | list[str]             | Divergences non-bloquantes.                   |
+| `erreurs`             | list[str]             | Erreurs bloquantes en mode réel.              |
+| `duree_secondes`      | float                 | Temps total.                                  |
 
 Codes de sortie CLI :
 
 - `0` : succès (même en dry-run avec warnings).
 - `1` : l'import a remonté des `erreurs`.
-- `2` : config ou profil invalide (erreur amont).
+- `2` : config ou profil invalide (erreur amont, profil v1 obsolète).
 
 ## Exemples
 
-Les quatre fixtures sous `tests/fixtures/profils/` sont testées bout
-en bout par `tests/test_importer.py` :
+Les fixtures sous `tests/fixtures/profils/` sont testées bout en bout
+par `tests/test_importer.py` :
 
 - `cas_item_simple/` — le cas le plus courant.
 - `cas_fichier_groupe/` — granularité fichier + DOI Nakala.
-- `cas_hierarchie_cote/` — decomposition_cote + decomposition_type.
+- `cas_hierarchie_cote/` — `decomposition_cote` + `decomposition_type`.
 - `cas_uri_dc/` — colonnes URI Dublin Core + agrégations.
 
 ## Erreurs fréquentes
@@ -169,12 +175,13 @@ pas de valeur correspondante sur l'item. Champs disponibles :
 - `{cote}` (toujours) ;
 - toutes les clés de `champs_colonne` (colonnes dédiées) ;
 - toutes les clés de `metadonnees` (préfixe `metadonnees.` retiré) ;
-- toutes les clés de `hierarchie` (si decomposition_cote a matché).
+- toutes les clés de `hierarchie` (si `decomposition_cote` a matché).
 
-### « Collection parent introuvable »
+### « Profil v1 obsolète »
 
-Le profil déclare un `parent_cote` pour lequel aucune collection
-n'existe en base. Importer d'abord le parent.
+Les profils écrits avant V0.9.0-gamma.1 (avec une section
+`collection:` racine) ne sont plus acceptés. Voir
+[Profils d'import](../../reference/profils.md) pour la migration v1 → v2.
 
 ### Rollback en mode réel
 

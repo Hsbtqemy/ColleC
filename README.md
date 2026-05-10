@@ -1,57 +1,47 @@
-# archives-tool
+# ColleC
 
-Outil interne de gestion de collections numérisées (revues anciennes,
-périodiques, textes). Voir [CLAUDE.md](CLAUDE.md) pour la vue d'ensemble
-et [schema.md](schema.md) pour le modèle de données.
+Outil de gestion de collections numérisées pour archives
+universitaires. Développé à l'Université de Poitiers.
+
+📖 **Documentation : <https://hsbtqemy.github.io/ColleC/>**
+
+ColleC gère le travail interne (métadonnées riches, états de
+catalogage, multi-appartenance d'items à plusieurs collections)
+sans contraindre la sémantique Nakala pour la publication. Modèle
+Fonds / Collection / Item, interface web pour le travail
+quotidien, CLI pour l'automatisation, exports Dublin Core /
+Nakala / xlsx.
+
+**Statut** : V0.9.0 release candidate. Modèle stable,
+fonctionnalités complètes. La V1.0 marquera la stabilisation
+après usage en production sur plusieurs vrais fonds.
 
 ## Démarrage rapide
 
 ```bash
+git clone https://github.com/Hsbtqemy/ColleC.git
+cd ColleC
 uv sync
 uv run alembic upgrade head
 uv run pytest
 ```
 
-Pour l'interface web, installer aussi Tailwind :
-
-```bash
-npm install
-npm run build:css
-```
-
-## Lancement en dev
-
-Deux processus en parallèle :
-
-```bash
-npm run watch:css
-uv run uvicorn archives_tool.api.main:app --reload --port 8000
-```
-
-## Démo
-
-Créer une base SQLite peuplée pour explorer l'UI sans toucher à la
-base de production :
+Pour explorer l'interface avec une base de démonstration :
 
 ```bash
 uv run archives-tool demo init
 ARCHIVES_DB=data/demo.db uv run uvicorn archives_tool.api.main:app --reload
 ```
 
-`ARCHIVES_DB` est lue par l'API ; sans elle, `data/archives.db` sert.
+Voir la doc en ligne (lien ci-dessus) ou en local
+(`uv run mkdocs serve`) pour le guide complet.
 
 ## Structure
 
-- `src/archives_tool/models/` — modèles SQLAlchemy par domaine.
-- `src/archives_tool/db.py` — engine SQLite + pragmas (WAL, FK).
-- `src/archives_tool/{importers,exporters,renamer,derivatives,qa}/` —
-  modules métier de la CLI.
-- `src/archives_tool/api/` — application FastAPI (routes, services).
-- `src/archives_tool/web/` — templates Jinja2 + assets statiques.
-- `src/archives_tool/cli.py` — commandes Typer.
+- `src/archives_tool/` — code Python (modèles, services, CLI, API).
 - `alembic/` — migrations.
-- `tests/` — pytest (contraintes, parité migration, intégration web).
-- `profiles/` — profils d'import YAML par collection.
+- `tests/` — pytest (~430 tests).
+- `profiles/` — profils d'import YAML par fonds.
 - `data/` — base SQLite locale (gitignoré).
-- `docs/` — références par module (importer, exports, qa, renamer,
-  derivatives, interface web, profils).
+- `docs/` — sources MkDocs ; build déployé sur GitHub Pages via
+  CI (`.github/workflows/docs.yml`).

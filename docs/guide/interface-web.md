@@ -70,7 +70,7 @@ Filtres Jinja exposés par `templating.py` :
 
 ## Bibliothèque de composants
 
-Les dix composants Jinja2 de [`docs/composants_ui.md`](composants_ui.md)
+Les dix composants Jinja2 de [`composants_ui.md` dans le dépôt](https://github.com/Hsbtqemy/ColleC/blob/main/docs/composants_ui.md)
 sont la **référence visuelle de vérité** (validés en design). Aucune
 réinterprétation : si une décision de markup ou de classe Tailwind
 semble inhabituelle, elle est intentionnelle.
@@ -95,7 +95,7 @@ Composants existants antérieurs (`header.html`, `breadcrumb.html`,
 plus référencé après le refactor V0.6.0.1 mais reste disponible.
 
 Schémas attendus, exemples d'usage et détails des hooks `data-…` :
-voir [`docs/composants_ui.md`](composants_ui.md).
+voir [`composants_ui.md` dans le dépôt](https://github.com/Hsbtqemy/ColleC/blob/main/docs/composants_ui.md).
 
 ## Service des dérivés
 
@@ -108,7 +108,7 @@ configurée dans `config_local.yaml`. Garde-fous :
 - fichier absent → 404.
 
 L'URL miroite la convention de stockage du module
-[derivatives](derivatives.md) : `/derives/miniatures/vignette/HK/01.jpg`
+[deriver](cli/deriver.md) : `/derives/miniatures/vignette/HK/01.jpg`
 sert `<racine miniatures>/vignette/HK/01.jpg`.
 
 ## Ajouter une nouvelle page

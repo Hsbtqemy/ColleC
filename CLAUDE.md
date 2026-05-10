@@ -141,6 +141,11 @@ code. Si une demande les contredit, signaler avant d'exécuter.
 - uv pour la gestion d'environnement et dépendances
 - pytest pour les tests
 - ruff pour lint + format
+- MkDocs Material pour la documentation (déploiement GitHub Pages
+  via `.github/workflows/docs.yml`, build `mkdocs build --strict`
+  exigé). Sources sous `docs/`, config racine `mkdocs.yml`. Voir
+  [docs/index.md](docs/index.md) et la section « Documentation »
+  ci-dessous.
 
 ---
 
@@ -181,7 +186,7 @@ Les profils v1 (avec `collection:` racine) sont rejetés via
 `ProfilObsoleteV1` avec un message de migration manuelle. Pas de
 migration automatique : la situation est ambiguë (`parent_cote`
 disparu, fonds vs collection libre rattachée). Référence complète :
-[`docs/profils.md`](docs/profils.md).
+[`docs/reference/profils.md`](docs/reference/profils.md).
 
 Le module `profils/generateur.py` produit des squelettes v2
 commentés :
@@ -190,7 +195,10 @@ commentés :
   avec heuristique pour les champs structurants.
 
 CLI : `archives-tool profil init` et `archives-tool profil analyser`.
-Guide utilisateur : [`docs/profils_creation.md`](docs/profils_creation.md).
+Guide utilisateur (gamma.5.2) : à reprendre dans
+[`docs/premiers-pas/premier-import.md`](docs/premiers-pas/premier-import.md).
+Source historique conservée : [`docs/profils_creation.md`](docs/profils_creation.md)
+(exclu du build MkDocs).
 
 ### Importer
 
@@ -210,7 +218,7 @@ Le pipeline d'import est découpé en quatre modules sous
   dans `OperationImport` en mode réel.
 
 CLI : `archives-tool importer <profil>` (Typer). Référence
-complète dans [`docs/importer.md`](docs/importer.md).
+complète dans [`docs/guide/cli/importer.md`](docs/guide/cli/importer.md).
 
 ### CLI Collections
 
@@ -244,7 +252,7 @@ CLI : `archives-tool exporter {dublin-core,nakala,xlsx} COTE
 partagée. Pour les transversales, chaque ligne Nakala/xlsx indique
 son fonds d'origine via la colonne `fonds_cote` ; en DC, les fonds
 représentés sont listés en `dc:source` dans la notice de tête.
-Référence complète : [`docs/exports.md`](docs/exports.md).
+Référence complète : [`docs/guide/cli/exporter.md`](docs/guide/cli/exporter.md).
 
 ### Affichage CLI
 
@@ -272,7 +280,7 @@ CLI `archives-tool montrer {fonds,collection,item,fichier}` :
 
 `--format text|json` partagé avec `controler` via l'enum
 `_FormatRapport`. Référence complète :
-[`docs/commandes_montrer.md`](docs/commandes_montrer.md).
+[`docs/guide/cli/montrer.md`](docs/guide/cli/montrer.md).
 
 ### Contrôles de cohérence
 
@@ -300,7 +308,7 @@ CLI : `archives-tool controler [--fonds COTE | --collection COTE]
 - 1 : erreur métier ou `--strict` avec problème ou cote inconnue,
 - 2 : saisie invalide.
 
-Référence complète : [`docs/controles.md`](docs/controles.md).
+Référence complète : [`docs/guide/cli/controler.md`](docs/guide/cli/controler.md).
 
 ### Renommage transactionnel
 
@@ -324,7 +332,7 @@ CLI : `archives-tool renommer appliquer --template ... [--fonds COTE
 --fichier-id ID]`, `archives-tool renommer annuler --batch-id UUID`,
 `archives-tool renommer historique`. Dry-run par défaut. Variables
 template incluent `{cote_fonds}` / `{titre_fonds}` / `{cote_collection}`
-/ etc. Référence complète dans [`docs/renamer.md`](docs/renamer.md).
+/ etc. Référence complète dans [`docs/guide/cli/renommer.md`](docs/guide/cli/renommer.md).
 
 ### Génération de dérivés
 
@@ -341,10 +349,18 @@ Tailles par défaut : vignette 300 px, aperçu 1 200 px (côté long,
 ratio préservé). Idempotent : `derive_genere=True` est ignoré sauf
 `--force`.
 
-CLI : `archives-tool deriver appliquer [--collection|--item|--fichier-id]
-[--recursif] [--force] [--dry-run] [--racine-cible miniatures]`,
-`archives-tool deriver nettoyer ...`. Référence dans
-[`docs/derivatives.md`](docs/derivatives.md).
+CLI (V0.9.0-gamma.4.3) : `archives-tool deriver appliquer
+[--fonds|--collection|--item|--fichier-id] [--force] [--dry-run]
+[--racine-cible miniatures]`, `archives-tool deriver nettoyer ...`.
+Périmètre validé via `Perimetre` (réutilisé du module `renamer`),
+sélection alignée sur `archives-tool renommer`. Référence dans
+[`docs/guide/cli/deriver.md`](docs/guide/cli/deriver.md).
+
+**Invalidation au renommage** : `renamer/execution.py` et
+`renamer/annulation.py` remettent `derive_genere = False` (et
+nullent `apercu_chemin` / `vignette_chemin`) sur chaque fichier
+déplacé, pour forcer la régénération à la prochaine passe
+`deriver appliquer`.
 
 ### Interface web
 
@@ -400,7 +416,7 @@ Nakala / OpenSeadragon est prévu pour V2 via `sources_image.py`.
 CLI : `archives-tool demo init [--sortie data/demo.db] [--force]` crée
 une base SQLite peuplée pour explorer l'interface (5 fonds, ~333
 items, ~1300 fichiers, 1 transversale, collaborateurs). Référence
-dans [`docs/interface_web.md`](docs/interface_web.md).
+dans [`docs/guide/interface-web.md`](docs/guide/interface-web.md).
 
 ### Sources externes (V2+)
 
@@ -424,6 +440,44 @@ Saisie nouvelle     ─┘                                ▲
                                                       ▲
                                                       │
                                             Consultation Nakala (V2+)
+```
+
+### Documentation
+
+Le site MkDocs Material est servi sur GitHub Pages, déploiement
+automatique depuis `main` via `.github/workflows/docs.yml`.
+Build `mkdocs build --strict` (passe en CI) refuse les liens
+cassés et les pages orphelines.
+
+Structure :
+
+- `mkdocs.yml` à la racine (config Material + nav).
+- `docs/index.md` : page d'accueil.
+- `docs/premiers-pas/` : Installation / Configuration / Premier
+  import / Workflow type (gamma.5.1, complets).
+- `docs/guide/` : Concepts (stub), Interface web, CLI/* (les 7
+  sous-commandes — importer, exporter, controler, montrer,
+  renommer, deriver complets ; collections en stub).
+- `docs/reference/` : Profils d'import (complet), Schéma de
+  données (complet), Formats d'export et Contrôles qa (stubs
+  gamma.5.2).
+- `docs/developpeurs/` : Contribuer (complet), reste en stubs
+  gamma.5.2.
+- `docs/annexes/` : Changelog (initial), Limites (stub).
+
+Fichiers conservés en dépôt mais hors build (relocalisés en
+gamma.5.2) : `docs/composants_ui.md`, `docs/profils_creation.md`
+(via `exclude_docs` dans `mkdocs.yml`).
+
+Tests garde-fous : `tests/docs/test_structure.py` vérifie la
+présence et le non-vide des fichiers documentaires essentiels.
+
+Commandes utiles :
+
+```bash
+uv run mkdocs serve              # preview locale (live reload)
+uv run mkdocs build --strict     # build (échoue sur warnings)
+uv run pytest tests/docs/        # garde-fou structure
 ```
 
 ---
@@ -459,7 +513,7 @@ Conséquences :
 
 ## Modèle de données (résumé)
 
-Entités principales — détails dans [`schema.md`](schema.md).
+Entités principales — détails dans [`docs/reference/schema.md`](docs/reference/schema.md).
 
 - **Fonds** (V0.9.0-alpha) : id, cote unique, titre, descriptions,
   champs revue (éditeur, périodicité, ISSN), responsable archives,
@@ -522,7 +576,8 @@ Entités principales — détails dans [`schema.md`](schema.md).
 archives-tool/
 ├── CLAUDE.md
 ├── README.md
-├── schema.md                  # Référence du modèle de données
+├── schema.md                  # Stub redirige vers docs/reference/schema.md
+├── mkdocs.yml                 # Config MkDocs Material (docs/ → site)
 ├── pyproject.toml
 ├── alembic.ini
 ├── alembic/
@@ -549,7 +604,8 @@ archives-tool/
 ├── tests/
 ├── data/                      # .db et dérivés (gitignoré)
 ├── scripts/
-└── docs/                      # Références par module (importer.md, exports.md, …)
+├── docs/                      # Sources MkDocs (index, premiers-pas/, guide/, reference/, developpeurs/, annexes/)
+└── .github/workflows/docs.yml # CI build + deploy GitHub Pages
 ```
 
 ### Règles de code
@@ -684,7 +740,19 @@ archives-tool/
   minimale dans `template.py` (ajout `cote_fonds` / `titre_fonds`,
   `Collection.cote` au lieu de `cote_collection`) et `plan.py`
   (sélection N-N via `ItemCollection`, plus de `recursif`). — V0.9.0-gamma.4.2.
-- Adaptation CLI deriver — V0.9.0-gamma.4.3.
+- ✅ CLI `deriver` adaptée : périmètre via `Perimetre` (réutilisé
+  du module `renamer`), 4 sélecteurs `--fonds`/`--collection`/`--item`/
+  `--fichier-id`, plus de `--recursif`. `_selectionner_fichiers` passe
+  par `Item.fonds_id` et la junction `ItemCollection`. Le moteur de
+  renommage invalide automatiquement `derive_genere` après chaque
+  rename FS pour garder la cohérence des dérivés. — V0.9.0-gamma.4.3.
+- ✅ Documentation MkDocs Material avec déploiement GitHub Pages
+  automatique. Site `docs/` réorganisé (Premiers pas, Guide
+  utilisateur, Référence, Pour développeurs, Annexes). Premiers
+  pas complet (Installation / Configuration / Premier import /
+  Workflow type), section Contribuer + Changelog initial.
+  Workflow `.github/workflows/docs.yml` build + déploie sur
+  push main. — V0.9.0-gamma.5.1.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
@@ -1036,9 +1104,9 @@ uv run archives-tool controler --format json         # pour CI
 uv run archives-tool controler --strict              # exit 1 dès un avertissement
 
 # Génération de dérivés (vignettes + aperçus)
-uv run archives-tool deriver appliquer --collection HK --recursif
-uv run archives-tool deriver appliquer --item HK-1960-01 --force
-uv run archives-tool deriver nettoyer --collection HK
+uv run archives-tool deriver appliquer --fonds HK
+uv run archives-tool deriver appliquer --item HK-1960-01 --fonds HK --force
+uv run archives-tool deriver nettoyer --collection HK-FAVORIS --fonds HK
 
 # Renommage transactionnel (dry-run par défaut)
 uv run archives-tool renommer appliquer \

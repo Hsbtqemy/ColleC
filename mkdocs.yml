@@ -1,0 +1,99 @@
+site_name: ColleC
+site_description: >-
+  Outil de gestion de collections numérisées pour archives
+  universitaires
+site_url: https://hsbtqemy.github.io/ColleC/
+repo_url: https://github.com/Hsbtqemy/ColleC
+repo_name: Hsbtqemy/ColleC
+
+theme:
+  name: material
+  language: fr
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Mode sombre
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Mode clair
+  icon:
+    logo: material/folder-multiple-outline
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+
+# Fichiers conservés en dépôt mais hors build (relocalisés en
+# V0.9.0-gamma.5.2). Évite les avertissements `omitted_files` du
+# mode strict sans perdre le contenu.
+exclude_docs: |
+  composants_ui.md
+  profils_creation.md
+
+nav:
+  - Accueil: index.md
+  - Premiers pas:
+    - Vue d'ensemble: premiers-pas/index.md
+    - Installation: premiers-pas/installation.md
+    - Configuration: premiers-pas/configuration.md
+    - Premier import: premiers-pas/premier-import.md
+    - Workflow type: premiers-pas/workflow-type.md
+  - Guide utilisateur:
+    - Vue d'ensemble: guide/index.md
+    - Concepts: guide/concepts.md
+    - Interface web: guide/interface-web.md
+    - CLI:
+      - Vue d'ensemble: guide/cli/index.md
+      - importer: guide/cli/importer.md
+      - collections: guide/cli/collections.md
+      - exporter: guide/cli/exporter.md
+      - controler: guide/cli/controler.md
+      - montrer: guide/cli/montrer.md
+      - renommer: guide/cli/renommer.md
+      - deriver: guide/cli/deriver.md
+  - Référence:
+    - Vue d'ensemble: reference/index.md
+    - Profils d'import: reference/profils.md
+    - Formats d'export: reference/exports.md
+    - Contrôles qa: reference/controles.md
+    - Schéma de données: reference/schema.md
+  - Pour développeurs:
+    - Vue d'ensemble: developpeurs/index.md
+    - Architecture: developpeurs/architecture.md
+    - Modèle de données: developpeurs/modele.md
+    - Services: developpeurs/services.md
+    - Tests: developpeurs/tests.md
+    - Contribuer: developpeurs/contribuer.md
+  - Annexes:
+    - Limites connues: annexes/limites.md
+    - Changelog: annexes/changelog.md

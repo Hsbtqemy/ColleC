@@ -265,19 +265,31 @@ Référence complète dans
 
 ### Contrôles de cohérence
 
-`src/archives_tool/qa/` regroupe les contrôles de cohérence
-base ↔ disque (lecture seule, jamais d'écriture) :
+`src/archives_tool/qa/` regroupe 14 contrôles répartis en 4 familles
+(lecture seule, jamais d'écriture en base ni sur disque) :
 
-- `controles.py` : quatre fonctions pures session → `RapportControle`
-  (fichiers manquants sur disque, orphelins disque, items sans
-  fichier, doublons par hash) plus un orchestrateur `controler_tout`.
-- `rapport.py` : dataclasses des anomalies et du rapport global.
-- `affichage.py` : rendu Rich par contrôle.
+- `_commun.py` : `Severite`, `Exemple`, `ResultatControle`,
+  `PerimetreControle`, `RapportQa`.
+- `invariants.py` : INV1-2-4-6 (miroir unique, miroir avec fonds,
+  item avec fonds, item dans la miroir).
+- `fichiers.py` : FILE-MISSING, FILE-ITEM-VIDE, FILE-HASH-DUPLIQUE
+  (agrégation SQL, pas de N+1), FILE-HASH-MANQUANT.
+- `metadonnees.py` : META-COTE-INVALIDE (`PATTERN_COTE`),
+  META-TITRE-VIDE, META-DATE-INVALIDE (regex EDTF tolérante),
+  META-ANNEE-IMPLAUSIBLE (plage configurable).
+- `cross.py` : CROSS-COTE-DUPLIQUEE-FONDS, CROSS-FONDS-VIDE.
+  Toujours sur la base entière, indépendamment du périmètre.
+- `orchestrateur.py` : `composer_perimetre` + `executer_controles`.
+- `formatteurs/{text,json}.py` : Rich pour text (couleurs ✓⚠✗ via
+  THEME projet), structure JSON stable pour CI.
 
-CLI : `archives-tool controler [--collection ...] [--recursif]
-[--check ...] [--extensions ...] [--limite-details N]`. Exit 0
-si aucune anomalie, 1 sinon. Référence complète dans
-[`docs/controles.md`](docs/controles.md).
+CLI : `archives-tool controler [--fonds COTE | --collection COTE]
+[--format text|json] [--strict] [--max-exemples N]`. Codes :
+- 0 : aucune erreur (avertissements/infos OK en non-strict),
+- 1 : erreur métier ou `--strict` avec problème ou cote inconnue,
+- 2 : saisie invalide.
+
+Référence complète : [`docs/controles.md`](docs/controles.md).
 
 ### Renommage transactionnel
 
@@ -639,8 +651,15 @@ archives-tool/
   Pour les transversales, chaque ligne Nakala/xlsx indique son fonds
   d'origine. CLI : `archives-tool exporter {dublin-core,nakala,xlsx}
   COTE [--fonds X] [--sortie ...]`. — V0.9.0-gamma.2.
-- Adaptation CLI controler / montrer / renommer / deriver
-  + qa / renamer / derivatives — V0.9.0-gamma.3 à V0.9.0-gamma.4.
+- ✅ Module qa refondu : 14 contrôles répartis en 4 familles
+  (invariants, fichiers, métadonnées, cross). Lecture seule, garantie
+  de ne jamais écrire en base. CLI `archives-tool controler [--fonds X
+  | --collection Y] [--format text|json] [--strict] [--max-exemples N]`
+  avec sortie text Rich (couleurs ✓⚠✗) ou JSON stable (intégration CI).
+  Codes de sortie : 0 (RAS), 1 (erreur ou strict avec avertissement),
+  2 (saisie invalide). — V0.9.0-gamma.3.
+- Adaptation CLI montrer / renommer / deriver + renamer / derivatives
+  — V0.9.0-gamma.4.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
@@ -986,9 +1005,10 @@ uv run archives-tool profil init --cote HK --titre "Hara-Kiri" \
     --tableur inventaire.xlsx --sortie squelette.yaml
 
 # Contrôles de cohérence (lecture seule)
-uv run archives-tool controler
-uv run archives-tool controler --collection HK --recursif
-uv run archives-tool controler --check items-vides --check doublons
+uv run archives-tool controler                       # base entière, text
+uv run archives-tool controler --fonds HK            # un seul fonds
+uv run archives-tool controler --format json         # pour CI
+uv run archives-tool controler --strict              # exit 1 dès un avertissement
 
 # Génération de dérivés (vignettes + aperçus)
 uv run archives-tool deriver appliquer --collection HK --recursif

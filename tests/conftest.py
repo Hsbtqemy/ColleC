@@ -34,7 +34,6 @@ from archives_tool.models import Base, Fonds, Item, ItemCollection
 # Collection/Item refondus, demo seeder, importers v2, exporters,
 # qa, renamer, derivatives, affichage CLI, routes web).
 collect_ignore = [
-    "test_cli_controler.py",
     "test_cli_deriver.py",
     "test_cli_importer.py",
     "test_cli_montrer.py",
@@ -50,7 +49,6 @@ collect_ignore = [
     "test_mapping_dc.py",
     "test_preferences.py",
     "test_profils_generateur.py",
-    "test_qa_controles.py",
     "test_rapport_export.py",
     "test_renamer_annulation.py",
     "test_renamer_execution.py",

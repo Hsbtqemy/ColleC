@@ -1,384 +1,416 @@
-"""Tests des contrôles de cohérence (module qa)."""
+"""Tests des contrôles qa (V0.9.0-gamma.3).
+
+Une test par contrôle : un cas où il passe et un cas où il échoue.
+Les cas d'échec injectent volontairement un problème en base
+(suppression de la miroir, retrait d'un item de sa miroir, hash
+dupliqué, cote invalide…) et vérifient que le contrôle le détecte.
+"""
 
 from __future__ import annotations
 
-import unicodedata
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from archives_tool.models import Collection, Fichier, Item
-from archives_tool.qa.controles import (
-    controler_doublons_par_hash,
-    controler_fichiers_manquants_disque,
-    controler_items_sans_fichier,
-    controler_orphelins_disque,
-    controler_tout,
+from archives_tool.api.services.collections import (
+    FormulaireCollection,
+    creer_collection_libre,
+    lire_collection_par_cote,
+    retirer_item_de_collection,
+)
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+)
+from archives_tool.api.services.items import (
+    FormulaireItem,
+    creer_item,
+)
+from archives_tool.models import (
+    Fichier,
+    Item,
+    ItemCollection,
+)
+from archives_tool.qa import (
+    Severite,
+    composer_perimetre,
+    controler_cross_cote_dupliquee_fonds,
+    controler_cross_fonds_vide,
+    controler_file_hash_duplique,
+    controler_file_hash_manquant,
+    controler_file_item_vide,
+    controler_file_missing,
+    controler_inv1_miroir_unique,
+    controler_inv2_miroir_avec_fonds,
+    controler_inv4_item_avec_fonds,
+    controler_inv6_item_dans_miroir,
+    controler_meta_annee_implausible,
+    controler_meta_cote_invalide,
+    controler_meta_date_invalide,
+    controler_meta_titre_vide,
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers de mise en place
-# ---------------------------------------------------------------------------
-
-
-def _collection(
-    session: Session, cote: str, titre: str = "T", parent: Collection | None = None
-) -> Collection:
-    col = Collection(cote_collection=cote, titre=titre, parent=parent)
-    session.add(col)
-    session.flush()
-    return col
-
-
-def _item(session: Session, col: Collection, cote: str) -> Item:
-    item = Item(collection_id=col.id, cote=cote)
-    session.add(item)
-    session.flush()
-    return item
-
-
-def _fichier(
-    session: Session,
-    item: Item,
-    racine: str,
-    chemin_relatif: str,
-    *,
-    ordre: int = 1,
-    nom: str | None = None,
-    hash_sha256: str | None = None,
-) -> Fichier:
-    f = Fichier(
-        item_id=item.id,
-        racine=racine,
-        chemin_relatif=chemin_relatif,
-        nom_fichier=nom or chemin_relatif.rsplit("/", 1)[-1],
-        ordre=ordre,
-        hash_sha256=hash_sha256,
-    )
-    session.add(f)
-    session.flush()
-    return f
-
-
-def _ecrire(racine: Path, chemin_relatif: str, contenu: bytes = b"x") -> Path:
-    chemin = racine.joinpath(*chemin_relatif.split("/"))
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    chemin.write_bytes(contenu)
-    return chemin
-
-
-# ---------------------------------------------------------------------------
-# controler_fichiers_manquants_disque
-# ---------------------------------------------------------------------------
-
-
-def test_fichiers_manquants_signale_uniquement_les_absents(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "scans"
-    racine.mkdir()
-    _ecrire(racine, "a.png")
-    # b.png n'est pas créé sur disque.
-
-    col = _collection(session, "C1")
-    it = _item(session, col, "C1-001")
-    _fichier(session, it, "scans", "a.png", ordre=1)
-    _fichier(session, it, "scans", "b.png", ordre=2)
-    session.commit()
-
-    rap = controler_fichiers_manquants_disque(session, {"scans": racine})
-    assert rap.nb_anomalies == 1
-    assert rap.anomalies[0].chemin_relatif == "b.png"
-    assert rap.anomalies[0].racine == "scans"
-
-
-def test_fichiers_manquants_racine_inconnue_remontee(
-    session: Session, tmp_path: Path
-) -> None:
-    col = _collection(session, "C1")
-    it = _item(session, col, "C1-001")
-    _fichier(session, it, "manquante", "x.png")
-    session.commit()
-
-    rap = controler_fichiers_manquants_disque(session, {})
-    # Racine non configurée → chaque fichier rattaché est signalé en avertissement
-    # (pas en anomalie « manquant »).
-    assert rap.nb_anomalies == 0
-    assert any("manquante" in a for a in rap.avertissements)
-
-
-def test_fichiers_manquants_filtre_par_ids_collections(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    c1 = _collection(session, "C1")
-    c2 = _collection(session, "C2")
-    i1 = _item(session, c1, "C1-001")
-    i2 = _item(session, c2, "C2-001")
-    _fichier(session, i1, "s", "absent_c1.png")
-    _fichier(session, i2, "s", "absent_c2.png")
-    session.commit()
-
-    rap = controler_fichiers_manquants_disque(
-        session, {"s": racine}, ids_collections=[c1.id]
-    )
-    assert rap.nb_anomalies == 1
-    assert rap.anomalies[0].chemin_relatif == "absent_c1.png"
-
-
-def test_fichiers_manquants_compare_en_nfc(session: Session, tmp_path: Path) -> None:
-    """Sur disque (macOS NFD ou autre), comparaison NFC-stable."""
-    racine = tmp_path / "s"
-    racine.mkdir()
-    # Le nom contient un caractère composé : on l'écrit décomposé sur disque,
-    # comme le ferait HFS+/APFS.
-    nom_nfd = unicodedata.normalize("NFD", "café.png")
-    _ecrire(racine, nom_nfd)
-
-    col = _collection(session, "C")
-    it = _item(session, col, "C-1")
-    # En base : forme NFC.
-    _fichier(session, it, "s", "café.png")
-    session.commit()
-
-    rap = controler_fichiers_manquants_disque(session, {"s": racine})
-    assert rap.nb_anomalies == 0
-
-
-# ---------------------------------------------------------------------------
-# controler_orphelins_disque
-# ---------------------------------------------------------------------------
-
-
-def test_orphelins_disque_liste_les_fichiers_non_references(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    _ecrire(racine, "ref.png")
-    _ecrire(racine, "orphelin.png")
-    _ecrire(racine, "sous/orph2.tif")
-
-    col = _collection(session, "C")
-    it = _item(session, col, "C-1")
-    _fichier(session, it, "s", "ref.png")
-    session.commit()
-
-    rap = controler_orphelins_disque(session, {"s": racine})
-    chemins = sorted(a.chemin_relatif for a in rap.anomalies)
-    assert chemins == ["orphelin.png", "sous/orph2.tif"]
-
-
-def test_orphelins_disque_ignore_extensions_inconnues(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    _ecrire(racine, "scan.png")
-    _ecrire(racine, "notes.txt")  # ignoré
-    _ecrire(racine, ".DS_Store")  # ignoré
-    session.commit()
-
-    rap = controler_orphelins_disque(session, {"s": racine})
-    assert {a.chemin_relatif for a in rap.anomalies} == {"scan.png"}
-
-
-def test_orphelins_disque_extensions_personnalisees(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    _ecrire(racine, "doc.txt")
-    session.commit()
-
-    rap = controler_orphelins_disque(session, {"s": racine}, extensions={"txt"})
-    assert {a.chemin_relatif for a in rap.anomalies} == {"doc.txt"}
-
-
-def test_orphelins_disque_filtre_aux_racines_de_la_collection(
-    session: Session, tmp_path: Path
-) -> None:
-    r1 = tmp_path / "r1"
-    r1.mkdir()
-    r2 = tmp_path / "r2"
-    r2.mkdir()
-    _ecrire(r1, "a.png")
-    _ecrire(r2, "b.png")
-
-    c1 = _collection(session, "C1")
-    c2 = _collection(session, "C2")
-    i1 = _item(session, c1, "i1")
-    i2 = _item(session, c2, "i2")
-    # c1 référence un fichier sur r1, c2 sur r2 (mais pas a.png ni b.png)
-    _ecrire(r1, "ref1.png")
-    _ecrire(r2, "ref2.png")
-    _fichier(session, i1, "r1", "ref1.png")
-    _fichier(session, i2, "r2", "ref2.png")
-    session.commit()
-
-    rap = controler_orphelins_disque(
-        session, {"r1": r1, "r2": r2}, ids_collections=[c1.id]
-    )
-    # On ne doit voir que les orphelins de r1, pas de r2.
-    assert {a.chemin_relatif for a in rap.anomalies} == {"a.png"}
-
-
-def test_orphelins_disque_nfd_sur_disque_pas_orphelin(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    _ecrire(racine, unicodedata.normalize("NFD", "café.png"))
-
-    col = _collection(session, "C")
-    it = _item(session, col, "C-1")
-    _fichier(session, it, "s", "café.png")  # NFC en base
-    session.commit()
-
-    rap = controler_orphelins_disque(session, {"s": racine})
-    assert rap.nb_anomalies == 0
-
-
-# ---------------------------------------------------------------------------
-# controler_items_sans_fichier
-# ---------------------------------------------------------------------------
-
-
-def test_items_sans_fichier_liste_les_items_vides(
-    session: Session, tmp_path: Path
-) -> None:
-    col = _collection(session, "C")
-    avec = _item(session, col, "AVEC")
-    _item(session, col, "SANS-1")
-    _item(session, col, "SANS-2")
-    racine = tmp_path / "s"
-    racine.mkdir()
-    _ecrire(racine, "x.png")
-    _fichier(session, avec, "s", "x.png")
-    session.commit()
-
-    rap = controler_items_sans_fichier(session)
-    cotes = sorted(a.cote for a in rap.anomalies)
-    assert cotes == ["SANS-1", "SANS-2"]
-
-
-def test_items_sans_fichier_filtre_par_collections(
-    session: Session, tmp_path: Path
-) -> None:
-    c1 = _collection(session, "C1")
-    c2 = _collection(session, "C2")
-    _item(session, c1, "A")
-    _item(session, c2, "B")
-    session.commit()
-
-    rap = controler_items_sans_fichier(session, ids_collections=[c1.id])
-    assert {a.cote for a in rap.anomalies} == {"A"}
-
-
-# ---------------------------------------------------------------------------
-# controler_doublons_par_hash
-# ---------------------------------------------------------------------------
-
-
-def test_doublons_groupe_par_hash(session: Session) -> None:
-    col = _collection(session, "C")
-    i1 = _item(session, col, "I1")
-    i2 = _item(session, col, "I2")
-    h = "a" * 64
-    _fichier(session, i1, "s", "x.png", hash_sha256=h)
-    _fichier(session, i2, "s", "y.png", hash_sha256=h)
-    _fichier(session, i1, "s", "z.png", ordre=2, hash_sha256="b" * 64)
-    session.commit()
-
-    rap = controler_doublons_par_hash(session)
-    assert rap.nb_anomalies == 1  # un seul groupe
-    groupe = rap.anomalies[0]
-    assert groupe.hash_sha256 == h
-    assert len(groupe.fichiers) == 2
-
-
-def test_doublons_signale_les_fichiers_sans_hash_en_avertissement(
-    session: Session,
-) -> None:
-    col = _collection(session, "C")
-    it = _item(session, col, "I")
-    _fichier(session, it, "s", "x.png", hash_sha256=None)
-    _fichier(session, it, "s", "y.png", ordre=2, hash_sha256=None)
-    session.commit()
-
-    rap = controler_doublons_par_hash(session)
-    assert rap.nb_anomalies == 0
-    assert any("hash" in a.lower() for a in rap.avertissements)
-
-
-# ---------------------------------------------------------------------------
-# Orchestrateur controler_tout
-# ---------------------------------------------------------------------------
-
-
-def test_controler_tout_lance_les_quatre_par_defaut(
-    session: Session, tmp_path: Path
-) -> None:
-    racine = tmp_path / "s"
-    racine.mkdir()
-    col = _collection(session, "C")
-    _item(session, col, "vide")
-    session.commit()
-
-    rapport = controler_tout(session, racines={"s": racine})
-    assert {r.code for r in rapport.controles} == {
-        "fichiers-manquants",
-        "orphelins-disque",
-        "items-vides",
-        "doublons",
-    }
-
-
-def test_controler_tout_subset(session: Session, tmp_path: Path) -> None:
-    col = _collection(session, "C")
-    _item(session, col, "vide")
-    session.commit()
-
-    rapport = controler_tout(session, racines={}, checks={"items-vides"})
-    assert [r.code for r in rapport.controles] == ["items-vides"]
-
-
-def test_controler_tout_collection_introuvable(session: Session) -> None:
-    with pytest.raises(ValueError, match="introuvable"):
-        controler_tout(session, racines={}, collection_cote="N_EXISTE_PAS")
-
-
-def test_controler_tout_collection_recursive(session: Session) -> None:
-    parent = _collection(session, "P")
-    enfant = _collection(session, "E", parent=parent)
-    _item(session, parent, "p-vide")
-    _item(session, enfant, "e-vide")
-    session.commit()
-
-    rap_non_rec = controler_tout(
-        session, racines={}, collection_cote="P", checks={"items-vides"}
-    )
-    assert rap_non_rec.controles[0].nb_anomalies == 1
-
-    rap_rec = controler_tout(
+@pytest.fixture
+def session_un_fonds(session: Session) -> Session:
+    """Fonds HK + 3 items + 2 fichiers — base saine, sert de référence."""
+    creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+    fonds = lire_fonds_par_cote(session, "HK")
+    item_a = creer_item(
         session,
-        racines={},
-        collection_cote="P",
-        recursif=True,
-        checks={"items-vides"},
+        FormulaireItem(
+            cote="HK-001", titre="N°1", fonds_id=fonds.id, annee=1969
+        ),
     )
-    assert rap_rec.controles[0].nb_anomalies == 2
-
-
-def test_controler_tout_orphelins_sans_racines_avertit(session: Session) -> None:
-    col = _collection(session, "C")
-    _item(session, col, "I")
+    item_b = creer_item(
+        session,
+        FormulaireItem(
+            cote="HK-002", titre="N°2", fonds_id=fonds.id, annee=1970
+        ),
+    )
+    creer_item(
+        session,
+        FormulaireItem(
+            cote="HK-003", titre="N°3", fonds_id=fonds.id, annee=1971
+        ),
+    )
+    session.add_all(
+        [
+            Fichier(
+                item_id=item_a.id,
+                racine="s",
+                chemin_relatif="HK-001/01.tif",
+                nom_fichier="01.tif",
+                ordre=1,
+                hash_sha256="aaaa1111",
+            ),
+            Fichier(
+                item_id=item_b.id,
+                racine="s",
+                chemin_relatif="HK-002/01.tif",
+                nom_fichier="01.tif",
+                ordre=1,
+                hash_sha256="bbbb2222",
+            ),
+        ]
+    )
     session.commit()
+    return session
 
-    rapport = controler_tout(session, racines=None, checks={"orphelins-disque"})
-    ctrl = rapport.controles[0]
-    assert ctrl.nb_anomalies == 0
-    assert any("racine" in a.lower() for a in ctrl.avertissements)
+
+# ---------------------------------------------------------------------------
+# Famille 1 — invariants
+# ---------------------------------------------------------------------------
+
+
+def test_inv1_passe_sur_base_saine(session_un_fonds: Session) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv1_miroir_unique(session_un_fonds, perimetre)
+    assert res.passe
+    assert res.compte_total == 1
+    assert res.severite == Severite.ERREUR
+
+
+def test_inv1_detecte_fonds_sans_miroir(session_un_fonds: Session) -> None:
+    """Suppression manuelle de la miroir → INV1 le détecte."""
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    miroir = fonds.collection_miroir
+    # Retire les liaisons puis la miroir directement (manipulation
+    # hors API qui contournerait la garde du service).
+    session_un_fonds.execute(
+        ItemCollection.__table__.delete().where(
+            ItemCollection.collection_id == miroir.id
+        )
+    )
+    session_un_fonds.delete(miroir)
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv1_miroir_unique(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 1
+    assert "HK" in res.exemples[0].message
+
+
+def test_inv2_passe_sur_base_saine(session_un_fonds: Session) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv2_miroir_avec_fonds(session_un_fonds, perimetre)
+    assert res.passe
+
+
+def test_inv4_passe_sur_base_saine(session_un_fonds: Session) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv4_item_avec_fonds(session_un_fonds, perimetre)
+    assert res.passe
+    assert res.compte_total == 3
+
+
+def test_inv6_passe_sur_base_saine(session_un_fonds: Session) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv6_item_dans_miroir(session_un_fonds, perimetre)
+    assert res.passe
+    assert res.severite == Severite.AVERTISSEMENT  # invariant 7 permet le retrait
+
+
+def test_inv6_signale_item_retire_miroir(session_un_fonds: Session) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    miroir = fonds.collection_miroir
+    item_hk1 = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    retirer_item_de_collection(session_un_fonds, item_hk1.id, miroir.id)
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_inv6_item_dans_miroir(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 1
+    assert "HK-001" in res.exemples[0].message
+
+
+# ---------------------------------------------------------------------------
+# Famille 2 — fichiers
+# ---------------------------------------------------------------------------
+
+
+def test_file_missing_signale_racine_non_configuree(
+    session_un_fonds: Session,
+) -> None:
+    """Sans racines configurées, FILE-MISSING signale la config absente."""
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_file_missing(session_un_fonds, perimetre, racines={})
+    assert not res.passe
+    assert "non configurée" in res.exemples[0].message
+
+
+def test_file_missing_passe_avec_fichiers_reels(
+    session_un_fonds: Session, tmp_path: Path
+) -> None:
+    """Si on crée vraiment les fichiers sur disque, FILE-MISSING passe."""
+    racine = tmp_path / "s"
+    (racine / "HK-001").mkdir(parents=True)
+    (racine / "HK-002").mkdir(parents=True)
+    (racine / "HK-001" / "01.tif").write_bytes(b"fake")
+    (racine / "HK-002" / "01.tif").write_bytes(b"fake")
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_file_missing(
+        session_un_fonds, perimetre, racines={"s": racine}
+    )
+    assert res.passe
+
+
+def test_file_item_vide_signale_item_sans_fichier(
+    session_un_fonds: Session,
+) -> None:
+    """HK-003 n'a aucun fichier → FILE-ITEM-VIDE le voit."""
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_file_item_vide(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 1
+    assert "HK-003" in res.exemples[0].message
+
+
+def test_file_hash_duplique_detecte(session_un_fonds: Session) -> None:
+    """Crée 2 fichiers avec même hash → FILE-HASH-DUPLIQUE le voit."""
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-003", Item.fonds_id == fonds.id)
+    )
+    session_un_fonds.add_all(
+        [
+            Fichier(
+                item_id=item.id,
+                racine="s",
+                chemin_relatif="HK-003/01.tif",
+                nom_fichier="01.tif",
+                ordre=1,
+                hash_sha256="cccc3333",
+            ),
+            Fichier(
+                item_id=item.id,
+                racine="s",
+                chemin_relatif="HK-003/02.tif",
+                nom_fichier="02.tif",
+                ordre=2,
+                hash_sha256="cccc3333",  # même hash
+            ),
+        ]
+    )
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_file_hash_duplique(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 2  # 2 fichiers concernés
+
+
+def test_file_hash_manquant_signale_fichier_sans_hash(
+    session_un_fonds: Session,
+) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-003", Item.fonds_id == fonds.id)
+    )
+    session_un_fonds.add(
+        Fichier(
+            item_id=item.id,
+            racine="s",
+            chemin_relatif="HK-003/01.tif",
+            nom_fichier="01.tif",
+            ordre=1,
+            hash_sha256=None,
+        )
+    )
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_file_hash_manquant(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 1
+    assert res.severite == Severite.INFO
+
+
+# ---------------------------------------------------------------------------
+# Famille 3 — métadonnées
+# ---------------------------------------------------------------------------
+
+
+def test_meta_cote_invalide_passe_sur_base_saine(
+    session_un_fonds: Session,
+) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_meta_cote_invalide(session_un_fonds, perimetre)
+    assert res.passe
+
+
+def test_meta_cote_invalide_detecte_cote_avec_espace(
+    session_un_fonds: Session,
+) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.cote = "HK 001"  # espace interdit
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_meta_cote_invalide(session_un_fonds, perimetre)
+    assert not res.passe
+    assert "HK 001" in res.exemples[0].message
+
+
+def test_meta_titre_vide_detecte(session_un_fonds: Session) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-002", Item.fonds_id == fonds.id)
+    )
+    item.titre = "   "  # whitespace-only
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_meta_titre_vide(session_un_fonds, perimetre)
+    assert not res.passe
+    assert "HK-002" in res.exemples[0].message
+
+
+def test_meta_date_invalide_signale_date_libre(session_un_fonds: Session) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.date = "n'importe quoi"
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_meta_date_invalide(session_un_fonds, perimetre)
+    assert not res.passe
+    assert res.compte_problemes == 1
+
+
+def test_meta_annee_implausible_detecte_annee_hors_plage(
+    session_un_fonds: Session,
+) -> None:
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    item = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.annee = 500  # < 1000
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_meta_annee_implausible(session_un_fonds, perimetre)
+    assert not res.passe
+    assert "500" in res.exemples[0].message
+
+
+# ---------------------------------------------------------------------------
+# Famille 4 — cross
+# ---------------------------------------------------------------------------
+
+
+def test_cross_cote_dupliquee_passe_sur_base_saine(
+    session_un_fonds: Session,
+) -> None:
+    perimetre = composer_perimetre(session_un_fonds)
+    res = controler_cross_cote_dupliquee_fonds(session_un_fonds, perimetre)
+    assert res.passe
+
+
+def test_cross_fonds_vide_signale_fonds_sans_items(session: Session) -> None:
+    """Un fonds créé sans items → CROSS-FONDS-VIDE le signale (info)."""
+    creer_fonds(session, FormulaireFonds(cote="VIDE", titre="Fonds vide"))
+    perimetre = composer_perimetre(session)
+    res = controler_cross_fonds_vide(session, perimetre)
+    assert not res.passe
+    assert res.severite == Severite.INFO
+    assert any("VIDE" in e.message for e in res.exemples)
+
+
+# ---------------------------------------------------------------------------
+# Périmètre filtré (--fonds, --collection)
+# ---------------------------------------------------------------------------
+
+
+def test_perimetre_par_fonds_restreint_les_items(
+    session_un_fonds: Session,
+) -> None:
+    """Le périmètre fonds limite INV6 aux items de ce fonds."""
+    creer_fonds(session_un_fonds, FormulaireFonds(cote="FA", titre="Aínsa"))
+    fonds_fa = lire_fonds_par_cote(session_un_fonds, "FA")
+    creer_item(
+        session_un_fonds,
+        FormulaireItem(cote="FA-001", titre="X", fonds_id=fonds_fa.id),
+    )
+
+    perimetre_hk = composer_perimetre(
+        session_un_fonds, fonds_id=lire_fonds_par_cote(session_un_fonds, "HK").id
+    )
+    res = controler_inv6_item_dans_miroir(session_un_fonds, perimetre_hk)
+    # 3 items HK uniquement (pas FA-001).
+    assert res.compte_total == 3
+
+
+def test_perimetre_par_collection(session_un_fonds: Session) -> None:
+    """Le périmètre collection limite FILE-ITEM-VIDE aux items de la collection."""
+    fonds = lire_fonds_par_cote(session_un_fonds, "HK")
+    creer_collection_libre(
+        session_un_fonds,
+        FormulaireCollection(cote="HK-FAV", titre="Favoris", fonds_id=fonds.id),
+    )
+    fav = lire_collection_par_cote(session_un_fonds, "HK-FAV", fonds_id=fonds.id)
+    item_hk1 = session_un_fonds.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    session_un_fonds.add(
+        ItemCollection(item_id=item_hk1.id, collection_id=fav.id)
+    )
+    session_un_fonds.commit()
+
+    perimetre = composer_perimetre(session_un_fonds, collection_id=fav.id)
+    res = controler_file_item_vide(session_un_fonds, perimetre)
+    # 1 seul item dans la collection HK-FAV, et il a un fichier.
+    assert res.compte_total == 1
+    assert res.passe

@@ -557,3 +557,91 @@ def test_parser_filtres_compteur_actifs() -> None:
     )
     # 3 dimensions actives : etats + langues + période.
     assert f.nb_filtres_actifs == 3
+
+
+def test_parser_filtres_accepte_cles_repetees() -> None:
+    """Les `<select multiple>` envoient `?etat=A&etat=B` (clés
+    répétées), FastAPI déserialise en `list[str]`. Le parser doit
+    accepter les deux formats (clés répétées + CSV) pour ne pas
+    silencieusement perdre des filtres soumis par formulaire."""
+    f = parser_filtres_collection(
+        etat=["brouillon", "a_verifier"],  # forme list[str]
+        langue=["fra"],
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert f.etats == ("brouillon", "a_verifier")
+    assert f.langues == ("fra",)
+
+
+def test_parser_filtres_accepte_format_mixte() -> None:
+    """Cas étrange mais possible : une liste où l'élément est
+    lui-même CSV (`['a,b', 'c']`). Doit être aplati."""
+    f = parser_filtres_collection(
+        etat=["brouillon,a_verifier", "verifie"],
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=_options_demo(),
+    )
+    assert f.etats == ("brouillon", "a_verifier", "verifie")
+
+
+def test_parser_filtres_periode_inversee_swap() -> None:
+    """`annee_de > annee_a` est swappé pour donner une plage
+    cohérente plutôt qu'un résultat vide muet."""
+    f = parser_filtres_collection(
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_de=1985,
+        annee_a=1969,
+        options=_options_demo(),
+    )
+    assert f.annee_de == 1969
+    assert f.annee_a == 1985
+
+
+def test_filtres_to_query_string_retire_un_filtre() -> None:
+    """`to_query_string(retire_etat='brouillon')` produit la query
+    string sans cet état mais avec les autres filtres."""
+    f = FiltresCollection(
+        etats=("brouillon", "a_verifier"),
+        langues=("fra",),
+        types_coar=(),
+        annee_de=1969,
+        annee_a=1985,
+    )
+    qs = f.to_query_string(retire_etat="brouillon")
+    assert "etat=a_verifier" in qs
+    assert "brouillon" not in qs
+    assert "langue=fra" in qs
+    assert "annee_de=1969" in qs
+    assert "annee_a=1985" in qs
+
+
+def test_filtres_to_query_string_retire_periode() -> None:
+    """`retire_periode=True` enlève annee_de et annee_a, garde le reste."""
+    f = FiltresCollection(
+        etats=("brouillon",),
+        langues=(),
+        types_coar=(),
+        annee_de=1969,
+        annee_a=1985,
+    )
+    qs = f.to_query_string(retire_periode=True)
+    assert "annee_de" not in qs
+    assert "annee_a" not in qs
+    assert "etat=brouillon" in qs
+
+
+def test_filtres_compteur_libelle() -> None:
+    f0 = FiltresCollection()
+    assert f0.compteur_libelle == "aucun"
+    f1 = FiltresCollection(etats=("brouillon",))
+    assert f1.compteur_libelle == "1 actif"
+    f2 = FiltresCollection(etats=("brouillon",), langues=("fra",))
+    assert f2.compteur_libelle == "2 actifs"

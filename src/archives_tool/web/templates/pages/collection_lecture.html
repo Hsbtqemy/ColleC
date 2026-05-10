@@ -211,62 +211,47 @@
   </form>
 </details>
 
-{# Pastilles de filtres actifs : retrait individuel par lien. #}
+{# Pastilles de filtres actifs : retrait individuel par lien.
+   Chaque pastille appelle `filtres.to_query_string(retire_*=...)`
+   qui reconstruit la query string sans la valeur retirée — pas de
+   logique de réassemblage côté template. #}
 {% if filtres.actifs %}
-  {% set base = '/collection/' ~ col.cote ~ ('?fonds=' ~ fonds_query if fonds_query else '?fonds=') %}
+  {% set base = '/collection/' ~ col.cote ~ ('?fonds=' ~ fonds_query if fonds_query else '') %}
+  {% set sep = '&' if fonds_query else '?' %}
   <div class="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
     <span class="text-gray-500">Filtres actifs :</span>
-    {% set _csv = (filtres.langues | join(',')) %}
-    {% set _tcsv = (filtres.types_coar | join(',')) %}
+
     {% for e in filtres.etats %}
-      {% set _autres_etats = filtres.etats | reject('equalto', e) | list %}
-      {% set _params = [] %}
-      {% if _autres_etats %}{% set _ = _params.append('etat=' ~ (_autres_etats | join(','))) %}{% endif %}
-      {% if filtres.langues %}{% set _ = _params.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
-      {% if filtres.types_coar %}{% set _ = _params.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
-      {% if filtres.annee_de is not none %}{% set _ = _params.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
-      {% if filtres.annee_a is not none %}{% set _ = _params.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
-      <a href="{{ base }}{% if _params %}&{{ _params | join('&') }}{% endif %}"
+      {% set qs = filtres.to_query_string(retire_etat=e) %}
+      <a href="{{ base }}{% if qs %}{{ sep }}{{ qs }}{% endif %}"
          class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
          style="padding:3px 8px;color:#374151;">
         État: {{ e | libelle_etat }} <span aria-hidden="true">×</span>
       </a>
     {% endfor %}
+
     {% if filtres.annee_de is not none or filtres.annee_a is not none %}
-      {% set _params2 = [] %}
-      {% if filtres.etats %}{% set _ = _params2.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
-      {% if filtres.langues %}{% set _ = _params2.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
-      {% if filtres.types_coar %}{% set _ = _params2.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
-      <a href="{{ base }}{% if _params2 %}&{{ _params2 | join('&') }}{% endif %}"
+      {% set qs = filtres.to_query_string(retire_periode=True) %}
+      <a href="{{ base }}{% if qs %}{{ sep }}{{ qs }}{% endif %}"
          class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
          style="padding:3px 8px;color:#374151;">
         Période: {{ filtres.annee_de or '?' }}–{{ filtres.annee_a or '?' }}
         <span aria-hidden="true">×</span>
       </a>
     {% endif %}
+
     {% for lang in filtres.langues %}
-      {% set _autres_lang = filtres.langues | reject('equalto', lang) | list %}
-      {% set _params3 = [] %}
-      {% if filtres.etats %}{% set _ = _params3.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
-      {% if _autres_lang %}{% set _ = _params3.append('langue=' ~ (_autres_lang | join(','))) %}{% endif %}
-      {% if filtres.types_coar %}{% set _ = _params3.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
-      {% if filtres.annee_de is not none %}{% set _ = _params3.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
-      {% if filtres.annee_a is not none %}{% set _ = _params3.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
-      <a href="{{ base }}{% if _params3 %}&{{ _params3 | join('&') }}{% endif %}"
+      {% set qs = filtres.to_query_string(retire_langue=lang) %}
+      <a href="{{ base }}{% if qs %}{{ sep }}{{ qs }}{% endif %}"
          class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200"
          style="padding:3px 8px;color:#374151;">
         Langue: {{ lang }} <span aria-hidden="true">×</span>
       </a>
     {% endfor %}
+
     {% for t in filtres.types_coar %}
-      {% set _autres_t = filtres.types_coar | reject('equalto', t) | list %}
-      {% set _params4 = [] %}
-      {% if filtres.etats %}{% set _ = _params4.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
-      {% if filtres.langues %}{% set _ = _params4.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
-      {% if _autres_t %}{% set _ = _params4.append('type_coar=' ~ (_autres_t | join(','))) %}{% endif %}
-      {% if filtres.annee_de is not none %}{% set _ = _params4.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
-      {% if filtres.annee_a is not none %}{% set _ = _params4.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
-      <a href="{{ base }}{% if _params4 %}&{{ _params4 | join('&') }}{% endif %}"
+      {% set qs = filtres.to_query_string(retire_type_coar=t) %}
+      <a href="{{ base }}{% if qs %}{{ sep }}{{ qs }}{% endif %}"
          class="inline-flex items-center gap-1.5 rounded bg-gray-100 hover:bg-gray-200 font-mono"
          style="padding:3px 8px;color:#374151;font-size:11px;">
         Type: {{ t.split('/')[-1] if '/' in t else t }} <span aria-hidden="true">×</span>
@@ -299,15 +284,16 @@
       {% set noms_cols = noms_cols + ['langue'] %}
     {% endif %}
     {# Compose la cible_url avec les filtres actifs, pour que les
-       liens de pagination et de tri préservent l'état du filtre. #}
-    {% set _params = [] %}
-    {% if fonds_query %}{% set _ = _params.append('fonds=' ~ fonds_query) %}{% endif %}
-    {% if filtres.etats %}{% set _ = _params.append('etat=' ~ (filtres.etats | join(','))) %}{% endif %}
-    {% if filtres.langues %}{% set _ = _params.append('langue=' ~ (filtres.langues | join(','))) %}{% endif %}
-    {% if filtres.types_coar %}{% set _ = _params.append('type_coar=' ~ (filtres.types_coar | join(','))) %}{% endif %}
-    {% if filtres.annee_de is not none %}{% set _ = _params.append('annee_de=' ~ filtres.annee_de) %}{% endif %}
-    {% if filtres.annee_a is not none %}{% set _ = _params.append('annee_a=' ~ filtres.annee_a) %}{% endif %}
-    {% set _cible = '/collection/' ~ col.cote ~ ('?' ~ (_params | join('&')) if _params else '') %}
+       liens de pagination et de tri préservent l'état du filtre.
+       `to_query_string` sérialise tous les filtres ; on y préfixe
+       `fonds=` quand applicable. #}
+    {% set _qs_filtres = filtres.to_query_string() %}
+    {% set _qs_complet = (
+      ('fonds=' ~ fonds_query) if fonds_query else ''
+    ) ~ (
+      ('&' if fonds_query and _qs_filtres else '')
+    ) ~ _qs_filtres %}
+    {% set _cible = '/collection/' ~ col.cote ~ (('?' ~ _qs_complet) if _qs_complet else '') %}
     {{ tableau_items({
       'colonnes': noms_cols,
       'sort': listage.tri,
@@ -321,7 +307,7 @@
         'total': listage.total,
         'pages': listage.pages,
       },
-      'compteur_filtres': (filtres.nb_filtres_actifs | string ~ ' actif' ~ ('s' if filtres.nb_filtres_actifs > 1 else '')) if filtres.actifs else 'aucun',
+      'compteur_filtres': filtres.compteur_libelle,
       'nb_colonnes_actives': noms_cols | length,
     }) }}
   {% else %}

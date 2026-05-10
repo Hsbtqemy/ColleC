@@ -561,6 +561,27 @@ def test_collection_filtre_etat_multi_csv(client_demo: TestClient) -> None:
     assert "Filtrer" in response.text
 
 
+def test_collection_filtre_etat_multi_cles_repetees(
+    client_demo: TestClient,
+) -> None:
+    """Régression V0.9.2-beta.2 : les `<select multiple>` envoient
+    `?etat=A&etat=B` (clés répétées) ; la route doit conserver les
+    deux états (auparavant FastAPI ne gardait que la dernière)."""
+    response = client_demo.get(
+        "/collection/FA",
+        params=[
+            ("fonds", "FA"),
+            ("etat", "brouillon"),
+            ("etat", "a_verifier"),
+        ],
+    )
+    assert response.status_code == 200
+    assert "Filtres actifs" in response.text
+    # Les deux pastilles d'état sont présentes.
+    assert "Brouillon" in response.text
+    assert "À vérifier" in response.text or "vérifier" in response.text
+
+
 def test_collection_filtre_etat_invalide_ignore(client_demo: TestClient) -> None:
     """Un état hors enum est silencieusement ignoré (pas de 400)."""
     response = client_demo.get(

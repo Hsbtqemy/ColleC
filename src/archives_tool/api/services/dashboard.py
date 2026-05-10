@@ -746,15 +746,78 @@ class FiltresCollection:
             n += 1
         return n
 
+    @property
+    def compteur_libelle(self) -> str:
+        n = self.nb_filtres_actifs
+        if n == 0:
+            return "aucun"
+        return f"{n} actif{'s' if n > 1 else ''}"
 
-def _csv_to_liste(valeur: str | None) -> list[str]:
-    """Parse `a,b,c` → `['a', 'b', 'c']`. Strip + dédoublonne. Vide
-    sur entrée None ou vide."""
-    if not valeur:
+    def to_query_string(
+        self,
+        *,
+        retire_etat: str | None = None,
+        retire_langue: str | None = None,
+        retire_type_coar: str | None = None,
+        retire_periode: bool = False,
+    ) -> str:
+        """Sérialise les filtres actifs en query string.
+
+        Optionnellement, retire une valeur précise (par ex. pour les
+        pastilles cliquables qui ouvrent le retrait d'un seul filtre)
+        ou la période entière. Les autres filtres sont conservés tels
+        quels.
+
+        Retourne une chaîne sans `?` initial (à concaténer par le
+        caller). Vide si aucun filtre n'est actif.
+        """
+        params: list[str] = []
+        etats = tuple(e for e in self.etats if e != retire_etat)
+        if etats:
+            params.append("etat=" + ",".join(etats))
+        langues = tuple(
+            lang for lang in self.langues if lang != retire_langue
+        )
+        if langues:
+            params.append("langue=" + ",".join(langues))
+        types_coar = tuple(
+            t for t in self.types_coar if t != retire_type_coar
+        )
+        if types_coar:
+            params.append("type_coar=" + ",".join(types_coar))
+        if not retire_periode:
+            if self.annee_de is not None:
+                params.append(f"annee_de={self.annee_de}")
+            if self.annee_a is not None:
+                params.append(f"annee_a={self.annee_a}")
+        return "&".join(params)
+
+
+def _csv_to_liste(valeur: str | list[str] | None) -> list[str]:
+    """Parse une valeur multi-valuée en liste de chaînes.
+
+    Accepte deux formats :
+    - chaîne CSV `a,b,c` (depuis un lien forgé à la main),
+    - liste de chaînes `["a", "b"]` (depuis un `<select multiple>`
+      qui envoie `?key=a&key=b` — FastAPI déserialise en liste).
+
+    Strip + dédoublonne en préservant l'ordre. Vide sur None ou vide.
+    """
+    if valeur is None:
         return []
+    parts: list[str]
+    if isinstance(valeur, str):
+        parts = valeur.split(",")
+    else:
+        # FastAPI passe `list[str]` quand la query a la même clé
+        # plusieurs fois ; chaque valeur peut elle-même contenir une
+        # CSV (cas mixte) — on aplatit.
+        parts = []
+        for v in valeur:
+            parts.extend(v.split(","))
     vu: set[str] = set()
     sortie: list[str] = []
-    for part in valeur.split(","):
+    for part in parts:
         v = part.strip()
         if v and v not in vu:
             vu.add(v)
@@ -764,9 +827,9 @@ def _csv_to_liste(valeur: str | None) -> list[str]:
 
 def parser_filtres_collection(
     *,
-    etat: str | None,
-    langue: str | None,
-    type_coar: str | None,
+    etat: str | list[str] | None,
+    langue: str | list[str] | None,
+    type_coar: str | list[str] | None,
     annee_de: int | None,
     annee_a: int | None,
     options: OptionsFiltresCollection,
@@ -775,14 +838,14 @@ def parser_filtres_collection(
     options dynamiques de la collection. Les valeurs hors whitelist
     sont silencieusement ignorées.
 
-    - `etat=brouillon,a_verifier` → tuple des états reconnus dans
-      `EtatCatalogage`.
-    - `langue=fra,eng` → tuple des langues qui existent dans la
-      collection (selon `options.langues`).
-    - `type_coar=...` → idem.
-    - `annee_de` / `annee_a` : entiers, clampés à
-      `[options.annee_min, options.annee_max]` ; rejet si hors plage
-      ou non-entier.
+    Accepte les multi-valeurs via deux serialisations :
+    - clés répétées (`?etat=a&etat=b`, format browser pour
+      `<select multiple>`),
+    - CSV (`?etat=a,b`, format pour les liens forgés à la main).
+
+    `annee_de` / `annee_a` : entiers, clampés à `[annee_min, annee_max]`.
+    Si `annee_de > annee_a` (intervalle inversé), on swap pour donner
+    une plage cohérente plutôt qu'un résultat vide muet.
     """
     etats_valides = {e.value for e in EtatCatalogage}
     etats = tuple(e for e in _csv_to_liste(etat) if e in etats_valides)
@@ -802,12 +865,19 @@ def parser_filtres_collection(
             return None
         return v
 
+    de = _valider_annee(annee_de)
+    a = _valider_annee(annee_a)
+    if de is not None and a is not None and de > a:
+        # Intervalle inversé : on swap pour donner un résultat
+        # exploitable (la pastille affichera la plage normalisée).
+        de, a = a, de
+
     return FiltresCollection(
         etats=etats,
         langues=langues,
         types_coar=types_coar,
-        annee_de=_valider_annee(annee_de),
-        annee_a=_valider_annee(annee_a),
+        annee_de=de,
+        annee_a=a,
     )
 
 

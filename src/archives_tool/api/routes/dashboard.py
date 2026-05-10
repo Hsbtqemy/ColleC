@@ -279,14 +279,19 @@ def page_collection(
     par_page: int = Query(50, ge=10, le=200),
     tri: str | None = Query(None),
     ordre: str = Query("asc"),
-    etat: str | None = Query(
-        None, description="Filtre par état (CSV : brouillon,valide,…)"
+    etat: list[str] | None = Query(
+        None,
+        description=(
+            "Filtre par état. Accepte les clés répétées "
+            "(`?etat=brouillon&etat=valide`, format envoyé par les "
+            "`<select multiple>`) et la CSV (`?etat=brouillon,valide`)."
+        ),
     ),
-    langue: str | None = Query(
-        None, description="Filtre par langue (CSV : fra,eng,…)"
+    langue: list[str] | None = Query(
+        None, description="Filtre par langue (mêmes formats que `etat`)."
     ),
-    type_coar: str | None = Query(
-        None, description="Filtre par type COAR (CSV : URI,URI,…)"
+    type_coar: list[str] | None = Query(
+        None, description="Filtre par type COAR (mêmes formats que `etat`)."
     ),
     annee_de: int | None = Query(None, ge=1000, le=2100),
     annee_a: int | None = Query(None, ge=1000, le=2100),

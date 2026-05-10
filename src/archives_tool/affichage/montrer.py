@@ -28,21 +28,25 @@ from archives_tool.affichage.formatters import (
     formater_taille_octets,
     temps_relatif,
 )
+from archives_tool.api.services._erreurs import chaine_ou_none
 from archives_tool.api.services.dashboard import (
     CollectionDetail,
     FondsDetail,
     ItemDetail,
 )
 from archives_tool.api.services.fonds import FondsResume
-from archives_tool.models import (
-    Collection,
-    Fichier,
-    TypeCollection,
-)
+from archives_tool.models import Collection, Fichier
+
+# Nombre par défaut d'événements de journal (modifications d'item,
+# opérations sur fichier) affichés en text. Pas exposé en CLI : si on
+# le rend configurable un jour, on remontera l'option ici.
+_MAX_EVENEMENTS = 5
+
+_ABSENT = "[dim]~[/dim]"
 
 
 # ---------------------------------------------------------------------------
-# Rendus utilitaires
+# Helpers communs
 # ---------------------------------------------------------------------------
 
 
@@ -54,24 +58,46 @@ def _new_console() -> tuple[Console, StringIO]:
     return Console(file=buf, theme=THEME, force_terminal=False, width=120), buf
 
 
-def _absent() -> str:
-    """Marqueur visuel d'une valeur absente (None ou vide)."""
-    return "[dim]~[/dim]"
-
-
 def _ou_absent(valeur: Any) -> str:
-    """Retourne `valeur` en str si non vide, sinon le marqueur absent."""
-    if valeur is None:
-        return _absent()
-    s = str(valeur).strip()
-    return s if s else _absent()
+    """`valeur` en str si non vide, sinon marqueur absent. S'aligne sur
+    `chaine_ou_none` (services/_erreurs) pour la définition de « vide »."""
+    nettoye = chaine_ou_none(valeur) if valeur is None or isinstance(valeur, str) else valeur
+    return _ABSENT if nettoye is None else str(nettoye)
 
 
-def _serialiser_default(obj: Any) -> Any:
-    """Handler JSON pour datetime + StrEnum déjà natifs comme str."""
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError(f"Non sérialisable : {type(obj).__name__}")
+def _iso(dt: datetime | None) -> str | None:
+    return dt.isoformat() if dt else None
+
+
+def _section_tracabilite_text(console: Console, entite: Any, *, verbe: str = "Créé") -> None:
+    """Section « Traçabilité » commune à fonds / collection / item / fichier.
+
+    `verbe` permet d'adapter (« Créé » vs « Ajouté » pour les fichiers).
+    Lit `cree_le` ou `ajoute_le` selon ce qui existe sur l'entité.
+    """
+    cree_le = getattr(entite, "cree_le", None) or getattr(entite, "ajoute_le", None)
+    cree_par = getattr(entite, "cree_par", None) or getattr(entite, "ajoute_par", None)
+    console.print("[bold]Traçabilité[/bold]")
+    console.print(
+        f"  {verbe} le {_iso(cree_le) or '~'} par {_ou_absent(cree_par)}"
+    )
+    if entite.modifie_le:
+        console.print(
+            f"  Modifié {temps_relatif(entite.modifie_le)} "
+            f"par {_ou_absent(entite.modifie_par)}"
+        )
+
+
+def _dict_tracabilite(entite: Any) -> dict[str, Any]:
+    """Dict JSON commun pour la traçabilité (clés stables : cree_le /
+    cree_par / modifie_le / modifie_par). Utile pour fonds / collection /
+    item — `Fichier` a son propre schéma (ajoute_le, version)."""
+    return {
+        "cree_le": _iso(entite.cree_le),
+        "cree_par": entite.cree_par,
+        "modifie_le": _iso(entite.modifie_le),
+        "modifie_par": entite.modifie_par,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +217,7 @@ def rendu_text_fonds_detail(detail: FondsDetail) -> str:
             for g in gens:
                 console.print(f"    - {g.nom}")
     console.print()
-    console.print("[bold]Traçabilité[/bold]")
-    console.print(
-        f"  Créé le {f.cree_le.isoformat() if f.cree_le else '~'} "
-        f"par {_ou_absent(f.cree_par)}"
-    )
-    if f.modifie_le:
-        console.print(
-            f"  Modifié {temps_relatif(f.modifie_le)} par {_ou_absent(f.modifie_par)}"
-        )
+    _section_tracabilite_text(console, f)
     return buf.getvalue()
 
 
@@ -244,15 +262,10 @@ def rendu_json_fonds_detail(detail: FondsDetail) -> str:
                 role.value: [{"nom": g.nom} for g in gens]
                 for role, gens in detail.collaborateurs_par_role.items()
             },
-            "tracabilite": {
-                "cree_le": f.cree_le.isoformat() if f.cree_le else None,
-                "cree_par": f.cree_par,
-                "modifie_le": f.modifie_le.isoformat() if f.modifie_le else None,
-                "modifie_par": f.modifie_par,
-            },
+            "tracabilite": _dict_tracabilite(f),
         },
     }
-    return json.dumps(data, indent=2, ensure_ascii=False, default=_serialiser_default)
+    return json.dumps(data, indent=2, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
@@ -261,9 +274,14 @@ def rendu_json_fonds_detail(detail: FondsDetail) -> str:
 
 
 def _libelle_collection(c: Collection) -> str:
-    if c.type_collection == TypeCollection.MIROIR.value:
+    """Libellé text d'une collection selon son type/rattachement.
+    Utilise les properties ORM `est_miroir`/`est_transversale` pour
+    rester cohérent avec le CHECK et les autres consommateurs."""
+    if c.est_miroir:
         return "miroir"
-    return "transversale" if c.fonds_id is None else "libre rattachée"
+    if c.est_transversale:
+        return "transversale"
+    return "libre rattachée"
 
 
 def rendu_text_collection_liste(collections: list[Collection]) -> str:
@@ -343,15 +361,7 @@ def rendu_text_collection_detail(detail: CollectionDetail) -> str:
             console.print(f"  • {f.titre} ([bold]{f.cote}[/bold])")
 
     console.print()
-    console.print("[bold]Traçabilité[/bold]")
-    console.print(
-        f"  Créée le {c.cree_le.isoformat() if c.cree_le else '~'} "
-        f"par {_ou_absent(c.cree_par)}"
-    )
-    if c.modifie_le:
-        console.print(
-            f"  Modifiée {temps_relatif(c.modifie_le)} par {_ou_absent(c.modifie_par)}"
-        )
+    _section_tracabilite_text(console, c)
     return buf.getvalue()
 
 
@@ -384,17 +394,11 @@ def rendu_json_collection_detail(detail: CollectionDetail) -> str:
                     {"cote": f.cote, "titre": f.titre}
                     for f in detail.fonds_representes
                 ],
-                "tracabilite": {
-                    "cree_le": c.cree_le.isoformat() if c.cree_le else None,
-                    "cree_par": c.cree_par,
-                    "modifie_le": c.modifie_le.isoformat() if c.modifie_le else None,
-                    "modifie_par": c.modifie_par,
-                },
+                "tracabilite": _dict_tracabilite(c),
             },
         },
         indent=2,
         ensure_ascii=False,
-        default=_serialiser_default,
     )
 
 
@@ -403,7 +407,9 @@ def rendu_json_collection_detail(detail: CollectionDetail) -> str:
 # ---------------------------------------------------------------------------
 
 
-def rendu_text_item_detail(detail: ItemDetail, *, max_evenements: int = 5) -> str:
+def rendu_text_item_detail(
+    detail: ItemDetail, *, max_evenements: int = _MAX_EVENEMENTS
+) -> str:
     console, buf = _new_console()
     item = detail.item
     fonds = detail.fonds
@@ -490,15 +496,7 @@ def rendu_text_item_detail(detail: ItemDetail, *, max_evenements: int = 5) -> st
             )
 
     console.print()
-    console.print("[bold]Traçabilité[/bold]")
-    console.print(
-        f"  Créé le {item.cree_le.isoformat() if item.cree_le else '~'} "
-        f"par {_ou_absent(item.cree_par)}"
-    )
-    if item.modifie_le:
-        console.print(
-            f"  Modifié {temps_relatif(item.modifie_le)} par {_ou_absent(item.modifie_par)}"
-        )
+    _section_tracabilite_text(console, item)
     return buf.getvalue()
 
 
@@ -546,17 +544,11 @@ def rendu_json_item_detail(detail: ItemDetail) -> str:
                     }
                     for f in detail.fichiers
                 ],
-                "tracabilite": {
-                    "cree_le": item.cree_le.isoformat() if item.cree_le else None,
-                    "cree_par": item.cree_par,
-                    "modifie_le": item.modifie_le.isoformat() if item.modifie_le else None,
-                    "modifie_par": item.modifie_par,
-                },
+                "tracabilite": _dict_tracabilite(item),
             },
         },
         indent=2,
         ensure_ascii=False,
-        default=_serialiser_default,
     )
 
 
@@ -565,7 +557,9 @@ def rendu_json_item_detail(detail: ItemDetail) -> str:
 # ---------------------------------------------------------------------------
 
 
-def rendu_text_fichier_detail(fichier: Fichier, *, max_evenements: int = 5) -> str:
+def rendu_text_fichier_detail(
+    fichier: Fichier, *, max_evenements: int = _MAX_EVENEMENTS
+) -> str:
     console, buf = _new_console()
     item = fichier.item
     fonds = item.fonds
@@ -704,5 +698,4 @@ def rendu_json_fichier_detail(fichier: Fichier) -> str:
         },
         indent=2,
         ensure_ascii=False,
-        default=_serialiser_default,
     )

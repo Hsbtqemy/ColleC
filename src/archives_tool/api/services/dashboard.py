@@ -141,7 +141,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 nb_items=nb_items_par_collection.get(c.id, 0),
                 fonds_id=c.fonds_id,
             )
-            if c.type_collection == TypeCollection.MIROIR.value:
+            if c.est_miroir:
                 miroir = resume
             else:
                 libres.append(resume)
@@ -157,7 +157,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
 
     # Transversales : collections sans fonds_id. Pour chacune, lister
     # les fonds dont elles tirent leurs items via ItemCollection ⨝ Item.
-    transversales_rows = [c for c in collection_rows if c.fonds_id is None]
+    transversales_rows = [c for c in collection_rows if c.est_transversale]
     fonds_par_transv: dict[int, list[FondsRepresente]] = {}
     if transversales_rows:
         transv_ids = [c.id for c in transversales_rows]

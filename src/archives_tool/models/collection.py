@@ -125,3 +125,19 @@ class Collection(Base, TracabiliteMixin):
             name="ck_collection_miroir_a_fonds",
         ),
     )
+
+    # Helpers de typage : évitent la duplication
+    # `c.type_collection == TypeCollection.MIROIR.value` dans les
+    # consommateurs (services, rendus, contrôles qa). Définis ici une
+    # fois pour rester cohérents avec le CHECK + l'invariant 1.
+    @property
+    def est_miroir(self) -> bool:
+        return self.type_collection == TypeCollection.MIROIR.value
+
+    @property
+    def est_transversale(self) -> bool:
+        return self.fonds_id is None and not self.est_miroir
+
+    @property
+    def est_libre_rattachee(self) -> bool:
+        return not self.est_miroir and self.fonds_id is not None

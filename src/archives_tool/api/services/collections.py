@@ -15,7 +15,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
@@ -181,8 +181,13 @@ def lister_collections(
     """Liste les collections, optionnellement filtrées par fonds et / ou
     type. Pas de pagination dans ce service ; l'UI dashboard construira
     sa propre vue paginée en V0.9.0-beta.
+
+    `selectinload(Collection.fonds)` : évite le N+1 sur les consommateurs
+    qui affichent la cote du fonds parent (CLI montrer, exports, etc.).
+    Une seule requête supplémentaire (SELECT IN (...)), pas une par
+    collection.
     """
-    stmt = select(Collection)
+    stmt = select(Collection).options(selectinload(Collection.fonds))
     if fonds_id is not None:
         stmt = stmt.where(Collection.fonds_id == fonds_id)
     if type_collection is not None:

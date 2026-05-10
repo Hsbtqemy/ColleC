@@ -31,6 +31,9 @@ from archives_tool.api.services.dashboard import (
 )
 from archives_tool.api.services.fonds import lister_fonds
 from archives_tool.api.services.items import ItemIntrouvable
+from sqlalchemy import select as sa_select
+from sqlalchemy.orm import selectinload
+
 from archives_tool.api.services.collections import (
     CollectionIntrouvable,
     CollectionInvalide,
@@ -38,6 +41,7 @@ from archives_tool.api.services.collections import (
     OperationCollectionInterdite,
     creer_collection_libre,
     lire_collection_par_cote,
+    lister_collections,
     supprimer_collection_libre,
 )
 from archives_tool.api.services.fonds import (
@@ -51,7 +55,13 @@ from archives_tool.exporters.excel import exporter_excel
 from archives_tool.exporters.nakala import exporter_nakala_csv
 from archives_tool.exporters.rapport import RapportExport
 from archives_tool.importers.ecrivain import RapportImport, importer as importer_profil
-from archives_tool.models import Collection, Fonds, PhaseChantier, TypeCollection
+from archives_tool.models import (
+    Collection,
+    Fichier,
+    Fonds,
+    Item,
+    PhaseChantier,
+)
 from archives_tool.profils import (
     ProfilInvalide,
     ProfilObsoleteV1,
@@ -463,8 +473,6 @@ def cmd_montrer_collection(
         fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
         fonds_id = fonds_obj.id if fonds_obj else None
         if cote is None:
-            from archives_tool.api.services.collections import lister_collections
-
             collections = lister_collections(session, fonds_id=fonds_id)
             sortie = (
                 rendu_json_collection_liste(collections)
@@ -530,10 +538,18 @@ def cmd_montrer_fichier(
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher la fiche détaillée d'un fichier (par id global)."""
-    from archives_tool.models import Fichier
-
     with _ouvrir_session_existante(db_path) as session:
-        fichier = session.get(Fichier, fichier_id)
+        # Eager loading explicite : le rendu lit `fichier.item.fonds`
+        # et `fichier.operations`. Sans ces options, 3 SELECT lazy
+        # supplémentaires seraient émis pendant le rendu.
+        fichier = session.scalar(
+            sa_select(Fichier)
+            .options(
+                selectinload(Fichier.item).selectinload(Item.fonds),
+                selectinload(Fichier.operations),
+            )
+            .where(Fichier.id == fichier_id)
+        )
         if fichier is None:
             typer.echo(
                 f"Erreur : fichier id={fichier_id} introuvable.", err=True
@@ -1186,8 +1202,6 @@ def cmd_collections_lister(
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Lister les collections (toutes, par fonds, ou transversales)."""
-    from sqlalchemy import select as sa_select
-
     with _ouvrir_session_existante(db_path) as session:
         stmt = sa_select(Collection, Fonds.cote.label("fonds_cote")).join(
             Fonds, Fonds.id == Collection.fonds_id, isouter=True
@@ -1205,11 +1219,7 @@ def cmd_collections_lister(
             return
 
         for col, fonds_cote in rows:
-            type_str = (
-                "[miroir]"
-                if col.type_collection == TypeCollection.MIROIR.value
-                else "[libre]"
-            )
+            type_str = "[miroir]" if col.est_miroir else "[libre]"
             rattachement = f"— {fonds_cote}" if fonds_cote else "— transversale"
             typer.echo(
                 f"  {col.cote:20} {col.titre[:40]:40} {type_str:10}{rattachement}"
@@ -1242,7 +1252,7 @@ def cmd_collections_supprimer(
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
 
-        if col.type_collection == TypeCollection.MIROIR.value:
+        if col.est_miroir:
             typer.echo(
                 f"Erreur : la collection {cote} est une miroir, "
                 f"elle est gérée par son fonds.",

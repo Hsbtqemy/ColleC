@@ -75,10 +75,15 @@ class CollectionResume:
     def est_transversale(self) -> bool:
         return self.fonds_id is None
 
-    # ---- Aliases attendus par la macro `tableau_collections` -----
-    # `tableau_collections` itère sur `c.repartition`, `c.modifie_depuis`,
-    # `c.sous_collections` ; on les expose ici comme propriétés pour
-    # éviter de dupliquer le résumé dans une seconde dataclass.
+    # ---- Contrat avec la macro `tableau_collections` ----------------
+    # La macro Jinja accède à : cote, titre, phase, sous_collections,
+    # nb_items, nb_fichiers, repartition, modifie_par, modifie_depuis,
+    # href. Les 4 derniers (sous_collections, repartition, modifie_depuis,
+    # plus l'absence de `repartition_etats` dans la macro) sont exposés
+    # via les @property ci-dessous pour servir une seule classe sur les
+    # deux contextes (vue arborescence dashboard + vue tableau page Fonds).
+    # Si la macro change (rename d'attribut), seul un test d'intégration
+    # de la route `/fonds/{cote}` le remontera — il en existe un.
 
     @property
     def repartition(self) -> dict[str, int]:
@@ -166,6 +171,29 @@ class DashboardResume:
     transversales: tuple[TransversaleResume, ...]
     stats: DashboardStats
     activite_recente: tuple[ActiviteRecente, ...]
+
+
+def _plus_recent(
+    le_a: datetime | None,
+    par_a: str | None,
+    le_b: datetime | None,
+    par_b: str | None,
+) -> tuple[datetime | None, str | None]:
+    """Retourne `(le, par)` du tuple le plus récent — utile pour fusionner
+    la modif propre d'une entité avec la modif d'une de ses sous-entités
+    (par ex. fonds vs son dernier item modifié) sans perdre `par`.
+
+    Si les deux dates sont None, retourne `(None, None)`. Si une seule
+    est définie, retourne le couple correspondant. À égalité parfaite,
+    on prend `a` (priorité au caller-supplied first argument).
+    """
+    if le_a is None and le_b is None:
+        return None, None
+    if le_b is None:
+        return le_a, par_a
+    if le_a is None or le_a < le_b:
+        return le_b, par_b
+    return le_a, par_a
 
 
 def _agreger_repartition(
@@ -304,19 +332,14 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 libres.append(resume)
 
         # Pour le fonds, on prend le plus récent entre sa propre modif
-        # et la modif la plus récente d'un de ses items (avec
-        # leur `modifie_par` respectif, pour ne pas afficher « — »
-        # quand la modif vient d'un item).
+        # et la modif la plus récente d'un de ses items.
         modif_item = max_modif_item_par_fonds.get(f.id)
-        if f.modifie_le is None and modif_item is None:
-            f_mod_par, f_mod_le = None, None
-        elif modif_item is None:
-            f_mod_par, f_mod_le = f.modifie_par, f.modifie_le
-        elif f.modifie_le is None or f.modifie_le < modif_item[0]:
-            f_mod_le_item, f_mod_par_item = modif_item
-            f_mod_par, f_mod_le = f_mod_par_item, f_mod_le_item
+        if modif_item is None:
+            f_mod_le, f_mod_par = f.modifie_le, f.modifie_par
         else:
-            f_mod_par, f_mod_le = f.modifie_par, f.modifie_le
+            f_mod_le, f_mod_par = _plus_recent(
+                f.modifie_le, f.modifie_par, modif_item[0], modif_item[1]
+            )
 
         fonds_resumes.append(
             FondsArborescence(
@@ -486,8 +509,8 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
     nb_fichiers, traçabilité) + 10 items les plus récents + collaborateurs
     groupés par rôle.
 
-    Coût SQL borné (~9 queries) indépendamment du nombre de collections,
-    cf. test garde-fou `test_page_fonds_n_emet_pas_plus_de_10_requetes`.
+    Coût SQL borné (≤9 queries) indépendamment du nombre de collections,
+    cf. test garde-fou `test_page_fonds_n_emet_pas_plus_de_9_requetes`.
 
     Lève `FondsIntrouvable` si la cote est inconnue.
     """
@@ -506,28 +529,29 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
     # ---- Répartition par collection (1 query) -----------------------
     # `nb_items_par_collection` se dérive ensuite par `sum(rep.values())`
     # — pas de requête séparée.
-    repartition_par_collection: dict[int, dict[str, int]] = {}
-    if collections_rows:
-        col_ids = [c.id for c in collections_rows]
-        for col_id, etat, n in db.execute(
-            select(
-                ItemCollection.collection_id,
-                Item.etat_catalogage,
-                func.count(Item.id),
+    col_ids = [c.id for c in collections_rows]
+    repartition_par_collection: dict[int | None, dict[str, int]] = (
+        _agreger_repartition(
+            list(
+                db.execute(
+                    select(
+                        ItemCollection.collection_id,
+                        Item.etat_catalogage,
+                        func.count(Item.id),
+                    )
+                    .join(Item, Item.id == ItemCollection.item_id)
+                    .where(ItemCollection.collection_id.in_(col_ids))
+                    .group_by(ItemCollection.collection_id, Item.etat_catalogage)
+                ).all()
             )
-            .join(Item, Item.id == ItemCollection.item_id)
-            .where(ItemCollection.collection_id.in_(col_ids))
-            .group_by(ItemCollection.collection_id, Item.etat_catalogage)
-        ).all():
-            cible = repartition_par_collection.setdefault(col_id, _repartition_vide())
-            if etat in cible:
-                cible[etat] = n
+        )
+        if col_ids
+        else {}
+    )
 
     # ---- Nb fichiers par collection (1 query) -----------------------
-    nb_fichiers_par_collection: dict[int, int] = {}
-    if collections_rows:
-        col_ids = [c.id for c in collections_rows]
-        nb_fichiers_par_collection = dict(
+    nb_fichiers_par_collection: dict[int, int] = (
+        dict(
             db.execute(
                 select(ItemCollection.collection_id, func.count(Fichier.id))
                 .join(Item, Item.id == ItemCollection.item_id)
@@ -536,17 +560,23 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
                 .group_by(ItemCollection.collection_id)
             ).all()
         )
+        if col_ids
+        else {}
+    )
 
     # ---- Répartition fonds-level (1 query) --------------------------
-    # `nb_items` du fonds se dérive de la somme.
-    repartition_fonds: dict[str, int] = _repartition_vide()
-    for etat, n in db.execute(
-        select(Item.etat_catalogage, func.count(Item.id))
-        .where(Item.fonds_id == fonds.id)
-        .group_by(Item.etat_catalogage)
-    ).all():
-        if etat in repartition_fonds:
-            repartition_fonds[etat] = n
+    # `nb_items` du fonds se dérive ensuite par `sum(rep.values())`.
+    # On réutilise `_agreger_repartition` avec une clé bidon `None`.
+    repartition_fonds: dict[str, int] = _agreger_repartition(
+        [
+            (None, etat, n)
+            for etat, n in db.execute(
+                select(Item.etat_catalogage, func.count(Item.id))
+                .where(Item.fonds_id == fonds.id)
+                .group_by(Item.etat_catalogage)
+            ).all()
+        ]
+    ).get(None, _repartition_vide())
     nb_items = sum(repartition_fonds.values())
 
     # ---- Nb fichiers fonds-level (1 query) --------------------------
@@ -569,14 +599,15 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         .limit(1)
     ).first()
 
-    if fonds.modifie_le is None and derniere_modif_item is None:
-        f_mod_par, f_mod_le = None, None
-    elif derniere_modif_item is None:
-        f_mod_par, f_mod_le = fonds.modifie_par, fonds.modifie_le
-    elif fonds.modifie_le is None or fonds.modifie_le < derniere_modif_item[0]:
-        f_mod_le, f_mod_par = derniere_modif_item
+    if derniere_modif_item is None:
+        f_mod_le, f_mod_par = fonds.modifie_le, fonds.modifie_par
     else:
-        f_mod_par, f_mod_le = fonds.modifie_par, fonds.modifie_le
+        f_mod_le, f_mod_par = _plus_recent(
+            fonds.modifie_le,
+            fonds.modifie_par,
+            derniere_modif_item[0],
+            derniere_modif_item[1],
+        )
 
     # ---- Construction des CollectionResume enrichies ----------------
     collections_resume = tuple(
@@ -587,7 +618,9 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
                     titre=c.titre,
                     type_collection=c.type_collection,
                     nb_items=sum(
-                        repartition_par_collection.get(c.id, {}).values()
+                        repartition_par_collection.get(
+                            c.id, _repartition_vide()
+                        ).values()
                     ),
                     fonds_id=c.fonds_id,
                     nb_fichiers=nb_fichiers_par_collection.get(c.id, 0),

@@ -337,13 +337,13 @@ def test_page_fonds_modifie_par_garde_fonds_si_plus_recent(
     assert detail.modifie_par == "Hugo"
 
 
-def test_page_fonds_n_emet_pas_plus_de_10_requetes(session_demo: Session) -> None:
-    """Garde-fou : `composer_page_fonds` reste sous 10 requêtes SQL sur
+def test_page_fonds_n_emet_pas_plus_de_9_requetes(session_demo: Session) -> None:
+    """Garde-fou : `composer_page_fonds` reste sous 9 requêtes SQL sur
     la base demo (5 fonds, ~60 items pour le fonds HK).
 
     Indépendant du nombre de collections du fonds — toute boucle Python
     ne fait qu'attacher des agrégats déjà calculés. Si ce test régresse,
-    quelqu'un a réintroduit un N+1.
+    quelqu'un a réintroduit un N+1 ou ajouté une query dérivable.
     """
     queries: list[str] = []
 
@@ -357,7 +357,7 @@ def test_page_fonds_n_emet_pas_plus_de_10_requetes(session_demo: Session) -> Non
     finally:
         event.remove(engine, "before_cursor_execute", _on_execute)
 
-    assert len(queries) <= 10, (
+    assert len(queries) <= 9, (
         f"composer_page_fonds a émis {len(queries)} requêtes "
-        f"(limite : 10). Première requête : {queries[0][:80]}"
+        f"(limite : 9). Première requête : {queries[0][:80]}"
     )

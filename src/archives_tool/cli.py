@@ -10,14 +10,27 @@ import typer
 from rich.table import Table
 
 import archives_tool.affichage.console as console_mod
-from archives_tool.affichage.collections import (
-    afficher_collections_arbre,
-    afficher_collections_plat,
-    afficher_fiche_collection,
+from archives_tool.affichage.montrer import (
+    rendu_json_collection_detail,
+    rendu_json_collection_liste,
+    rendu_json_fichier_detail,
+    rendu_json_fonds_detail,
+    rendu_json_fonds_liste,
+    rendu_json_item_detail,
+    rendu_text_collection_detail,
+    rendu_text_collection_liste,
+    rendu_text_fichier_detail,
+    rendu_text_fonds_detail,
+    rendu_text_fonds_liste,
+    rendu_text_item_detail,
 )
-from archives_tool.affichage.fichiers import afficher_fiche_fichier
-from archives_tool.affichage.items import afficher_fiche_item
-from archives_tool.affichage.statistiques import afficher_statistiques
+from archives_tool.api.services.dashboard import (
+    composer_page_collection,
+    composer_page_fonds,
+    composer_page_item,
+)
+from archives_tool.api.services.fonds import lister_fonds
+from archives_tool.api.services.items import ItemIntrouvable
 from archives_tool.api.services.collections import (
     CollectionIntrouvable,
     CollectionInvalide,
@@ -131,6 +144,14 @@ def _resoudre_fonds_ou_sortie(session, cote: str | None) -> Fonds | None:
 _DB_PATH_OPTION = typer.Option(
     Path("data/archives.db"), "--db-path", help="Chemin de la base SQLite."
 )
+
+
+class _FormatRapport(str, enum.Enum):
+    """Formats de sortie partagés par `controler` et `montrer`. Typer
+    reconnaît les `Enum(str, ...)` et génère un Choice automatiquement."""
+
+    TEXT = "text"
+    JSON = "json"
 
 
 def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
@@ -388,143 +409,147 @@ montrer = typer.Typer(
 app.add_typer(montrer, name="montrer")
 
 
-@montrer.command("statistiques")
-def cmd_montrer_statistiques(
-    collection: str = typer.Option(
+@montrer.command("fonds")
+def cmd_montrer_fonds(
+    cote: str | None = typer.Option(
+        None, "--cote", "-c", help="Cote du fonds. Sans cote : liste tous les fonds."
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format"
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Afficher un fonds (liste sans --cote, détail avec --cote)."""
+    with _ouvrir_session_existante(db_path) as session:
+        if cote is None:
+            fonds_list = lister_fonds(session)
+            sortie = (
+                rendu_json_fonds_liste(fonds_list)
+                if format_sortie is _FormatRapport.JSON
+                else rendu_text_fonds_liste(fonds_list)
+            )
+        else:
+            try:
+                detail = composer_page_fonds(session, cote)
+            except FondsIntrouvable:
+                typer.echo(f"Erreur : fonds {cote!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            sortie = (
+                rendu_json_fonds_detail(detail)
+                if format_sortie is _FormatRapport.JSON
+                else rendu_text_fonds_detail(detail)
+            )
+    typer.echo(sortie)
+
+
+@montrer.command("collection")
+def cmd_montrer_collection(
+    cote: str | None = typer.Option(
+        None, "--cote", "-c", help="Cote de la collection. Sans cote : liste."
+    ),
+    fonds: str | None = typer.Option(
         None,
-        "--collection",
-        help="Limite les statistiques à une collection (et ses sous-collections).",
+        "--fonds",
+        "-f",
+        help="Cote du fonds (filtre la liste, ou désambiguïse une cote partagée).",
     ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
-) -> None:
-    """Vue d'ensemble globale ou par collection."""
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        ok = afficher_statistiques(session, collection_cote=collection)
-    if not ok:
-        raise typer.Exit(1)
-
-
-@montrer.command("fichier")
-def cmd_montrer_fichier(
-    fichier_id: int = typer.Argument(..., help="ID numérique du fichier en base."),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
-    config_path: Path = typer.Option(
-        Path("config_local.yaml"),
-        "--config",
-        help="Config locale pour le diagnostic disque (optionnelle).",
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format"
     ),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
-    """Afficher la fiche d'un fichier avec diagnostic disque."""
-    config: ConfigLocale | None = None
-    try:
-        config = charger_config(config_path)
-    except Exception:
-        # Config absente ou invalide : on continue sans diagnostic disque.
-        config = None
+    """Afficher les collections (liste ou détail)."""
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        fonds_id = fonds_obj.id if fonds_obj else None
+        if cote is None:
+            from archives_tool.api.services.collections import lister_collections
 
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        ok = afficher_fiche_fichier(session, fichier_id, config)
-    if not ok:
-        raise typer.Exit(1)
+            collections = lister_collections(session, fonds_id=fonds_id)
+            sortie = (
+                rendu_json_collection_liste(collections)
+                if format_sortie is _FormatRapport.JSON
+                else rendu_text_collection_liste(collections)
+            )
+        else:
+            try:
+                col = lire_collection_par_cote(session, cote, fonds_id=fonds_id)
+            except CollectionIntrouvable:
+                typer.echo(
+                    f"Erreur : collection {cote!r} introuvable.", err=True
+                )
+                raise typer.Exit(1) from None
+            detail = composer_page_collection(session, col)
+            sortie = (
+                rendu_json_collection_detail(detail)
+                if format_sortie is _FormatRapport.JSON
+                else rendu_text_collection_detail(detail)
+            )
+    typer.echo(sortie)
 
 
 @montrer.command("item")
 def cmd_montrer_item(
     cote_item: str = typer.Argument(..., help="Cote de l'item."),
-    collection: str = typer.Option(
-        None,
-        "--collection",
-        help="Cote de la collection si la cote item n'est pas unique.",
+    fonds: str = typer.Option(
+        ...,
+        "--fonds",
+        "-f",
+        help="Cote du fonds (obligatoire — la cote item n'est unique que par fonds).",
     ),
-    metadonnees_completes: bool = typer.Option(
-        False,
-        "--metadonnees-completes",
-        help="Afficher tout le JSON metadonnees (sinon résumé tronqué).",
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format"
     ),
-    fichiers: bool = typer.Option(True, "--fichiers/--pas-fichiers"),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher la fiche détaillée d'un item."""
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        ok = afficher_fiche_item(
-            session,
-            cote_item,
-            collection_cote=collection,
-            metadonnees_completes=metadonnees_completes,
-            fichiers=fichiers,
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        try:
+            detail = composer_page_item(session, cote_item, fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(
+                f"Erreur : item {cote_item!r} introuvable dans le fonds {fonds}.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+        sortie = (
+            rendu_json_item_detail(detail)
+            if format_sortie is _FormatRapport.JSON
+            else rendu_text_item_detail(detail)
         )
-    if not ok:
-        raise typer.Exit(1)
+    typer.echo(sortie)
 
 
-@montrer.command("collection")
-def cmd_montrer_collection(
-    cote: str = typer.Argument(..., help="Cote de la collection."),
-    items: bool = typer.Option(True, "--items/--pas-items"),
-    limite: int = typer.Option(
-        50,
-        "--limite",
-        help="Nombre max d'items à afficher (0 = illimité).",
+@montrer.command("fichier")
+def cmd_montrer_fichier(
+    fichier_id: int = typer.Argument(..., help="ID numérique du fichier."),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format"
     ),
-    tri_par: str = typer.Option(
-        "cote",
-        "--tri-par",
-        help="Tri des items : cote, date, etat, modifie.",
-    ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
+    db_path: Path = _DB_PATH_OPTION,
 ) -> None:
-    """Afficher la fiche d'une collection avec ses items."""
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        ok = afficher_fiche_collection(
-            session, cote, items=items, limite=limite, tri_par=tri_par
+    """Afficher la fiche détaillée d'un fichier (par id global)."""
+    from archives_tool.models import Fichier
+
+    with _ouvrir_session_existante(db_path) as session:
+        fichier = session.get(Fichier, fichier_id)
+        if fichier is None:
+            typer.echo(
+                f"Erreur : fichier id={fichier_id} introuvable.", err=True
+            )
+            raise typer.Exit(1)
+        sortie = (
+            rendu_json_fichier_detail(fichier)
+            if format_sortie is _FormatRapport.JSON
+            else rendu_text_fichier_detail(fichier)
         )
-    if not ok:
-        raise typer.Exit(1)
-
-
-@montrer.command("collections")
-def cmd_montrer_collections(
-    recursif: bool = typer.Option(
-        False,
-        "--recursif/--pas-recursif",
-        help="Affichage en arbre plutôt qu'en tableau plat.",
-    ),
-    vide: bool = typer.Option(
-        True,
-        "--vide/--avec-items",
-        help="Inclure les collections sans items (mode plat seulement).",
-    ),
-    db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
-) -> None:
-    """Lister toutes les collections (plat ou arbre)."""
-    engine = creer_engine(db_path)
-    factory = creer_session_factory(engine)
-    with factory() as session:
-        if recursif:
-            afficher_collections_arbre(session)
-        else:
-            afficher_collections_plat(session, vide=vide)
+    typer.echo(sortie)
 
 
 # ---------------------------------------------------------------------------
 # Commande `controler` : contrôles de cohérence base/disque (lecture seule).
 # ---------------------------------------------------------------------------
-
-
-class _FormatRapport(str, enum.Enum):
-    """Formats de sortie de `archives-tool controler`. Typer reconnaît
-    les `Enum(str, ...)` et génère un Choice automatiquement."""
-
-    TEXT = "text"
-    JSON = "json"
 
 
 @app.command("controler")

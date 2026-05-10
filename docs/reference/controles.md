@@ -7,7 +7,8 @@ résoudre** s'il échoue. Pour l'usage de la CLI, voir le guide.
 
 Les contrôles sont strictement en **lecture seule** : aucun
 `db.add` ni `db.commit`. On peut les exécuter sur une base de
-production sans risque.
+production sans risque, dans une CI, ou sur une copie en cours
+d'analyse — la base est garantie inchangée.
 
 ## Vue d'ensemble
 
@@ -90,8 +91,10 @@ jamais remonter une erreur. S'il en remonte une, c'est qu'une
 intervention SQL directe a corrompu la base (ou un bug
 catastrophique).
 
-**Comment résoudre** : restaurer une sauvegarde, ou rattacher
-l'item à un fonds via SQL direct si c'est ponctuel.
+**Comment résoudre** : restaurer une sauvegarde. La contrainte
+`NOT NULL` rendant le cas pratiquement impossible sans
+intervention SQL directe, il s'agit toujours d'un signe de
+corruption.
 
 #### `INV6` — Item dans la collection miroir de son fonds
 

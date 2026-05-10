@@ -105,11 +105,11 @@ Ordre exact (source : [`nakala.py`](https://github.com/Hsbtqemy/ColleC/blob/main
 
 | #  | Colonne                                | Source ColleC                                  |
 | -- | -------------------------------------- | ---------------------------------------------- |
-| 1  | `Linked in collection`                 | DOI Nakala de la collection (ou de l'item).    |
-| 2  | `Status collection`                    | `metadonnees.statut_nakala` ou défaut CLI.     |
+| 1  | `Linked in collection`                 | DOI Nakala de l'item (`Item.doi_collection_nakala`), repli sur celui de la collection (`Collection.doi_nakala`). |
+| 2  | `Status collection`                    | Vide (constant).                               |
 | 3  | `collectionsIds`                       | Vide par défaut.                               |
-| 4  | `Linked in item`                       | Vide par défaut.                               |
-| 5  | `Status donnee`                        | Idem `Status collection`.                      |
+| 4  | `Linked in item`                       | DOI Nakala de l'item (`Item.doi_nakala`).      |
+| 5  | `Status donnee`                        | `metadonnees.statut_nakala` ou défaut CLI (`pending`). |
 | 6  | `http://nakala.fr/terms#title`         | `Item.titre`.                                  |
 | 7  | `langTitle`                            | `Item.langue` (code ISO).                      |
 | 8  | `http://nakala.fr/terms#creator`       | `metadonnees.createurs` / `auteurs`.           |
@@ -137,9 +137,10 @@ Ordre exact (source : [`nakala.py`](https://github.com/Hsbtqemy/ColleC/blob/main
 
 - **Listes** (créateurs multiples, sujets…) : concaténées avec
   ` | ` et triées alphabétiquement.
-- **Linked in collection** : se rabat sur `Collection.doi_nakala`
-  si l'item n'a pas son propre `Item.doi_collection_nakala` —
-  utile quand on dépose une collection d'un coup.
+- **Linked in collection** : pris sur `Item.doi_collection_nakala`
+  s'il est renseigné, sinon sur `Collection.doi_nakala` — utile
+  quand on dépose une collection d'un coup, l'item-level prenant
+  toujours la priorité s'il est explicitement renseigné.
 - **Licence et statut** : pris dans `metadonnees.licence` /
   `metadonnees.statut_nakala` si renseignés ; sinon les défauts
   fournis par la CLI (`CC-BY-NC-ND-4.0` / `pending`).

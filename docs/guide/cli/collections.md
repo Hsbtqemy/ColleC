@@ -61,8 +61,12 @@ archives-tool collections creer-libre TEMOIG "Témoignages d'exil" \
 ```
 
 Une fois créée, on remplit la collection en y ajoutant des items
-depuis l'interface web (page Collection → onglet « Ajouter des
-items »).
+depuis l'[interface web](../interface-web.md) (page Collection,
+bouton « Ajouter des items »).
+
+Si la cote est déjà prise par une autre collection du même fonds
+(ou par une transversale, pour une transversale), la commande
+sort en code 1 avec un message d'erreur explicite.
 
 ## lister
 

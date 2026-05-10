@@ -30,17 +30,12 @@ graph TB
     I2 -.dans.-> CM
     I2 -.dans.-> CL2
     I3 -.dans.-> CM
-
-    style CM fill:#e0e7ff,stroke:#4f46e5
-    style CL1 fill:#fef3c7,stroke:#d97706
-    style CL2 fill:#fef3c7,stroke:#d97706
 ```
 
-Un fonds *Aínsa* contient trois items. La **collection miroir** (en
-bleu) regroupe tous les items du fonds, créée automatiquement.
-Deux **collections libres** (en jaune) sélectionnent des items selon
-des critères thématiques. Chaque item peut figurer dans plusieurs
-collections.
+Un fonds *Aínsa* contient trois items. La **collection miroir**
+regroupe tous les items du fonds, créée automatiquement. Deux
+**collections libres** sélectionnent des items selon des critères
+thématiques. Chaque item peut figurer dans plusieurs collections.
 
 ## Fonds
 
@@ -143,13 +138,14 @@ Un item peut figurer dans **plusieurs collections simultanément** :
   rattachées** au même fonds ;
 - éventuellement dans une ou plusieurs **collections transversales**.
 
-Exemple : la lettre `FA-CORRESP-005` (du Fonds Aínsa) peut être :
+Exemple : la *Lettre n°5* du diagramme ci-dessus est
+simultanément :
 
 - dans la miroir « Fonds Aínsa » (par défaut) ;
 - dans la libre « Correspondance » (regroupement thématique au sein
   du fonds) ;
-- dans la transversale « Témoignages d'exil » (avec des items
-  d'autres fonds).
+- éventuellement, dans une transversale « Témoignages d'exil »
+  (mêlée à des items d'autres fonds).
 
 Ces appartenances sont gérées via une table de liaison N-N
 (`ItemCollection`). Ajouter ou retirer un item d'une collection ne
@@ -192,9 +188,12 @@ Quelques règles toujours vraies (vérifiées par les
 8. **Une cote de collection ou d'item est unique au sein d'un
    fonds.**
 9. **À la suppression d'un fonds** : items et miroir supprimés en
-   cascade ; les collections libres rattachées sont déliées (le
-   fonds référencé disparaît, à l'archiviste de rattacher ailleurs
-   ou de transformer en transversale).
+   cascade. Les collections libres rattachées **deviennent
+   automatiquement transversales** (`fonds_id = NULL` via
+   `ON DELETE SET NULL`) — les items qu'elles contenaient ayant
+   été supprimés avec le fonds, l'archiviste choisit de
+   re-peupler la collection depuis d'autres fonds ou de la
+   supprimer.
 10. **Une collection libre transversale peut piocher dans
     n'importe quel fonds**, y compris des fonds créés a posteriori.
 

@@ -12,31 +12,10 @@ page-ci documente l'usage de la CLI.
 
 ## Familles de contrôles
 
-| Famille        | Contrôles                                  | Sévérités principales |
-|----------------|--------------------------------------------|------------------------|
-| `invariants`   | INV1, INV2, INV4, INV6                     | erreur (sauf INV6)     |
-| `fichiers`     | FILE-MISSING, FILE-ITEM-VIDE, FILE-HASH-DUPLIQUE, FILE-HASH-MANQUANT | avertissement / info |
-| `metadonnees`  | META-COTE-INVALIDE, META-TITRE-VIDE, META-DATE-INVALIDE, META-ANNEE-IMPLAUSIBLE | erreur / avertissement |
-| `cross`        | CROSS-COTE-DUPLIQUEE-FONDS, CROSS-FONDS-VIDE | erreur / info        |
-
-## Tableau des contrôles
-
-| ID                          | Sévérité       | Description                                                                  |
-|-----------------------------|----------------|------------------------------------------------------------------------------|
-| `INV1`                      | erreur         | Tout fonds a exactement une collection miroir.                               |
-| `INV2`                      | erreur         | Toute collection miroir a `fonds_id` non null.                               |
-| `INV4`                      | erreur         | Tout item a `fonds_id` non null (filet de sécurité — NOT NULL en DB).        |
-| `INV6`                      | avertissement  | Tout item est dans la miroir de son fonds (le retrait est légitime, info).   |
-| `FILE-MISSING`              | avertissement  | Fichier référencé en base mais absent du disque (ou racine non configurée). |
-| `FILE-ITEM-VIDE`            | info           | Item sans fichier rattaché.                                                 |
-| `FILE-HASH-DUPLIQUE`        | avertissement  | Plusieurs fichiers ACTIF avec même hash SHA-256.                            |
-| `FILE-HASH-MANQUANT`        | info           | Fichier ACTIF sans hash calculé.                                            |
-| `META-COTE-INVALIDE`        | erreur         | Cote (fonds/collection/item) hors pattern `^[A-Za-z0-9_-]+$`.               |
-| `META-TITRE-VIDE`           | erreur         | Titre vide ou whitespace-only sur fonds/collection/item.                    |
-| `META-DATE-INVALIDE`        | avertissement  | `Item.date` ne reconnaît pas la regex EDTF tolérante.                       |
-| `META-ANNEE-IMPLAUSIBLE`    | avertissement  | `Item.annee` hors `[1000, 2100]` (plage par défaut).                        |
-| `CROSS-COTE-DUPLIQUEE-FONDS`| erreur         | Plusieurs fonds avec la même cote (filet — UNIQUE en DB).                   |
-| `CROSS-FONDS-VIDE`          | info           | Fonds créé mais sans aucun item (cas légitime, signalé pour info).          |
+14 contrôles répartis en 4 familles : `invariants` (4),
+`fichiers` (4), `metadonnees` (4), `cross` (2). Le détail
+ID + sévérité + ce qui est vérifié + comment résoudre est dans
+la [référence des contrôles qa](../../reference/controles.md#tableau-récapitulatif).
 
 ## CLI
 
@@ -138,20 +117,6 @@ change avant V1.0 ; toute évolution incompatible bumpera
   }
 }
 ```
-
-## Comment interpréter les avertissements
-
-Sur une base demo (chemins fictifs sans fichiers physiques) :
-
-- `FILE-MISSING` (avertissement) : tous les fichiers signalent
-  « racine non configurée » → c'est attendu, la base demo ne
-  pointe vers aucun disque.
-- `FILE-HASH-MANQUANT` (info) : aucun fichier n'a de hash → également
-  attendu, le seeder ne calcule pas de SHA-256.
-- `INV6` (avertissement) : retirer un item de sa miroir est
-  explicitement permis par l'invariant 7 du modèle (l'item reste
-  dans le fonds, juste plus dans la sélection « tous les items »).
-  Le contrôle informe sans bloquer.
 
 ## Sémantique du périmètre
 

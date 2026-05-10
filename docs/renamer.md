@@ -17,23 +17,25 @@ Le journal est tenu dans `OperationFichier`.
 
 ## Variables du template
 
-| Variable           | Source                                       |
-| ------------------ | -------------------------------------------- |
-| `{cote}`           | `Item.cote`                                  |
-| `{numero}`         | `Item.numero`                                |
-| `{titre}`          | `Item.titre`                                 |
-| `{date}`           | `Item.date` (format EDTF brut)               |
-| `{annee}`          | `Item.annee`                                 |
-| `{langue}`         | `Item.langue`                                |
-| `{type_coar}`      | `Item.type_coar`                             |
-| `{ordre}`          | `Fichier.ordre` (entier)                     |
-| `{type_page}`      | `Fichier.type_page`                          |
-| `{folio}`          | `Fichier.folio`                              |
-| `{nom_original}`   | `Fichier.nom_fichier` sans extension         |
-| `{ext}`            | extension en minuscules, sans le point       |
-| `{ext_majuscule}`  | extension en majuscules                      |
-| `{cote_collection}`| `Collection.cote_collection`                 |
-| `{titre_collection}`| `Collection.titre`                          |
+| Variable             | Source                                       |
+| -------------------- | -------------------------------------------- |
+| `{cote}`             | `Item.cote`                                  |
+| `{cote_fonds}`       | `Fonds.cote` (toujours disponible)           |
+| `{titre_fonds}`      | `Fonds.titre` (toujours disponible)          |
+| `{numero}`           | `Item.numero`                                |
+| `{titre}`            | `Item.titre`                                 |
+| `{date}`             | `Item.date` (format EDTF brut)               |
+| `{annee}`            | `Item.annee`                                 |
+| `{langue}`           | `Item.langue`                                |
+| `{type_coar}`        | `Item.type_coar`                             |
+| `{ordre}`            | `Fichier.ordre` (entier)                     |
+| `{type_page}`        | `Fichier.type_page`                          |
+| `{folio}`            | `Fichier.folio`                              |
+| `{nom_original}`     | `Fichier.nom_fichier` sans extension         |
+| `{ext}`              | extension en minuscules, sans le point       |
+| `{ext_majuscule}`    | extension en majuscules                      |
+| `{cote_collection}`  | `Collection.cote` (si une collection est passée) |
+| `{titre_collection}` | `Collection.titre`                           |
 
 Les valeurs `None` sont substituées par une chaîne vide. Le format
 `{ordre:02d}` Python est supporté (zéro-padding, etc.).
@@ -41,21 +43,26 @@ Les valeurs `None` sont substituées par une chaîne vide. Le format
 Exemples :
 
 - `{cote}-{ordre:02d}.{ext}` → `HK-1960-01-01.png`
+- `{cote_fonds}/{cote}-{ordre:03d}.{ext}` → `HK/HK-1960-01-001.png`
 - `{annee}/{cote}-{ordre:02d}.{ext}` → `1960/HK-1960-01-01.png`
-- `{nom_original}_canonique.{ext}` → `scan_42_canonique.jpg`
 
 ## CLI
 
 ```bash
-# Aperçu (dry-run par défaut) — n'écrit rien.
+# Aperçu sur tout un fonds (dry-run par défaut — n'écrit rien).
+archives-tool renommer appliquer \
+    --template "{cote_fonds}/{cote}-{ordre:03d}.{ext}" \
+    --fonds HK
+
+# Cibler une collection (--fonds COTE pour désambiguïser si nécessaire).
 archives-tool renommer appliquer \
     --template "{cote}-{ordre:02d}.{ext}" \
-    --collection HK
+    --collection FA-OEUVRES --fonds FA
 
 # Cibler un seul item.
 archives-tool renommer appliquer \
-    --template "{cote}.{ext}" \
-    --item HK-1960-01
+    --template "{cote}-{ordre:02d}.{ext}" \
+    --item HK-001 --fonds HK
 
 # Cibler des fichiers précis.
 archives-tool renommer appliquer \
@@ -64,9 +71,8 @@ archives-tool renommer appliquer \
 
 # Appliquer pour de vrai après revue du plan.
 archives-tool renommer appliquer \
-    --template "{cote}-{ordre:02d}.{ext}" \
-    --collection HK --recursif --no-dry-run \
-    --utilisateur "Marie"
+    --template "{cote_fonds}/{cote}-{ordre:03d}.{ext}" \
+    --fonds HK --no-dry-run --utilisateur "Marie"
 
 # Annuler un batch.
 archives-tool renommer annuler --batch-id <UUID> --no-dry-run
@@ -75,11 +81,16 @@ archives-tool renommer annuler --batch-id <UUID> --no-dry-run
 archives-tool renommer historique --limite 20
 ```
 
+**Périmètre** : exactement un de `--fonds` (seul, pour renommer
+tout le fonds), `--collection`, `--item`, ou `--fichier-id` (multi).
+`--fonds` peut accompagner `--collection` ou `--item` quand la cote
+est partagée entre fonds (désambiguïsation).
+
 **Codes de sortie** :
 
 - `0` : aucune anomalie ; le plan a été affiché ou exécuté.
 - `1` : plan non applicable (conflits) ou échec à l'exécution.
-- `2` : erreur d'invocation (collection introuvable, etc.).
+- `2` : erreur d'invocation (périmètre absent ou manquant).
 
 ## Conflits détectés
 

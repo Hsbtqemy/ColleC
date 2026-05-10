@@ -319,11 +319,12 @@ Référence complète : [`docs/controles.md`](docs/controles.md).
   idempotent.
 - `historique.py` : vue agrégée des batchs `OperationFichier`.
 
-CLI : `archives-tool renommer appliquer --template ... [--collection
-COTE | --item COTE | --fichier-id ID]`, `archives-tool renommer
-annuler --batch-id UUID`, `archives-tool renommer historique`.
-Dry-run par défaut. Référence complète dans
-[`docs/renamer.md`](docs/renamer.md).
+CLI : `archives-tool renommer appliquer --template ... [--fonds COTE
+| --collection COTE [--fonds COTE] | --item COTE --fonds COTE |
+--fichier-id ID]`, `archives-tool renommer annuler --batch-id UUID`,
+`archives-tool renommer historique`. Dry-run par défaut. Variables
+template incluent `{cote_fonds}` / `{titre_fonds}` / `{cote_collection}`
+/ etc. Référence complète dans [`docs/renamer.md`](docs/renamer.md).
 
 ### Génération de dérivés
 
@@ -676,8 +677,14 @@ archives-tool/
   composeurs `composer_page_*` de `services/dashboard.py`. Suppression
   des modules legacy `affichage/{collections,items,fichiers,
   statistiques}.py` qui assumaient l'ancien modèle. — V0.9.0-gamma.4.1.
-- Adaptation CLI renommer / deriver + renamer / derivatives —
-  V0.9.0-gamma.4.2 et 4.3.
+- ✅ CLI `renommer` adaptée : sélection par `--fonds`, `--collection`
+  (+ `--fonds` pour désambiguïser), `--item` (+ `--fonds`),
+  `--fichier-id`. Le moteur (template + plan + execution + annulation
+  + historique) est largement neutre vis-à-vis du modèle ; refonte
+  minimale dans `template.py` (ajout `cote_fonds` / `titre_fonds`,
+  `Collection.cote` au lieu de `cote_collection`) et `plan.py`
+  (sélection N-N via `ItemCollection`, plus de `recursif`). — V0.9.0-gamma.4.2.
+- Adaptation CLI deriver — V0.9.0-gamma.4.3.
 - Script de résolution Nakala (peuplement `Fichier.iiif_url_nakala`) — V0.7.
 - Édition inline des métadonnées item (sans formulaire de page) — V0.9.1.
 - Édition structurelle des champs personnalisés d'une collection
@@ -1033,11 +1040,12 @@ uv run archives-tool deriver appliquer --collection HK --recursif
 uv run archives-tool deriver appliquer --item HK-1960-01 --force
 uv run archives-tool deriver nettoyer --collection HK
 
-# Renommage transactionnel
+# Renommage transactionnel (dry-run par défaut)
 uv run archives-tool renommer appliquer \
-    --template "{cote}-{ordre:02d}.{ext}" --collection HK
+    --template "{cote_fonds}/{cote}-{ordre:03d}.{ext}" --fonds HK
 uv run archives-tool renommer appliquer \
-    --template "{cote}.{ext}" --collection HK --no-dry-run --utilisateur "Marie"
+    --template "{cote}-{ordre:03d}.{ext}" --item HK-001 --fonds HK \
+    --no-dry-run --utilisateur "Marie"
 uv run archives-tool renommer annuler --batch-id <UUID> --no-dry-run
 uv run archives-tool renommer historique
 

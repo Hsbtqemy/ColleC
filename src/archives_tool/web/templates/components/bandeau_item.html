@@ -1,0 +1,105 @@
+{# bandeau_item.html — bandeau de la page item (lecture).
+
+   Variables (passées via la macro) :
+   - item : modèle ORM Item (cote, titre, etat_catalogage, modifie_*)
+   - fonds : Fonds parent (cote, titre)
+   - nb_fichiers : int
+   - navigation : NavigationItem (precedent, suivant)
+   - collections : tuple[CollectionAppartenance, ...] — collections
+     d'appartenance, affichées en ligne « Présent dans » sous la meta.
+
+   Le breadcrumb est en haut, la cote/titre/badge au milieu, la
+   navigation Précédent/Suivant à droite. Les liens Précédent/Suivant
+   préservent le `?fonds=` (cote des items unique par fonds). #}
+
+{% from 'components/badge_etat.html' import badge_etat %}
+{% from 'components/cellule_modifie.html' import cellule_modifie %}
+
+{% macro bandeau_item(item, fonds, nb_fichiers, navigation, collections=()) -%}
+<header class="bandeau-item mb-5">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/fonds/{{ fonds.cote }}"
+       class="hover:underline font-mono">{{ fonds.cote }}</a> ›
+    <span class="font-mono">{{ item.cote }}</span>
+  </p>
+
+  <div class="flex items-start justify-between mt-2 gap-4">
+    <div class="min-w-0">
+      <div class="flex items-baseline gap-3" style="margin-bottom:2px;">
+        <span class="font-mono text-sm text-gray-500">{{ item.cote }}</span>
+        {{ badge_etat(item.etat_catalogage) }}
+      </div>
+      <h1 class="text-2xl font-medium" style="line-height:1.25;">
+        {{ item.titre or '(sans titre)' }}
+      </h1>
+      <p class="text-sm text-gray-500 mt-1 flex items-center flex-wrap gap-x-2 gap-y-1">
+        <span>{{ nb_fichiers }} fichier{{ "s" if nb_fichiers != 1 else "" }}</span>
+        {% if item.modifie_le %}
+          <span aria-hidden="true">·</span>
+          {{ cellule_modifie(item.modifie_par, item.modifie_le | temps_relatif) }}
+        {% endif %}
+        <span aria-hidden="true">·</span>
+        Dans <a href="/fonds/{{ fonds.cote }}"
+                class="hover:underline">{{ fonds.titre }}</a>
+      </p>
+    </div>
+
+    <nav class="flex items-center gap-2 shrink-0" aria-label="Navigation entre items">
+      {% if navigation.precedent %}
+        <a href="/item/{{ navigation.precedent.cote }}?fonds={{ navigation.precedent.fonds_cote }}"
+           class="inline-flex items-center gap-1 rounded hover:bg-gray-50"
+           style="padding:5px 10px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+           title="{{ navigation.precedent.titre or navigation.precedent.cote }}">
+          <span aria-hidden="true">‹</span> Précédent
+        </a>
+      {% else %}
+        <span class="inline-flex items-center gap-1 rounded cursor-not-allowed"
+              style="padding:5px 10px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+          <span aria-hidden="true">‹</span> Précédent
+        </span>
+      {% endif %}
+      {% if navigation.suivant %}
+        <a href="/item/{{ navigation.suivant.cote }}?fonds={{ navigation.suivant.fonds_cote }}"
+           class="inline-flex items-center gap-1 rounded hover:bg-gray-50"
+           style="padding:5px 10px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+           title="{{ navigation.suivant.titre or navigation.suivant.cote }}">
+          Suivant <span aria-hidden="true">›</span>
+        </a>
+      {% else %}
+        <span class="inline-flex items-center gap-1 rounded cursor-not-allowed"
+              style="padding:5px 10px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+          Suivant <span aria-hidden="true">›</span>
+        </span>
+      {% endif %}
+      <a href="/item/{{ item.cote }}/modifier?fonds={{ fonds.cote }}"
+         class="inline-flex items-center gap-1 rounded hover:bg-gray-50"
+         style="padding:5px 10px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+        Modifier
+      </a>
+    </nav>
+  </div>
+
+  {% if collections %}
+    <p class="text-sm text-gray-500 mt-2 flex items-center flex-wrap gap-2">
+      <span>Présent dans :</span>
+      {% for c in collections %}
+        <a href="/collection/{{ c.cote }}{% if c.fonds_cote %}?fonds={{ c.fonds_cote }}{% endif %}"
+           class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+           style="padding:3px 8px;font-size:12px;color:#374151;
+                  background:#fff;border:1px solid rgba(0,0,0,0.10);">
+          {{ c.titre }}
+          <span class="font-mono text-xs text-gray-500">{{ c.cote }}</span>
+          {% if c.est_miroir %}
+            <span class="text-xs text-gray-400 italic">miroir</span>
+          {% elif c.est_transversale %}
+            <span class="text-xs text-gray-400 italic">transversale</span>
+          {% else %}
+            <span class="text-xs text-gray-400 italic">libre</span>
+          {% endif %}
+        </a>
+      {% endfor %}
+    </p>
+  {% endif %}
+</header>
+{%- endmacro %}

@@ -1,4 +1,5 @@
-"""Gestion des collaborateurs d'une collection.
+# Archivé V0.8 — aucun consommateur actif. Voir api/main.py.
+"""Gestion des collaborateurs d'une collection (archivé).
 
 Lecture (groupée par rôle pour l'affichage), ajout, modification,
 suppression. Toutes les opérations valident le vocabulaire des rôles

@@ -1,8 +1,9 @@
-"""Routes HTMX de gestion des collaborateurs d'une collection.
+# Archivé V0.8 — non mounté. Voir api/main.py.
+"""Routes HTMX de gestion des collaborateurs d'une collection (archivé).
 
 Toutes les routes :
 - exigent une collection existante (404 sinon, via
-  `charger_collection_ou_404`) ;
+  `_charger_collection_ou_404`) ;
 - sont conçues pour HTMX (réponses fragments, swap in-place) ;
 - vérifient que le collaborateur appartient bien à la collection
   donnée (anti-confused-deputy) avant toute mutation.
@@ -14,19 +15,31 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db
-from archives_tool.api.routes.collections import charger_collection_ou_404
 from archives_tool.api.services import collaborateurs as svc
 from archives_tool.api.templating import templates
 from archives_tool.models import (
+    Collection,
     CollaborateurCollection,
     LIBELLES_ROLE,
     RoleCollaborateur,
 )
 
 router = APIRouter()
+
+
+def _charger_collection_ou_404(db: Session, cote: str) -> Collection:
+    """Charge une collection par cote ou 404 (premier match, cote non
+    globalement unique — module non mounté, le comportement dégradé
+    n'a aucune conséquence en prod).
+    """
+    col = db.scalar(select(Collection).where(Collection.cote == cote))
+    if col is None:
+        raise HTTPException(status_code=404, detail="Collection introuvable.")
+    return col
 
 ROLES_OPTIONS: list[str] = [r.value for r in RoleCollaborateur]
 
@@ -96,7 +109,7 @@ def section_collaborateurs(
     request: Request, cote: str, db: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Section complète, utilisée pour le swap HTMX après save/delete."""
-    col = charger_collection_ou_404(db, cote)
+    col = _charger_collection_ou_404(db, cote)
     return _reponse_section(request, db, cote, col.id)
 
 
@@ -105,7 +118,7 @@ def formulaire_nouveau(
     request: Request, cote: str, db: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Fragment HTML du formulaire vide, à insérer dans `#formulaire-collaborateur`."""
-    charger_collection_ou_404(db, cote)
+    _charger_collection_ou_404(db, cote)
     return templates.TemplateResponse(
         request,
         "partials/_formulaire_collaborateur.html",
@@ -124,7 +137,7 @@ def formulaire_modifier(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Fragment formulaire pré-rempli."""
-    col = charger_collection_ou_404(db, cote)
+    col = _charger_collection_ou_404(db, cote)
     c = _collaborateur_appartenant(db, collaborateur_id, col.id)
     formulaire = svc.FormulaireCollaborateur(
         nom=c.nom,
@@ -146,7 +159,7 @@ def ajouter(
     formulaire: Annotated[svc.FormulaireCollaborateur, Form()],
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    col = charger_collection_ou_404(db, cote)
+    col = _charger_collection_ou_404(db, cote)
     try:
         svc.ajouter_collaborateur(db, col.id, formulaire)
     except svc.CollaborateurInvalide as e:
@@ -167,7 +180,7 @@ def modifier(
     formulaire: Annotated[svc.FormulaireCollaborateur, Form()],
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    col = charger_collection_ou_404(db, cote)
+    col = _charger_collection_ou_404(db, cote)
     _collaborateur_appartenant(db, collaborateur_id, col.id)
     try:
         svc.modifier_collaborateur(db, collaborateur_id, formulaire)
@@ -188,7 +201,7 @@ def supprimer(
     collaborateur_id: int,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    col = charger_collection_ou_404(db, cote)
+    col = _charger_collection_ou_404(db, cote)
     _collaborateur_appartenant(db, collaborateur_id, col.id)
     svc.supprimer_collaborateur(db, collaborateur_id)
     return _reponse_section(request, db, cote, col.id)

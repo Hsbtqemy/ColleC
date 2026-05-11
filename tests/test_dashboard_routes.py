@@ -824,39 +824,42 @@ def test_page_item_lecture_collections_appartenance(
     assert row is not None
     response = client_demo.get(f"/item/{row.cote}?fonds={row.fonds_cote}")
     assert response.status_code == 200
-    assert "Présent dans les collections" in response.text
+    assert "Présent dans" in response.text
     assert "miroir" in response.text
 
 
 def test_page_item_lecture_visionneuse_premier_fichier(
     client_demo: TestClient,
 ) -> None:
-    """Le premier fichier (ordre=1) est affiché par défaut."""
+    """Le premier fichier (ordre=1) est affiché par défaut dans le
+    panneau fichiers ; la visionneuse pointe sur ce fichier (data-source
+    présent quand un aperçu est disponible, fallback message sinon)."""
     response = client_demo.get("/item/HK-001?fonds=HK")
     assert response.status_code == 200
     # Le seeder crée des fichiers nommés `{cote}-{ordre:02d}.tif`.
     assert "HK-001-01.tif" in response.text
-    # Position 1 / N affichée dans le contrôle de navigation.
-    assert "1 /" in response.text
+    # Le panneau fichiers liste les fichiers avec leur ordre.
+    assert "panneau-fichiers" in response.text
 
 
 def test_page_item_lecture_visionneuse_navigation(
     client_demo: TestClient,
 ) -> None:
-    """?fichier_courant=2 affiche le 2e fichier."""
+    """?fichier_courant=2 met en évidence le 2e fichier dans le panneau."""
     response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=2")
     assert response.status_code == 200
     assert "HK-001-02.tif" in response.text
 
 
-def test_page_item_lecture_visionneuse_format_non_natif(
+def test_page_item_lecture_visionneuse_pas_d_apercu(
     client_demo: TestClient,
 ) -> None:
-    """Format TIFF (non supporté) : message + lien de téléchargement."""
+    """Sur la base demo (chemins fictifs, aperçus non générés), la
+    visionneuse affiche le fallback : message + lien télécharger."""
     response = client_demo.get("/item/HK-001?fonds=HK")
     assert response.status_code == 200
-    assert "non supporté nativement" in response.text
-    assert "Télécharger le fichier" in response.text
+    assert "Aucun aperçu disponible" in response.text
+    assert "archives-tool deriver" in response.text
 
 
 def test_page_item_lecture_clamp_position_si_depasse(
@@ -866,6 +869,141 @@ def test_page_item_lecture_clamp_position_si_depasse(
     response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=999")
     assert response.status_code == 200
     # La position effective <= nb_fichiers : pas de crash.
+
+
+def test_page_item_lecture_layout_trois_zones(client_demo: TestClient) -> None:
+    """La page item rend les 3 zones (panneau fichiers, cartouche
+    métadonnées, visionneuse) et charge OpenSeadragon."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert "panneau-fichiers" in response.text
+    assert "cartouche-metadonnees" in response.text
+    assert "openseadragon.min.js" in response.text
+    assert "visionneuse_osd.js" in response.text
+
+
+def test_page_item_lecture_cartouche_sections(client_demo: TestClient) -> None:
+    """Les 4 sections du cartouche sont présentes (`<details>` repliable)."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    for section in ("Identification", "Champs personnalisés",
+                    "Identifiants externes", "Description"):
+        assert section in response.text
+
+
+def test_page_item_lecture_navigation_precedent_suivant(
+    client_demo: TestClient,
+) -> None:
+    """Le bandeau expose les boutons Précédent/Suivant qui pointent
+    vers les items adjacents du même fonds."""
+    response = client_demo.get("/item/HK-002?fonds=HK")
+    assert response.status_code == 200
+    # Précédent : HK-001
+    assert 'href="/item/HK-001?fonds=HK"' in response.text
+    # Suivant : HK-003
+    assert 'href="/item/HK-003?fonds=HK"' in response.text
+
+
+def test_page_item_lecture_hooks_edition_inline_dormants(
+    client_demo: TestClient,
+) -> None:
+    """Les `<dd>` du cartouche portent les hooks data-edit-* pour
+    l'édition inline future (V0.7+). Aucun JS d'édition actif."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert 'data-edit-cle="cote"' in response.text
+    assert 'data-edit-cle="titre"' in response.text
+    assert 'data-edit-type=' in response.text
+
+
+def test_page_item_panneau_fichiers_checkbox_avant_aside(
+    client_demo: TestClient,
+) -> None:
+    """Régression : la checkbox `#panneau-fichiers-pin` doit
+    apparaître AVANT l'`<aside class="panneau-fichiers">` dans le
+    HTML rendu, pour que le sélecteur CSS `#…:checked ~ aside.…`
+    fonctionne (frères directs).
+    """
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    pos_input = response.text.find('id="panneau-fichiers-pin"')
+    pos_aside = response.text.find('class="panneau-fichiers"')
+    assert pos_input > 0 and pos_aside > 0
+    assert pos_input < pos_aside, (
+        "La checkbox doit être placée AVANT l'aside (frère direct)"
+    )
+
+
+def test_page_item_panneau_fichiers_largeur_dans_style_tag(
+    client_demo: TestClient,
+) -> None:
+    """Régression : la déclaration `width: 36px` doit être dans un
+    `<style>` (pas inline) pour que `:hover` et `:checked ~` puissent
+    surcharger la spécificité.
+    """
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    # La largeur initiale est dans la règle CSS interne, pas inline.
+    assert "aside.panneau-fichiers" in response.text
+    assert "width: 36px" in response.text
+
+
+def test_page_item_collections_dans_bandeau_pas_dans_cartouche(
+    client_demo: TestClient,
+) -> None:
+    """Régression : la section « Présent dans » doit apparaître dans
+    le bandeau (header.bandeau-item), pas dans le cartouche
+    métadonnées qui se limite aux 4 sections fixes.
+    """
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert "Présent dans" in response.text
+    # Le texte « Présent dans » est avant le cartouche.
+    pos_present = response.text.find("Présent dans")
+    pos_cartouche = response.text.find('class="cartouche-metadonnees')
+    assert pos_present > 0 and pos_cartouche > 0
+    assert pos_present < pos_cartouche, (
+        "« Présent dans » doit être dans le bandeau, avant le cartouche"
+    )
+
+
+def test_page_item_pas_de_doublon_fonds_fonds(client_demo: TestClient) -> None:
+    """Régression : si `fonds.titre` commence par « Fonds », le
+    bandeau ne doit pas afficher « Fonds Fonds Aínsa ». Solution
+    actée : préfixer par « Dans » au lieu de « Fonds ».
+    """
+    # Le fonds FA a titre = "Fonds Aínsa" dans la base demo.
+    response = client_demo.get("/item/FA-CORRESP-001?fonds=FA")
+    assert response.status_code == 200
+    assert "Fonds Fonds" not in response.text
+
+
+def test_page_item_pas_de_ligne_navigation_contexte(
+    client_demo: TestClient,
+) -> None:
+    """Pas de ligne « Navigation : ... » sous le bandeau (redondante
+    avec la meta principale et les boutons Précédent/Suivant)."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    assert "Navigation :" not in response.text
+
+
+def test_page_item_lecture_panneau_fichiers_ordre(
+    client_demo: TestClient,
+) -> None:
+    """Le panneau fichiers liste tous les fichiers ordonnés."""
+    response = client_demo.get("/item/HK-001?fonds=HK")
+    assert response.status_code == 200
+    # Plusieurs fichiers nommés HK-001-NN.tif
+    assert "HK-001-01.tif" in response.text
+    assert "HK-001-02.tif" in response.text
+
+
+def test_derives_route_mountee(client_demo: TestClient) -> None:
+    """La route /derives/{racine}/{chemin} est mountée. Une racine
+    inconnue retourne 403 (sécurité), pas 404 (= route absente)."""
+    response = client_demo.get("/derives/inconnue/chemin/inexistant.jpg")
+    assert response.status_code == 403
 
 
 def test_servir_fichier_404_si_disque_absent(client_demo: TestClient) -> None:

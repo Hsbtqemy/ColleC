@@ -1,0 +1,159 @@
+{# panneau_fichiers.html — panneau gauche escamotable de la page item.
+
+   Trois états visuels :
+   - collapsed (défaut) : 36px de large, label vertical et chevron.
+   - hover            : 240px (transition CSS, délai 200ms à l'ouverture
+     pour éviter les ouvertures accidentelles, immédiat à la fermeture).
+   - pinned (épinglé) : 240px, comportement permanent piloté par une
+     checkbox cachée (CSS pur).
+
+   **Contrainte structurelle** : la checkbox `#panneau-fichiers-pin`
+   et l'`<aside class="panneau-fichiers">` doivent être **frères directs**
+   (même parent) pour que le sélecteur `#…:checked ~ aside.…`
+   fonctionne. La macro retourne donc les deux éléments côte à côte
+   au caller ; l'appelant doit les insérer dans un conteneur flex
+   commun (le layout 3 zones).
+
+   Toutes les déclarations CSS de largeur / transition sont placées
+   dans un `<style>` interne pour éviter qu'un `style="width:36px"`
+   inline (spécificité 1,0,0,0) n'écrase les règles `:hover` / `:checked`.
+
+   Variables :
+   - fichiers : tuple[FichierResume, ...] (déjà ordonné par `ordre`).
+   - position_courante : 1-indexée — pour mettre en évidence le fichier
+     actif et ne pas recharger la page si on reclique sur lui.
+   - cote : cote de l'item (pour les liens `?fichier_courant=N`).
+   - fonds_cote : pour le query string.
+#}
+
+{% macro panneau_fichiers(fichiers, position_courante, cote, fonds_cote) -%}
+<style>
+  aside.panneau-fichiers {
+    position: relative;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 100%;
+    background: #fff;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+    transition: width 200ms ease-out;
+    transition-delay: 200ms;
+    overflow: hidden;
+  }
+  aside.panneau-fichiers:hover {
+    width: 240px;
+  }
+  #panneau-fichiers-pin:checked ~ aside.panneau-fichiers,
+  aside.panneau-fichiers[data-pinned="true"] {
+    width: 240px;
+    transition-delay: 0ms;
+  }
+  aside.panneau-fichiers .panneau-fichiers-contenu {
+    opacity: 0;
+    transition: opacity 150ms ease-out 100ms;
+    padding: 36px 0 12px;
+    height: 100%;
+    overflow-y: auto;
+  }
+  aside.panneau-fichiers:hover .panneau-fichiers-contenu,
+  #panneau-fichiers-pin:checked ~ aside.panneau-fichiers .panneau-fichiers-contenu,
+  aside.panneau-fichiers[data-pinned="true"] .panneau-fichiers-contenu {
+    opacity: 1;
+  }
+</style>
+
+<input type="checkbox" id="panneau-fichiers-pin" class="hidden">
+<aside class="panneau-fichiers" data-pinned="false">
+
+  {# Toggle pin (visible quel que soit l'état) #}
+  <label for="panneau-fichiers-pin"
+         class="absolute top-2 right-2 cursor-pointer hover:bg-gray-100 rounded"
+         style="z-index:2;padding:4px;color:#6b7280;"
+         aria-label="Épingler le panneau">
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M6 2 L6 8 M6 8 L4 6 M6 8 L8 6" fill="none" stroke="currentColor"
+            stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="6" cy="2" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+  </label>
+
+  {# État collapsed : label vertical visible quand panneau étroit #}
+  <div class="absolute top-12 left-2"
+       style="writing-mode:vertical-rl;transform:rotate(180deg);
+              font-size:11px;color:#9ca3af;letter-spacing:.05em;
+              text-transform:uppercase;">
+    Fichiers · {{ fichiers|length }}
+  </div>
+
+  {# Contenu visible quand le panneau est ouvert (hover ou pinned) #}
+  <div class="panneau-fichiers-contenu">
+
+    <div style="padding:0 14px 8px;">
+      <h3 style="font-size:11px;font-weight:500;color:#9ca3af;
+                 letter-spacing:.04em;text-transform:uppercase;">
+        Fichiers <span class="font-tabular text-gray-700">{{ fichiers|length }}</span>
+      </h3>
+    </div>
+
+    {%- if not fichiers %}
+      <p class="text-xs text-gray-400 italic" style="padding:4px 14px;">
+        Aucun fichier rattaché.
+      </p>
+    {%- else %}
+      <ul>
+        {% for f in fichiers %}
+          {% if loop.previtem and (f.ordre - loop.previtem.ordre) > 1 %}
+            <li class="text-xs text-gray-400 italic"
+                style="padding:4px 14px;border-top:1px dashed rgba(0,0,0,0.10);
+                       border-bottom:1px dashed rgba(0,0,0,0.10);">
+              ⋯ manque entre {{ loop.previtem.ordre }} et {{ f.ordre }}
+            </li>
+          {% endif %}
+          {% set est_courant = (loop.index == position_courante) %}
+          <li>
+            <a href="/item/{{ cote }}?fonds={{ fonds_cote }}&fichier_courant={{ loop.index }}"
+               class="flex items-center gap-2 hover:bg-gray-50"
+               style="padding:6px 14px;
+                      {% if est_courant %}background:#f3f6fb;{% endif %}">
+              {%- if f.vignette_url %}
+                <img src="{{ f.vignette_url }}"
+                     alt="" loading="lazy"
+                     style="width:36px;height:48px;object-fit:cover;
+                            border:1px solid rgba(0,0,0,0.08);background:#f3f4f6;
+                            flex-shrink:0;">
+              {%- else %}
+                <div style="width:36px;height:48px;background:#f3f4f6;
+                            border:1px solid rgba(0,0,0,0.08);flex-shrink:0;
+                            display:flex;align-items:center;justify-content:center;
+                            font-size:10px;color:#9ca3af;">
+                  {{ f.extension or '?' }}
+                </div>
+              {%- endif %}
+              <div class="min-w-0 flex-1">
+                <div style="font-size:12px;color:{% if est_courant %}#1f1f1f{% else %}#374151{% endif %};
+                            font-weight:{% if est_courant %}500{% else %}400{% endif %};
+                            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  {{ f.nom_fichier }}
+                </div>
+                <div style="font-size:11px;color:#9ca3af;">
+                  {{ f.type_page }} · #{{ f.ordre }}
+                </div>
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {%- endif %}
+
+    <div style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);margin-top:8px;">
+      <span aria-disabled="true"
+            title="Disponible dans une prochaine version"
+            class="inline-flex items-center gap-1.5 rounded cursor-not-allowed"
+            style="padding:4px 10px;font-size:12px;color:#9ca3af;
+                   background:#fff;border:1px solid rgba(0,0,0,0.08);">
+        + Ajouter des fichiers
+        <span style="font-size:10px;font-style:italic;">bientôt</span>
+      </span>
+    </div>
+  </div>
+</aside>
+{%- endmacro %}

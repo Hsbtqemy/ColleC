@@ -20,7 +20,7 @@ from typing import Literal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from archives_tool.models import Item, PreferencesAffichage
+from archives_tool.models import Item, ItemCollection, PreferencesAffichage
 
 # V0.6.3 — seul `items` est câblé. Les autres vues seront ajoutées
 # avec leur propre persistance V0.7+ ; on n'élargit pas le Literal
@@ -205,7 +205,9 @@ def champs_metadonnees_disponibles(
     # `Item.metadonnees` est de type SQLAlchemy `JSON` : auto-décodé
     # en dict à la lecture (jamais de chaîne brute à parser ici).
     rows = db.execute(
-        select(Item.metadonnees).where(Item.collection_id == collection_id)
+        select(Item.metadonnees)
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(ItemCollection.collection_id == collection_id)
     ).all()
     compteurs: dict[str, int] = {}
     for (md,) in rows:
@@ -280,3 +282,34 @@ def resoudre_colonnes_actives(
 def metas_valides_pour(disponibles: dict[str, list[ColonneDisponible]]) -> set[str]:
     """Set des noms de champs métadonnées valides pour la collection."""
     return {c.nom for c in disponibles.get("metadonnees", [])}
+
+
+@dataclass
+class ColonnesActivesResolues:
+    """Résultat de `charger_colonnes_actives` — actives + dispo bruts.
+
+    Le champ `disponibles` est conservé pour permettre aux callers de
+    réutiliser le scan déjà effectué (modale colonnes notamment).
+    """
+
+    actives: list[ColonneDisponible]
+    disponibles: dict[str, list[ColonneDisponible]]
+
+
+def charger_colonnes_actives(
+    db: Session,
+    utilisateur: str,
+    collection_id: int,
+    vue: Vue = "items",
+) -> ColonnesActivesResolues:
+    """Lit les préférences, charge les colonnes disponibles, et résout
+    la liste active. Court-circuite le scan de `Item.metadonnees` quand
+    les préférences ne référencent que des colonnes dédiées.
+    """
+    prefs = lire_preferences_colonnes(db, utilisateur, collection_id, vue)
+    avec_metas = any(nom not in _DEDIEES_PAR_NOM for nom in prefs.colonnes_ordonnees)
+    disponibles = colonnes_disponibles_items(
+        db, collection_id, avec_metadonnees=avec_metas
+    )
+    actives = resoudre_colonnes_actives(prefs.colonnes_ordonnees, disponibles)
+    return ColonnesActivesResolues(actives=actives, disponibles=disponibles)

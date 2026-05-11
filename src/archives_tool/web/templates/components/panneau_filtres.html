@@ -4,10 +4,15 @@
 
    Variables :
    - cible_url : URL de soumission (sans params filtres)
-   - filtres_actifs : dict des filtres effectivement appliqués
+   - hidden_inputs : dict {name: value} d'inputs cachés à inclure
+     (typiquement `{'fonds': 'HK'}` pour désambiguïser une cote partagée)
+   - lien_tout_effacer : URL pour le lien « Tout effacer » (généralement
+     `cible_url` sans aucun paramètre filtre)
    - sections : liste de blocs de filtres, chacun :
-       {'titre': str, 'type': 'multi'|'range'|'text', 'champ': str,
-        'options': list[str] (pour multi), 'valeur': pré-remplie}
+       {'titre': str, 'type': 'multi'|'range_annee'|'text', 'champ': str,
+        'options': list[str] (pour multi), 'valeur': pré-remplie,
+        'libelles': dict opt→label, 'min', 'max',
+        'valeur_debut', 'valeur_fin' (pour range_annee)}
 #}
 <aside id="panneau-filtres" data-ouvert="false"
        style="position:fixed;top:0;right:0;height:100vh;width:360px;background:#fff;
@@ -26,13 +31,17 @@
               class="hover:text-gray-800" style="font-size:18px;color:#6b7280;line-height:1;padding:0 4px;">×</button>
     </div>
     <p style="font-size:12px;color:#9ca3af;">
-      <a href="{{ cible_url }}" class="hover:text-gray-800">Tout effacer</a>
+      <a href="{{ lien_tout_effacer or cible_url }}" class="hover:text-gray-800">Tout effacer</a>
     </p>
   </header>
 
   <form id="panneau-filtres-form" method="get" action="{{ cible_url }}"
         class="flex-1 overflow-y-auto"
         style="padding:14px 18px;">
+
+    {%- for k, v in (hidden_inputs or {}).items() %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {%- endfor %}
 
     {%- for s in sections %}
       <fieldset style="margin-bottom:18px;border:0;padding:0;">
@@ -55,14 +64,14 @@
 
         {%- elif s.type == 'range_annee' %}
           <div class="flex items-center gap-2">
-            <input type="number" name="annee_debut" placeholder="De"
-                   min="1000" max="2100" step="1"
+            <input type="number" name="annee_de" placeholder="De"
+                   min="{{ s.min or 1000 }}" max="{{ s.max or 2100 }}" step="1"
                    value="{{ s.valeur_debut if s.valeur_debut is not none else '' }}"
                    class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
                    style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">
             <span style="color:#9ca3af;">→</span>
-            <input type="number" name="annee_fin" placeholder="À"
-                   min="1000" max="2100" step="1"
+            <input type="number" name="annee_a" placeholder="À"
+                   min="{{ s.min or 1000 }}" max="{{ s.max or 2100 }}" step="1"
                    value="{{ s.valeur_fin if s.valeur_fin is not none else '' }}"
                    class="w-full bg-gray-50 rounded focus:outline-none focus:bg-white"
                    style="padding:5px 8px;font-size:13px;border:1px solid rgba(0,0,0,0.08);">

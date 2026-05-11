@@ -1,0 +1,54 @@
+{# visionneuse_osd.html — zone visionneuse OpenSeadragon.
+
+   Variables :
+   - fichier : FichierResume (extension, nom_fichier, source_image)
+   - cote : cote de l'item (pour le lien de téléchargement)
+   - fonds_cote : pour le query string
+
+   La visionneuse est instanciée par `static/js/visionneuse_osd.js` :
+   elle lit `data-source` (JSON sérialisé sur le wrapper) et invoque
+   `OpenSeadragon({ tileSources: ... })` avec le bon format pour iiif
+   ou image plate. Sur `open-failed`, elle bascule sur le fallback
+   (deuxième source de SourceImage) ou affiche un message.
+#}
+
+{% macro visionneuse_osd(fichier, cote, fonds_cote) -%}
+{%- if not fichier %}
+  <div class="flex items-center justify-center h-full bg-gray-50 rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);">
+    <p class="text-sm text-gray-500">Aucun fichier rattaché à cet item.</p>
+  </div>
+{%- elif not fichier.source_image.primary %}
+  {# Aucune source utilisable (chemin local + Nakala absents) — fallback
+     vers le binaire direct, qui peut servir un PNG/JPG natif. #}
+  {% set src_brut = '/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote %}
+  <div class="flex flex-col items-center justify-center h-full bg-gray-50 rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
+    <p class="text-sm text-gray-600 text-center" style="max-width:360px;">
+      Aucun aperçu disponible pour ce fichier.
+      <br>
+      <span class="text-xs text-gray-500">
+        Lancez <code class="font-mono">archives-tool deriver appliquer</code>
+        pour générer les aperçus.
+      </span>
+    </p>
+    <a href="{{ src_brut }}"
+       class="inline-flex items-center gap-1.5 rounded mt-3"
+       style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;
+              border:1px solid #1f1f1f;">
+      Télécharger {{ fichier.nom_fichier }}
+    </a>
+  </div>
+{%- else %}
+  {% set src_brut = '/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote %}
+  <div id="visionneuse-{{ fichier.id }}"
+       class="visionneuse-osd"
+       style="width:100%;height:100%;background:#1a1a1a;border-radius:6px;"
+       data-source='{{ {
+         "primary": fichier.source_image.primary,
+         "fallback": fichier.source_image.fallback,
+         "telecharger": src_brut,
+         "nom": fichier.nom_fichier
+       } | tojson }}'></div>
+{%- endif %}
+{%- endmacro %}

@@ -1,14 +1,13 @@
 """Routes du panneau de configuration des colonnes (vue items).
 
 Trois endpoints :
-- GET  /preferences/colonnes/items/{collection_id}      → modale ouverte
-- POST /preferences/colonnes/items/{collection_id}      → sauvegarde + tableau swap
-- POST /preferences/colonnes/items/{collection_id}/reset → reset défauts + tableau swap
+- GET  /preferences/colonnes/items/{collection_id}        → modale ouverte
+- POST /preferences/colonnes/items/{collection_id}        → sauvegarde + tableau swap
+- POST /preferences/colonnes/items/{collection_id}/reset  → reset défauts + tableau swap
 
-V0.6.3 — onglet items uniquement. La validation côté serveur est
-déléguée au service (whitelist par catégorie). Réponse au POST :
-le tableau d'items mis à jour, avec un en-tête `HX-Trigger`
-`panneau-colonnes-ferme` que le JS écoute pour fermer la modale.
+Le swap HTMX renvoie le partial `partials/collection_items.html`. Le
+serveur émet `HX-Trigger: panneau-colonnes-ferme` pour fermer la
+modale côté client.
 """
 
 from __future__ import annotations
@@ -19,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_utilisateur_courant
-from archives_tool.api.services import collection as svc_collection
 from archives_tool.api.services import preferences as svc
+from archives_tool.api.services.items import lister_items_collection
 from archives_tool.api.templating import templates
 from archives_tool.models import Collection
 
@@ -44,6 +43,8 @@ def ouvrir_panneau_colonnes(
     """Rend le panneau (modale) avec les vraies données contextuelles."""
     col = _charger_collection_par_id(db, collection_id)
     prefs = svc.lire_preferences_colonnes(db, utilisateur, collection_id, "items")
+    # La modale a toujours besoin de la liste complète des métadonnées
+    # disponibles, peu importe les préférences en cours.
     disponibles = svc.colonnes_disponibles_items(db, collection_id)
     actives = svc.resoudre_colonnes_actives(prefs.colonnes_ordonnees, disponibles)
     actifs_noms = {c.nom for c in actives}
@@ -69,28 +70,21 @@ def _re_render_tableau(
     db: Session,
     utilisateur: str,
     col: Collection,
-    *,
-    disponibles: dict | None = None,
 ) -> HTMLResponse:
     """Rend le partial du tableau items mis à jour, avec HX-Trigger.
 
-    `disponibles` peut être passé pour réutiliser le calcul fait en amont
-    par la route POST (évite un second scan de `Item.metadonnees`).
+    Le swap repart à la page 1 sans filtre — la modale colonnes ne
+    transporte pas l'état de filtre/pagination.
     """
-    prefs = svc.lire_preferences_colonnes(db, utilisateur, col.id, "items")
-    if disponibles is None:
-        disponibles = svc.colonnes_disponibles_items(db, col.id)
-    actives = svc.resoudre_colonnes_actives(prefs.colonnes_ordonnees, disponibles)
-    listing = svc_collection.lister_items(
-        db, col.cote_collection, colonnes=[c.nom for c in actives]
-    )
+    resolu = svc.charger_colonnes_actives(db, utilisateur, col.id, "items")
+    listage = lister_items_collection(db, col.id, page=1, par_page=50)
     response = templates.TemplateResponse(
         request,
         "partials/collection_items.html",
         {
-            "items": listing,
-            "cote": col.cote_collection,
-            "colonnes_actives": actives,
+            "items": listage,
+            "cote": col.cote,
+            "colonnes_actives": resolu.actives,
             "collection_id": col.id,
         },
     )
@@ -118,9 +112,8 @@ def sauvegarder_panneau_colonnes(
             metas_valides=svc.metas_valides_pour(disponibles),
         )
     except ValueError as e:
-        # Liste totalement invalide après filtrage.
         raise HTTPException(status_code=400, detail=str(e)) from None
-    return _re_render_tableau(request, db, utilisateur, col, disponibles=disponibles)
+    return _re_render_tableau(request, db, utilisateur, col)
 
 
 @router.post(

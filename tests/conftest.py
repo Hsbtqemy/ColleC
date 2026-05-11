@@ -35,14 +35,11 @@ from archives_tool.models import Base, Fonds, Item, ItemCollection
 # qa, renamer, derivatives, affichage CLI, routes web).
 collect_ignore = [
     "test_cli_importer.py",
+    # CollaborateurCollection archivé : routes/services jamais mountés.
     "test_collaborateurs.py",
-    "test_collection_routes.py",
-    "test_collection_services.py",
-    "test_collections_creation.py",
     "test_contraintes.py",
     "test_derives_route.py",
     "test_mapping_dc.py",
-    "test_preferences.py",
     "test_profils_generateur.py",
     "test_rapport_export.py",
     "test_roundtrip.py",

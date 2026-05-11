@@ -1,21 +1,40 @@
-{# Onglet items. Variables :
+{# Partial du tableau d'items d'une collection. Servi à la fois :
+   - inline depuis `pages/collection_lecture.html` (rendu initial),
+   - en swap HTMX depuis le POST de sauvegarde des préférences de
+     colonnes (`/preferences/colonnes/items/{id}`).
+
+   Variables :
    - items : Listage[ItemResume]
    - cote : cote de la collection courante
    - colonnes_actives : list[ColonneDisponible] dans l'ordre voulu
      (par défaut, les 7 colonnes de COLONNES_DEFAUT_ITEMS).
-   - nb_sous_collections : pour décider de l'empty state
-     (collection vide = aucun item ET aucune sous-collection).
+   - collection_id : id pour brancher l'URL de la modale colonnes.
+   - fonds_query : cote du fonds parent pour désambiguïser (optionnel).
+   - filtres : FiltresCollection effectivement actifs (optionnel — sert
+     à préserver les filtres dans la cible_url des liens HTMX de tri
+     et de pagination).
 #}
 {% from 'components/tableau_items.html' import tableau_items %}
 {% set nb_f = items.nb_filtres_actifs %}
 {% set noms_cols = colonnes_actives|map(attribute='nom')|list %}
-{% set nb_sous = nb_sous_collections|default(0) %}
+
+{# Cible URL pour les liens HTMX de tri et pagination. Pointe sur la
+   page collection elle-même (HTMX swap juste `#tableau-items`),
+   préserve `fonds` et les filtres actifs s'ils existent. #}
+{%- set qs_filtres = filtres.to_query_string() if filtres else '' -%}
+{%- set qs_complet = (
+  ('fonds=' ~ fonds_query) if fonds_query else ''
+) ~ (
+  ('&' if fonds_query and qs_filtres else '')
+) ~ qs_filtres -%}
+{%- set cible = '/collection/' ~ cote ~ (('?' ~ qs_complet) if qs_complet else '') -%}
+
 {% if items.items or nb_f > 0 %}
   {{ tableau_items({
     'colonnes': noms_cols,
     'sort': items.tri,
     'ordre': items.ordre,
-    'cible_url': '/collection/' ~ cote ~ '/items',
+    'cible_url': cible,
     'id': 'tableau-items',
     'items': items.items,
     'pagination': {
@@ -26,8 +45,9 @@
     'nb_colonnes_actives': noms_cols|length,
     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
   }) }}
-{% elif nb_sous == 0 %}
-  {# Collection complètement vide : empty state proactif. #}
+{% else %}
+  {# Collection vide : empty state proactif (V0.9.0 — pas de sous-collections,
+     un item rattaché à la collection apparaît directement dans le tableau). #}
   <div id="tableau-items" class="bg-white rounded-lg"
        style="border:1px solid rgba(0,0,0,0.08);padding:36px 24px;">
     <div class="text-center" style="max-width:440px;margin:0 auto;">
@@ -56,11 +76,5 @@
         </span>
       </div>
     </div>
-  </div>
-{% else %}
-  <div id="tableau-items">
-    <p class="text-sm text-gray-500 text-center py-12">
-      Aucun item rattaché à cette collection.
-    </p>
   </div>
 {% endif %}

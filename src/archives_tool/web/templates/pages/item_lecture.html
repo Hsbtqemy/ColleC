@@ -1,10 +1,18 @@
-{# Page item (lecture). Variables :
-   - `detail` (ItemDetail) : item ORM + fonds + fichiers + collections
-     d'appartenance + fichier courant
-   - `fonds_cote` : cote du fonds parent (pour les liens retour)
-   - `formats_img_natifs` : frozenset des extensions affichables
-     directement dans <img> (PNG/JPG/GIF/WebP/SVG) #}
+{# Page item (lecture). Layout en 3 zones :
+   panneau fichiers (gauche, escamotable) | cartouche métadonnées
+   (centre, 460px) | visionneuse OpenSeadragon (droite, flex-1).
+
+   Variables :
+   - detail (ItemDetail) : item ORM + fonds + fichiers + collections +
+     metadonnees_par_section + navigation + position_courante
+   - fonds_cote : cote du fonds (pour les query strings)
+#}
 {% extends "base.html" %}
+{% from 'components/bandeau_item.html' import bandeau_item %}
+{% from 'components/cartouche_metadonnees.html' import cartouche_metadonnees %}
+{% from 'components/panneau_fichiers.html' import panneau_fichiers %}
+{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+
 {% set item = detail.item %}
 {% set fonds = detail.fonds %}
 {% set f_courant = detail.fichier_courant %}
@@ -12,208 +20,23 @@
 {% block title %}{{ item.titre or item.cote }} — archives-tool{% endblock %}
 
 {% block content %}
-<header class="mb-6">
-  <p class="text-sm text-gray-500">
-    <a href="/" class="hover:underline">Tableau de bord</a> ›
-    <a href="/fonds/{{ fonds.cote }}"
-       class="hover:underline font-mono">{{ fonds.cote }}</a> ›
-    <span class="font-mono">{{ item.cote }}</span>
-  </p>
+{{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections) }}
 
-  <div class="flex items-start justify-between mt-2 gap-4">
-    <div>
-      <h1 class="text-2xl font-medium">{{ item.titre or item.cote }}</h1>
-      <p class="text-sm text-gray-500 mt-1">
-        <span class="font-mono">{{ item.cote }}</span>
-        <span aria-hidden="true">·</span>
-        État : {{ item.etat_catalogage | libelle_etat }}
-        {% if item.date %}
-          <span aria-hidden="true">·</span>
-          {{ item.date }}
-        {% elif item.annee %}
-          <span aria-hidden="true">·</span>
-          {{ item.annee }}
-        {% endif %}
-        <span aria-hidden="true">·</span>
-        Fonds <a href="/fonds/{{ fonds.cote }}"
-                 class="hover:underline">{{ fonds.titre }}</a>
-      </p>
-    </div>
-    <div class="flex items-start gap-2">
-      <a href="/item/{{ item.cote }}/modifier?fonds={{ fonds.cote }}"
-         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
-        Modifier l'item
-      </a>
-    </div>
+<div class="layout-trois-zones flex gap-4"
+     style="height:calc(100vh - 240px);min-height:520px;">
+  {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote) }}
+
+  <div style="flex:0 0 460px;height:100%;">
+    {{ cartouche_metadonnees(detail.metadonnees_par_section, item.cote) }}
   </div>
 
-  {% if item.description %}
-    <p class="text-sm text-gray-700 mt-3">{{ item.description }}</p>
-  {% endif %}
+  <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;">
+    {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+  </div>
+</div>
+{% endblock %}
 
-  {% if item.notes_internes %}
-    <p class="text-sm text-gray-500 mt-2">
-      <span class="font-medium">Notes internes :</span>
-      {{ item.notes_internes }}
-    </p>
-  {% endif %}
-
-  {% if item.type_coar or item.langue or item.numero
-        or item.doi_nakala or item.doi_collection_nakala %}
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm">
-      {% if item.type_coar %}
-        <div><dt class="inline text-gray-500">Type COAR :</dt>
-             <dd class="inline">{{ item.type_coar }}</dd></div>
-      {% endif %}
-      {% if item.langue %}
-        <div><dt class="inline text-gray-500">Langue :</dt>
-             <dd class="inline">{{ item.langue }}</dd></div>
-      {% endif %}
-      {% if item.numero %}
-        <div><dt class="inline text-gray-500">Numéro :</dt>
-             <dd class="inline">{{ item.numero }}</dd></div>
-      {% endif %}
-      {% if item.doi_nakala %}
-        <div><dt class="inline text-gray-500">DOI Nakala :</dt>
-             <dd class="inline font-mono">{{ item.doi_nakala }}</dd></div>
-      {% endif %}
-      {% if item.doi_collection_nakala %}
-        <div><dt class="inline text-gray-500">DOI collection Nakala :</dt>
-             <dd class="inline font-mono">{{ item.doi_collection_nakala }}</dd></div>
-      {% endif %}
-    </dl>
-  {% endif %}
-</header>
-
-{% if detail.collections %}
-  <section class="mb-8">
-    <h2 class="text-lg font-medium mb-2">
-      Présent dans les collections
-      <span class="text-gray-400">({{ detail.collections | length }})</span>
-    </h2>
-    <ul class="text-sm">
-      {% for c in detail.collections %}
-        <li class="py-1 border-b border-gray-100 flex items-center gap-2">
-          <a href="/collection/{{ c.cote }}{% if c.fonds_cote %}?fonds={{ c.fonds_cote }}{% endif %}"
-             class="hover:underline">{{ c.titre }}</a>
-          <span class="font-mono text-xs text-gray-500">{{ c.cote }}</span>
-          {% if c.est_miroir %}
-            <span class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">miroir</span>
-          {% elif c.est_transversale %}
-            <span class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">transversale</span>
-          {% else %}
-            <span class="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">libre</span>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  </section>
-{% endif %}
-
-<section class="mb-8">
-  <h2 class="text-lg font-medium mb-2">
-    Fichiers <span class="text-gray-400">({{ detail.nb_fichiers }})</span>
-  </h2>
-
-  {% if f_courant %}
-    {# Visionneuse : navigation + zone d'affichage + métadonnées du
-       fichier courant. URL bookmarkable via ?fichier_courant=N. #}
-    <div class="border border-gray-200 rounded mb-4">
-      <div class="flex items-center justify-between px-3 py-2 border-b border-gray-100 text-sm">
-        {% if detail.position_courante > 1 %}
-          <a href="?fonds={{ fonds_cote }}&fichier_courant={{ detail.position_courante - 1 }}"
-             class="text-blue-600 hover:underline">‹ Précédent</a>
-        {% else %}
-          <span class="text-gray-300">‹ Précédent</span>
-        {% endif %}
-
-        <span class="font-mono">
-          {{ f_courant.nom_fichier }}
-          <span class="text-gray-500">
-            ({{ detail.position_courante }} / {{ detail.nb_fichiers }})
-          </span>
-        </span>
-
-        {% if detail.position_courante < detail.nb_fichiers %}
-          <a href="?fonds={{ fonds_cote }}&fichier_courant={{ detail.position_courante + 1 }}"
-             class="text-blue-600 hover:underline">Suivant ›</a>
-        {% else %}
-          <span class="text-gray-300">Suivant ›</span>
-        {% endif %}
-      </div>
-
-      <div class="flex items-center justify-center bg-gray-50 p-4 min-h-[300px]">
-        {% set src = "/item/" ~ item.cote ~ "/fichiers/" ~ f_courant.id ~ "?fonds=" ~ fonds_cote %}
-        {% if f_courant.extension in formats_img_natifs %}
-          <img src="{{ src }}"
-               alt="{{ f_courant.nom_fichier }}"
-               loading="lazy"
-               class="max-h-[600px] max-w-full object-contain"
-               onerror="this.outerHTML='<p class=&quot;text-sm text-gray-500&quot;>Image indisponible (fichier absent du disque).</p>'">
-        {% else %}
-          <div class="text-center text-sm text-gray-600">
-            <p>Format <strong class="font-mono">{{ f_courant.extension or "?" }}</strong>
-               non supporté nativement par le navigateur.</p>
-            <p class="mt-2">
-              <a href="{{ src }}"
-                 class="text-blue-600 hover:underline">Télécharger le fichier</a>
-            </p>
-          </div>
-        {% endif %}
-      </div>
-
-      <div class="px-3 py-2 border-t border-gray-100 text-xs text-gray-500">
-        {{ f_courant.type_page }}
-        {% if f_courant.taille_octets %}
-          • {{ f_courant.taille_octets | taille_humaine }}
-        {% endif %}
-        {% if f_courant.dimensions %}
-          • {{ f_courant.dimensions }}
-        {% endif %}
-        {% if f_courant.format %}
-          • {{ f_courant.format }}
-        {% endif %}
-      </div>
-    </div>
-
-    <table class="w-full text-sm">
-      <thead class="text-xs text-gray-500 uppercase tracking-wide border-b">
-        <tr>
-          <th class="text-left py-2 w-8">#</th>
-          <th class="text-left py-2">Nom</th>
-          <th class="text-left py-2">Type</th>
-          <th class="text-right py-2">Taille</th>
-          <th class="text-right py-2">Dimensions</th>
-          <th class="text-left py-2">Format</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in detail.fichiers %}
-          {% set est_courant = (loop.index == detail.position_courante) %}
-          <tr class="border-b border-gray-100 {% if est_courant %}bg-gray-50{% endif %}">
-            <td class="py-2 text-gray-500">{{ loop.index }}</td>
-            <td class="py-2 font-mono">
-              <a href="?fonds={{ fonds_cote }}&fichier_courant={{ loop.index }}"
-                 class="hover:underline">{{ f.nom_fichier }}</a>
-            </td>
-            <td class="py-2">{{ f.type_page }}</td>
-            <td class="py-2 text-right text-gray-500">
-              {{ f.taille_octets | taille_humaine if f.taille_octets else "—" }}
-            </td>
-            <td class="py-2 text-right text-gray-500">
-              {{ f.dimensions or "—" }}
-            </td>
-            <td class="py-2 text-gray-500">{{ f.format or "—" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="text-sm text-gray-500">Aucun fichier rattaché à cet item.</p>
-  {% endif %}
-</section>
-
-<p class="text-sm">
-  <a href="/fonds/{{ fonds.cote }}" class="text-blue-600 hover:underline">← Retour au fonds</a>
-</p>
+{% block scripts %}
+  <script src="{{ url_for('static', path='js/vendor/openseadragon/openseadragon.min.js') }}"></script>
+  <script src="{{ url_for('static', path='js/visionneuse_osd.js') }}"></script>
 {% endblock %}

@@ -131,11 +131,19 @@ code. Si une demande les contredit, signaler avant d'exécuter.
   les commandes `archives-tool montrer ...`)
 
 **Frontend :**
-- Jinja2 + HTMX pour les interactions
+- Jinja2 + HTMX 1.9.10 (vendor sous `web/static/js/vendor/htmx/`)
+  pour les interactions partielles. Inclus dans `base.html`.
 - Tailwind CSS compilé via la CLI npm (pas de CDN). `npm install` une
   fois ; `npm run watch:css` en dev. `output.css` est gitignoré.
-- SortableJS pour les réordonnancements (drag & drop vignettes)
-- OpenSeadragon pour la visionneuse d'images (IIIF-compatible)
+- SortableJS 1.15.2 (vendor sous `web/static/js/vendor/sortable/`)
+  pour les réordonnancements (drag & drop colonnes du tableau,
+  vignettes en V2+). Chargé à la demande sur la page collection.
+- OpenSeadragon (vendor sous `web/static/js/vendor/openseadragon/`)
+  pour la visionneuse d'images de la page Item. Chargé sur la
+  page item uniquement. Mode `tileSources: { type: "image", url }`
+  pour les aperçus JPEG locaux ; mode IIIF (URL `info.json`) quand
+  le fichier a un DOI Nakala publié. Fallback `open-failed` →
+  source secondaire puis message + lien télécharger.
 
 **Traitement fichiers :**
 - Pillow pour les dérivés simples
@@ -897,9 +905,44 @@ pages Fonds, Collection et Item.
   Test de régression `date_incertaine` ajouté pour le bug HIGH
   V0.9.2-beta. Drawer `panneau_filtres` riche et `panneau_colonnes`
   drag-drop reportés à V0.9.2-beta.3 (JS plumbing).
-- **V0.9.2-gamma** : page Item — recréation des composants absents
-  (`bandeau_item`, `cartouche_metadonnees`, `panneau_fichiers`),
-  branchement de la visionneuse OpenSeadragon.
+- ✅ **V0.9.2-beta.3** : drawer animé `panneau_filtres` (CSS pur
+  via attribut `data-ouvert`, fermeture ESC + croix, slide-in
+  200ms, backdrop semi-transparent) à la place du `<details>`
+  collapsible. Drawer modale `panneau_colonnes` avec drag-drop
+  Sortable.js (vendor 1.15.2) et boutons activer/désactiver/
+  réinitialiser ; persistance via `PreferencesAffichage` (par
+  utilisateur + collection + vue). HTMX 1.9.10 ajouté en vendor
+  et inclus dans `base.html` — active aussi le tri d'en-têtes
+  qui était dormant. Le service `preferences_colonnes` est
+  migré au modèle V0.9.0 (junction `ItemCollection` au lieu de
+  `Item.collection_id`) et `tests/test_preferences.py` est
+  réactivé (était en `collect_ignore`). Le bouton « Colonnes »
+  du tableau ouvre la modale via `hx-get`, le POST swap
+  `#tableau-items` avec `HX-Trigger: panneau-colonnes-ferme`
+  qui ferme la modale côté client. La cote `cote` reste
+  obligatoire — réinjectée silencieusement si l'utilisateur
+  tente de la décocher (défense en profondeur). +23 tests
+  verts (514 au total).
+- ✅ **V0.9.2-gamma** : page Item refondue en layout 3 zones
+  (panneau fichiers gauche escamotable, cartouche métadonnées
+  centre 460px, visionneuse droite flex-1). Trois composants
+  recréés sous `components/` : `bandeau_item.html` (breadcrumb +
+  cote + titre + badge état + meta + Précédent/Suivant),
+  `cartouche_metadonnees.html` (4 sections repliables :
+  Identification / Champs personnalisés / Identifiants externes /
+  Description, hooks `data-edit-cle` / `data-edit-type` posés
+  pour l'édition inline V0.7+), `panneau_fichiers.html` (CSS pur
+  3 états collapsed/hover/pinned, vignettes, détection des sauts
+  d'ordre). Visionneuse `OpenSeadragon` (vendor 4.x) instanciée
+  par `visionneuse_osd.js` via `data-source` sérialisé ; fallback
+  open-failed → secondary source puis message + télécharger.
+  Service `composer_page_item` enrichi : `metadonnees_par_section`
+  (4 sections, DOI rendus en lien cliquable, listes en CSV),
+  `navigation_items` (préc/suiv triés par cote dans la miroir du
+  fonds), `FichierResume.source_image` pré-résolu via
+  `resoudre_source_image`. Router `derives` mounté sur `/derives`
+  pour servir les aperçus locaux. Garde-fou SQL ≤ 8 requêtes.
+  +14 tests verts (529 au total).
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 

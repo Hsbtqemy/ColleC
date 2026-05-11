@@ -645,3 +645,184 @@ def test_filtres_compteur_libelle() -> None:
     assert f1.compteur_libelle == "1 actif"
     f2 = FiltresCollection(etats=("brouillon",), langues=("fra",))
     assert f2.compteur_libelle == "2 actifs"
+
+
+# ---------------------------------------------------------------------------
+# composer_page_item : page item enrichie
+# ---------------------------------------------------------------------------
+
+
+def _charger_item(session: Session, fonds_cote: str, item_cote: str):
+    from archives_tool.models import Fonds
+
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == fonds_cote))
+    item = session.scalar(
+        select(Item).where(Item.cote == item_cote, Item.fonds_id == fonds.id)
+    )
+    return fonds, item
+
+
+def test_composer_page_item_charge_metadonnees_par_section(
+    session_demo: Session,
+) -> None:
+    """ItemDetail expose 4 sections de métadonnées prêtes à l'affichage."""
+    from archives_tool.api.services.dashboard import composer_page_item
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    detail = composer_page_item(session_demo, "HK-001", fonds)
+    sections = detail.metadonnees_par_section
+    assert set(sections.keys()) == {
+        "Identification",
+        "Champs personnalisés",
+        "Identifiants externes",
+        "Description",
+    }
+    # La section Identification contient toujours la cote en première
+    # position (clé fixe).
+    libelles_id = [c.cle for c in sections["Identification"]]
+    assert libelles_id[0] == "cote"
+    # La section Identifiants externes liste les 2 DOI (pré-définis)
+    cles_doi = [c.cle for c in sections["Identifiants externes"]]
+    assert cles_doi == ["doi_nakala", "doi_collection_nakala"]
+
+
+def test_composer_page_item_navigation_aux_bornes(session_demo: Session) -> None:
+    """Le tout premier item d'un fonds n'a pas de précédent ; le dernier
+    n'a pas de suivant."""
+    from archives_tool.api.services.dashboard import composer_page_item
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    # Premier item (cote la plus basse)
+    premier = session_demo.scalar(
+        select(Item).where(Item.fonds_id == fonds.id).order_by(Item.cote).limit(1)
+    )
+    detail_p = composer_page_item(session_demo, premier.cote, fonds)
+    assert detail_p.navigation.precedent is None
+    assert detail_p.navigation.suivant is not None
+
+    dernier = session_demo.scalar(
+        select(Item)
+        .where(Item.fonds_id == fonds.id)
+        .order_by(Item.cote.desc())
+        .limit(1)
+    )
+    detail_d = composer_page_item(session_demo, dernier.cote, fonds)
+    assert detail_d.navigation.suivant is None
+    assert detail_d.navigation.precedent is not None
+
+
+def test_composer_page_item_source_image_pre_resolue(session_demo: Session) -> None:
+    """Chaque FichierResume porte sa SourceImage pré-calculée."""
+    from archives_tool.api.services.dashboard import composer_page_item
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    detail = composer_page_item(session_demo, "HK-001", fonds)
+    for f in detail.fichiers:
+        assert hasattr(f, "source_image")
+        # Sur la base demo, apercu_chemin n'est pas peuplé → primary None.
+        # On vérifie juste que l'attribut est typé correctement.
+        assert f.source_image is not None
+
+
+def test_composer_page_item_n_emet_pas_plus_de_8_requetes(
+    session_demo: Session,
+) -> None:
+    """Garde-fou : la composition d'une page item reste sous 8
+    requêtes SQL (item + fonds + fichiers + collections + champs perso
+    + précédent + suivant + petits)."""
+    from archives_tool.api.services.dashboard import composer_page_item
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    queries: list[str] = []
+
+    def _on_execute(_conn, _cur, statement, *_args, **_kwargs):
+        queries.append(statement)
+
+    engine = session_demo.get_bind()
+    event.listen(engine, "before_cursor_execute", _on_execute)
+    try:
+        composer_page_item(session_demo, "HK-001", fonds)
+    finally:
+        event.remove(engine, "before_cursor_execute", _on_execute)
+
+    assert len(queries) <= 8, (
+        f"composer_page_item a émis {len(queries)} requêtes "
+        f"(limite : 8). Première : {queries[0][:80]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# composer_metadonnees_par_section : regroupement libellé + valeur
+# ---------------------------------------------------------------------------
+
+
+def test_metadonnees_par_section_doi_type_uri(session_demo: Session) -> None:
+    """Le DOI est typé `uri` pour permettre au template de le rendre
+    en lien cliquable via la macro `lien_doi`."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.doi_nakala = "10.34847/nkl.example"
+    sections = composer_metadonnees_par_section(item, [])
+    doi = next(c for c in sections["Identifiants externes"] if c.cle == "doi_nakala")
+    assert doi.valeur == "10.34847/nkl.example"
+    assert doi.type_donnee == "uri"
+
+
+def test_metadonnees_par_section_champs_perso_dedupliques(
+    session_demo: Session,
+) -> None:
+    """Si plusieurs ChampPersonnalise partagent la même `cle`, la
+    déduplication garde le premier (par ordre)."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+    from archives_tool.models import ChampPersonnalise
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {"editeur": "Acme Press"}
+    champs = [
+        ChampPersonnalise(
+            collection_id=1, cle="editeur", libelle="Éditeur",
+            type="texte", ordre=1,
+        ),
+        ChampPersonnalise(
+            collection_id=2, cle="editeur", libelle="Editeur (alias)",
+            type="texte", ordre=2,
+        ),
+    ]
+    sections = composer_metadonnees_par_section(item, champs)
+    perso = sections["Champs personnalisés"]
+    libelles = [c.libelle for c in perso if c.cle == "editeur"]
+    assert libelles == ["Éditeur"]
+
+
+def test_metadonnees_par_section_liste_rendue_csv(session_demo: Session) -> None:
+    """Une métadonnée multi-valeurs (list) est rendue en CSV."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+    from archives_tool.models import ChampPersonnalise
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {"sujets": ["révolution", "almanach", "satire"]}
+    champs = [
+        ChampPersonnalise(
+            collection_id=1, cle="sujets", libelle="Sujets",
+            type="liste", ordre=1,
+        ),
+    ]
+    sections = composer_metadonnees_par_section(item, champs)
+    sujets = next(c for c in sections["Champs personnalisés"] if c.cle == "sujets")
+    assert sujets.valeur == "révolution, almanach, satire"

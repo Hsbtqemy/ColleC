@@ -1,6 +1,6 @@
 {# Wrapper modale du panneau de configuration des colonnes.
    Variables :
-   - collection : objet Collection (id, cote_collection, titre)
+   - collection : objet Collection (id, cote, titre)
    - actives, disponibles_dediees, disponibles_metadonnees :
      list[ColonneDisponible]
    - par_defaut : bool (info "rien en base, on tombe sur les défauts")
@@ -78,7 +78,7 @@
         <div style="padding:14px 18px 4px;">
           <h4 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">Disponibles · métadonnées</h4>
           <p style="font-size:11px;color:#9ca3af;margin-top:2px;">
-            propres à la collection <span class="font-mono text-gray-700">{{ collection.cote_collection }}</span>
+            propres à la collection <span class="font-mono text-gray-700">{{ collection.cote }}</span>
           </p>
         </div>
         <ul data-cols-meta style="padding-bottom:6px;">

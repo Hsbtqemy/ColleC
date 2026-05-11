@@ -519,7 +519,7 @@ def cmd_montrer_item(
     with _ouvrir_session_existante(db_path) as session:
         fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
         try:
-            detail = composer_page_item(session, cote_item, fonds_obj.id)
+            detail = composer_page_item(session, cote_item, fonds_obj)
         except ItemIntrouvable:
             typer.echo(
                 f"Erreur : item {cote_item!r} introuvable dans le fonds {fonds}.",

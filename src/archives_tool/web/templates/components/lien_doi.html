@@ -1,0 +1,17 @@
+{# lien_doi.html — rendu uniforme d'un DOI Nakala en lien cliquable.
+
+   Centralise le markup utilisé par le tableau d'items, le cartouche
+   métadonnées de la page item, et tout autre rendu d'identifiant.
+
+   Variable :
+   - doi : str | None — la valeur du DOI (ex. "10.34847/nkl.example").
+     Affiche un tiret discret si vide.
+#}
+
+{% macro lien_doi(doi) -%}
+{%- if doi -%}
+<a href="https://doi.org/{{ doi }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ doi }}</a>
+{%- else -%}
+<span style="font-size:13px;color:#9ca3af;">—</span>
+{%- endif -%}
+{%- endmacro %}

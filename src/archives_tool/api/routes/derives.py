@@ -60,4 +60,8 @@ def servir_derive(
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
     if not cible.is_relative_to(base):
         raise HTTPException(status_code=403, detail="Hors racine.")
-    return FileResponse(cible)
+    # Aperçus / vignettes sont régénérés par `archives-tool deriver` —
+    # le poste local peut les cacher 1 jour sans souci. Évite de
+    # revalider 50 vignettes à chaque navigation prev/next dans la
+    # page item.
+    return FileResponse(cible, headers={"Cache-Control": "private, max-age=86400"})

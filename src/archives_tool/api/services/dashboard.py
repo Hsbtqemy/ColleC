@@ -7,7 +7,7 @@ Quatre fonctions publiques :
 - `composer_page_collection(db, cote, fonds_id=None)` :
   `CollectionDetail` (une collection, ses items paginés, le fonds
   parent ou les fonds représentés si transversale).
-- `composer_page_item(db, cote, fonds_id, fichier_courant_pos=1)` :
+- `composer_page_item(db, cote, fonds, fichier_courant_pos=1)` :
   `ItemDetail` (un item, ses fichiers, collections d'appartenance,
   fichier sélectionné dans la visionneuse).
 
@@ -30,7 +30,12 @@ from archives_tool.api.services.collaborateurs_fonds import (
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
+from archives_tool.api.services.sources_image import (
+    SourceImage,
+    resoudre_source_image,
+)
 from archives_tool.models import (
+    ChampPersonnalise,
     Collection,
     EtatCatalogage,
     Fichier,
@@ -1022,7 +1027,12 @@ def composer_page_collection(
 
 @dataclass(frozen=True)
 class FichierResume:
-    """Vue figée d'un fichier pour la page item — détache du modèle ORM."""
+    """Vue figée d'un fichier pour la page item — détache du modèle ORM.
+
+    Inclut la `SourceImage` pré-résolue : la visionneuse n'a plus
+    qu'à passer `source_image.primary` à OpenSeadragon, et le panneau
+    fichiers utilise `vignette_url`.
+    """
 
     id: int
     nom_fichier: str
@@ -1033,12 +1043,17 @@ class FichierResume:
     largeur_px: int | None
     hauteur_px: int | None
     format: str | None
+    source_image: SourceImage
 
     @property
     def dimensions(self) -> str | None:
         if self.largeur_px and self.hauteur_px:
             return f"{self.largeur_px}×{self.hauteur_px}"
         return None
+
+    @property
+    def vignette_url(self) -> str | None:
+        return self.source_image.vignette_url
 
 
 @dataclass(frozen=True)
@@ -1058,6 +1073,47 @@ class CollectionAppartenance:
         return self.fonds_id is None
 
 
+TypeChampMetadonnee = Literal[
+    "texte", "date", "etat", "uri", "multiligne", "entier", "liste", "calcule"
+]
+
+
+@dataclass(frozen=True)
+class ChampMetadonnee:
+    """Une cellule du cartouche : libellé + valeur + hooks d'édition.
+
+    `editable` est True structurellement (les hooks `data-edit-*` sont
+    posés sur tous les champs), mais aucun JS d'édition inline n'est
+    actif. Le `type_donnee` pilote le rendu côté template (par ex.
+    `uri` → lien cliquable via la macro `lien_doi`).
+    """
+
+    cle: str  # identifiant technique (ex. "cote", "titre", "Auteur")
+    libelle: str  # affiché à gauche du cartouche
+    valeur: str | None
+    type_donnee: TypeChampMetadonnee = "texte"
+    editable: bool = True
+
+
+@dataclass(frozen=True)
+class ItemAdjacent:
+    cote: str
+    titre: str | None
+    fonds_cote: str
+
+
+@dataclass(frozen=True)
+class NavigationItem:
+    """Précédent / suivant dans la miroir du fonds parent.
+
+    Les filtres éventuels appliqués sur la page Collection d'origine
+    ne sont pas préservés.
+    """
+
+    precedent: ItemAdjacent | None
+    suivant: ItemAdjacent | None
+
+
 @dataclass(frozen=True)
 class ItemDetail:
     item: Item  # ORM (le template lit ses champs métadonnées)
@@ -1067,6 +1123,8 @@ class ItemDetail:
     position_courante: int  # 1-indexed
     nb_fichiers: int
     collections: tuple[CollectionAppartenance, ...]
+    metadonnees_par_section: dict[str, list[ChampMetadonnee]]
+    navigation: NavigationItem
 
 
 def _extension(nom_fichier: str) -> str:
@@ -1086,35 +1144,176 @@ def _resume_fichier(f: Fichier) -> FichierResume:
         largeur_px=f.largeur_px,
         hauteur_px=f.hauteur_px,
         format=f.format,
+        source_image=resoudre_source_image(f),
+    )
+
+
+_LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (
+    # (clé, libellé, type_donnee)
+    ("cote", "Cote", "texte"),
+    ("titre", "Titre", "texte"),
+    ("type_coar", "Type COAR", "texte"),
+    ("date", "Date", "date"),
+    ("annee", "Année", "texte"),
+    ("langue", "Langue", "texte"),
+    ("numero", "Numéro", "texte"),
+)
+
+
+def composer_metadonnees_par_section(
+    item: Item,
+    champs_personnalises: list[ChampPersonnalise],
+) -> dict[str, list[ChampMetadonnee]]:
+    """Organise les métadonnées de l'item en 4 sections affichables.
+
+    - Identification : champs structurants (cote, titre, type, date, langue...)
+    - Champs personnalisés : extraits de `item.metadonnees` selon les
+      `ChampPersonnalise` des collections d'appartenance (déduplication
+      par `cle`, ordre stable).
+    - Identifiants externes : DOI Nakala (rendu en lien cliquable).
+    - Description : texte libre multi-ligne.
+
+    Une section vide est conservée (la macro Jinja affiche un placeholder
+    « non renseigné » pour les valeurs absentes — la section reste un
+    point d'entrée pour l'édition future).
+    """
+    identification: list[ChampMetadonnee] = [
+        ChampMetadonnee(
+            cle=cle,
+            libelle=lib,
+            valeur=getattr(item, cle, None),
+            type_donnee=td,
+        )
+        for cle, lib, td in _LIBELLES_IDENTIFICATION
+    ]
+
+    metadonnees_brutes = item.metadonnees or {}
+    vus: set[str] = set()
+    perso: list[ChampMetadonnee] = []
+    for champ in sorted(champs_personnalises, key=lambda c: (c.ordre, c.cle)):
+        if champ.cle in vus:
+            continue
+        vus.add(champ.cle)
+        valeur = metadonnees_brutes.get(champ.cle)
+        # Les listes (vocabulaires multi-valeurs) sont rendues en CSV.
+        if isinstance(valeur, list):
+            valeur_str: str | None = ", ".join(str(v) for v in valeur) or None
+        elif valeur in (None, ""):
+            valeur_str = None
+        else:
+            valeur_str = str(valeur)
+        perso.append(
+            ChampMetadonnee(
+                cle=champ.cle,
+                libelle=champ.libelle,
+                valeur=valeur_str,
+                type_donnee=champ.type,
+            )
+        )
+
+    identifiants: list[ChampMetadonnee] = [
+        ChampMetadonnee(
+            cle="doi_nakala",
+            libelle="DOI Nakala",
+            valeur=item.doi_nakala,
+            type_donnee="uri",
+        ),
+        ChampMetadonnee(
+            cle="doi_collection_nakala",
+            libelle="DOI collection",
+            valeur=item.doi_collection_nakala,
+            type_donnee="uri",
+        ),
+    ]
+
+    description: list[ChampMetadonnee] = [
+        ChampMetadonnee(
+            cle="description",
+            libelle="Description",
+            valeur=item.description,
+            type_donnee="multiligne",
+        ),
+        ChampMetadonnee(
+            cle="notes_internes",
+            libelle="Notes internes",
+            valeur=item.notes_internes,
+            type_donnee="multiligne",
+        ),
+    ]
+
+    return {
+        "Identification": identification,
+        "Champs personnalisés": perso,
+        "Identifiants externes": identifiants,
+        "Description": description,
+    }
+
+
+def navigation_items(
+    db: Session,
+    item: Item,
+    fonds: Fonds,
+) -> NavigationItem:
+    """Retourne les items précédent/suivant adjacents dans la miroir
+    du fonds parent (tri par cote ASC). Bornes incluses : `None` si on
+    est au début ou à la fin.
+    """
+    base_filtre = (
+        Item.fonds_id == fonds.id,
+        Item.id != item.id,
+    )
+    precedent_row = db.execute(
+        select(Item.cote, Item.titre)
+        .where(*base_filtre, Item.cote < item.cote)
+        .order_by(Item.cote.desc())
+        .limit(1)
+    ).one_or_none()
+    suivant_row = db.execute(
+        select(Item.cote, Item.titre)
+        .where(*base_filtre, Item.cote > item.cote)
+        .order_by(Item.cote.asc())
+        .limit(1)
+    ).one_or_none()
+
+    return NavigationItem(
+        precedent=(
+            ItemAdjacent(cote=precedent_row.cote, titre=precedent_row.titre,
+                         fonds_cote=fonds.cote)
+            if precedent_row
+            else None
+        ),
+        suivant=(
+            ItemAdjacent(cote=suivant_row.cote, titre=suivant_row.titre,
+                         fonds_cote=fonds.cote)
+            if suivant_row
+            else None
+        ),
     )
 
 
 def composer_page_item(
     db: Session,
     cote: str,
-    fonds_id: int,
+    fonds: Fonds,
     *,
     fichier_courant_pos: int = 1,
 ) -> ItemDetail:
-    """Charge un item avec ses fichiers, collections d'appartenance et
-    fichier courant. Lève `ItemIntrouvable` si la cote n'existe pas
-    dans le fonds donné.
+    """Charge un item avec ses fichiers, collections d'appartenance,
+    métadonnées par section et navigation prev/next.
 
-    Eager loading sur les fichiers (one-to-many ordonné). Les
-    collections d'appartenance sont chargées via une requête JOIN
-    distincte qui inclut la cote du fonds parent (None si transversale)
-    — utile pour afficher les liens vers les bons fonds.
+    Le `Fonds` doit déjà être chargé par la route (cohérent avec
+    `composer_page_collection`) — évite une requête redondante.
+    Eager loading sur les fichiers. Les collections d'appartenance et
+    leurs ChampPersonnalise sont chargés via JOIN distincts. La
+    `SourceImage` de chaque fichier est pré-résolue côté service.
     """
     item = db.scalar(
         select(Item)
         .options(selectinload(Item.fichiers))
-        .where(Item.cote == cote, Item.fonds_id == fonds_id)
+        .where(Item.cote == cote, Item.fonds_id == fonds.id)
     )
     if item is None:
-        raise ItemIntrouvable(f"cote={cote!r} dans le fonds {fonds_id}")
-
-    fonds = db.get(Fonds, fonds_id)
-    assert fonds is not None  # garanti par la FK
+        raise ItemIntrouvable(f"cote={cote!r} dans le fonds {fonds.id}")
 
     fichiers = tuple(_resume_fichier(f) for f in item.fichiers)
     nb_fichiers = len(fichiers)
@@ -1149,6 +1348,19 @@ def composer_page_item(
         for cote_c, titre, type_c, fonds_id_c, fonds_cote in rows
     )
 
+    # Champs personnalisés mutualisés sur l'ensemble des collections
+    # d'appartenance (déduplication par `cle` côté composer).
+    champs = list(
+        db.scalars(
+            select(ChampPersonnalise)
+            .join(
+                ItemCollection,
+                ItemCollection.collection_id == ChampPersonnalise.collection_id,
+            )
+            .where(ItemCollection.item_id == item.id)
+        ).all()
+    )
+
     return ItemDetail(
         item=item,
         fonds=fonds,
@@ -1157,4 +1369,6 @@ def composer_page_item(
         position_courante=pos,
         nb_fichiers=nb_fichiers,
         collections=collections,
+        metadonnees_par_section=composer_metadonnees_par_section(item, champs),
+        navigation=navigation_items(db, item, fonds),
     )

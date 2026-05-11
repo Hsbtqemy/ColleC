@@ -70,6 +70,7 @@ from archives_tool.api.services.items import (
     lister_items_collection,
     modifier_item,
 )
+from archives_tool.api.services.preferences import charger_colonnes_actives
 from archives_tool.api.templating import templates
 from archives_tool.models import (
     CollaborateurFonds,
@@ -330,6 +331,7 @@ def page_collection(
         annee_de=filtres.annee_de,
         annee_a=filtres.annee_a,
     )
+    resolu = charger_colonnes_actives(db, utilisateur, collection.id, "items")
     return templates.TemplateResponse(
         request,
         "pages/collection_lecture.html",
@@ -338,11 +340,10 @@ def page_collection(
             utilisateur,
             detail=detail,
             listage=listage,
+            colonnes_actives=resolu.actives,
             fonds_query=fonds,
             filtres=filtres,
             etats_disponibles=list(EtatCatalogage),
-            # Conservé pour rétro-compatibilité du `<form>` simple.
-            etat_actif=filtres.etats[0] if filtres.etats else None,
         ),
     )
 
@@ -530,13 +531,6 @@ def soumettre_retirer_item(
 # ---------------------------------------------------------------------------
 
 
-# Formats raster supportés nativement par les navigateurs : `<img>` direct.
-# Les autres formats (TIFF, PDF, etc.) basculent en lien de téléchargement.
-_FORMATS_IMG_NATIFS: frozenset[str] = frozenset(
-    {"png", "jpg", "jpeg", "gif", "webp", "svg"}
-)
-
-
 @router.get("/item/{cote}", response_class=HTMLResponse)
 def page_item(
     cote: str,
@@ -558,7 +552,7 @@ def page_item(
     fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
         detail = composer_page_item(
-            db, cote, fonds_obj.id, fichier_courant_pos=fichier_courant
+            db, cote, fonds_obj, fichier_courant_pos=fichier_courant
         )
     except ItemIntrouvable as e:
         raise HTTPException(
@@ -572,7 +566,6 @@ def page_item(
             utilisateur,
             detail=detail,
             fonds_cote=fonds_obj.cote,
-            formats_img_natifs=_FORMATS_IMG_NATIFS,
         ),
     )
 

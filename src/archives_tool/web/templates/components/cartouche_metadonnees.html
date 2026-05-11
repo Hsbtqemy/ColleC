@@ -1,0 +1,65 @@
+{# cartouche_metadonnees.html — cartouche de métadonnées style Zotero.
+
+   Sections repliables (`<details>` natif, ouvert par défaut). Chaque
+   ligne expose des hooks `data-edit-cle` / `data-edit-type` pour
+   l'édition inline future (les hooks sont structurels, sans JS).
+
+   Variables :
+   - sections : dict[str, list[ChampMetadonnee]] (4 sections fixes :
+     Identification, Champs personnalisés, Identifiants externes,
+     Description). Une section sans aucune valeur renseignée affiche
+     ses libellés avec « non renseigné », ce qui en fait un point
+     d'entrée pour la saisie future.
+   - cote : cote courante (pour signaler dans l'aria-label).
+#}
+
+{% from 'components/lien_doi.html' import lien_doi %}
+
+{% macro cartouche_metadonnees(sections, cote) -%}
+<aside class="cartouche-metadonnees bg-white rounded-lg overflow-y-auto"
+       style="border:1px solid rgba(0,0,0,0.08);"
+       aria-label="Métadonnées de l'item {{ cote }}">
+  {% for nom_section, champs in sections.items() %}
+    <details class="section-cartouche" open
+             style="border-bottom:1px solid rgba(0,0,0,0.06);">
+      <summary class="cursor-pointer select-none flex items-center justify-between hover:bg-gray-50"
+               style="padding:10px 14px;font-size:11px;font-weight:500;
+                      color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">
+        <span>{{ nom_section }}</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"
+             class="transition-transform" style="transform:rotate(0deg);">
+          <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
+                stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </summary>
+      {%- if champs %}
+        <dl style="padding:4px 14px 12px;">
+          {% for champ in champs %}
+            <div class="grid grid-cols-[120px_1fr] gap-3 items-baseline"
+                 style="padding:4px 0;border-top:1px solid rgba(0,0,0,0.04);">
+              <dt style="font-size:12px;color:#6b7280;">{{ champ.libelle }}</dt>
+              <dd data-edit-cle="{{ champ.cle }}"
+                  data-edit-type="{{ champ.type_donnee }}"
+                  data-editable="{{ '1' if champ.editable else '0' }}"
+                  style="font-size:13px;color:#1f1f1f;
+                         {% if champ.type_donnee == 'multiligne' %}line-height:1.45;white-space:pre-wrap;{% endif %}">
+                {%- if not champ.valeur -%}
+                  <span class="text-gray-400 italic" style="font-size:12px;">non renseigné</span>
+                {%- elif champ.type_donnee == 'uri' -%}
+                  {{ lien_doi(champ.valeur) }}
+                {%- else -%}
+                  {{ champ.valeur }}
+                {%- endif -%}
+              </dd>
+            </div>
+          {% endfor %}
+        </dl>
+      {%- else %}
+        <p class="text-xs text-gray-400 italic" style="padding:4px 14px 12px;">
+          Aucun champ dans cette section.
+        </p>
+      {%- endif %}
+    </details>
+  {% endfor %}
+</aside>
+{%- endmacro %}

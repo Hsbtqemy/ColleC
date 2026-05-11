@@ -21,6 +21,7 @@
 
 {% from 'components/badge_etat.html' import badge_etat %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/lien_doi.html' import lien_doi %}
 
 {%- set _COLS = {
   'cote':                   {'label': 'Cote',           'align': 'left'},
@@ -68,17 +69,9 @@
       {%- else -%}<span style="font-size:13px;color:#9ca3af;">—</span>{%- endif -%}
     </td>
   {%- elif key == 'doi_nakala' -%}
-    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      {%- if item.doi_nakala -%}
-      <a href="https://doi.org/{{ item.doi_nakala }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ item.doi_nakala }}</a>
-      {%- else -%}<span style="font-size:13px;color:#9ca3af;">—</span>{%- endif -%}
-    </td>
+    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">{{ lien_doi(item.doi_nakala) }}</td>
   {%- elif key == 'doi_collection_nakala' -%}
-    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      {%- if item.doi_collection_nakala -%}
-      <a href="https://doi.org/{{ item.doi_collection_nakala }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ item.doi_collection_nakala }}</a>
-      {%- else -%}<span style="font-size:13px;color:#9ca3af;">—</span>{%- endif -%}
-    </td>
+    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">{{ lien_doi(item.doi_collection_nakala) }}</td>
   {%- elif key == 'date' -%}
     <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
       {%- if not item.date -%}

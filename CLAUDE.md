@@ -131,19 +131,26 @@ code. Si une demande les contredit, signaler avant d'exécuter.
   les commandes `archives-tool montrer ...`)
 
 **Frontend :**
-- Jinja2 + HTMX 1.9.10 (vendor sous `web/static/js/vendor/htmx/`)
-  pour les interactions partielles. Inclus dans `base.html`.
-- Tailwind CSS compilé via la CLI npm (pas de CDN). `npm install` une
-  fois ; `npm run watch:css` en dev. `output.css` est gitignoré.
-- SortableJS 1.15.2 (vendor sous `web/static/js/vendor/sortable/`)
-  pour les réordonnancements (drag & drop colonnes du tableau,
-  vignettes en V2+). Chargé à la demande sur la page collection.
-- OpenSeadragon (vendor sous `web/static/js/vendor/openseadragon/`)
-  pour la visionneuse d'images de la page Item. Chargé sur la
-  page item uniquement. Mode `tileSources: { type: "image", url }`
-  pour les aperçus JPEG locaux ; mode IIIF (URL `info.json`) quand
-  le fichier a un DOI Nakala publié. Fallback `open-failed` →
+- Jinja2 + HTMX 1.9.10 pour les interactions partielles. Inclus
+  dans `base.html` (chargé sur toutes les pages).
+- Tailwind CSS compilé via la CLI npm (pas de CDN). `output.css` est
+  gitignoré.
+- SortableJS 1.15.2 pour les réordonnancements (drag & drop colonnes
+  du tableau d'items, vignettes en V2+). Chargé à la demande sur la
+  page collection.
+- OpenSeadragon pour la visionneuse d'images de la page Item. Chargé
+  sur la page item uniquement. Mode `tileSources: { type: "image",
+  url }` pour les aperçus JPEG locaux ; mode IIIF (URL `info.json`)
+  quand le fichier a un DOI Nakala publié. Fallback `open-failed` →
   source secondaire puis message + lien télécharger.
+
+Les 3 vendors (HTMX, SortableJS, OpenSeadragon) sont installés via
+`npm install` (déclarés en `dependencies` du `package.json`) puis
+copiés sous `web/static/js/vendor/{htmx,sortable,openseadragon}/`
+par `npm run vendor` (script `scripts/vendor.mjs`, cross-platform).
+Le dossier `vendor/` est gitignoré pour ne pas embarquer le code
+tiers dans le dépôt — relancer `npm run vendor` après un clone
+frais.
 
 **Traitement fichiers :**
 - Pillow pour les dérivés simples
@@ -1269,7 +1276,8 @@ uv sync
 uv run pytest
 
 # Lancer l'application en dev (deux processus)
-npm install                          # une fois pour Tailwind
+npm install                          # une fois pour Tailwind + vendors
+npm run vendor                       # copie OpenSeadragon + Sortable + htmx dans static/js/vendor/
 npm run watch:css                    # recompile le CSS à chaque édition
 uv run uvicorn archives_tool.api.main:app --reload --port 8000
 

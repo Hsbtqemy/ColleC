@@ -36,6 +36,18 @@ if TYPE_CHECKING:
 class Item(Base, TracabiliteMixin):
     __tablename__ = "item"
 
+    # Verrou optimiste fort : SQLAlchemy ajoute `AND version=?` aux
+    # UPDATE et lève `StaleDataError` si 0 ligne matche. Permet de
+    # détecter une écriture concurrente cross-process — sans ça, deux
+    # uvicorn frappant la même base partagée (WebDAV) pourraient
+    # écraser silencieusement les modifications de l'autre.
+    # `version_id_generator=False` : on garde l'incrément manuel côté
+    # service (cohérent avec le check applicatif sur formulaire.version).
+    __mapper_args__ = {
+        "version_id_col": TracabiliteMixin.version,
+        "version_id_generator": False,
+    }
+
     id: Mapped[int] = mapped_column(primary_key=True)
     fonds_id: Mapped[int] = mapped_column(
         ForeignKey("fonds.id", ondelete="CASCADE"),

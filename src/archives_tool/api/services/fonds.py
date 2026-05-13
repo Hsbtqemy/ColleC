@@ -22,7 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.conflits import (
+    convertir_stale_data,
+    verifier_et_incrementer_version,
+)
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -84,11 +87,15 @@ class FondsResume:
 
 def _appliquer_formulaire(fonds: Fonds, formulaire: FormulaireFonds) -> None:
     """Copie le formulaire sur le modèle ; chaînes vides → None pour
-    les champs optionnels (cote/titre obligatoires sont strippés)."""
+    les champs optionnels (cote/titre obligatoires sont strippés).
+
+    `version` est géré séparément par `verifier_et_incrementer_version`
+    et exclu d'office — sinon on écraserait la valeur en base avec la
+    valeur du formulaire (et avec None à la création)."""
     fonds.cote = formulaire.cote.strip()
     fonds.titre = formulaire.titre.strip()
     for nom, valeur in formulaire.model_dump().items():
-        if nom in ("cote", "titre"):
+        if nom in ("cote", "titre", "version"):
             continue
         setattr(fonds, nom, chaine_ou_none(valeur))
 
@@ -240,15 +247,15 @@ def modifier_fonds(
         raise FondsInvalide(erreurs)
 
     fonds = lire_fonds(db, fonds_id)
-    if formulaire.version is not None and formulaire.version != fonds.version:
-        raise ConflitVersion(formulaire.version, fonds.version)
-
     _appliquer_formulaire(fonds, formulaire)
     fonds.modifie_par = modifie_par
     fonds.modifie_le = datetime.now()
-    fonds.version = (fonds.version or 1) + 1
+    verifier_et_incrementer_version(fonds, formulaire)
 
-    with garde_cote_unique(db, FondsInvalide, fonds.cote):
+    with (
+        garde_cote_unique(db, FondsInvalide, fonds.cote),
+        convertir_stale_data(formulaire.version),
+    ):
         db.commit()
     db.refresh(fonds)
     return fonds

@@ -24,7 +24,10 @@ from archives_tool.affichage.formatters import (
     date_incertaine as _date_incertaine,
     temps_relatif,
 )
-from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.conflits import (
+    convertir_stale_data,
+    verifier_et_incrementer_version,
+)
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -542,15 +545,15 @@ def modifier_item(
     item = lire_item(db, item_id)
     if formulaire.fonds_id != item.fonds_id:
         raise OperationItemInterdite("Le fonds d'un item ne peut pas être modifié.")
-    if formulaire.version is not None and formulaire.version != item.version:
-        raise ConflitVersion(formulaire.version, item.version)
-
     _appliquer_formulaire(item, formulaire)
     item.modifie_par = modifie_par
     item.modifie_le = datetime.now()
-    item.version = (item.version or 1) + 1
+    verifier_et_incrementer_version(item, formulaire)
 
-    with garde_cote_unique(db, ItemInvalide, item.cote):
+    with (
+        garde_cote_unique(db, ItemInvalide, item.cote),
+        convertir_stale_data(formulaire.version),
+    ):
         db.commit()
     db.refresh(item)
     return item

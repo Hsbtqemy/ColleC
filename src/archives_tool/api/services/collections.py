@@ -17,7 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.conflits import (
+    convertir_stale_data,
+    verifier_et_incrementer_version,
+)
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -257,15 +260,15 @@ def modifier_collection(
     if formulaire.fonds_id != col.fonds_id:
         _verifier_fonds(db, formulaire.fonds_id)
 
-    if formulaire.version is not None and formulaire.version != col.version:
-        raise ConflitVersion(formulaire.version, col.version)
-
     _appliquer_formulaire(col, formulaire)
     col.modifie_par = modifie_par
     col.modifie_le = datetime.now()
-    col.version = (col.version or 1) + 1
+    verifier_et_incrementer_version(col, formulaire)
 
-    with garde_cote_unique(db, CollectionInvalide, col.cote):
+    with (
+        garde_cote_unique(db, CollectionInvalide, col.cote),
+        convertir_stale_data(formulaire.version),
+    ):
         db.commit()
     db.refresh(col)
     return col

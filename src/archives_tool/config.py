@@ -24,14 +24,11 @@ class ConfigLocale(BaseModel):
 
     utilisateur: str = Field(min_length=1)
     racines: dict[str, Path] = Field(default_factory=dict)
-    lecture_seule: bool = Field(
-        default=False,
-        description=(
-            "Si True, l'interface web bloque toute mutation (POST/PUT/"
-            "PATCH/DELETE) avec un code 423. Sert à exposer ColleC à un "
-            "consultant occasionnel sans risque d'édition accidentelle."
-        ),
-    )
+    # `lecture_seule: true` bloque toute mutation HTTP (POST/PUT/PATCH/
+    # DELETE) avec un code 423. Sert à exposer ColleC à un consultant
+    # occasionnel sans risque d'édition accidentelle — ce n'est pas
+    # une mesure de sécurité (l'utilisateur peut éditer le YAML).
+    lecture_seule: bool = False
 
     @field_validator("racines")
     @classmethod

@@ -1,0 +1,12 @@
+{# Bannière affichée quand un POST de modification a levé
+   ConflitVersion. Variables :
+   - erreurs : dict contenant éventuellement la clé '_version'.
+#}
+{% if erreurs.get('_version') %}
+<div role="alert"
+     style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;
+            padding:10px 14px;border-radius:6px;margin-bottom:18px;
+            font-size:13px;">
+  <strong>Conflit de version.</strong> {{ erreurs._version }}
+</div>
+{% endif %}

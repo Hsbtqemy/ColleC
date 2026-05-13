@@ -99,8 +99,12 @@ def test_pas_de_banniere_en_mode_normal(config_normale: Path) -> None:
 
 
 def test_post_passe_en_mode_normal(config_normale: Path) -> None:
-    """En mode normal, le middleware n'intervient pas — on devrait
-    obtenir la vraie réponse du routeur (404 ou 422, pas 423)."""
+    """En mode normal, le middleware n'intervient pas — on doit
+    obtenir la vraie réponse du routeur (404 si la collection
+    n'existe pas dans la base de test, 422 si le payload est
+    refusé). Code 423 strictement interdit ici, et la réponse ne
+    doit pas mentionner « lecture seule »."""
     client = TestClient(app)
     resp = client.post("/preferences/colonnes/items/1", data={})
-    assert resp.status_code != 423
+    assert resp.status_code in {200, 303, 400, 404, 422}
+    assert "lecture seule" not in resp.text.lower()

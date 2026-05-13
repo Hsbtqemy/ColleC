@@ -47,6 +47,12 @@ if TYPE_CHECKING:
 class Collection(Base, TracabiliteMixin):
     __tablename__ = "collection"
 
+    # Verrou optimiste fort (cf. Item).
+    __mapper_args__ = {
+        "version_id_col": TracabiliteMixin.version,
+        "version_id_generator": False,
+    }
+
     id: Mapped[int] = mapped_column(primary_key=True)
     cote: Mapped[str] = mapped_column(String(64), nullable=False)
     titre: Mapped[str] = mapped_column(String(500), nullable=False)

@@ -143,6 +143,49 @@ def test_modifier_collection_verrou(session: Session, fonds_existant) -> None:
         )
 
 
+def test_convertir_stale_data_traduit_en_conflit_version() -> None:
+    """`convertir_stale_data` transforme `StaleDataError` en
+    `ConflitVersion` pour offrir une UX uniforme côté caller."""
+    from sqlalchemy.orm.exc import StaleDataError
+
+    from archives_tool.api.services.conflits import convertir_stale_data
+
+    with pytest.raises(ConflitVersion) as exc:
+        with convertir_stale_data(version_attendue=3):
+            raise StaleDataError("UPDATE statement matched 0 rows")
+    assert exc.value.version_attendue == 3
+
+
+def test_modifier_fonds_race_cross_process_simulee(
+    session: Session, fonds_existant
+) -> None:
+    """Simule la race cross-process : on bump la version en base via
+    SQL brut entre la lecture et le commit. SQLAlchemy détecte au
+    flush via le `version_id_col` et lève `StaleDataError`, traduit
+    en `ConflitVersion` par `convertir_stale_data`."""
+    from sqlalchemy import text
+
+    version_lue = fonds_existant.version
+    # On charge l'objet dans la session (read).
+    session.expire(fonds_existant)
+    fonds = session.get(type(fonds_existant), fonds_existant.id)
+    # Race : une autre transaction bump la version directement en DB.
+    session.execute(
+        text("UPDATE fonds SET version = version + 1 WHERE id = :i"),
+        {"i": fonds.id},
+    )
+    session.commit()
+    # Notre objet a encore version=lue en mémoire. On modifie et commit.
+    # SQLAlchemy émet `WHERE version=<lue>` → 0 lignes → StaleDataError
+    # → ConflitVersion.
+    with pytest.raises(ConflitVersion):
+        modifier_fonds(
+            session,
+            fonds.id,
+            FormulaireFonds(cote="VAL", titre="Tentative", version=version_lue),
+        )
+
+
 def test_message_exception_versions(session: Session, fonds_existant) -> None:
     """L'exception contient les deux versions pour affichage CLI/UI."""
     version = fonds_existant.version

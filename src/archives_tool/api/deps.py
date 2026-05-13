@@ -46,12 +46,34 @@ def get_db() -> Iterator[Session]:
         yield session
 
 
-def _charger_config() -> ConfigLocale | None:
-    chemin = Path(os.environ.get("ARCHIVES_CONFIG", CHEMIN_CONFIG_DEFAUT))
+@lru_cache(maxsize=4)
+def _charger_config_cache(chemin: Path, mtime_ns: int) -> ConfigLocale | None:
+    """Parse + valide le YAML une seule fois par (chemin, mtime).
+
+    Le couple (chemin, mtime_ns) sert de clé de cache : éditer le
+    fichier suffit à invalider sans redémarrage (mtime change → miss).
+    """
     try:
         return charger_config(chemin)
     except (FileNotFoundError, yaml.YAMLError, ValidationError, ValueError):
         return None
+
+
+def _charger_config() -> ConfigLocale | None:
+    """Charge la config locale en s'amortissant sur les requêtes.
+
+    Sans cache, la combinaison `middleware_lecture_seule` (à chaque
+    requête) + filtre Jinja `est_lecture_seule()` (à chaque rendu) +
+    trois deps (`get_utilisateur_courant`, `get_racines`, `get_nom_base`)
+    déclenchait jusqu'à 5 parses YAML par requête. Un seul `stat()`
+    suffit désormais ; le YAML n'est relu que si le fichier change.
+    """
+    chemin = Path(os.environ.get("ARCHIVES_CONFIG", CHEMIN_CONFIG_DEFAUT))
+    try:
+        mtime_ns = chemin.stat().st_mtime_ns
+    except FileNotFoundError:
+        return None
+    return _charger_config_cache(chemin, mtime_ns)
 
 
 def get_utilisateur_courant() -> str:

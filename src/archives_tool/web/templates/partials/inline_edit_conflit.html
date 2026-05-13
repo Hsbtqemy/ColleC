@@ -1,0 +1,13 @@
+{# Fragment 409 — conflit de version sur édition inline. Contient un
+   bouton « Recharger » qui force un refresh de la page (la version
+   actuelle pourrait être plus fraîche que celle qu'on a injectée
+   dans le formulaire avant). #}
+<span data-edit-error="conflit"
+      data-edit-version-actuelle="{{ exc.version_actuelle }}"
+      style="color:#991b1b;font-size:12px;">
+  Conflit (v{{ exc.version_actuelle }} en base).
+  <button type="button" onclick="window.location.reload()"
+          class="underline" style="margin-left:6px;color:#1f1f1f;">
+    Recharger
+  </button>
+</span>

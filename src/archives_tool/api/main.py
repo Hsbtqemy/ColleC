@@ -22,7 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from archives_tool.api.middleware import middleware_lecture_seule
-from archives_tool.api.routes import dashboard, derives, import_assistant, preferences
+from archives_tool.api.routes import (
+    dashboard,
+    derives,
+    import_assistant,
+    inline_edit,
+    preferences,
+)
 
 RACINE_STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
@@ -37,5 +43,6 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=middleware_lecture_seule)
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
 app.include_router(dashboard.router)
 app.include_router(preferences.router)
+app.include_router(inline_edit.router)
 app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)

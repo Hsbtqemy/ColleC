@@ -1,0 +1,11 @@
+{# Fragment retourné après un POST réussi d'inline edit. Swap dans
+   le `[data-value]` de la ligne. Inclut la nouvelle version dans un
+   attribut pour que le JS rafraîchisse le hidden côté formulaire. #}
+{% set valeur = item|attr(field) %}
+<span data-edit-new-version="{{ item.version }}">
+  {%- if valeur is none or valeur == '' -%}
+    <span class="text-gray-400 italic" style="font-size:12px;">non renseigné</span>
+  {%- else -%}
+    {{ valeur }}
+  {%- endif -%}
+</span>

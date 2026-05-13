@@ -1,0 +1,11 @@
+{# Fragment 400 — valeur invalide sur édition inline. #}
+<span data-edit-error="invalide"
+      title="{{ erreurs|tojson }}"
+      style="color:#991b1b;font-size:12px;">
+  Valeur refusée.
+  <span class="text-gray-500" style="font-size:11px;">
+    {% for cle, msg in erreurs.items() -%}
+      {{ cle }}: {{ msg }}{% if not loop.last %} · {% endif %}
+    {%- endfor %}
+  </span>
+</span>

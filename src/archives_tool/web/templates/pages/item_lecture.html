@@ -20,6 +20,13 @@
 {% block title %}{{ item.titre or item.cote }} — archives-tool{% endblock %}
 
 {% block content %}
+{# Contexte item exposé au JS d'édition inline. Lit cote, fonds, version
+   pour construire les POST et synchroniser la version après chaque save. #}
+<meta name="item-context"
+      data-cote="{{ item.cote }}"
+      data-fonds="{{ fonds.cote }}"
+      data-version="{{ item.version }}">
+
 {{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections) }}
 
 <div class="layout-trois-zones flex gap-4"
@@ -39,4 +46,5 @@
 {% block scripts %}
   <script src="{{ url_for('static', path='js/vendor/openseadragon/openseadragon.min.js') }}"></script>
   <script src="{{ url_for('static', path='js/visionneuse_osd.js') }}"></script>
+  <script src="{{ url_for('static', path='js/inline_edit.js') }}"></script>
 {% endblock %}

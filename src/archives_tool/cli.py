@@ -89,6 +89,10 @@ from archives_tool.renamer import (
     annuler_batch,
     construire_plan,
     executer_plan,
+    formatter_annulation_json,
+    formatter_execution_json,
+    formatter_historique_json,
+    formatter_plan_json,
 )
 from archives_tool.renamer.affichage import (
     afficher_annulation,
@@ -857,6 +861,11 @@ def cmd_renommer_appliquer(
     limite: int = typer.Option(
         50, "--limite", help="Lignes max affichées (0 = illimité)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT,
+        "--format",
+        help="Format de sortie : 'text' (Rich) ou 'json'.",
+    ),
     db_path: Path = _DB_PATH_OPTION,
     config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
 ) -> None:
@@ -884,7 +893,10 @@ def cmd_renommer_appliquer(
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
 
-        afficher_plan(plan, limite=limite)
+        if format_sortie is _FormatRapport.JSON:
+            typer.echo(formatter_plan_json(plan))
+        else:
+            afficher_plan(plan, limite=limite)
         if not plan.applicable:
             raise typer.Exit(1)
         if plan.nb_renommages == 0:
@@ -897,7 +909,10 @@ def cmd_renommer_appliquer(
             dry_run=dry_run,
             execute_par=nom,
         )
-        afficher_execution(rap)
+        if format_sortie is _FormatRapport.JSON:
+            typer.echo(formatter_execution_json(rap))
+        else:
+            afficher_execution(rap)
         raise typer.Exit(1 if rap.erreurs else 0)
 
 
@@ -906,6 +921,11 @@ def cmd_renommer_annuler(
     batch_id: str = typer.Option(..., "--batch-id", help="UUID du batch à annuler."),
     dry_run: bool = typer.Option(True, "--dry-run/--no-dry-run"),
     utilisateur: str = typer.Option(None, "--utilisateur"),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT,
+        "--format",
+        help="Format de sortie : 'text' (Rich) ou 'json'.",
+    ),
     db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
     config_path: Path = typer.Option(Path("config_local.yaml"), "--config"),
 ) -> None:
@@ -920,13 +940,21 @@ def cmd_renommer_annuler(
         rap = annuler_batch(
             session, batch_id, racines=racines, dry_run=dry_run, execute_par=nom
         )
-    afficher_annulation(rap)
+    if format_sortie is _FormatRapport.JSON:
+        typer.echo(formatter_annulation_json(rap))
+    else:
+        afficher_annulation(rap)
     raise typer.Exit(1 if rap.erreurs else 0)
 
 
 @renommer.command("historique")
 def cmd_renommer_historique(
     limite: int = typer.Option(50, "--limite", help="Nombre de batchs à afficher."),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT,
+        "--format",
+        help="Format de sortie : 'text' (Rich) ou 'json'.",
+    ),
     db_path: Path = typer.Option(Path("data/archives.db"), "--db-path"),
 ) -> None:
     """Afficher les derniers batchs de renommage."""
@@ -934,6 +962,10 @@ def cmd_renommer_historique(
     factory = creer_session_factory(engine)
     with factory() as session:
         entrees = lister_batchs(session, limite=limite)
+
+    if format_sortie is _FormatRapport.JSON:
+        typer.echo(formatter_historique_json(entrees))
+        return
 
     if not entrees:
         console_mod.console.print(

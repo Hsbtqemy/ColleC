@@ -27,6 +27,12 @@ from .rapport import (
     RapportPlan,
     StatutPlan,
 )
+from .formatteurs_json import (
+    formatter_annulation_json,
+    formatter_execution_json,
+    formatter_historique_json,
+    formatter_plan_json,
+)
 from .template import EchecTemplate, evaluer_template
 
 __all__ = [
@@ -34,6 +40,10 @@ __all__ = [
     "executer_plan",
     "construire_plan",
     "evaluer_template",
+    "formatter_annulation_json",
+    "formatter_execution_json",
+    "formatter_historique_json",
+    "formatter_plan_json",
     "Perimetre",
     "EchecTemplate",
     "CodeConflit",

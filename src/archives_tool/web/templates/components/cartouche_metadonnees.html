@@ -1,65 +1,179 @@
-{# cartouche_metadonnees.html — cartouche de métadonnées style Zotero.
+{# ---------------------------------------------------------------------------
+   cartouche_metadonnees.html — bloc métadonnées style Zotero
+   ---------------------------------------------------------------------------
+   Composé de plusieurs macros :
 
-   Sections repliables (`<details>` natif, ouvert par défaut). Chaque
-   ligne expose des hooks `data-edit-cle` / `data-edit-type` pour
-   l'édition inline future (les hooks sont structurels, sans JS).
+     cartouche_wrapper()                                  (block)
+       Enveloppe qui empile les sections.
 
-   Variables :
-   - sections : dict[str, list[ChampMetadonnee]] (4 sections fixes :
-     Identification, Champs personnalisés, Identifiants externes,
-     Description). Une section sans aucune valeur renseignée affiche
-     ses libellés avec « non renseigné », ce qui en fait un point
-     d'entrée pour la saisie future.
-   - cote : cote courante (pour signaler dans l'aria-label).
-#}
+     section(titre, info=None, default_open=True, anchor=None) (block)
+     ligne(label, field=None)                             (block)
+     valeur_mono(text)                                    (helper)
+     valeur_doi(href, text=None)                          (helper)
+     valeur_url(href)                                     (helper)
+     valeur_date_incertaine(text)                         (helper)
+     valeur_non_renseigne()                               (helper)
+     liste_auteurs(valeurs)                               (helper)
+     tags_sujets(valeurs)                                 (helper)
+
+   Hooks pour l'édition inline (V0.7+ : câblage dans
+   `web/static/js/inline_edit.js`) :
+     - `[data-edit-field="<key>"]` sur chaque conteneur `<div>` de ligne
+     - `[data-value]` sur le conteneur de la valeur
+
+   Compat : la macro de haut niveau `cartouche_metadonnees(sections,
+   cote)` reste exposée pour les consommateurs data-driven existants
+   (cf. `composer_metadonnees_par_section` côté service). Elle
+   compose en interne `cartouche_wrapper` + `section` + `ligne` +
+   `valeur_*` et pose donc les mêmes hooks.
+   --------------------------------------------------------------------------- #}
 
 {% from 'components/lien_doi.html' import lien_doi %}
 
-{% macro cartouche_metadonnees(sections, cote) -%}
-<aside class="cartouche-metadonnees bg-white rounded-lg overflow-y-auto"
-       style="border:1px solid rgba(0,0,0,0.08);"
-       aria-label="Métadonnées de l'item {{ cote }}">
-  {% for nom_section, champs in sections.items() %}
-    <details class="section-cartouche" open
-             style="border-bottom:1px solid rgba(0,0,0,0.06);">
-      <summary class="cursor-pointer select-none flex items-center justify-between hover:bg-gray-50"
-               style="padding:10px 14px;font-size:11px;font-weight:500;
-                      color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;">
-        <span>{{ nom_section }}</span>
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"
-             class="transition-transform" style="transform:rotate(0deg);">
-          <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
-                stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+{%- macro cartouche_wrapper() -%}
+<div class="cartouche-metadonnees bg-white rounded-lg overflow-hidden"
+     style="border:1px solid rgba(0,0,0,0.08);">
+  <style>
+    [data-section] details[open] .meta-chevron { transform: rotate(90deg); transition: transform .15s; }
+    [data-section] .meta-chevron { transition: transform .15s; }
+    [data-section] summary::-webkit-details-marker { display:none; }
+  </style>
+  {{ caller() }}
+</div>
+{%- endmacro %}
+
+
+{%- macro section(titre, info=None, default_open=True, anchor=None) -%}
+<section class="border-t first:border-t-0" style="border-color: rgba(0,0,0,0.08);"
+         data-section{% if anchor %} id="meta-{{ anchor }}"{% endif %}>
+  <details {% if default_open %}open{% endif %}>
+    <summary class="flex items-center justify-between cursor-pointer select-none hover:bg-gray-100 transition-colors"
+             style="padding:8px 14px;background:#f9fafb;list-style:none;">
+      <span class="flex items-center gap-2">
+        <svg class="meta-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="#6b7280" stroke-width="1.4"
+                stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-      </summary>
+        <span style="font-size:12px;font-weight:500;color:#374151;">{{ titre }}</span>
+      </span>
+      {%- if info %}
+        <span style="font-size:11px;color:#9ca3af;">{{ info }}</span>
+      {%- endif %}
+    </summary>
+    <div data-section-body>
+      {{ caller() }}
+    </div>
+  </details>
+</section>
+{%- endmacro %}
+
+
+{%- macro ligne(label, field=None, type_donnee=None, editable=true) -%}
+<div class="flex border-t first:border-t-0"
+     style="border-color: rgba(0,0,0,0.08);padding:6px 14px;font-size:13px;line-height:20px;"
+     {% if field %}data-edit-field="{{ field }}"{% endif %}
+     {% if type_donnee %}data-edit-type="{{ type_donnee }}"{% endif %}
+     data-editable="{{ '1' if (field and editable) else '0' }}">
+  <div class="break-words" style="width:150px;flex:0 0 150px;color:#6b7280;padding-right:12px;">{{ label }}</div>
+  <div class="flex-1 min-w-0 break-words" style="color:#1f1f1f;" data-value>
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{%- macro valeur_mono(text) -%}
+  <span class="font-mono" style="font-size:12px;">{{ text }}</span>
+{%- endmacro %}
+
+
+{%- macro valeur_doi(href, text=None) -%}
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">
+    {{ text or href }}
+  </a>
+{%- endmacro %}
+
+
+{%- macro valeur_url(href) -%}
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ href }}</a>
+{%- endmacro %}
+
+
+{%- macro valeur_date_incertaine(text) -%}
+  <span style="font-style:italic;color:#6b7280;">{{ text }}</span>
+{%- endmacro %}
+
+
+{%- macro valeur_non_renseigne() -%}
+  <span style="font-style:italic;color:#9ca3af;">non renseigné</span>
+{%- endmacro %}
+
+
+{%- macro liste_auteurs(valeurs) -%}
+<div class="space-y-1" data-multi="auteurs">
+  {%- for v in valeurs %}
+  <div class="flex items-center justify-between gap-2 group" data-entry>
+    <span>{{ v }}</span>
+    <button type="button" aria-label="Retirer"
+            class="opacity-40 group-hover:opacity-100 transition-opacity hover:text-gray-800"
+            style="font-size:14px;line-height:1;color:#9ca3af;padding:0 4px;"
+            data-action="remove">−</button>
+  </div>
+  {%- endfor %}
+  <button type="button" class="text-left hover:text-gray-800"
+          style="font-size:12px;color:#6b7280;padding-top:2px;" data-action="add">+ Ajouter</button>
+</div>
+{%- endmacro %}
+
+
+{%- macro tags_sujets(valeurs) -%}
+<div class="flex flex-wrap items-center" style="gap:4px;" data-multi="sujets">
+  {%- for v in valeurs %}
+  <span class="inline-flex items-center bg-gray-100 hover:bg-gray-200 transition-colors"
+        style="padding:1px 9px;border-radius:9999px;font-size:12px;" data-entry>{{ v }}</span>
+  {%- endfor %}
+  <button type="button" aria-label="Ajouter"
+          class="inline-flex items-center justify-center bg-white hover:bg-gray-50"
+          style="width:22px;height:22px;border-radius:9999px;font-size:12px;color:#6b7280;
+                 border:1px solid rgba(0,0,0,0.16);" data-action="add">+</button>
+</div>
+{%- endmacro %}
+
+
+{# Couche de compatibilité data-driven : rend une cartouche complète
+   depuis un `dict[str, list[ChampMetadonnee]]`. Composé en interne
+   avec les macros prescrites — les hooks `data-edit-field` /
+   `data-value` sont donc bien posés. Pas le chemin recommandé par le
+   handoff (qui préfère le call composable côté page) mais conservé
+   pour ne pas casser l'existant. #}
+{%- macro cartouche_metadonnees(sections, cote) -%}
+{% call cartouche_wrapper() %}
+  {% for nom_section, champs in sections.items() %}
+    {% call section(nom_section) %}
       {%- if champs %}
-        <dl style="padding:4px 14px 12px;">
-          {% for champ in champs %}
-            <div class="grid grid-cols-[120px_1fr] gap-3 items-baseline"
-                 style="padding:4px 0;border-top:1px solid rgba(0,0,0,0.04);">
-              <dt style="font-size:12px;color:#6b7280;">{{ champ.libelle }}</dt>
-              <dd data-edit-cle="{{ champ.cle }}"
-                  data-edit-type="{{ champ.type_donnee }}"
-                  data-editable="{{ '1' if champ.editable else '0' }}"
-                  style="font-size:13px;color:#1f1f1f;
-                         {% if champ.type_donnee == 'multiligne' %}line-height:1.45;white-space:pre-wrap;{% endif %}">
-                {%- if not champ.valeur -%}
-                  <span class="text-gray-400 italic" style="font-size:12px;">non renseigné</span>
-                {%- elif champ.type_donnee == 'uri' -%}
-                  {{ lien_doi(champ.valeur) }}
-                {%- else -%}
-                  {{ champ.valeur }}
-                {%- endif -%}
-              </dd>
-            </div>
-          {% endfor %}
-        </dl>
+        {% for champ in champs %}
+          {% call ligne(
+              champ.libelle,
+              field=champ.cle,
+              type_donnee=champ.type_donnee,
+              editable=champ.editable) %}
+            {%- if not champ.valeur -%}
+              {{ valeur_non_renseigne() }}
+            {%- elif champ.type_donnee == 'uri' -%}
+              {{ lien_doi(champ.valeur) }}
+            {%- elif champ.type_donnee == 'mono' -%}
+              {{ valeur_mono(champ.valeur) }}
+            {%- else -%}
+              {{ champ.valeur }}
+            {%- endif -%}
+          {% endcall %}
+        {% endfor %}
       {%- else %}
-        <p class="text-xs text-gray-400 italic" style="padding:4px 14px 12px;">
+        <p class="text-xs text-gray-400 italic" style="padding:8px 14px;">
           Aucun champ dans cette section.
         </p>
       {%- endif %}
-    </details>
+    {% endcall %}
   {% endfor %}
-</aside>
+{% endcall %}
 {%- endmacro %}

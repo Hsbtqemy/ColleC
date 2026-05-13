@@ -885,12 +885,14 @@ def test_page_item_lecture_navigation_precedent_suivant(
 def test_page_item_lecture_hooks_edition_inline_dormants(
     client_demo: TestClient,
 ) -> None:
-    """Les `<dd>` du cartouche portent les hooks data-edit-* pour
-    l'édition inline future (V0.7+). Aucun JS d'édition actif."""
+    """Le markup du cartouche porte les hooks d'édition inline prévus
+    par le handoff (`data-edit-field` / `data-value` sur chaque
+    ligne). Le câblage JS vit dans `static/js/inline_edit.js`."""
     response = client_demo.get("/item/HK-001?fonds=HK")
     assert response.status_code == 200
-    assert 'data-edit-cle="cote"' in response.text
-    assert 'data-edit-cle="titre"' in response.text
+    assert 'data-edit-field="cote"' in response.text
+    assert 'data-edit-field="titre"' in response.text
+    assert "data-value" in response.text
     assert "data-edit-type=" in response.text
 
 

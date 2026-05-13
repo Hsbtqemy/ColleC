@@ -144,11 +144,11 @@ class FondsArborescence:
     modifie_le: datetime | None = None
 
     # ---- Contrat avec la macro `tableau_collections` ---------------
-    # Le dashboard rend les fonds comme rangées du tableau_collections
-    # paramétré (handoff). Les @property ci-dessous projettent les
-    # champs internes sur le schéma attendu par la macro :
-    # cote / titre / phase / sous_collections / nb_items / nb_fichiers
-    # / repartition / modifie_par / modifie_depuis / href.
+    # Le dashboard rend chaque fonds comme une rangée du tableau ; les
+    # @property ci-dessous projettent les champs internes sur le schéma
+    # attendu par la macro (cote, titre, phase, sous_collections,
+    # nb_items, nb_fichiers, repartition, modifie_par, modifie_depuis,
+    # href). Cohérent avec le contrat déjà exposé par CollectionResume.
 
     @property
     def href(self) -> str:
@@ -338,14 +338,9 @@ def composer_dashboard(db: Session) -> DashboardResume:
         if fid not in max_modif_item_par_fonds:
             max_modif_item_par_fonds[fid] = (le, par)
 
-    # ---- Stats globales ---------------------------------------------
-    # `nb_fichiers` et `nb_items_valides` ne se dérivent pas des
-    # répartitions précédentes (elles agrègent par fonds, pas
-    # globalement), mais `nb_items_valides` se dérive lui de la
-    # répartition par fonds en sommant l'état VALIDE.
-    nb_fichiers: int = db.scalar(select(func.count(Fichier.id))) or 0
-    # nb_fichiers par fonds (pour le tableau_collections du dashboard) :
-    # un GROUP BY sur Fichier ⨝ Item, pas un N+1.
+    # ---- nb_fichiers par fonds (GROUP BY Fichier ⨝ Item, pas N+1).
+    # Item.fonds_id est NOT NULL, donc le total global se dérive de
+    # la somme du dict — pas besoin d'une seconde requête COUNT(*).
     nb_fichiers_par_fonds: dict[int, int] = dict(
         db.execute(
             select(Item.fonds_id, func.count(Fichier.id))
@@ -353,6 +348,9 @@ def composer_dashboard(db: Session) -> DashboardResume:
             .group_by(Item.fonds_id)
         ).all()
     )
+    nb_fichiers: int = sum(nb_fichiers_par_fonds.values())
+    # nb_items_valides se dérive de repartition_par_fonds en sommant
+    # l'état VALIDE par fonds — pas de requête supplémentaire.
     nb_items_valides = sum(
         rep.get(EtatCatalogage.VALIDE.value, 0)
         for rep in repartition_par_fonds.values()

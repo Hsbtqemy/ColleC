@@ -44,6 +44,10 @@ from archives_tool.api.services.collections import (
     modifier_collection,
     retirer_item_de_collection,
 )
+from archives_tool.api.routes._helpers import (
+    charger_fonds_ou_404 as _charger_fonds_ou_404,
+    resoudre_item_ou_404 as _resoudre_item_ou_404,
+)
 from archives_tool.api.services.dashboard import (
     composer_dashboard,
     composer_page_collection,
@@ -659,19 +663,6 @@ def servir_fichier_item(
     return FileResponse(chemin_local)
 
 
-def _resoudre_item_ou_404(db: Session, cote: str, fonds_cote: str):
-    """Charge un item par (cote, fonds_cote) ou lève 404 propre.
-    Centralise le couple `_charger_fonds_ou_404` + `lire_item_par_cote`
-    pour les routes /item/{cote}/..."""
-    fonds_obj = _charger_fonds_ou_404(db, fonds_cote)
-    try:
-        return lire_item_par_cote(db, cote, fonds_id=fonds_obj.id), fonds_obj
-    except ItemIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail=f"Item {cote!r} introuvable."
-        ) from e
-
-
 @router.get("/item/{cote}/modifier", response_class=HTMLResponse)
 def formulaire_modifier_item(
     cote: str,
@@ -770,15 +761,6 @@ def soumettre_modification_item(
 # ---------------------------------------------------------------------------
 # Collaborateurs d'un fonds (CRUD HTMX-friendly)
 # ---------------------------------------------------------------------------
-
-
-def _charger_fonds_ou_404(db: Session, cote: str) -> Fonds:
-    try:
-        return lire_fonds_par_cote(db, cote)
-    except FondsIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail=f"Fonds {cote!r} introuvable."
-        ) from e
 
 
 def _collaborateur_fonds_appartenant(

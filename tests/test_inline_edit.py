@@ -1,4 +1,4 @@
-"""Tests de la route d'édition inline du cartouche (V0.7 / handoff)."""
+"""Tests de la route d'édition inline du cartouche."""
 
 from __future__ import annotations
 

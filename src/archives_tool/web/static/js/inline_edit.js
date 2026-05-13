@@ -1,43 +1,24 @@
-// Édition inline du cartouche métadonnées (V0.7 / handoff).
-//
-// Cible le markup posé par `components/cartouche_metadonnees.html` :
-//
-//   <div data-edit-field="titre" data-edit-type="texte" data-editable="1">
-//     <div ...>Titre</div>
-//     <div data-value>...</div>
-//   </div>
-//
-// Workflow :
-// 1. Click sur la zone valeur (data-value) → on remplace par un
-//    <input> pré-rempli avec la valeur courante.
-// 2. Blur ou Enter → POST /item/{cote}/champ/{field} avec
-//    `version` (lu du form caché sur la page) + `valeur`.
-// 3. 200 → swap le data-value avec la réponse, mettre à jour la
-//    version dans le form caché si l'attribut `data-edit-new-version`
-//    est présent.
-// 4. 409 → swap avec le bandeau de conflit, l'utilisateur recharge.
-// 5. 400 → swap avec le message d'erreur, l'utilisateur peut
-//    re-cliquer pour réessayer.
-//
-// Le câblage est volontairement minimal : pas de framework, pas de
-// state partagé. La source de vérité (version actuelle) vit dans le
-// `<input type="hidden" name="version">` du form `/modifier`
-// classique, qui reste présent sur la page (la page item lecture
-// n'a pas ce form, donc on lit la version depuis un autre marqueur).
+// Édition inline du cartouche métadonnées.
+// Cible le markup `[data-edit-field][data-editable="1"]` posé par
+// components/cartouche_metadonnees.html. Workflow : click → input,
+// blur/Enter → POST /item/{cote}/champ/{field}, swap la réponse dans
+// [data-value]. La version vit dans <meta name="item-context"> et
+// est resynchronisée après chaque save via [data-edit-new-version].
 
 (function () {
   const ligneSelector = '[data-edit-field][data-editable="1"]';
 
   function chercherContextItem() {
-    // La page item expose `cote` et `fonds_cote` via les meta refs
-    // ci-dessous (ajoutées dans pages/item_lecture.html). Si absent,
-    // on n'active pas l'édition.
+    // La page item expose cote/fonds/version via <meta name="item-context">.
+    // On garde la référence au noeud DOM pour resynchroniser la version
+    // après chaque save sans nouveau querySelector.
     const meta = document.querySelector('meta[name="item-context"]');
     if (!meta) return null;
     return {
       cote: meta.dataset.cote,
       fonds: meta.dataset.fonds,
       version: parseInt(meta.dataset.version, 10),
+      meta,
     };
   }
 
@@ -105,8 +86,7 @@
             const nv = parseInt(span.dataset.editNewVersion, 10);
             if (!isNaN(nv)) {
               ctx.version = nv;
-              const meta = document.querySelector('meta[name="item-context"]');
-              if (meta) meta.dataset.version = String(nv);
+              ctx.meta.dataset.version = String(nv);
             }
           }
         }

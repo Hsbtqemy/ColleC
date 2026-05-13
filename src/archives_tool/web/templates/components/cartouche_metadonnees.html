@@ -16,8 +16,7 @@
      liste_auteurs(valeurs)                               (helper)
      tags_sujets(valeurs)                                 (helper)
 
-   Hooks pour l'édition inline (V0.7+ : câblage dans
-   `web/static/js/inline_edit.js`) :
+   Hooks pour l'édition inline (câblage dans `web/static/js/inline_edit.js`) :
      - `[data-edit-field="<key>"]` sur chaque conteneur `<div>` de ligne
      - `[data-value]` sur le conteneur de la valeur
 
@@ -140,12 +139,10 @@
 {%- endmacro %}
 
 
-{# Couche de compatibilité data-driven : rend une cartouche complète
-   depuis un `dict[str, list[ChampMetadonnee]]`. Composé en interne
-   avec les macros prescrites — les hooks `data-edit-field` /
-   `data-value` sont donc bien posés. Pas le chemin recommandé par le
-   handoff (qui préfère le call composable côté page) mais conservé
-   pour ne pas casser l'existant. #}
+{# Adaptateur data-driven : rend la cartouche complète depuis un
+   `dict[str, list[ChampMetadonnee]]` (cf. `composer_metadonnees_par_section`).
+   Compose les macros ci-dessus et pose donc les hooks `data-edit-field`
+   / `data-value`. #}
 {%- macro cartouche_metadonnees(sections, cote) -%}
 {% call cartouche_wrapper() %}
   {% for nom_section, champs in sections.items() %}

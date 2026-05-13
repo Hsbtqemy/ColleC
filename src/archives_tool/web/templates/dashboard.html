@@ -47,11 +47,10 @@
   </div>
 </section>
 
-{# ----- Section Fonds (tableau plat — handoff tableau_collections) -- #}
-{# Chaque fonds est rendu comme une rangée du tableau_collections du
-   handoff. Le contrat de schéma est exposé via les @property de
-   `FondsArborescence` (href, phase, sous_collections, repartition,
-   modifie_depuis) pour éviter un adaptateur explicite côté template. #}
+{# ----- Section Fonds (tableau plat — chaque fonds = une rangée) ---- #}
+{# Le contrat de schéma attendu par la macro est exposé via les
+   @property de `FondsArborescence` (href, phase, sous_collections,
+   repartition, modifie_depuis) — pas d'adaptateur côté template. #}
 {% from 'components/tableau_collections.html' import tableau_collections %}
 <section class="mb-10">
   <h2 class="text-lg font-medium mb-3">

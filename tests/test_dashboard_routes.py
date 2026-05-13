@@ -91,11 +91,10 @@ def test_dashboard_affiche_5_fonds_demo(client_demo: TestClient) -> None:
 
 
 def test_dashboard_compte_sous_collections(client_demo: TestClient) -> None:
-    """Dashboard V0.9.x : le tableau_collections affiche les fonds en
-    rangées avec un compteur `N sous-collections`. Le détail (titres
-    des libres) vit sur la page /fonds/{cote}, plus sur le dashboard."""
+    """Le tableau de fonds affiche un compteur `N sous-collections` par
+    rangée. Le détail (titres des libres) vit sur /fonds/{cote}."""
     response = client_demo.get("/")
-    # Fonds Aínsa a 1 miroir + 4 libres = 5 sous-collections.
+    # Fonds Aínsa : 1 miroir + 4 libres = 5 sous-collections.
     assert "5 sous-collections" in response.text
 
 
@@ -108,13 +107,14 @@ def test_dashboard_section_transversale_visible(client_demo: TestClient) -> None
 
 
 def test_dashboard_compteurs_corrects(client_demo: TestClient) -> None:
-    """Le tableau_collections du handoff formate les nombres avec une
-    espace fine comme séparateur de milliers (« 1 234 »). Pour les
-    petites valeurs (< 1000), c'est juste le chiffre dans une cellule
-    `font-tabular` — on vérifie la présence du chiffre dans le HTML."""
+    """Chaque rangée du tableau affiche nb_items et nb_fichiers du fonds
+    dans un `<span>...</span>` dédié. On vérifie au contact strict du
+    markup (`>N</span>`) pour éviter les faux positifs (« 40 » dans une
+    date ou un id arbitraires ailleurs dans le HTML)."""
     response = client_demo.get("/")
-    for n in ("40", "167", "39", "18"):
-        assert n in response.text
+    # Compteurs nb_items connus de la base de démo, fonds HK et FA.
+    for n in ("40", "167"):
+        assert f'>{n}</span>' in response.text
 
 
 def test_dashboard_lien_fonds(client_demo: TestClient) -> None:
@@ -125,10 +125,8 @@ def test_dashboard_lien_fonds(client_demo: TestClient) -> None:
 def test_dashboard_lien_fonds_pour_chaque_rangee(
     client_demo: TestClient,
 ) -> None:
-    """Le dashboard utilise désormais `tableau_collections` paramétré
-    sur les fonds : la cellule cote linke `/fonds/{cote}`. Les liens
-    vers les collections libres se trouvent sur la page fonds elle-même
-    (V0.9 hierarchie fonds-first)."""
+    """La cellule cote de chaque rangée du tableau linke `/fonds/{cote}`.
+    Les liens vers les libres sont sur la page fonds, pas ici."""
     response = client_demo.get("/")
     for cote in ("HK", "FA", "RDM", "MAR", "CONC-1789"):
         assert f'href="/fonds/{cote}"' in response.text

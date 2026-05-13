@@ -30,9 +30,7 @@ if TYPE_CHECKING:
 # d'accents (pour la portabilité fichier et URL — voir CLAUDE.md).
 PATTERN_COTE = re.compile(r"^[A-Za-z0-9_-]+$")
 
-_MSG_COTE_CARACTERES = (
-    "Caractères autorisés : lettres, chiffres, tiret, souligné."
-)
+_MSG_COTE_CARACTERES = "Caractères autorisés : lettres, chiffres, tiret, souligné."
 
 
 class EntiteIntrouvable(LookupError):

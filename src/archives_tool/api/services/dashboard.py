@@ -165,7 +165,9 @@ class ActiviteRecente:
     type: Literal["item", "collection", "fonds"]
     cote: str
     titre: str
-    fonds_cote: str | None  # cote du fonds parent pour les items et collections rattachées
+    fonds_cote: (
+        str | None
+    )  # cote du fonds parent pour les items et collections rattachées
     modifie_par: str | None
     modifie_le: datetime
 
@@ -249,7 +251,9 @@ def composer_dashboard(db: Session) -> DashboardResume:
     Python ne font qu'attacher les agrégats préalablement calculés.
     """
     fonds_rows = list(db.scalars(select(Fonds).order_by(Fonds.cote)).all())
-    collection_rows = list(db.scalars(select(Collection).order_by(Collection.titre)).all())
+    collection_rows = list(
+        db.scalars(select(Collection).order_by(Collection.titre)).all()
+    )
 
     # ---- Répartitions d'états (1 query par dimension) ---------------
     # Les compteurs `nb_items` par fonds / par collection sont dérivés
@@ -259,8 +263,9 @@ def composer_dashboard(db: Session) -> DashboardResume:
         [
             (fonds_id, etat, n)
             for fonds_id, etat, n in db.execute(
-                select(Item.fonds_id, Item.etat_catalogage, func.count(Item.id))
-                .group_by(Item.fonds_id, Item.etat_catalogage)
+                select(
+                    Item.fonds_id, Item.etat_catalogage, func.count(Item.id)
+                ).group_by(Item.fonds_id, Item.etat_catalogage)
             ).all()
         ]
     )
@@ -378,9 +383,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 nb_items=nb_items_par_fonds.get(f.id, 0),
                 collection_miroir=miroir,
                 collections_libres=tuple(libres),
-                repartition_etats=repartition_par_fonds.get(
-                    f.id, _repartition_vide()
-                ),
+                repartition_etats=repartition_par_fonds.get(f.id, _repartition_vide()),
                 modifie_par=f_mod_par,
                 modifie_le=f_mod_le,
             )
@@ -411,9 +414,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
             titre=c.titre,
             nb_items=nb_items_par_collection.get(c.id, 0),
             fonds_representes=tuple(fonds_par_transv.get(c.id, [])),
-            repartition_etats=repartition_par_collection.get(
-                c.id, _repartition_vide()
-            ),
+            repartition_etats=repartition_par_collection.get(c.id, _repartition_vide()),
             modifie_par=c.modifie_par,
             modifie_le=c.modifie_le,
             phase=c.phase,
@@ -780,14 +781,10 @@ class FiltresCollection:
         etats = tuple(e for e in self.etats if e != retire_etat)
         if etats:
             params.append("etat=" + ",".join(etats))
-        langues = tuple(
-            lang for lang in self.langues if lang != retire_langue
-        )
+        langues = tuple(lang for lang in self.langues if lang != retire_langue)
         if langues:
             params.append("langue=" + ",".join(langues))
-        types_coar = tuple(
-            t for t in self.types_coar if t != retire_type_coar
-        )
+        types_coar = tuple(t for t in self.types_coar if t != retire_type_coar)
         if types_coar:
             params.append("type_coar=" + ",".join(types_coar))
         if not retire_periode:
@@ -854,12 +851,8 @@ def parser_filtres_collection(
     """
     etats_valides = {e.value for e in EtatCatalogage}
     etats = tuple(e for e in _csv_to_liste(etat) if e in etats_valides)
-    langues = tuple(
-        lang for lang in _csv_to_liste(langue) if lang in options.langues
-    )
-    types_coar = tuple(
-        t for t in _csv_to_liste(type_coar) if t in options.types_coar
-    )
+    langues = tuple(lang for lang in _csv_to_liste(langue) if lang in options.langues)
+    types_coar = tuple(t for t in _csv_to_liste(type_coar) if t in options.types_coar)
 
     def _valider_annee(v: int | None) -> int | None:
         if v is None:
@@ -913,9 +906,7 @@ class CollectionDetail:
         return not self.est_miroir and not self.est_transversale
 
 
-def composer_page_collection(
-    db: Session, collection: Collection
-) -> CollectionDetail:
+def composer_page_collection(db: Session, collection: Collection) -> CollectionDetail:
     """Charge le contexte d'affichage d'une collection : compteurs,
     répartition d'états, traçabilité, options de filtres dynamiques.
 
@@ -1277,14 +1268,18 @@ def navigation_items(
 
     return NavigationItem(
         precedent=(
-            ItemAdjacent(cote=precedent_row.cote, titre=precedent_row.titre,
-                         fonds_cote=fonds.cote)
+            ItemAdjacent(
+                cote=precedent_row.cote,
+                titre=precedent_row.titre,
+                fonds_cote=fonds.cote,
+            )
             if precedent_row
             else None
         ),
         suivant=(
-            ItemAdjacent(cote=suivant_row.cote, titre=suivant_row.titre,
-                         fonds_cote=fonds.cote)
+            ItemAdjacent(
+                cote=suivant_row.cote, titre=suivant_row.titre, fonds_cote=fonds.cote
+            )
             if suivant_row
             else None
         ),

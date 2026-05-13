@@ -12,6 +12,8 @@ data/*.db-wal
 data/*.db-shm
 data/*.log
 data/derivatives/
+data/demo_derives/
+data/demo_config.yaml
 
 config_local.yaml
 .env

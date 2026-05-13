@@ -86,6 +86,7 @@ nav:
     - Configuration: premiers-pas/configuration.md
     - Premier import: premiers-pas/premier-import.md
     - Workflow type: premiers-pas/workflow-type.md
+    - Installation locale + WebDAV: premiers-pas/installation-locale-webdav.md
   - Guide utilisateur:
     - Vue d'ensemble: guide/index.md
     - Concepts: guide/concepts.md

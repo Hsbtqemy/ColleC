@@ -41,6 +41,7 @@ def _charger_collection_ou_404(db: Session, cote: str) -> Collection:
         raise HTTPException(status_code=404, detail="Collection introuvable.")
     return col
 
+
 ROLES_OPTIONS: list[str] = [r.value for r in RoleCollaborateur]
 
 

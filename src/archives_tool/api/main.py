@@ -19,7 +19,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from archives_tool.api.middleware import middleware_lecture_seule
 from archives_tool.api.routes import dashboard, derives, import_assistant, preferences
 
 RACINE_STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -29,6 +31,8 @@ app = FastAPI(
     description="Outil de gestion de collections numérisées",
     version="0.9.2",
 )
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=middleware_lecture_seule)
 
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
 app.include_router(dashboard.router)

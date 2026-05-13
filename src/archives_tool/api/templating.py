@@ -16,6 +16,7 @@ from archives_tool.affichage.formatters import (
     formater_taille_octets,
     temps_relatif,
 )
+from archives_tool.api.deps import est_lecture_seule
 from archives_tool.models import (
     LIBELLES_ROLE,
     EtatCatalogage,
@@ -106,3 +107,4 @@ templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri
 templates.env.filters["url_page"] = _url_page
 templates.env.globals["pages_visibles"] = _pages_visibles
+templates.env.globals["est_lecture_seule"] = est_lecture_seule

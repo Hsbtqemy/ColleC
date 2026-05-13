@@ -66,3 +66,13 @@ def get_racines() -> dict[str, Path]:
 
 def get_nom_base() -> str:
     return chemin_base_courant().name
+
+
+def est_lecture_seule() -> bool:
+    """Vrai si la config locale active le mode lecture seule.
+
+    Utilisé par le middleware qui bloque les mutations et par les
+    templates qui affichent une bannière.
+    """
+    config = _charger_config()
+    return bool(config and config.lecture_seule)

@@ -7,6 +7,17 @@
   <link rel="stylesheet" href="{{ url_for('static', path='css/output.css') }}">
 </head>
 <body class="bg-white">
+  {% if est_lecture_seule() %}
+  <div role="status"
+       style="background:#fef3c7;border-bottom:1px solid #fcd34d;
+              padding:8px 24px;font-size:13px;color:#92400e;
+              text-align:center;">
+    <strong>Mode lecture seule.</strong>
+    Les modifications sont temporairement désactivées
+    (<code style="font-family:monospace;">lecture_seule: true</code>
+    dans <code style="font-family:monospace;">config_local.yaml</code>).
+  </div>
+  {% endif %}
   <div class="max-w-7xl mx-auto px-6 py-8">
     {% include "components/header.html" %}
     {% block breadcrumb %}{% endblock %}

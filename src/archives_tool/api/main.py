@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -41,6 +42,15 @@ app = FastAPI(
 app.add_middleware(BaseHTTPMiddleware, dispatch=middleware_lecture_seule)
 
 app.mount("/static", StaticFiles(directory=RACINE_STATIC), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    """Stub silencieux : les navigateurs reclament systematiquement
+    /favicon.ico, on repond 204 pour eviter le bruit 404 dans les logs."""
+    return Response(status_code=204)
+
+
 app.include_router(dashboard.router)
 app.include_router(preferences.router)
 app.include_router(inline_edit.router)

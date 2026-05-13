@@ -148,6 +148,11 @@
 
     function annuler() {
       if (envoye) return;
+      // Marquer envoye AVANT de detacher l'input : le innerHTML qui
+      // suit declenche un blur synchrone sur l'input qui re-appelle
+      // envoyer(). Sans ce flag, une saisie suivie d'Escape soumettait
+      // quand meme la valeur tapee au lieu de l'annuler.
+      envoye = true;
       zoneValeur.innerHTML = contenuAvant;
       ligne.dataset.editing = "0";
     }

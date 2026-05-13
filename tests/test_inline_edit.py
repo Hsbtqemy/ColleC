@@ -175,6 +175,16 @@ def test_whitelist_inline_aligne_sur_cartouche(base_demo: Path) -> None:
     )
 
 
+def test_script_inline_edit_a_un_suffixe_cache_bust(base_demo: Path) -> None:
+    """Les inclusions JS sur la page item passent par `static_url()`,
+    qui suffixe le src avec `?v=<mtime>`. Permet d'éditer le JS sans
+    bataille avec le cache navigateur en dev."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001?fonds=HK")
+    assert resp.status_code == 200
+    assert "inline_edit.js?v=" in resp.text
+
+
 def test_meta_item_context_dans_page(base_demo: Path) -> None:
     """La page item lecture expose `<meta name="item-context">` lu
     par le JS d'édition inline."""

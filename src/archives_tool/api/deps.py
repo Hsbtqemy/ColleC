@@ -59,6 +59,29 @@ def _charger_config_cache(chemin: Path, mtime_ns: int) -> ConfigLocale | None:
         return None
 
 
+def _resoudre_chemin_config() -> Path:
+    """Détermine le chemin de la config locale, avec auto-détection.
+
+    Précédence :
+    1. `ARCHIVES_CONFIG` (variable d'environnement) si défini.
+    2. `<db>_config.yaml` adjacent à `ARCHIVES_DB` s'il existe — évite
+       d'avoir à set deux variables d'env pour la démo et tout cas
+       similaire de base avec config sœur (`data/X.db` + `data/X_config.yaml`).
+    3. `config_local.yaml` à la racine du projet (défaut).
+    """
+    valeur = os.environ.get("ARCHIVES_CONFIG")
+    if valeur:
+        return Path(valeur)
+    db_env = os.environ.get("ARCHIVES_DB")
+    if db_env:
+        adjacent = Path(db_env).with_suffix("").with_name(
+            Path(db_env).stem + "_config.yaml"
+        )
+        if adjacent.is_file():
+            return adjacent
+    return CHEMIN_CONFIG_DEFAUT
+
+
 def _charger_config() -> ConfigLocale | None:
     """Charge la config locale en s'amortissant sur les requêtes.
 
@@ -68,7 +91,7 @@ def _charger_config() -> ConfigLocale | None:
     déclenchait jusqu'à 5 parses YAML par requête. Un seul `stat()`
     suffit désormais ; le YAML n'est relu que si le fichier change.
     """
-    chemin = Path(os.environ.get("ARCHIVES_CONFIG", CHEMIN_CONFIG_DEFAUT))
+    chemin = _resoudre_chemin_config()
     try:
         mtime_ns = chemin.stat().st_mtime_ns
     except FileNotFoundError:

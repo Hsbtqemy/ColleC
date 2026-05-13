@@ -29,9 +29,14 @@ uv run pytest
 Pour explorer l'interface avec une base de démonstration :
 
 ```bash
-uv run archives-tool demo init
+uv run archives-tool demo init           # crée data/demo.db + data/demo_config.yaml
+npm install && npm run vendor            # une fois : HTMX + Sortable + OpenSeadragon
+npm run watch:css                        # terminal séparé : recompile Tailwind
 ARCHIVES_DB=data/demo.db uv run uvicorn archives_tool.api.main:app --reload
 ```
+
+`data/demo_config.yaml` est détectée automatiquement (config sœur de
+la base). Pour un projet réel, placer `config_local.yaml` à la racine.
 
 Voir la doc en ligne (lien ci-dessus) ou en local
 (`uv run mkdocs serve`) pour le guide complet.
@@ -40,7 +45,7 @@ Voir la doc en ligne (lien ci-dessus) ou en local
 
 - `src/archives_tool/` — code Python (modèles, services, CLI, API).
 - `alembic/` — migrations.
-- `tests/` — pytest (~430 tests).
+- `tests/` — pytest (~570 tests).
 - `profiles/` — profils d'import YAML par fonds.
 - `data/` — base SQLite locale (gitignoré).
 - `docs/` — sources MkDocs ; build déployé sur GitHub Pages via

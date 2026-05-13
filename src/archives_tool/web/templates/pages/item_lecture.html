@@ -45,7 +45,7 @@
 {% endblock %}
 
 {% block scripts %}
-  <script src="{{ url_for('static', path='js/vendor/openseadragon/openseadragon.min.js') }}"></script>
-  <script src="{{ url_for('static', path='js/visionneuse_osd.js') }}"></script>
-  <script src="{{ url_for('static', path='js/inline_edit.js') }}"></script>
+  <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
+  <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
+  <script src="{{ static_url('js/inline_edit.js') }}"></script>
 {% endblock %}

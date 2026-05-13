@@ -25,6 +25,19 @@ from archives_tool.models import (
 )
 
 RACINE_TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
+RACINE_STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+
+
+def _static_url(path: str) -> str:
+    """Retourne `/static/<path>?v=<mtime>` pour bust le cache navigateur
+    quand on édite un asset. Si le fichier est introuvable (cas test,
+    racine déplacée), renvoie l'URL sans suffix — pas de plantage."""
+    cible = RACINE_STATIC / path
+    try:
+        mtime_ns = cible.stat().st_mtime_ns
+    except FileNotFoundError:
+        return f"/static/{path}"
+    return f"/static/{path}?v={mtime_ns}"
 
 
 def _libelle_etat(etat: EtatCatalogage | str | None) -> str:
@@ -108,3 +121,4 @@ templates.env.filters["url_tri"] = _url_tri
 templates.env.filters["url_page"] = _url_page
 templates.env.globals["pages_visibles"] = _pages_visibles
 templates.env.globals["est_lecture_seule"] = est_lecture_seule
+templates.env.globals["static_url"] = _static_url

@@ -1123,6 +1123,11 @@ class ChampMetadonnee:
     `<select>` strict au lieu d'un `<input>` libre. Chaque entrée est
     une paire `(valeur, libelle)` — la valeur est stockée, le libellé
     est ce que voit l'utilisateur dans le dropdown.
+
+    `valeur_affichee` : ce que rend le cartouche en lecture. Identique
+    à `valeur` par défaut ; pour les vocabulaires (cf. `options`), le
+    composer y stocke le libellé humain associé à la valeur (par ex.
+    URI COAR → « Texte »).
     """
 
     cle: str  # identifiant technique (ex. "cote", "titre", "Auteur")
@@ -1131,6 +1136,7 @@ class ChampMetadonnee:
     type_donnee: TypeChampMetadonnee = "texte"
     editable: bool = True
     options: tuple[tuple[str, str], ...] | None = None
+    valeur_affichee: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1224,6 +1230,23 @@ CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
 )
 
 
+def libelle_pour_valeur(
+    valeur: object,
+    options: tuple[tuple[str, str], ...] | None,
+) -> str | None:
+    """Pour un champ à vocabulaire, retourne le libellé humain associé à
+    la valeur stockée (URI COAR → « Texte »). Si la valeur n'est pas
+    dans la liste (legacy / hors-référentiel), retourne la valeur brute
+    inchangée — le cartouche l'affichera telle quelle."""
+    if valeur is None or not options:
+        return valeur if valeur is None else str(valeur)
+    valeur_str = str(valeur)
+    for v, libelle in options:
+        if v == valeur_str:
+            return libelle
+    return valeur_str
+
+
 def composer_metadonnees_par_section(
     item: Item,
     champs_personnalises: list[ChampPersonnalise],
@@ -1241,17 +1264,21 @@ def composer_metadonnees_par_section(
     « non renseigné » pour les valeurs absentes — la section reste un
     point d'entrée pour l'édition future).
     """
-    identification: list[ChampMetadonnee] = [
-        ChampMetadonnee(
-            cle=cle,
-            libelle=lib,
-            valeur=getattr(item, cle, None),
-            type_donnee=td,
-            editable=cle in CHAMPS_ITEM_EDITABLES_INLINE,
-            options=OPTIONS_PAR_CHAMP.get(cle),
+    identification: list[ChampMetadonnee] = []
+    for cle, lib, td in _LIBELLES_IDENTIFICATION:
+        valeur = getattr(item, cle, None)
+        options = OPTIONS_PAR_CHAMP.get(cle)
+        identification.append(
+            ChampMetadonnee(
+                cle=cle,
+                libelle=lib,
+                valeur=valeur,
+                type_donnee=td,
+                editable=cle in CHAMPS_ITEM_EDITABLES_INLINE,
+                options=options,
+                valeur_affichee=libelle_pour_valeur(valeur, options),
+            )
         )
-        for cle, lib, td in _LIBELLES_IDENTIFICATION
-    ]
 
     metadonnees_brutes = item.metadonnees or {}
     vus: set[str] = set()

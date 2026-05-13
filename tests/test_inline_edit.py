@@ -111,6 +111,24 @@ def test_inline_edit_chaine_vide_efface(base_demo: Path) -> None:
     assert "non renseigné" in resp.text
 
 
+def test_save_vocabulaire_retourne_libelle_avec_data_edit_raw(
+    base_demo: Path,
+) -> None:
+    """Sauver une langue (« fra ») doit retourner le libellé humain
+    « Français » dans le markup affiché, et la valeur brute « fra »
+    dans `data-edit-raw` pour que la prochaine édition pré-remplisse
+    le <select> correctement."""
+    client = TestClient(app)
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/langue?fonds=HK",
+        data={"version": str(v), "valeur": "fra"},
+    )
+    assert resp.status_code == 200
+    assert 'data-edit-raw="fra"' in resp.text
+    assert "Français" in resp.text
+
+
 def test_cartouche_emet_data_edit_options_pour_langue(base_demo: Path) -> None:
     """`langue` et `type_coar` doivent porter `data-edit-options` (JSON)
     sur la ligne du cartouche, pour que l'édition inline déclenche un

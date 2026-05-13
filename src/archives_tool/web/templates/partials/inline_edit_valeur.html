@@ -1,11 +1,14 @@
 {# Fragment retourné après un POST réussi d'inline edit. Swap dans
    le `[data-value]` de la ligne. Inclut la nouvelle version dans un
    attribut pour que le JS rafraîchisse le hidden côté formulaire. #}
-{% set valeur = item|attr(field) %}
 <span data-edit-new-version="{{ item.version }}">
-  {%- if valeur is none or valeur == '' -%}
+  {%- if valeur_brute is none or valeur_brute == '' -%}
     <span class="text-gray-400 italic" style="font-size:12px;">non renseigné</span>
+  {%- elif vocabulaire -%}
+    {# Vocabulaire contrôlé : on affiche le libellé humain mais on
+       conserve la valeur brute dans data-edit-raw pour la ré-édition. #}
+    <span data-edit-raw="{{ valeur_brute }}">{{ valeur_affichee }}</span>
   {%- else -%}
-    {{ valeur }}
+    {{ valeur_brute }}
   {%- endif -%}
 </span>

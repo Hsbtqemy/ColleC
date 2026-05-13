@@ -158,6 +158,12 @@
               options=champ.options) %}
             {%- if not champ.valeur -%}
               {{ valeur_non_renseigne() }}
+            {%- elif champ.options -%}
+              {# Vocabulaire : on affiche le libellé humain associé.
+                 La valeur brute (URI / code) reste en data-edit-raw
+                 pour que l'édition inline pré-remplisse le <select>
+                 avec la valeur stockée, pas son libellé. #}
+              <span data-edit-raw="{{ champ.valeur }}">{{ champ.valeur_affichee }}</span>
             {%- elif champ.type_donnee == 'uri' -%}
               {{ lien_doi(champ.valeur) }}
             {%- elif champ.type_donnee == 'mono' -%}

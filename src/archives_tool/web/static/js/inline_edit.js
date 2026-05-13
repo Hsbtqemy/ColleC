@@ -28,9 +28,16 @@
   }
 
   function valeurBruteCourante(zoneValeur) {
-    // Texte brut, sans le markup (mono / non-renseigné).
+    // Si la zone porte un marqueur `data-edit-raw`, sa valeur est la
+    // source brute (URI COAR, code ISO langue) tandis que le texte
+    // visible est le libellé humain. On lit donc l'attribut, pas le
+    // textContent — sinon on rempile "Texte" au lieu de l'URI.
     const span = zoneValeur.querySelector("[data-edit-raw]");
-    if (span) return span.textContent.trim();
+    if (span) {
+      const raw = span.getAttribute("data-edit-raw");
+      if (raw !== null) return raw;
+      return span.textContent.trim();
+    }
     // Fallback : textContent moins les éléments italic « non renseigné ».
     const txt = zoneValeur.textContent || "";
     const trimmed = txt.trim();

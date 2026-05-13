@@ -32,7 +32,18 @@ Pour explorer l'interface avec une base de démonstration :
 uv run archives-tool demo init           # crée data/demo.db + data/demo_config.yaml
 npm install && npm run vendor            # une fois : HTMX + Sortable + OpenSeadragon
 npm run watch:css                        # terminal séparé : recompile Tailwind
+```
+
+Puis lancer le serveur — la commande dépend du shell :
+
+```bash
+# bash / zsh (macOS, Linux, WSL)
 ARCHIVES_DB=data/demo.db uv run uvicorn archives_tool.api.main:app --reload
+```
+
+```powershell
+# PowerShell (Windows)
+$env:ARCHIVES_DB="data/demo.db"; uv run uvicorn archives_tool.api.main:app --reload
 ```
 
 `data/demo_config.yaml` est détectée automatiquement (config sœur de

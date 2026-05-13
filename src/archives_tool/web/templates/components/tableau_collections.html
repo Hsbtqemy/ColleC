@@ -23,18 +23,23 @@
   {%- set active = ctx.sort == key -%}
   {%- set ordre = ctx.ordre|default('asc') -%}
   {%- set id_wrap = ctx.id|default('tableau-collections') -%}
-  <th class="border-b {{ 'cursor-pointer hover:text-gray-900' if sortable else '' }}"
+  {# Le tri n'est activable que si la page fournit `cible_url` ET que la
+     route correspondante sait repondre en partial HTMX. Sans cela on
+     rendrait des entetes cliquables qui injecteraient la page complete
+     dans la table — exactement le bug observe sur le dashboard. #}
+  {%- set actif_htmx = sortable and ctx.cible_url -%}
+  <th class="border-b {{ 'cursor-pointer hover:text-gray-900' if actif_htmx else '' }}"
       style="border-color:rgba(0,0,0,0.08);padding:10px 14px;font-size:12px;font-weight:500;
              color:{{ '#1f1f1f' if active else '#6b7280' }};text-align:{{ align }};white-space:nowrap;"
-      {% if sortable %}data-sort-key="{{ key }}"
-        hx-get="{{ ctx.cible_url|default('')|url_tri(key, ctx.sort|default(''), ordre) }}"
+      {% if actif_htmx %}data-sort-key="{{ key }}"
+        hx-get="{{ ctx.cible_url|url_tri(key, ctx.sort|default(''), ordre) }}"
         hx-target="#{{ id_wrap }}"
         hx-swap="outerHTML"
         hx-push-url="true"
       {% endif %}>
     <span class="inline-flex items-center gap-1">
       {{ label }}
-      {%- if active and sortable %}
+      {%- if active and actif_htmx %}
         <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"
              style="transform:{{ 'rotate(180deg)' if ordre == 'asc' else 'none' }};">
           <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"

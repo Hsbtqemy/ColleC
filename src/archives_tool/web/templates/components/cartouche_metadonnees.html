@@ -162,7 +162,11 @@
               {# Vocabulaire : on affiche le libellé humain associé.
                  La valeur brute (URI / code) reste en data-edit-raw
                  pour que l'édition inline pré-remplisse le <select>
-                 avec la valeur stockée, pas son libellé. #}
+                 avec la valeur stockée, pas son libellé.
+                 NB : cette branche précède `uri` exprès — si un jour
+                 un champ uri reçoit aussi un vocabulaire (URI COAR
+                 cliquable + sélection), il faudra recomposer ici
+                 plutôt que choisir l'une ou l'autre. #}
               <span data-edit-raw="{{ champ.valeur }}">{{ champ.valeur_affichee }}</span>
             {%- elif champ.type_donnee == 'uri' -%}
               {{ lien_doi(champ.valeur) }}

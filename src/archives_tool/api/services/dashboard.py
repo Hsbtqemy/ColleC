@@ -30,7 +30,7 @@ from archives_tool.api.services.collaborateurs_fonds import (
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
-from archives_tool.api.services.vocabulaires import OPTIONS_PAR_CHAMP
+from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
 from archives_tool.api.services.sources_image import (
     SourceImage,
     resoudre_source_image,
@@ -1230,23 +1230,6 @@ CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
 )
 
 
-def libelle_pour_valeur(
-    valeur: object,
-    options: tuple[tuple[str, str], ...] | None,
-) -> str | None:
-    """Pour un champ à vocabulaire, retourne le libellé humain associé à
-    la valeur stockée (URI COAR → « Texte »). Si la valeur n'est pas
-    dans la liste (legacy / hors-référentiel), retourne la valeur brute
-    inchangée — le cartouche l'affichera telle quelle."""
-    if valeur is None or not options:
-        return valeur if valeur is None else str(valeur)
-    valeur_str = str(valeur)
-    for v, libelle in options:
-        if v == valeur_str:
-            return libelle
-    return valeur_str
-
-
 def composer_metadonnees_par_section(
     item: Item,
     champs_personnalises: list[ChampPersonnalise],
@@ -1267,7 +1250,7 @@ def composer_metadonnees_par_section(
     identification: list[ChampMetadonnee] = []
     for cle, lib, td in _LIBELLES_IDENTIFICATION:
         valeur = getattr(item, cle, None)
-        options = OPTIONS_PAR_CHAMP.get(cle)
+        options, libelle = resoudre_vocabulaire(cle, valeur)
         identification.append(
             ChampMetadonnee(
                 cle=cle,
@@ -1276,7 +1259,7 @@ def composer_metadonnees_par_section(
                 type_donnee=td,
                 editable=cle in CHAMPS_ITEM_EDITABLES_INLINE,
                 options=options,
-                valeur_affichee=libelle_pour_valeur(valeur, options),
+                valeur_affichee=libelle,
             )
         )
 

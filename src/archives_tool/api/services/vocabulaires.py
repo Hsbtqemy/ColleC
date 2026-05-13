@@ -60,3 +60,36 @@ OPTIONS_PAR_CHAMP: dict[str, tuple[tuple[str, str], ...]] = {
     "langue": LANGUES_OPTIONS,
     "type_coar": TYPES_COAR_OPTIONS,
 }
+
+
+def libelle_pour_valeur(
+    valeur: object,
+    options: tuple[tuple[str, str], ...] | None,
+) -> str | None:
+    """Résout une valeur stockée vers son libellé humain via les options.
+
+    URI COAR → « Texte », code ISO « fra » → « Français ». Si la
+    valeur n'est pas dans la liste (legacy / hors-référentiel),
+    retourne la valeur brute inchangée — le cartouche l'affichera
+    telle quelle.
+    """
+    if valeur is None or not options:
+        return valeur if valeur is None else str(valeur)
+    valeur_str = str(valeur)
+    for v, libelle in options:
+        if v == valeur_str:
+            return libelle
+    return valeur_str
+
+
+def resoudre_vocabulaire(
+    field: str, valeur: object
+) -> tuple[tuple[tuple[str, str], ...] | None, str | None]:
+    """Atomise le couple (options du champ, libellé pour la valeur).
+
+    Évite la duplication composer/route : un seul lookup, deux
+    informations renvoyées. Retourne `(None, valeur)` si le champ
+    n'a pas de vocabulaire enregistré.
+    """
+    options = OPTIONS_PAR_CHAMP.get(field)
+    return options, libelle_pour_valeur(valeur, options)

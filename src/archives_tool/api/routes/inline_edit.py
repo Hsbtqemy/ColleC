@@ -20,11 +20,8 @@ from archives_tool.api.deps import (
 )
 from archives_tool.api.routes._helpers import resoudre_item_ou_404
 from archives_tool.api.services.conflits import ConflitVersion
-from archives_tool.api.services.dashboard import (
-    CHAMPS_ITEM_EDITABLES_INLINE,
-    libelle_pour_valeur,
-)
-from archives_tool.api.services.vocabulaires import OPTIONS_PAR_CHAMP
+from archives_tool.api.services.dashboard import CHAMPS_ITEM_EDITABLES_INLINE
+from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
 from archives_tool.api.services.items import (
     ItemInvalide,
     formulaire_depuis_item,
@@ -87,9 +84,8 @@ def soumettre_edition_inline(
     # (« Texte » plutôt que l'URI COAR) avec la valeur brute stockée
     # dans `data-edit-raw` pour que la prochaine édition pré-remplisse
     # correctement le <select>.
-    options = OPTIONS_PAR_CHAMP.get(field)
     valeur_brute = getattr(item_modifie, field, None)
-    valeur_affichee = libelle_pour_valeur(valeur_brute, options)
+    options, valeur_affichee = resoudre_vocabulaire(field, valeur_brute)
     return templates.TemplateResponse(
         request,
         "partials/inline_edit_valeur.html",

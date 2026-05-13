@@ -78,6 +78,21 @@
 
 <input type="checkbox" id="panneau-fichiers-pin" class="hidden">
 <aside class="panneau-fichiers" data-pinned="false">
+<script>
+  // Persistance de l'etat epingle entre navigations (clic sur un autre
+  // fichier rechargent la page, sinon la checkbox reset). Stockage
+  // localStorage cle dediee — pas de cookie, pas de query string.
+  (function () {
+    var pin = document.getElementById("panneau-fichiers-pin");
+    if (!pin) return;
+    var KEY = "panneau-fichiers-pin";
+    if (localStorage.getItem(KEY) === "1") pin.checked = true;
+    pin.addEventListener("change", function () {
+      if (pin.checked) localStorage.setItem(KEY, "1");
+      else localStorage.removeItem(KEY);
+    });
+  })();
+</script>
 
   {# Toggle pin (visible quel que soit l'état) #}
   <label for="panneau-fichiers-pin"

@@ -25,7 +25,8 @@
 <meta name="item-context"
       data-cote="{{ item.cote }}"
       data-fonds="{{ fonds.cote }}"
-      data-version="{{ item.version }}">
+      data-version="{{ item.version }}"
+      data-edit-url-template="/item/{cote}/champ/{field}?fonds={fonds}">
 
 {{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections) }}
 

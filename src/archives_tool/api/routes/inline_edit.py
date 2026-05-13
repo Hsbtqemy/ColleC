@@ -20,6 +20,7 @@ from archives_tool.api.deps import (
 )
 from archives_tool.api.routes._helpers import resoudre_item_ou_404
 from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.dashboard import CHAMPS_ITEM_EDITABLES_INLINE
 from archives_tool.api.services.items import (
     ItemInvalide,
     formulaire_depuis_item,
@@ -28,22 +29,6 @@ from archives_tool.api.services.items import (
 from archives_tool.api.templating import templates
 
 router = APIRouter()
-
-
-CHAMPS_EDITABLES_INLINE: frozenset[str] = frozenset(
-    {
-        "titre",
-        "date",
-        "annee",
-        "langue",
-        "type_coar",
-        "numero",
-        "description",
-        "notes_internes",
-        "doi_nakala",
-        "doi_collection_nakala",
-    }
-)
 
 
 @router.post(
@@ -67,7 +52,7 @@ def soumettre_edition_inline(
     - 400 + fragment d'erreur si la valeur est invalide ;
     - 403 si le champ n'est pas dans la whitelist.
     """
-    if field not in CHAMPS_EDITABLES_INLINE:
+    if field not in CHAMPS_ITEM_EDITABLES_INLINE:
         raise HTTPException(
             status_code=403, detail=f"Champ {field!r} non éditable inline."
         )

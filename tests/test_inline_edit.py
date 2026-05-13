@@ -111,6 +111,36 @@ def test_inline_edit_chaine_vide_efface(base_demo: Path) -> None:
     assert "non renseigné" in resp.text
 
 
+def test_whitelist_inline_aligne_sur_cartouche(base_demo: Path) -> None:
+    """Garde-fou anti-drift : chaque `ChampMetadonnee.editable=True`
+    rendu par le cartouche doit être accepté par la route POST. Sinon
+    l'utilisateur cliquerait sur une zone marquée éditable et recevrait
+    un 403 silencieux."""
+    from archives_tool.api.services.dashboard import (
+        CHAMPS_ITEM_EDITABLES_INLINE,
+        composer_metadonnees_par_section,
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        sections = composer_metadonnees_par_section(item, [])
+    engine.dispose()
+
+    editables_rendues = {
+        champ.cle for champs in sections.values() for champ in champs
+        if champ.editable
+    }
+    # Tout champ rendu éditable est dans la whitelist (le contraire
+    # — un champ dans la whitelist non rendu — est OK : champs perso
+    # ou champs absents par construction).
+    assert editables_rendues <= CHAMPS_ITEM_EDITABLES_INLINE, (
+        f"Champs rendus éditables hors whitelist : "
+        f"{editables_rendues - CHAMPS_ITEM_EDITABLES_INLINE}"
+    )
+
+
 def test_meta_item_context_dans_page(base_demo: Path) -> None:
     """La page item lecture expose `<meta name="item-context">` lu
     par le JS d'édition inline."""

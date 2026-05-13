@@ -18,6 +18,7 @@
       cote: meta.dataset.cote,
       fonds: meta.dataset.fonds,
       version: parseInt(meta.dataset.version, 10),
+      urlTemplate: meta.dataset.editUrlTemplate,
       meta,
     };
   }
@@ -73,10 +74,11 @@
       formData.append("version", String(ctx.version));
       formData.append("valeur", input.value);
       try {
-        const resp = await fetch(
-          `/item/${encodeURIComponent(ctx.cote)}/champ/${encodeURIComponent(field)}?fonds=${encodeURIComponent(ctx.fonds)}`,
-          { method: "POST", body: formData }
-        );
+        const url = ctx.urlTemplate
+          .replace("{cote}", encodeURIComponent(ctx.cote))
+          .replace("{field}", encodeURIComponent(field))
+          .replace("{fonds}", encodeURIComponent(ctx.fonds));
+        const resp = await fetch(url, { method: "POST", body: formData });
         const html = await resp.text();
         zoneValeur.innerHTML = html;
         if (resp.ok) {

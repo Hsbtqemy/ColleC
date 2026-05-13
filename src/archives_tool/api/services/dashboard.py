@@ -1191,6 +1191,32 @@ _LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (
 )
 
 
+# Source de vérité unique des champs item éditables inline (clic dans
+# le cartouche). Référencée par la route POST /item/{cote}/champ/{field}
+# pour valider et par `composer_metadonnees_par_section` pour stamper
+# `ChampMetadonnee.editable` — ainsi la macro ne pose `data-editable="1"`
+# que sur les lignes vraiment éditables.
+#
+# Cote, fonds_id, version, etat_catalogage et les champs personnalisés
+# (JSON) sont volontairement exclus : la cote touche aux chemins,
+# l'état porte un workflow, le fonds_id est immuable, la version est
+# technique, et le JSON nécessite une UI dédiée (vocabulaires, listes).
+CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
+    {
+        "titre",
+        "type_coar",
+        "date",
+        "annee",
+        "langue",
+        "numero",
+        "description",
+        "notes_internes",
+        "doi_nakala",
+        "doi_collection_nakala",
+    }
+)
+
+
 def composer_metadonnees_par_section(
     item: Item,
     champs_personnalises: list[ChampPersonnalise],
@@ -1214,6 +1240,7 @@ def composer_metadonnees_par_section(
             libelle=lib,
             valeur=getattr(item, cle, None),
             type_donnee=td,
+            editable=cle in CHAMPS_ITEM_EDITABLES_INLINE,
         )
         for cle, lib, td in _LIBELLES_IDENTIFICATION
     ]
@@ -1239,6 +1266,10 @@ def composer_metadonnees_par_section(
                 libelle=champ.libelle,
                 valeur=valeur_str,
                 type_donnee=champ.type,
+                # Les champs personnalisés vivent dans Item.metadonnees (JSON)
+                # et leur édition nécessitera une UI dédiée (vocabulaires,
+                # listes). Non éditables inline pour l'instant.
+                editable=False,
             )
         )
 
@@ -1248,12 +1279,14 @@ def composer_metadonnees_par_section(
             libelle="DOI Nakala",
             valeur=item.doi_nakala,
             type_donnee="uri",
+            editable="doi_nakala" in CHAMPS_ITEM_EDITABLES_INLINE,
         ),
         ChampMetadonnee(
             cle="doi_collection_nakala",
             libelle="DOI collection",
             valeur=item.doi_collection_nakala,
             type_donnee="uri",
+            editable="doi_collection_nakala" in CHAMPS_ITEM_EDITABLES_INLINE,
         ),
     ]
 
@@ -1263,12 +1296,14 @@ def composer_metadonnees_par_section(
             libelle="Description",
             valeur=item.description,
             type_donnee="multiligne",
+            editable="description" in CHAMPS_ITEM_EDITABLES_INLINE,
         ),
         ChampMetadonnee(
             cle="notes_internes",
             libelle="Notes internes",
             valeur=item.notes_internes,
             type_donnee="multiligne",
+            editable="notes_internes" in CHAMPS_ITEM_EDITABLES_INLINE,
         ),
     ]
 

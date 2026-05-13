@@ -30,6 +30,7 @@ from archives_tool.api.services.collaborateurs_fonds import (
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
+from archives_tool.api.services.vocabulaires import OPTIONS_PAR_CHAMP
 from archives_tool.api.services.sources_image import (
     SourceImage,
     resoudre_source_image,
@@ -1117,6 +1118,11 @@ class ChampMetadonnee:
     posés sur tous les champs), mais aucun JS d'édition inline n'est
     actif. Le `type_donnee` pilote le rendu côté template (par ex.
     `uri` → lien cliquable via la macro `lien_doi`).
+
+    `options` (optionnel) : si renseigné, l'édition inline propose un
+    `<select>` strict au lieu d'un `<input>` libre. Chaque entrée est
+    une paire `(valeur, libelle)` — la valeur est stockée, le libellé
+    est ce que voit l'utilisateur dans le dropdown.
     """
 
     cle: str  # identifiant technique (ex. "cote", "titre", "Auteur")
@@ -1124,6 +1130,7 @@ class ChampMetadonnee:
     valeur: str | None
     type_donnee: TypeChampMetadonnee = "texte"
     editable: bool = True
+    options: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -1241,6 +1248,7 @@ def composer_metadonnees_par_section(
             valeur=getattr(item, cle, None),
             type_donnee=td,
             editable=cle in CHAMPS_ITEM_EDITABLES_INLINE,
+            options=OPTIONS_PAR_CHAMP.get(cle),
         )
         for cle, lib, td in _LIBELLES_IDENTIFICATION
     ]

@@ -111,6 +111,22 @@ def test_inline_edit_chaine_vide_efface(base_demo: Path) -> None:
     assert "non renseigné" in resp.text
 
 
+def test_cartouche_emet_data_edit_options_pour_langue(base_demo: Path) -> None:
+    """`langue` et `type_coar` doivent porter `data-edit-options` (JSON)
+    sur la ligne du cartouche, pour que l'édition inline déclenche un
+    <select> au lieu d'un <input> libre."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001?fonds=HK")
+    assert resp.status_code == 200
+    # Vocabulaire des langues présent sur la ligne langue.
+    assert 'data-edit-field="langue"' in resp.text
+    assert 'data-edit-options="' in resp.text
+    # Une langue connue figure dans le JSON sérialisé (forceescape).
+    assert "Fran" in resp.text  # « Français » dans le libellé
+    # Pareil pour type_coar.
+    assert 'data-edit-field="type_coar"' in resp.text
+
+
 def test_whitelist_inline_aligne_sur_cartouche(base_demo: Path) -> None:
     """Garde-fou anti-drift : chaque `ChampMetadonnee.editable=True`
     rendu par le cartouche doit être accepté par la route POST. Sinon

@@ -47,23 +47,54 @@
     const valeurAvant = valeurBruteCourante(zoneValeur);
     const type = chercherTypeChamp(ligne);
     const field = ligne.dataset.editField;
+    const optionsBrutes = ligne.dataset.editOptions;
 
-    const tag = type === "multiligne" ? "textarea" : "input";
-    const input = document.createElement(tag);
-    if (tag === "input") input.type = "text";
-    input.value = valeurAvant;
-    input.style.cssText =
-      "width:100%;font-size:13px;padding:2px 4px;border:1px solid #d1d5db;border-radius:3px;background:white;";
-    if (tag === "textarea") {
-      input.rows = 3;
-      input.style.cssText += "resize:vertical;line-height:1.45;";
+    let input;
+    if (optionsBrutes) {
+      // Vocabulaire contrôlé : <select> strict avec la liste fournie.
+      // Le champ peut déjà contenir une valeur hors-liste (legacy ou
+      // saisie ailleurs) ; on l'ajoute pour ne pas la perdre au save.
+      input = document.createElement("select");
+      const options = JSON.parse(optionsBrutes);
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "—";
+      input.appendChild(blank);
+      const presents = new Set();
+      for (const [val, libelle] of options) {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = libelle;
+        input.appendChild(opt);
+        presents.add(val);
+      }
+      if (valeurAvant && !presents.has(valeurAvant)) {
+        const opt = document.createElement("option");
+        opt.value = valeurAvant;
+        opt.textContent = valeurAvant + " (hors-liste)";
+        input.appendChild(opt);
+      }
+      input.value = valeurAvant;
+      input.style.cssText =
+        "width:100%;font-size:13px;padding:2px 4px;border:1px solid #d1d5db;border-radius:3px;background:white;";
+    } else {
+      const tag = type === "multiligne" ? "textarea" : "input";
+      input = document.createElement(tag);
+      if (tag === "input") input.type = "text";
+      input.value = valeurAvant;
+      input.style.cssText =
+        "width:100%;font-size:13px;padding:2px 4px;border:1px solid #d1d5db;border-radius:3px;background:white;";
+      if (tag === "textarea") {
+        input.rows = 3;
+        input.style.cssText += "resize:vertical;line-height:1.45;";
+      }
     }
 
     const contenuAvant = zoneValeur.innerHTML;
     zoneValeur.innerHTML = "";
     zoneValeur.appendChild(input);
     input.focus();
-    input.select();
+    if (input.select) input.select();
 
     let envoye = false;
 
@@ -115,11 +146,17 @@
     }
 
     input.addEventListener("blur", envoyer);
+    if (input.tagName === "SELECT") {
+      // Pour un <select>, le change fait foi : l'utilisateur a fait
+      // son choix, on sauve sans attendre un blur (qui peut tarder).
+      input.addEventListener("change", envoyer);
+    }
     input.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" && tag === "input") {
+      const t = input.tagName;
+      if (event.key === "Enter" && t === "INPUT") {
         event.preventDefault();
         input.blur();
-      } else if (event.key === "Enter" && event.ctrlKey && tag === "textarea") {
+      } else if (event.key === "Enter" && event.ctrlKey && t === "TEXTAREA") {
         event.preventDefault();
         input.blur();
       } else if (event.key === "Escape") {

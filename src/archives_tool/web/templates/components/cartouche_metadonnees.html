@@ -67,11 +67,12 @@
 {%- endmacro %}
 
 
-{%- macro ligne(label, field=None, type_donnee=None, editable=true) -%}
+{%- macro ligne(label, field=None, type_donnee=None, editable=true, options=None) -%}
 <div class="flex border-t first:border-t-0"
      style="border-color: rgba(0,0,0,0.08);padding:6px 14px;font-size:13px;line-height:20px;"
      {% if field %}data-edit-field="{{ field }}"{% endif %}
      {% if type_donnee %}data-edit-type="{{ type_donnee }}"{% endif %}
+     {% if options %}data-edit-options="{{ options|tojson|forceescape }}"{% endif %}
      data-editable="{{ '1' if (field and editable) else '0' }}">
   <div class="break-words" style="width:150px;flex:0 0 150px;color:#6b7280;padding-right:12px;">{{ label }}</div>
   <div class="flex-1 min-w-0 break-words" style="color:#1f1f1f;" data-value>
@@ -153,7 +154,8 @@
               champ.libelle,
               field=champ.cle,
               type_donnee=champ.type_donnee,
-              editable=champ.editable) %}
+              editable=champ.editable,
+              options=champ.options) %}
             {%- if not champ.valeur -%}
               {{ valeur_non_renseigne() }}
             {%- elif champ.type_donnee == 'uri' -%}

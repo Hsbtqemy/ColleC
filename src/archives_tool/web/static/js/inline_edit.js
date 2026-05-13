@@ -70,6 +70,13 @@
     async function envoyer() {
       if (envoye) return;
       envoye = true;
+      // No-op si la valeur n'a pas changé : un simple clic-out après
+      // un focus passif ne doit pas bumper la version en base.
+      if (input.value === valeurAvant) {
+        zoneValeur.innerHTML = contenuAvant;
+        ligne.dataset.editing = "0";
+        return;
+      }
       const formData = new FormData();
       formData.append("version", String(ctx.version));
       formData.append("valeur", input.value);

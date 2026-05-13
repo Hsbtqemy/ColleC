@@ -24,6 +24,7 @@ from archives_tool.affichage.formatters import (
     date_incertaine as _date_incertaine,
     temps_relatif,
 )
+from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -75,6 +76,10 @@ class FormulaireItem(BaseModel):
     cote: str = Field(default="")
     titre: str = Field(default="")
     fonds_id: int = Field(default=0)
+    # Verrou optimiste : version lue à l'ouverture du formulaire,
+    # comparée à la version actuelle au save. None à la création
+    # (l'item n'existe pas encore).
+    version: int | None = None
 
     description: str = Field(default="")
     notes_internes: str = Field(default="")
@@ -189,9 +194,7 @@ def _appliquer_formulaire(item: Item, formulaire: FormulaireItem) -> None:
     par les appelants (immuable à la modification)."""
     item.cote = formulaire.cote.strip()
     item.titre = formulaire.titre.strip()
-    item.etat_catalogage = (
-        formulaire.etat_catalogage or EtatCatalogage.BROUILLON.value
-    )
+    item.etat_catalogage = formulaire.etat_catalogage or EtatCatalogage.BROUILLON.value
     item.annee = formulaire.annee
     item.numero_tri = formulaire.numero_tri
     item.metadonnees = formulaire.metadonnees or None
@@ -233,9 +236,7 @@ def lire_item(db: Session, item_id: int) -> Item:
 def lire_item_par_cote(db: Session, cote: str, *, fonds_id: int) -> Item:
     """Lecture par cote dans un fonds donné. La cote n'étant unique que
     par fonds, `fonds_id` est obligatoire."""
-    item = db.scalar(
-        select(Item).where(Item.cote == cote, Item.fonds_id == fonds_id)
-    )
+    item = db.scalar(select(Item).where(Item.cote == cote, Item.fonds_id == fonds_id))
     if item is None:
         raise ItemIntrouvable(f"cote={cote!r} dans le fonds {fonds_id}")
     return item
@@ -494,7 +495,9 @@ def creer_item(
 
     fonds = db.get(Fonds, formulaire.fonds_id)
     if fonds is None:
-        raise ItemInvalide({"fonds_id": f"Le fonds {formulaire.fonds_id} n'existe pas."})
+        raise ItemInvalide(
+            {"fonds_id": f"Le fonds {formulaire.fonds_id} n'existe pas."}
+        )
 
     # Fail fast : si le fonds n'a pas de miroir (anomalie), pas la peine
     # de tenter l'insert.
@@ -538,13 +541,14 @@ def modifier_item(
 
     item = lire_item(db, item_id)
     if formulaire.fonds_id != item.fonds_id:
-        raise OperationItemInterdite(
-            "Le fonds d'un item ne peut pas être modifié."
-        )
+        raise OperationItemInterdite("Le fonds d'un item ne peut pas être modifié.")
+    if formulaire.version is not None and formulaire.version != item.version:
+        raise ConflitVersion(formulaire.version, item.version)
 
     _appliquer_formulaire(item, formulaire)
     item.modifie_par = modifie_par
     item.modifie_le = datetime.now()
+    item.version = (item.version or 1) + 1
 
     with garde_cote_unique(db, ItemInvalide, item.cote):
         db.commit()

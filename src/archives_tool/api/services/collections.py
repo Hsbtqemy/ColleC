@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -60,6 +61,9 @@ class FormulaireCollection(BaseModel):
 
     cote: str = Field(default="")
     titre: str = Field(default="")
+    # Verrou optimiste : None à la création, valeur lue à l'édition.
+    version: int | None = None
+
     description: str = Field(default="")
     description_publique: str = Field(default="")
     description_interne: str = Field(default="")
@@ -107,9 +111,7 @@ def formulaire_depuis_collection(col: Collection) -> FormulaireCollection:
     )
 
 
-def _appliquer_formulaire(
-    col: Collection, formulaire: FormulaireCollection
-) -> None:
+def _appliquer_formulaire(col: Collection, formulaire: FormulaireCollection) -> None:
     """Copie le formulaire sur le modèle ; chaînes vides → None pour
     les champs optionnels.
 
@@ -131,9 +133,7 @@ def _verifier_fonds(db: Session, fonds_id: int | None) -> None:
     if fonds_id is None:
         return
     if db.get(Fonds, fonds_id) is None:
-        raise CollectionInvalide(
-            {"fonds_id": f"Le fonds {fonds_id} n'existe pas."}
-        )
+        raise CollectionInvalide({"fonds_id": f"Le fonds {fonds_id} n'existe pas."})
 
 
 def lire_collection(db: Session, collection_id: int) -> Collection:
@@ -257,9 +257,13 @@ def modifier_collection(
     if formulaire.fonds_id != col.fonds_id:
         _verifier_fonds(db, formulaire.fonds_id)
 
+    if formulaire.version is not None and formulaire.version != col.version:
+        raise ConflitVersion(formulaire.version, col.version)
+
     _appliquer_formulaire(col, formulaire)
     col.modifie_par = modifie_par
     col.modifie_le = datetime.now()
+    col.version = (col.version or 1) + 1
 
     with garde_cote_unique(db, CollectionInvalide, col.cote):
         db.commit()
@@ -276,8 +280,7 @@ def supprimer_collection_libre(db: Session, collection_id: int) -> None:
     col = lire_collection(db, collection_id)
     if col.type_collection == TypeCollection.MIROIR.value:
         raise OperationCollectionInterdite(
-            "Une collection miroir ne peut pas être supprimée "
-            "indépendamment du fonds."
+            "Une collection miroir ne peut pas être supprimée indépendamment du fonds."
         )
     db.delete(col)
     db.commit()
@@ -333,9 +336,7 @@ def ajouter_items_a_collection(
         return 0
 
     # Items qui existent réellement.
-    ids_valides = set(
-        db.scalars(select(Item.id).where(Item.id.in_(item_ids))).all()
-    )
+    ids_valides = set(db.scalars(select(Item.id).where(Item.id.in_(item_ids))).all())
     # Items déjà liés à la collection.
     deja_lies = set(
         db.scalars(
@@ -387,9 +388,7 @@ def items_disponibles_pour_collection(
     terme_recherche = (recherche or "").strip()
     if terme_recherche:
         motif = f"%{terme_recherche}%"
-        base_stmt = base_stmt.where(
-            Item.cote.ilike(motif) | Item.titre.ilike(motif)
-        )
+        base_stmt = base_stmt.where(Item.cote.ilike(motif) | Item.titre.ilike(motif))
         filtres["recherche"] = terme_recherche
 
     total = db.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
@@ -413,9 +412,7 @@ def items_disponibles_pour_collection(
     )
 
 
-def retirer_item_de_collection(
-    db: Session, item_id: int, collection_id: int
-) -> None:
+def retirer_item_de_collection(db: Session, item_id: int, collection_id: int) -> None:
     """Retire un item d'une collection (idempotent).
 
     Pas d'erreur si la liaison n'existe pas. Permis sur les miroirs

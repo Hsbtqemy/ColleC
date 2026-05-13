@@ -60,6 +60,7 @@ from archives_tool.api.services.fonds import (
     lister_fonds,
     modifier_fonds,
 )
+from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services.items import (
     FormulaireItem,
     ItemIntrouvable,
@@ -201,6 +202,29 @@ def soumettre_modification_fonds(
     formulaire.cote = fonds.cote
     try:
         modifier_fonds(db, fonds.id, formulaire, modifie_par=utilisateur)
+    except ConflitVersion as e:
+        formulaire.version = fonds.version
+        return templates.TemplateResponse(
+            request,
+            "pages/fonds_modifier.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                fonds=fonds,
+                formulaire=formulaire,
+                erreurs={
+                    "_version": (
+                        "Ce fonds a été modifié entre-temps "
+                        f"(version {e.version_actuelle} en base, "
+                        f"vous avez {e.version_attendue}). Vérifiez "
+                        "les valeurs et resoumettez si vous souhaitez "
+                        "écraser."
+                    )
+                },
+                phases=list(PhaseChantier),
+            ),
+            status_code=409,
+        )
     except FondsInvalide as e:
         return templates.TemplateResponse(
             request,
@@ -402,8 +426,30 @@ def soumettre_collection_modifier(
     # `fonds_id` est immuable côté UI (cf. décision V0.9.0-alpha.1).
     formulaire.fonds_id = collection.fonds_id
     try:
-        modifier_collection(
-            db, collection.id, formulaire, modifie_par=utilisateur
+        modifier_collection(db, collection.id, formulaire, modifie_par=utilisateur)
+    except ConflitVersion as e:
+        formulaire.version = collection.version
+        return templates.TemplateResponse(
+            request,
+            "pages/collection_modifier.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                collection=collection,
+                formulaire=formulaire,
+                erreurs={
+                    "_version": (
+                        "Cette collection a été modifiée entre-temps "
+                        f"(version {e.version_actuelle} en base, "
+                        f"vous avez {e.version_attendue}). Vérifiez "
+                        "les valeurs et resoumettez si vous souhaitez "
+                        "écraser."
+                    )
+                },
+                fonds_query=fonds,
+                phases=list(PhaseChantier),
+            ),
+            status_code=409,
         )
     except CollectionInvalide as e:
         return templates.TemplateResponse(
@@ -502,9 +548,7 @@ def soumettre_ajouter_items(
 ) -> RedirectResponse:
     """Ajoute la sélection (multi-id) à la collection. Idempotent."""
     collection = _resoudre_collection_mutable(db, cote, fonds)
-    ajouter_items_a_collection(
-        db, collection.id, item_ids, ajoute_par=utilisateur
-    )
+    ajouter_items_a_collection(db, collection.id, item_ids, ajoute_par=utilisateur)
     return RedirectResponse(_url_collection(cote, fonds), status_code=303)
 
 
@@ -671,6 +715,36 @@ def soumettre_modification_item(
     formulaire.fonds_id = item.fonds_id
     try:
         modifier_item(db, item.id, formulaire, modifie_par=utilisateur)
+    except ConflitVersion as e:
+        # L'item a été modifié entre le rendu du formulaire et le POST.
+        # On re-rend avec un erreur visible et la version actuelle
+        # injectée pour que la ressoumission n'échoue plus si l'auteur
+        # accepte d'écraser. Le formulaire conserve les saisies de
+        # l'utilisateur pour qu'il puisse les ressoumettre sans tout
+        # retaper.
+        formulaire.version = item.version
+        return templates.TemplateResponse(
+            request,
+            "pages/item_modifier.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                item=item,
+                fonds=fonds_obj,
+                formulaire=formulaire,
+                erreurs={
+                    "_version": (
+                        "Cet item a été modifié entre-temps "
+                        f"(version {e.version_actuelle} en base, "
+                        f"vous avez {e.version_attendue}). Vérifiez "
+                        "les valeurs et resoumettez si vous souhaitez "
+                        "écraser."
+                    )
+                },
+                etats=list(EtatCatalogage),
+            ),
+            status_code=409,
+        )
     except ItemInvalide as e:
         return templates.TemplateResponse(
             request,
@@ -690,9 +764,7 @@ def soumettre_modification_item(
         # fonds_id immuable : ne devrait pas arriver vu l'override
         # ci-dessus, mais on rend l'erreur lisible si elle survient.
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return RedirectResponse(
-        f"/item/{cote}?fonds={fonds_obj.cote}", status_code=303
-    )
+    return RedirectResponse(f"/item/{cote}?fonds={fonds_obj.cote}", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -752,7 +824,9 @@ def _re_rendre_fonds_avec_erreurs_collab(
     )
 
 
-@router.post("/fonds/{cote}/collaborateurs", response_class=HTMLResponse, response_model=None)
+@router.post(
+    "/fonds/{cote}/collaborateurs", response_class=HTMLResponse, response_model=None
+)
 def ajouter_collaborateur_fonds_route(
     cote: str,
     request: Request,
@@ -801,9 +875,7 @@ def modifier_collaborateur_fonds_route(
             collaborateur_en_modification=collaborateur_id,
         )
     except CollaborateurFondsIntrouvable as e:
-        raise HTTPException(
-            status_code=404, detail="Collaborateur introuvable."
-        ) from e
+        raise HTTPException(status_code=404, detail="Collaborateur introuvable.") from e
     return RedirectResponse(f"/fonds/{cote}", status_code=303)
 
 

@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -52,6 +53,9 @@ class FormulaireFonds(BaseModel):
 
     cote: str = Field(default="")
     titre: str = Field(default="")
+    # Verrou optimiste : None à la création, valeur lue à l'édition.
+    version: int | None = None
+
     description: str = Field(default="")
     description_publique: str = Field(default="")
     description_interne: str = Field(default="")
@@ -190,7 +194,9 @@ def creer_fonds(
     une autre transaction l'a créée entretemps, l'IntegrityError du
     commit la rattrape.
     """
-    erreurs = valider_cote_titre(formulaire.cote, formulaire.titre, exiger_pattern=False)
+    erreurs = valider_cote_titre(
+        formulaire.cote, formulaire.titre, exiger_pattern=False
+    )
     if erreurs:
         raise FondsInvalide(erreurs)
 
@@ -227,14 +233,20 @@ def modifier_fonds(
     l'instant, le rattachement reste cohérent (même `fonds_id`) mais
     la miroir peut diverger.
     """
-    erreurs = valider_cote_titre(formulaire.cote, formulaire.titre, exiger_pattern=False)
+    erreurs = valider_cote_titre(
+        formulaire.cote, formulaire.titre, exiger_pattern=False
+    )
     if erreurs:
         raise FondsInvalide(erreurs)
 
     fonds = lire_fonds(db, fonds_id)
+    if formulaire.version is not None and formulaire.version != fonds.version:
+        raise ConflitVersion(formulaire.version, fonds.version)
+
     _appliquer_formulaire(fonds, formulaire)
     fonds.modifie_par = modifie_par
     fonds.modifie_le = datetime.now()
+    fonds.version = (fonds.version or 1) + 1
 
     with garde_cote_unique(db, FondsInvalide, fonds.cote):
         db.commit()

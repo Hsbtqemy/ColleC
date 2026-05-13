@@ -30,6 +30,20 @@
       action="/item/{{ item.cote }}/modifier?fonds={{ fonds.cote }}"
       style="max-width:680px;">
 
+  {# Verrou optimiste : on remonte la version lue à l'ouverture du
+     formulaire. Le service modifier_item compare avec la valeur en
+     base et lève ConflitVersion si quelqu'un a modifié entretemps. #}
+  <input type="hidden" name="version" value="{{ item.version }}">
+
+  {% if erreurs.get('_version') %}
+  <div role="alert"
+       style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;
+              padding:10px 14px;border-radius:6px;margin-bottom:18px;
+              font-size:13px;">
+    <strong>Conflit de version.</strong> {{ erreurs._version }}
+  </div>
+  {% endif %}
+
   <section style="margin-bottom:28px;">
     <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
       Identification

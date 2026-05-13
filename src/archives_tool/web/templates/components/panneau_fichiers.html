@@ -28,6 +28,7 @@
 
 {% macro panneau_fichiers(fichiers, position_courante, cote, fonds_cote) -%}
 <style>
+  /* Etat collapsed (defaut) : 36 px, fermeture immediate (pas de delay). */
   aside.panneau-fichiers {
     position: relative;
     flex: 0 0 auto;
@@ -36,12 +37,15 @@
     background: #fff;
     border-right: 1px solid rgba(0, 0, 0, 0.08);
     transition: width 200ms ease-out;
-    transition-delay: 200ms;
     overflow: hidden;
   }
+  /* Etat hover : 200 ms de delay a l'ouverture (anti-ouverture accidentelle),
+     fermeture immediate quand on quitte (le delay vient uniquement de :hover). */
   aside.panneau-fichiers:hover {
     width: 240px;
+    transition-delay: 200ms;
   }
+  /* Etat pinned : ouverture immediate, pas de delay. */
   #panneau-fichiers-pin:checked ~ aside.panneau-fichiers,
   aside.panneau-fichiers[data-pinned="true"] {
     width: 240px;
@@ -58,6 +62,17 @@
   #panneau-fichiers-pin:checked ~ aside.panneau-fichiers .panneau-fichiers-contenu,
   aside.panneau-fichiers[data-pinned="true"] .panneau-fichiers-contenu {
     opacity: 1;
+  }
+  /* Le label vertical "Fichiers . N" n'est utile qu'en etat collapsed :
+     on le masque des que le panneau s'ouvre, sinon il duplique le <h3>
+     horizontal du contenu. */
+  aside.panneau-fichiers .panneau-fichiers-label-vertical {
+    transition: opacity 100ms ease-out;
+  }
+  aside.panneau-fichiers:hover .panneau-fichiers-label-vertical,
+  #panneau-fichiers-pin:checked ~ aside.panneau-fichiers .panneau-fichiers-label-vertical,
+  aside.panneau-fichiers[data-pinned="true"] .panneau-fichiers-label-vertical {
+    opacity: 0;
   }
 </style>
 
@@ -76,8 +91,8 @@
     </svg>
   </label>
 
-  {# État collapsed : label vertical visible quand panneau étroit #}
-  <div class="absolute top-12 left-2"
+  {# État collapsed : label vertical, masque automatiquement a l'ouverture. #}
+  <div class="panneau-fichiers-label-vertical absolute top-12 left-2"
        style="writing-mode:vertical-rl;transform:rotate(180deg);
               font-size:11px;color:#9ca3af;letter-spacing:.05em;
               text-transform:uppercase;">

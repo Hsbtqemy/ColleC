@@ -174,9 +174,7 @@ def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
     typer.echo(f"Import {mode} — durée {rapport.duree_secondes:.2f}s")
     if rapport.fonds_cote:
         verbe = "créé" if rapport.fonds_cree else "existant"
-        suffixe = (
-            " + miroir personnalisée" if rapport.miroir_personnalisee else ""
-        )
+        suffixe = " + miroir personnalisée" if rapport.miroir_personnalisee else ""
         typer.echo(f"  Fonds {rapport.fonds_cote} ({verbe}){suffixe}")
     typer.echo(f"  Items créés : {rapport.items_crees}")
     typer.echo(f"  Fichiers ajoutés : {rapport.fichiers_ajoutes}")
@@ -317,9 +315,7 @@ def _afficher_rapport_export(rapport: RapportExport, verbose: bool) -> None:
     if rapport.chemin_sortie:
         typer.echo(f"  Sortie : {rapport.chemin_sortie}")
     if rapport.items_incomplets:
-        typer.echo(
-            f"  ⚠ Items incomplets : {len(rapport.items_incomplets)}", err=True
-        )
+        typer.echo(f"  ⚠ Items incomplets : {len(rapport.items_incomplets)}", err=True)
         if verbose:
             for cote, manques in rapport.items_incomplets:
                 typer.echo(f"    - {cote} : manque {', '.join(manques)}", err=True)
@@ -429,9 +425,7 @@ def cmd_montrer_fonds(
     cote: str | None = typer.Option(
         None, "--cote", "-c", help="Cote du fonds. Sans cote : liste tous les fonds."
     ),
-    format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format"
-    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher un fonds (liste sans --cote, détail avec --cote)."""
@@ -468,9 +462,7 @@ def cmd_montrer_collection(
         "-f",
         help="Cote du fonds (filtre la liste, ou désambiguïse une cote partagée).",
     ),
-    format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format"
-    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher les collections (liste ou détail)."""
@@ -488,9 +480,7 @@ def cmd_montrer_collection(
             try:
                 col = lire_collection_par_cote(session, cote, fonds_id=fonds_id)
             except CollectionIntrouvable:
-                typer.echo(
-                    f"Erreur : collection {cote!r} introuvable.", err=True
-                )
+                typer.echo(f"Erreur : collection {cote!r} introuvable.", err=True)
                 raise typer.Exit(1) from None
             detail = composer_page_collection(session, col)
             sortie = (
@@ -510,9 +500,7 @@ def cmd_montrer_item(
         "-f",
         help="Cote du fonds (obligatoire — la cote item n'est unique que par fonds).",
     ),
-    format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format"
-    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher la fiche détaillée d'un item."""
@@ -537,9 +525,7 @@ def cmd_montrer_item(
 @montrer.command("fichier")
 def cmd_montrer_fichier(
     fichier_id: int = typer.Argument(..., help="ID numérique du fichier."),
-    format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format"
-    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Afficher la fiche détaillée d'un fichier (par id global)."""
@@ -556,9 +542,7 @@ def cmd_montrer_fichier(
             .where(Fichier.id == fichier_id)
         )
         if fichier is None:
-            typer.echo(
-                f"Erreur : fichier id={fichier_id} introuvable.", err=True
-            )
+            typer.echo(f"Erreur : fichier id={fichier_id} introuvable.", err=True)
             raise typer.Exit(1)
         sortie = (
             rendu_json_fichier_detail(fichier)
@@ -641,9 +625,7 @@ def cmd_controler(
         collection_id: int | None = None
         if collection:
             try:
-                col = lire_collection_par_cote(
-                    session, collection, fonds_id=fonds_id
-                )
+                col = lire_collection_par_cote(session, collection, fonds_id=fonds_id)
             except CollectionIntrouvable:
                 typer.echo(
                     f"Erreur : collection {collection!r} introuvable.",
@@ -1177,14 +1159,22 @@ def cmd_demo_init(
     )
     console_mod.console.print(f"  {rapport.nb_fonds} fonds")
     console_mod.console.print(
-        f"  {rapport.nb_collections} collections "
-        "(miroirs + libres + transversale)"
+        f"  {rapport.nb_collections} collections (miroirs + libres + transversale)"
     )
     console_mod.console.print(f"  {rapport.nb_items} items rattachés")
     console_mod.console.print(f"  {rapport.nb_fichiers} fichiers référencés")
+    if rapport.chemin_derives:
+        console_mod.console.print(
+            f"  Placeholders JPEG : [valeur]{rapport.chemin_derives}[/valeur]"
+        )
+    if rapport.chemin_config:
+        console_mod.console.print(
+            f"  Config locale démo : [valeur]{rapport.chemin_config}[/valeur]"
+        )
     console_mod.console.print(
-        "Pour lancer l'interface sur cette base :\n"
+        "\nPour lancer l'interface sur cette base :\n"
         f"  ARCHIVES_DB={rapport.chemin_db} "
+        f"ARCHIVES_CONFIG={rapport.chemin_config} "
         "uv run uvicorn archives_tool.api.main:app --reload"
     )
 

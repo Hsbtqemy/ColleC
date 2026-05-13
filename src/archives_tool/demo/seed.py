@@ -23,6 +23,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+from PIL import Image, ImageDraw
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -61,6 +63,17 @@ class RapportDemo:
     nb_collections: int  # toutes types confondus (miroirs + libres + transversale)
     nb_items: int
     nb_fichiers: int
+    chemin_config: Path | None = None
+    chemin_derives: Path | None = None
+
+
+# Nom du placeholder partagé par tous les fichiers de la démo. Le même
+# JPEG est servi pour chaque vignette et chaque aperçu — la base démo
+# ne stocke aucun fichier source, mais la visionneuse a besoin d'une
+# cible d'image valide. Un seul fichier suffit (~50 Ko sur disque) et
+# tous les Fichier.apercu_chemin/vignette_chemin pointent dessus.
+NOM_VIGNETTE_DEMO = "demo_placeholder_vignette.jpg"
+NOM_APERCU_DEMO = "demo_placeholder_apercu.jpg"
 
 
 _ETATS_DISTRIBUTION: list[EtatCatalogage] = [
@@ -89,7 +102,9 @@ def _seed_fichiers(
     extension: str = "tif",
 ) -> None:
     """Crée des entrées Fichier pour un item (chemins fictifs ;
-    la base demo ne touche pas au disque)."""
+    la base demo ne touche pas au disque, mais pointe sur un
+    placeholder JPEG unique pour que la visionneuse ait quelque
+    chose à charger)."""
     nb = alea.randint(nb_min, nb_max)
     for ordre in range(1, nb + 1):
         nom = f"{item.cote}-{ordre:02d}.{extension}"
@@ -105,6 +120,9 @@ def _seed_fichiers(
                 hauteur_px=alea.randint(3000, 4800),
                 format=extension,
                 ajoute_par="seeder",
+                apercu_chemin=NOM_APERCU_DEMO,
+                vignette_chemin=NOM_VIGNETTE_DEMO,
+                derive_genere=True,
             )
         )
 
@@ -339,7 +357,13 @@ def _seed_fonds_conc(db: Session, alea: random.Random) -> tuple[Fonds, list[Item
         )
         items.append(item)
         _seed_fichiers(
-            db, item, alea, racine="scans_historiques", nb_min=1, nb_max=5, extension="tif"
+            db,
+            item,
+            alea,
+            racine="scans_historiques",
+            nb_min=1,
+            nb_max=5,
+            extension="tif",
         )
     return fonds, items
 
@@ -433,14 +457,77 @@ def _seed_collaborateurs(
 # ---------------------------------------------------------------------------
 
 
+def _generer_placeholders(dossier: Path) -> None:
+    """Écrit le placeholder vignette + aperçu sous `dossier` s'ils
+    manquent. Idempotent."""
+    dossier.mkdir(parents=True, exist_ok=True)
+    for nom, taille in [
+        (NOM_VIGNETTE_DEMO, (300, 400)),
+        (NOM_APERCU_DEMO, (1200, 1600)),
+    ]:
+        chemin = dossier / nom
+        if chemin.exists():
+            continue
+        img = Image.new("RGB", taille, (243, 240, 232))
+        draw = ImageDraw.Draw(img)
+        marge = max(8, taille[0] // 40)
+        draw.rectangle(
+            [(marge, marge), (taille[0] - marge, taille[1] - marge)],
+            outline=(195, 190, 180),
+            width=2,
+        )
+        # Texte centré sans charger de police personnalisée (la police
+        # par défaut de Pillow est minuscule mais suffit pour signaler
+        # que c'est un placeholder).
+        texte = "démo · ColleC"
+        bbox = draw.textbbox((0, 0), texte)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text(
+            ((taille[0] - tw) // 2, (taille[1] - th) // 2),
+            texte,
+            fill=(140, 135, 125),
+        )
+        img.save(chemin, "JPEG", quality=80)
+
+
+def _ecrire_config_demo(chemin_config: Path, dossier_derives: Path) -> None:
+    """Crée un `config_local.yaml` minimal pointé sur les placeholders.
+
+    Le contenu volontairement spartiate : juste de quoi servir les
+    dérivés synthétiques de la démo via `/derives/miniatures/...`.
+    """
+    chemin_config.parent.mkdir(parents=True, exist_ok=True)
+    chemin_config.write_text(
+        yaml.safe_dump(
+            {
+                "utilisateur": "démo",
+                "racines": {
+                    "miniatures": str(dossier_derives.resolve()).replace("\\", "/")
+                },
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
     """Construit la base de démonstration (création + remplissage).
 
     `seed` permet de rejouer la même base (tests déterministes) ou
-    d'en générer une variante.
+    d'en générer une variante. Produit également deux placeholders
+    JPEG sous `<chemin_db>.parent/demo_derives/` et un
+    `data/demo_config.yaml` pointant la racine `miniatures` dessus —
+    sans ça la visionneuse OpenSeadragon n'aurait rien à charger.
     """
     alea = random.Random(seed)
     chemin_db.parent.mkdir(parents=True, exist_ok=True)
+    dossier_derives = chemin_db.parent / "demo_derives"
+    _generer_placeholders(dossier_derives)
+    chemin_config = chemin_db.parent / "demo_config.yaml"
+    _ecrire_config_demo(chemin_config, dossier_derives)
+
     engine = creer_engine(chemin_db)
     Base.metadata.create_all(engine)
 
@@ -458,13 +545,12 @@ def peupler_base(chemin_db: Path, *, seed: int = 42) -> RapportDemo:
         rapport = RapportDemo(
             chemin_db=chemin_db,
             nb_fonds=session.scalar(select(func.count()).select_from(Fonds)) or 0,
-            nb_collections=session.scalar(
-                select(func.count()).select_from(Collection)
-            )
+            nb_collections=session.scalar(select(func.count()).select_from(Collection))
             or 0,
             nb_items=session.scalar(select(func.count()).select_from(Item)) or 0,
-            nb_fichiers=session.scalar(select(func.count()).select_from(Fichier))
-            or 0,
+            nb_fichiers=session.scalar(select(func.count()).select_from(Fichier)) or 0,
+            chemin_config=chemin_config,
+            chemin_derives=dossier_derives,
         )
 
     engine.dispose()

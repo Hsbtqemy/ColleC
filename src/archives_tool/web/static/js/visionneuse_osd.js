@@ -56,6 +56,11 @@
     const osd = OpenSeadragon({
       element: viz,
       tileSources: primary,
+      // Les icônes de contrôle (zoom, home, full page, rotation) sont
+      // servies par FastAPI sous /static/. Sans ce préfixe, OSD tente
+      // de les charger depuis `/images/` (chemin par défaut) et les
+      // boutons restent invisibles ou cassés.
+      prefixUrl: "/static/js/vendor/openseadragon/images/",
       showNavigationControl: true,
       showRotationControl: true,
       showFullPageControl: true,

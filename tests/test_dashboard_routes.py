@@ -11,7 +11,14 @@ from archives_tool.api.main import app
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-from archives_tool.models import Base, CollaborateurFonds, Collection, Fonds, Item, ItemCollection
+from archives_tool.models import (
+    Base,
+    CollaborateurFonds,
+    Collection,
+    Fonds,
+    Item,
+    ItemCollection,
+)
 from sqlalchemy import select as sa_select
 
 from _helpers import texte_visible as _texte_visible
@@ -30,9 +37,7 @@ def base_demo_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture
-def client_demo(
-    base_demo_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> TestClient:
+def client_demo(base_demo_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("ARCHIVES_DB", str(base_demo_path))
     return TestClient(app)
 
@@ -208,9 +213,7 @@ def test_collection_redirige_vers_fonds_si_meme_cote(
 def test_collection_meme_cote_avec_query_fonds_n_redirige_pas(
     client_demo: TestClient,
 ) -> None:
-    response = client_demo.get(
-        "/collection/HK?fonds=HK", follow_redirects=False
-    )
+    response = client_demo.get("/collection/HK?fonds=HK", follow_redirects=False)
     assert response.status_code == 200
     assert "miroir" in response.text
 
@@ -429,9 +432,7 @@ def test_collaborateur_fonds_anti_confused_deputy(
 
 
 def test_modifier_collection_libre_charge(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/FA-OEUVRES/modifier?fonds=FA"
-    )
+    response = client_demo.get("/collection/FA-OEUVRES/modifier?fonds=FA")
     assert response.status_code == 200
     assert "Œuvres" in response.text
     assert 'value="FA-OEUVRES"' in response.text  # cote pré-affichée
@@ -531,9 +532,7 @@ def test_collection_lecture_composants_riches(client_demo: TestClient) -> None:
 
 
 def test_collection_pagination(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/FA?fonds=FA&par_page=50&page=1"
-    )
+    response = client_demo.get("/collection/FA?fonds=FA&par_page=50&page=1")
     assert response.status_code == 200
     # FA a 167 items dans sa miroir → pagination active. Le composant
     # `pagination.html` rend « 1–50 sur 167 ».
@@ -542,18 +541,14 @@ def test_collection_pagination(client_demo: TestClient) -> None:
 
 
 def test_collection_filtre_etat(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/FA-OEUVRES?fonds=FA&etat=brouillon"
-    )
+    response = client_demo.get("/collection/FA-OEUVRES?fonds=FA&etat=brouillon")
     assert response.status_code == 200
 
 
 def test_collection_filtre_etat_multi_csv(client_demo: TestClient) -> None:
     """V0.9.2-beta.2 : le filtre état accepte des valeurs multiples
     en CSV (cumul OR), et les pastilles s'affichent."""
-    response = client_demo.get(
-        "/collection/FA?fonds=FA&etat=brouillon,a_verifier"
-    )
+    response = client_demo.get("/collection/FA?fonds=FA&etat=brouillon,a_verifier")
     assert response.status_code == 200
     # Pastilles présentes : « État: Brouillon ✕ » + « État: À vérifier ✕ »
     assert "Filtres actifs" in response.text
@@ -584,9 +579,7 @@ def test_collection_filtre_etat_multi_cles_repetees(
 
 def test_collection_filtre_etat_invalide_ignore(client_demo: TestClient) -> None:
     """Un état hors enum est silencieusement ignoré (pas de 400)."""
-    response = client_demo.get(
-        "/collection/FA?fonds=FA&etat=inexistant"
-    )
+    response = client_demo.get("/collection/FA?fonds=FA&etat=inexistant")
     assert response.status_code == 200
     # Aucune pastille rendue puisque le filtre est invalide.
     assert "Filtres actifs" not in response.text
@@ -594,9 +587,7 @@ def test_collection_filtre_etat_invalide_ignore(client_demo: TestClient) -> None
 
 def test_collection_filtre_periode(client_demo: TestClient) -> None:
     """Filtre par plage d'années."""
-    response = client_demo.get(
-        "/collection/HK?fonds=HK&annee_de=1969&annee_a=1972"
-    )
+    response = client_demo.get("/collection/HK?fonds=HK&annee_de=1969&annee_a=1972")
     assert response.status_code == 200
     assert "Filtres actifs" in response.text
     assert "Période" in response.text
@@ -618,24 +609,18 @@ def test_collection_transversale_montre_colonne_fonds(
 
 
 def test_picker_charge(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/FA-OEUVRES/items/picker?fonds=FA"
-    )
+    response = client_demo.get("/collection/FA-OEUVRES/items/picker?fonds=FA")
     assert response.status_code == 200
     assert "Ajouter" in response.text
 
 
 def test_picker_miroir_403(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/HK/items/picker?fonds=HK"
-    )
+    response = client_demo.get("/collection/HK/items/picker?fonds=HK")
     assert response.status_code == 403
 
 
 def test_picker_transversale_filtre_fonds(client_demo: TestClient) -> None:
-    response = client_demo.get(
-        "/collection/TEMOIG/items/picker?fonds_filter=HK"
-    )
+    response = client_demo.get("/collection/TEMOIG/items/picker?fonds_filter=HK")
     assert response.status_code == 200
     # Au moins un item HK proposé.
     assert "HK-" in response.text
@@ -648,9 +633,7 @@ def test_picker_recherche(client_demo: TestClient) -> None:
     assert response.status_code == 200
 
 
-def test_ajouter_items_a_collection(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_ajouter_items_a_collection(client_demo: TestClient, db_demo_factory) -> None:
     """Ajout multi-id idempotent vers une transversale."""
     with db_demo_factory() as s:
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
@@ -679,15 +662,11 @@ def test_ajouter_items_a_collection(
             assert s.get(ItemCollection, (iid, coll_id)) is not None
 
 
-def test_ajouter_items_idempotent(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_ajouter_items_idempotent(client_demo: TestClient, db_demo_factory) -> None:
     """Le second submit ne crée pas de doublon."""
     with db_demo_factory() as s:
         fonds_fa = s.scalar(sa_select(Fonds).where(Fonds.cote == "FA"))
-        un_item = s.scalar(
-            sa_select(Item).where(Item.fonds_id == fonds_fa.id).limit(1)
-        )
+        un_item = s.scalar(sa_select(Item).where(Item.fonds_id == fonds_fa.id).limit(1))
         iid = un_item.id
 
     # Premier ajout (l'item est déjà dans la miroir, mais on l'ajoute
@@ -721,13 +700,9 @@ def test_ajouter_items_a_miroir_403(client_demo: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_retirer_item_de_libre(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_retirer_item_de_libre(client_demo: TestClient, db_demo_factory) -> None:
     with db_demo_factory() as s:
-        oeuvres = s.scalar(
-            sa_select(Collection).where(Collection.cote == "FA-OEUVRES")
-        )
+        oeuvres = s.scalar(sa_select(Collection).where(Collection.cote == "FA-OEUVRES"))
         liaison = s.scalar(
             sa_select(ItemCollection)
             .where(ItemCollection.collection_id == oeuvres.id)
@@ -756,9 +731,7 @@ def test_retirer_item_de_miroir_garde_dans_fonds(
     with db_demo_factory() as s:
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
         fonds_hk_id = fonds_hk.id
-        un_item = s.scalar(
-            sa_select(Item).where(Item.fonds_id == fonds_hk_id).limit(1)
-        )
+        un_item = s.scalar(sa_select(Item).where(Item.fonds_id == fonds_hk_id).limit(1))
         iid = un_item.id
 
     response = client_demo.post(
@@ -774,9 +747,7 @@ def test_retirer_item_de_miroir_garde_dans_fonds(
         assert item.fonds_id == fonds_hk_id
 
 
-def test_retirer_item_idempotent(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_retirer_item_idempotent(client_demo: TestClient, db_demo_factory) -> None:
     """Retirer un item déjà absent : pas d'erreur."""
     with db_demo_factory() as s:
         un_item = s.scalar(sa_select(Item).limit(1))
@@ -851,15 +822,18 @@ def test_page_item_lecture_visionneuse_navigation(
     assert "HK-001-02.tif" in response.text
 
 
-def test_page_item_lecture_visionneuse_pas_d_apercu(
+def test_page_item_lecture_visionneuse_affiche_placeholder_demo(
     client_demo: TestClient,
 ) -> None:
-    """Sur la base demo (chemins fictifs, aperçus non générés), la
-    visionneuse affiche le fallback : message + lien télécharger."""
+    """Sur la base demo, tous les fichiers pointent sur un JPEG
+    placeholder unique sous `/derives/miniatures/`. La visionneuse
+    OpenSeadragon est donc instanciée avec cette source plutôt que
+    de tomber sur le message « Aucun aperçu disponible »."""
     response = client_demo.get("/item/HK-001?fonds=HK")
     assert response.status_code == 200
-    assert "Aucun aperçu disponible" in response.text
-    assert "archives-tool deriver" in response.text
+    assert "demo_placeholder_apercu.jpg" in response.text
+    assert "visionneuse-osd" in response.text
+    assert "Aucun aperçu disponible" not in response.text
 
 
 def test_page_item_lecture_clamp_position_si_depasse(
@@ -886,8 +860,12 @@ def test_page_item_lecture_cartouche_sections(client_demo: TestClient) -> None:
     """Les 4 sections du cartouche sont présentes (`<details>` repliable)."""
     response = client_demo.get("/item/HK-001?fonds=HK")
     assert response.status_code == 200
-    for section in ("Identification", "Champs personnalisés",
-                    "Identifiants externes", "Description"):
+    for section in (
+        "Identification",
+        "Champs personnalisés",
+        "Identifiants externes",
+        "Description",
+    ):
         assert section in response.text
 
 
@@ -913,7 +891,7 @@ def test_page_item_lecture_hooks_edition_inline_dormants(
     assert response.status_code == 200
     assert 'data-edit-cle="cote"' in response.text
     assert 'data-edit-cle="titre"' in response.text
-    assert 'data-edit-type=' in response.text
+    assert "data-edit-type=" in response.text
 
 
 def test_page_item_panneau_fichiers_checkbox_avant_aside(
@@ -1027,9 +1005,7 @@ def test_servir_fichier_anti_confused_deputy(
         # Récupère un fichier rattaché à HK-001.
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
         item_hk1 = s.scalar(
-            sa_select(Item).where(
-                Item.fonds_id == fonds_hk.id, Item.cote == "HK-001"
-            )
+            sa_select(Item).where(Item.fonds_id == fonds_hk.id, Item.cote == "HK-001")
         )
         from archives_tool.models import Fichier as FichierModel
 
@@ -1074,9 +1050,7 @@ def test_modifier_item_sans_fonds_422(client_demo: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_post_modifier_item_succes(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_post_modifier_item_succes(client_demo: TestClient, db_demo_factory) -> None:
     response = client_demo.post(
         "/item/HK-001/modifier?fonds=HK",
         data={
@@ -1095,9 +1069,7 @@ def test_post_modifier_item_succes(
     with db_demo_factory() as s:
         fonds_hk = s.scalar(sa_select(Fonds).where(Fonds.cote == "HK"))
         item = s.scalar(
-            sa_select(Item).where(
-                Item.fonds_id == fonds_hk.id, Item.cote == "HK-001"
-            )
+            sa_select(Item).where(Item.fonds_id == fonds_hk.id, Item.cote == "HK-001")
         )
         assert item.titre == "Numéro 1 (modifié par test)"
         assert item.etat_catalogage == "valide"

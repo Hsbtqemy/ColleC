@@ -152,11 +152,23 @@
       ligne.dataset.editing = "0";
     }
 
-    input.addEventListener("blur", envoyer);
     if (input.tagName === "SELECT") {
-      // Pour un <select>, le change fait foi : l'utilisateur a fait
-      // son choix, on sauve sans attendre un blur (qui peut tarder).
+      // Pour un <select>, on ne s'appuie PAS sur blur : la popup native
+      // du dropdown (Chrome / Firefox sur Windows) prend brievement le
+      // focus quand on l'ouvre (Space, F4, clic), declenchant un blur
+      // parasite qui fermait le select avant que l'utilisateur ait pu
+      // choisir. On sauve sur change (l'utilisateur a vraiment choisi)
+      // et on detecte le click outside via mousedown sur document.
       input.addEventListener("change", envoyer);
+      const clickOutside = function (event) {
+        if (!ligne.contains(event.target)) {
+          document.removeEventListener("mousedown", clickOutside);
+          annuler();
+        }
+      };
+      document.addEventListener("mousedown", clickOutside);
+    } else {
+      input.addEventListener("blur", envoyer);
     }
     input.addEventListener("keydown", function (event) {
       const t = input.tagName;

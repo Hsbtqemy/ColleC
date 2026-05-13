@@ -138,9 +138,41 @@ class FondsArborescence:
     nb_items: int
     collection_miroir: CollectionResume | None
     collections_libres: tuple[CollectionResume, ...]
+    nb_fichiers: int = 0
     repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
     modifie_par: str | None = None
     modifie_le: datetime | None = None
+
+    # ---- Contrat avec la macro `tableau_collections` ---------------
+    # Le dashboard rend les fonds comme rangées du tableau_collections
+    # paramétré (handoff). Les @property ci-dessous projettent les
+    # champs internes sur le schéma attendu par la macro :
+    # cote / titre / phase / sous_collections / nb_items / nb_fichiers
+    # / repartition / modifie_par / modifie_depuis / href.
+
+    @property
+    def href(self) -> str:
+        return f"/fonds/{self.cote}"
+
+    @property
+    def phase(self) -> str | None:
+        # Les fonds ne portent pas de phase (c'est une notion collection).
+        return None
+
+    @property
+    def sous_collections(self) -> int:
+        n = len(self.collections_libres)
+        if self.collection_miroir is not None:
+            n += 1
+        return n
+
+    @property
+    def repartition(self) -> dict[str, int]:
+        return self.repartition_etats
+
+    @property
+    def modifie_depuis(self) -> str:
+        return temps_relatif(self.modifie_le)
 
 
 @dataclass(frozen=True)
@@ -312,6 +344,15 @@ def composer_dashboard(db: Session) -> DashboardResume:
     # globalement), mais `nb_items_valides` se dérive lui de la
     # répartition par fonds en sommant l'état VALIDE.
     nb_fichiers: int = db.scalar(select(func.count(Fichier.id))) or 0
+    # nb_fichiers par fonds (pour le tableau_collections du dashboard) :
+    # un GROUP BY sur Fichier ⨝ Item, pas un N+1.
+    nb_fichiers_par_fonds: dict[int, int] = dict(
+        db.execute(
+            select(Item.fonds_id, func.count(Fichier.id))
+            .join(Fichier, Fichier.item_id == Item.id)
+            .group_by(Item.fonds_id)
+        ).all()
+    )
     nb_items_valides = sum(
         rep.get(EtatCatalogage.VALIDE.value, 0)
         for rep in repartition_par_fonds.values()
@@ -383,6 +424,7 @@ def composer_dashboard(db: Session) -> DashboardResume:
                 nb_items=nb_items_par_fonds.get(f.id, 0),
                 collection_miroir=miroir,
                 collections_libres=tuple(libres),
+                nb_fichiers=nb_fichiers_par_fonds.get(f.id, 0),
                 repartition_etats=repartition_par_fonds.get(f.id, _repartition_vide()),
                 modifie_par=f_mod_par,
                 modifie_le=f_mod_le,

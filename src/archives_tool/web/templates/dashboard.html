@@ -47,17 +47,22 @@
   </div>
 </section>
 
-{# ----- Section Fonds (arborescence dépliable enrichie) ------------- #}
+{# ----- Section Fonds (tableau plat — handoff tableau_collections) -- #}
+{# Chaque fonds est rendu comme une rangée du tableau_collections du
+   handoff. Le contrat de schéma est exposé via les @property de
+   `FondsArborescence` (href, phase, sous_collections, repartition,
+   modifie_depuis) pour éviter un adaptateur explicite côté template. #}
+{% from 'components/tableau_collections.html' import tableau_collections %}
 <section class="mb-10">
   <h2 class="text-lg font-medium mb-3">
     Fonds <span class="text-gray-400 text-base">({{ resume.stats.nb_fonds }})</span>
   </h2>
   {% if resume.fonds %}
-    <ul class="space-y-3">
-      {% for fonds in resume.fonds %}
-        {% include "components/tableau_fonds_enrichi.html" %}
-      {% endfor %}
-    </ul>
+    {{ tableau_collections({
+      'id': 'tableau-fonds-dashboard',
+      'sort': 'modifie',
+      'collections': resume.fonds,
+    }) }}
   {% else %}
     <p class="text-sm text-gray-500">
       Aucun fonds dans cette base. Importez un tableur ou créez-en un.

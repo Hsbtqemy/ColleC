@@ -90,10 +90,13 @@ def test_dashboard_affiche_5_fonds_demo(client_demo: TestClient) -> None:
     assert "Fonds Aínsa" in response.text
 
 
-def test_dashboard_collections_libres_ainsa(client_demo: TestClient) -> None:
+def test_dashboard_compte_sous_collections(client_demo: TestClient) -> None:
+    """Dashboard V0.9.x : le tableau_collections affiche les fonds en
+    rangées avec un compteur `N sous-collections`. Le détail (titres
+    des libres) vit sur la page /fonds/{cote}, plus sur le dashboard."""
     response = client_demo.get("/")
-    for titre in ("Œuvres", "Correspondance", "Documentation", "Photographies"):
-        assert titre in response.text
+    # Fonds Aínsa a 1 miroir + 4 libres = 5 sous-collections.
+    assert "5 sous-collections" in response.text
 
 
 def test_dashboard_section_transversale_visible(client_demo: TestClient) -> None:
@@ -105,11 +108,13 @@ def test_dashboard_section_transversale_visible(client_demo: TestClient) -> None
 
 
 def test_dashboard_compteurs_corrects(client_demo: TestClient) -> None:
+    """Le tableau_collections du handoff formate les nombres avec une
+    espace fine comme séparateur de milliers (« 1 234 »). Pour les
+    petites valeurs (< 1000), c'est juste le chiffre dans une cellule
+    `font-tabular` — on vérifie la présence du chiffre dans le HTML."""
     response = client_demo.get("/")
-    assert "40 items" in response.text
-    assert "167 items" in response.text
-    assert "39 items" in response.text
-    assert "18 items" in response.text
+    for n in ("40", "167", "39", "18"):
+        assert n in response.text
 
 
 def test_dashboard_lien_fonds(client_demo: TestClient) -> None:
@@ -117,11 +122,16 @@ def test_dashboard_lien_fonds(client_demo: TestClient) -> None:
     assert 'href="/fonds/HK"' in response.text
 
 
-def test_dashboard_lien_collection_libre_avec_query_fonds(
+def test_dashboard_lien_fonds_pour_chaque_rangee(
     client_demo: TestClient,
 ) -> None:
+    """Le dashboard utilise désormais `tableau_collections` paramétré
+    sur les fonds : la cellule cote linke `/fonds/{cote}`. Les liens
+    vers les collections libres se trouvent sur la page fonds elle-même
+    (V0.9 hierarchie fonds-first)."""
     response = client_demo.get("/")
-    assert 'href="/collection/FA-OEUVRES?fonds=FA"' in response.text
+    for cote in ("HK", "FA", "RDM", "MAR", "CONC-1789"):
+        assert f'href="/fonds/{cote}"' in response.text
 
 
 def test_dashboard_lien_transversale_sans_query_fonds(

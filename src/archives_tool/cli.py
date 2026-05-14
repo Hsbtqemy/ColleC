@@ -1363,7 +1363,32 @@ def cmd_collections_supprimer(
         typer.echo(f"✓ Collection {cote} supprimée.")
 
 
+def _forcer_utf8_stdout() -> None:
+    """Force stdout/stderr en UTF-8 si l'encodage par défaut ne l'est
+    pas (cas typique : PowerShell sous Windows qui utilise cp1252).
+
+    Sans ça, `controler` et `montrer` plantent en `UnicodeEncodeError`
+    sur les symboles Rich (✓ ⚠ etc.). `errors="replace"` est défensif
+    pour les chars qui resteraient inencodables — on n'interrompt
+    jamais une commande à cause d'un glyphe.
+    """
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            enc = (stream.encoding or "").lower()
+        except AttributeError:
+            continue
+        if enc and enc != "utf-8":
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, OSError):
+                # Stream redirigé / wrappé : pas de reconfigure dispo.
+                pass
+
+
 def main() -> None:
+    _forcer_utf8_stdout()
     app()
 
 

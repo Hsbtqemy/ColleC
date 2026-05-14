@@ -89,11 +89,13 @@
     Collections du fonds <span class="text-gray-400">({{ detail.collections_resume | length }})</span>
   </h2>
   {% if detail.collections_resume %}
+    {# `cible_url` omis : le tri cote serveur n'est pas implemente sur
+       /fonds/{cote}, le macro rend des entetes non cliquables (sinon
+       HTMX recupere la page entiere et l'imbrique dans la table). #}
     {{ tableau_collections({
       'collections': detail.collections_resume,
       'sort': 'titre',
       'ordre': 'asc',
-      'cible_url': '/fonds/' ~ detail.fonds.cote,
       'id': 'collections-fonds-' ~ detail.fonds.cote,
     }) }}
   {% else %}
@@ -107,30 +109,37 @@
 
 <section class="mb-8">
   <h2 class="text-lg font-medium mb-2">Collaborateurs</h2>
-  {% if detail.collaborateurs_par_role %}
-    {% for role, collabs in detail.collaborateurs_par_role.items() %}
-      <h3 class="text-sm font-medium text-gray-700 mt-3">{{ role | libelle_role }}</h3>
-      <ul class="text-sm">
-        {% for c in collabs %}
-          <li class="flex items-baseline justify-between py-1 border-b border-gray-100">
-            <span>
-              {{ c.nom }}
-              {% if c.periode %}
-                <span class="text-gray-500 text-xs ml-2">· {{ c.periode }}</span>
-              {% endif %}
-            </span>
-            <form method="post"
-                  action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
-                  onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
-                  class="inline">
-              <button type="submit" class="text-xs text-red-600 hover:underline">
-                Supprimer
-              </button>
-            </form>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endfor %}
+  {# Une ligne par personne, ses roles affiches en chips. Avant V0.9.1
+     la liste etait groupee par role, ce qui dupliquait une personne
+     multi-roles et plaçait plusieurs boutons Supprimer pour la meme
+     entite — chaque clic supprimant tous les roles d'un coup. #}
+  {% if detail.collaborateurs %}
+    <ul class="text-sm">
+      {% for c in detail.collaborateurs %}
+        <li class="flex items-baseline justify-between py-2 border-b border-gray-100 gap-3">
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <span class="font-medium">{{ c.nom }}</span>
+            {% for r in c.roles %}
+              <span class="inline-flex items-center rounded text-xs"
+                    style="padding:2px 8px;background:#f3f4f6;color:#374151;">
+                {{ r | libelle_role }}
+              </span>
+            {% endfor %}
+            {% if c.periode %}
+              <span class="text-gray-500 text-xs">· {{ c.periode }}</span>
+            {% endif %}
+          </div>
+          <form method="post"
+                action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
+                onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
+                class="inline shrink-0">
+            <button type="submit" class="text-xs text-red-600 hover:underline">
+              Supprimer
+            </button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
   {% else %}
     <p class="text-sm text-gray-500">Aucun collaborateur sur ce fonds.</p>
   {% endif %}

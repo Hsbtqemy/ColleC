@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, selectinload
 from archives_tool.affichage.formatters import temps_relatif
 from archives_tool.api.services.collaborateurs_fonds import (
     CollaborateurFondsResume,
-    lister_collaborateurs_fonds_par_role,
+    lister_collaborateurs_fonds,
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
@@ -562,7 +562,7 @@ class FondsDetail:
     nb_fichiers: int
     collections_resume: tuple[CollectionResume, ...]
     items_recents: tuple[ItemResume, ...]
-    collaborateurs_par_role: dict[RoleCollaborateur, list[CollaborateurFondsResume]]
+    collaborateurs: tuple[CollaborateurFondsResume, ...] = ()
     repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
     modifie_par: str | None = None
     modifie_le: datetime | None = None
@@ -574,6 +574,22 @@ class FondsDetail:
             if c.est_miroir:
                 return c
         return None
+
+    @property
+    def collaborateurs_par_role(
+        self,
+    ) -> dict[RoleCollaborateur, list[CollaborateurFondsResume]]:
+        """Groupe les collaborateurs par role pour les rendus qui veulent
+        cette vue (CLI montrer). L'UI Fonds, elle, prefere la liste plate
+        avec chips pour eviter qu'une personne multi-roles apparaisse
+        plusieurs fois — chaque doublon ayant un bouton Supprimer qui
+        supprime tout."""
+        groupes: dict[RoleCollaborateur, list[CollaborateurFondsResume]] = {}
+        for role in RoleCollaborateur:
+            membres = [c for c in self.collaborateurs if role in c.roles]
+            if membres:
+                groupes[role] = membres
+        return groupes
 
 
 def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
@@ -733,7 +749,7 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         nb_fichiers=nb_fichiers_fonds,
         collections_resume=collections_resume,
         items_recents=items_recents,
-        collaborateurs_par_role=lister_collaborateurs_fonds_par_role(db, fonds.id),
+        collaborateurs=tuple(lister_collaborateurs_fonds(db, fonds.id)),
         repartition_etats=repartition_fonds,
         modifie_par=f_mod_par,
         modifie_le=f_mod_le,

@@ -13,14 +13,16 @@
   function ouvrir() { drawer.dataset.ouvert = "true"; }
   function fermer() { drawer.dataset.ouvert = "false"; }
 
-  // Boutons « Filtrer » (déjà dans tableau_items / partial fichiers).
-  document.querySelectorAll('[data-action="filter"]').forEach((btn) => {
-    btn.addEventListener("click", ouvrir);
-  });
-
-  // Boutons internes au drawer (×, Annuler).
-  drawer.querySelectorAll("[data-panneau-filtres-fermer]").forEach((btn) => {
-    btn.addEventListener("click", fermer);
+  // Delegation sur document plutot qu'attache par-bouton : HTMX
+  // remplace `#tableau-items` apres un tri/pagination, ce qui efface
+  // l'ancien bouton « Filtrer ». Une delegation au document survit
+  // a tous les swaps sans re-cablage.
+  document.addEventListener("click", (e) => {
+    if (e.target.closest('[data-action="filter"]')) {
+      ouvrir();
+    } else if (e.target.closest("[data-panneau-filtres-fermer]")) {
+      fermer();
+    }
   });
 
   // Fermeture par Escape.

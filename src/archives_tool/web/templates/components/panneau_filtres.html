@@ -17,10 +17,14 @@
 <aside id="panneau-filtres" data-ouvert="false"
        style="position:fixed;top:0;right:0;height:100vh;width:360px;background:#fff;
               border-left:1px solid rgba(0,0,0,0.16);box-shadow:-2px 0 8px rgba(0,0,0,0.04);
-              z-index:50;display:flex;flex-direction:column;transform:translateX(100%);
+              z-index:50;display:flex;flex-direction:column;
               transition:transform .2s ease;">
 
+  {# Le transform initial vit dans la regle CSS et non en inline pour
+     que le selecteur [data-ouvert="true"] puisse le surcharger
+     (sinon l'inline gagne en specificite et le drawer reste hors ecran). #}
   <style>
+    #panneau-filtres { transform: translateX(100%); }
     #panneau-filtres[data-ouvert="true"] { transform: translateX(0); }
   </style>
 

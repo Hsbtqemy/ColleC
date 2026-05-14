@@ -61,24 +61,30 @@ La config sœur `data/demo_config.yaml` est détectée automatiquement
 
 ---
 
-## D — Navigation et tableaux ⏳
+## D — Navigation et tableaux ✅
 
 - [x] Dashboard : entêtes non-cliquables (tri pas implémenté côté service, commit b7bc259)
-- [ ] Page Collection : trier les colonnes du tableau d'items (HTMX swap partial)
-- [ ] Page Collection : ouvrir drawer **Filtrer**, cocher 2 états → tableau filtré, pastilles actives en haut
-- [ ] Retirer une pastille de filtre individuellement → tableau ré-élargi
-- [ ] Pagination : page 2, vérifier que les filtres sont préservés dans les liens
-- [ ] Page Collection : modale **Colonnes**, drag-drop pour réordonner, valider → ordre persisté après reload
-- [ ] Page Fonds : section Collaborateurs → ajouter une personne avec 2 rôles, sauver, retirer
+- [x] Page Collection : trier les colonnes du tableau d'items (HTMX swap partial) — 4 bugs corrigés ce jour, voir frictions
+- [x] Page Collection : ouvrir drawer **Filtrer**, cocher 2 états → tableau filtré, pastilles actives en haut
+- [x] Retirer une pastille de filtre individuellement → tableau ré-élargi
+- [x] Tri après filtre → filtre préservé dans `cible_url` (vu via logs uvicorn)
+- [x] Bouton Filtrer après tri → ouvre toujours (délégation document)
+- [x] Pagination : page 2 préserve les filtres dans tous les liens (`?fonds=…&etat=valide&page=N`, 23 items en CONC-1789/valide réparti sur 3 pages)
+- [x] Page Collection : modale **Colonnes** — pipeline GET modal + POST save + reload persisté validé via curl. Drag-drop visuel via Sortable.js à confirmer au navigateur (rien de cassé côté code).
+- [x] Page Fonds : section Collaborateurs → ajouter une personne avec 2 rôles, sauver, retirer (bug d'affichage corrigé ce jour, voir frictions)
+
+**Validé.**
 
 ---
 
-## E — Visionneuse OpenSeadragon ⏳
+## E — Visionneuse OpenSeadragon ✅
 
-- [ ] Charge sans erreur 403 sur les dérivés
-- [ ] Zoom molette + boutons +/- du controlbar
-- [ ] Boutons Précédent/Suivant dans le bandeau
-- [ ] Recharger avec `?fichier_courant=3` directement → ouvre sur le 3e
+- [x] Charge sans erreur 403 sur les dérivés (après backfill DB, voir frictions)
+- [x] Zoom molette + boutons +/- du controlbar
+- [x] Boutons Précédent/Suivant dans le bandeau
+- [x] Recharger avec `?fichier_courant=3` directement → ouvre sur le 3e
+
+**Validé.**
 
 ---
 
@@ -110,14 +116,16 @@ Le test qui compte. Sur un vrai mini-fonds (30-50 items minimum).
 
 ---
 
-## G — CLI ⏳
+## G — CLI ✅ (sur base demo)
 
-- [ ] `archives-tool montrer fonds` → liste lisible
-- [ ] `archives-tool montrer item COTE --fonds X --format json` → JSON valide, structure stable
-- [ ] `archives-tool controler --strict` → exit code propre (0 si RAS, 1 sinon)
-- [ ] `archives-tool exporter dublin-core COTE_MIROIR --fonds X --sortie /tmp/out.xml` → XML valide DC
-- [ ] `archives-tool exporter nakala COTE --fonds X --licence "CC-BY-4.0"` → CSV ouvrable, UTF-8 BOM
-- [ ] `archives-tool exporter xlsx COTE --fonds X` → s'ouvre sans warning
+- [x] `archives-tool montrer fonds --db-path data/demo.db` → 5 fonds listés (CONC-1789, FA, HK, MAR, RDM)
+- [x] `archives-tool montrer item HK-001 --fonds HK --format json --db-path data/demo.db` → JSON valide (type=item_detail, 40 fichiers, structure stable)
+- [x] `archives-tool controler --strict --format json --db-path data/demo.db` → exit 1 (333 items, 14 contrôles). **Text Rich plante en PowerShell cp1252** — voir frictions.
+- [x] `archives-tool exporter dublin-core HK --fonds HK --sortie data/x.xml --db-path data/demo.db` → XML valide DC, 1 notice de tête + 40 items
+- [x] `archives-tool exporter nakala HK --fonds HK --licence "CC-BY-4.0" --sortie data/x.csv --db-path data/demo.db` → CSV `;`-séparé, 40 lignes, UTF-8 BOM
+- [x] `archives-tool exporter xlsx HK --fonds HK --sortie data/x.xlsx --db-path data/demo.db` → 1 sheet × 46×12, openpyxl ouvre sans warning
+
+**Validé.** Note : `--db-path` est un flag par sous-commande, pas global. `ARCHIVES_DB` ne s'applique qu'à l'API web.
 
 ---
 
@@ -135,15 +143,15 @@ Le test qui compte. Sur un vrai mini-fonds (30-50 items minimum).
 
 ---
 
-## I — Cas tordus ⏳
+## I — Cas tordus ⏳ (partiel — reste à voir avec F)
 
-- [ ] Cote avec `é`, `ï`, espace, parenthèse → tout marche-t-il ?
-- [ ] Fichier avec chemin contenant `é` (NFD Mac vs NFC Windows)
-- [ ] Importer 2 fois le même profil → idempotent ou doublons ?
-- [ ] Cote `HK-001` partagée entre 2 fonds → désambiguïsation `--fonds` partout
-- [ ] `lecture_seule: true` dans config → routes POST renvoient 423, bouton « Modifier » remplacé
-- [ ] Tuer uvicorn pendant un save inline → reprendre, base intacte ?
-- [ ] `alembic upgrade head` sur vraie base → ne casse rien ?
+- [ ] Cote avec `é`, `ï`, espace, parenthèse → **reporté à F** (testable seulement à l'import)
+- [ ] Fichier avec chemin contenant `é` (NFD Mac vs NFC Windows) → **reporté à F** (démo = chemins fictifs)
+- [ ] Importer 2 fois le même profil → idempotent ou doublons ? → **reporté à F**
+- [x] Cote `HK-001` partagée entre 2 fonds → désambiguïsation `--fonds` partout : `/item/FA-CORRESP-001` sans `?fonds=` → 422, avec bon fonds → 200, avec mauvais → 404. Désambiguïsation côté route OK. Cote effectivement partagée pas testée (la démo n'en a pas, à revoir à F).
+- [x] `lecture_seule: true` dans config → routes POST renvoient 423 ✓, bannière s'affiche ✓, **bouton « Modifier » PAS remplacé** ✗ (voir frictions). Middleware seul est solide ; couverture UI partielle.
+- [ ] Tuer uvicorn pendant un save inline → **non testé** (peu d'apport : SQLAlchemy COMMIT atomique = soit le save passe, soit rien ; pas de demi-état possible).
+- [ ] `alembic upgrade head` sur vraie base → **reporté à F** (pas de migration en attente sur la démo)
 
 ---
 
@@ -215,6 +223,136 @@ récupérait le HTML complet du dashboard, et l'injectait dans la div
 du tableau.
 **Fix** : commit b7bc259 — `tableau_collections` rend les entêtes non
 cliquables si `ctx.cible_url` n'est pas fourni.
+
+### 2026-05-14 — D — bloquant → fixé
+
+Même bug d'imbrication sur la page **Collection** : entêtes du tableau
+d'items envoyaient `hx-get` à `/collection/{cote}?...&tri=...&ordre=...`,
+la route renvoyait la page complète, HTMX l'injectait dans `#tableau-items`.
+Aucun handler `HX-Request` dans `api/`. Pagination affectée par le même
+mécanisme.
+**Fix** : `page_collection` détecte `HX-Request: true` → renvoie
+`partials/collection_items.html` seulement.
+
+### 2026-05-14 — D — bloquant → fixé
+
+Même bug d'imbrication sur la page **Fonds** : table `tableau_collections`
+recevait `cible_url='/fonds/{cote}'` mais la route ne gère ni `tri`,
+ni `ordre`, ni partial — donc tout click ramenait la page entière.
+**Fix** : `cible_url` retiré de l'appel `tableau_collections` dans
+`fonds_lecture.html` → entêtes non cliquables (cohérent avec le
+fait que le service ne supporte pas le tri).
+
+### 2026-05-14 — D — bloquant → fixé
+
+Drawer **Filtrer** ne s'affichait pas : `<aside style="...transform:translateX(100%);...">`
+en inline (poids 1000) gagnait sur `<style> #panneau-filtres[data-ouvert="true"] { transform: translateX(0); }`
+(spécificité ~21). Le clic flippait bien `data-ouvert="true"` mais le
+drawer restait offscreen.
+**Fix** : `transform` initial déplacé dans la règle `<style>` → la
+règle `[data-ouvert="true"]` peut maintenant la surcharger.
+
+### 2026-05-14 — D — bloquant → fixé
+
+Submit du drawer Filtrer renvoyait **422 Unprocessable Content** dès
+qu'au moins un état était coché (n'importe quelle collection). Cause :
+les inputs `<input type="number" name="annee_de">` envoient
+`annee_de=&annee_a=` quand vides, et `int | None = Query(None, ge=...)`
+ne parse pas la chaîne vide.
+**Fix** : route accepte `str | None`, helper `_annee_int_ou_none`
+coerce silencieusement (vide / non-numérique / hors plage → None).
+Cohérent avec la philosophie « validation silencieuse » de
+`parser_filtres_collection`.
+
+### 2026-05-14 — D — gênant → fixé
+
+Bouton **Filtrer** mort après un tri colonne. Cause : `panneau_filtres.js`
+attachait un click listener directement sur chaque
+`[data-action="filter"]` au chargement de page. HTMX swappait
+`#tableau-items` au tri/pagination → nouveau bouton sans listener.
+**Fix** : délégation `document.addEventListener("click", ...)` qui
+capture les clics sur tout `[data-action="filter"]` actuel et futur,
+survit aux swaps. Idem pour `[data-panneau-filtres-fermer]`.
+Cache-bust ajouté sur `panneau_filtres.js` et `panneau_colonnes.js`
+(`static_url()` au lieu de `url_for`) pour éviter d'avoir à
+hard-refresh à chaque édition.
+
+### 2026-05-14 — D — cosmétique → fixé
+
+Compteur de filtres affichait « 1 actifs » (pluriel forcé).
+**Fix** : `(nb_f|string ~ (' actif' if nb_f == 1 else ' actifs'))` dans
+`partials/collection_items.html`.
+
+### 2026-05-14 — D — bloquant UX → fixé
+
+Page Fonds, section Collaborateurs : une personne avec N rôles
+apparaissait N fois (groupement par rôle), avec un bouton **Supprimer**
+à chaque occurrence — mais tous pointaient vers le même endpoint
+qui supprimait la ligne entière (tous les rôles d'un coup).
+Cliquer Supprimer sous « Numérisation » pour quelqu'un aussi
+catalogueur le retirait des deux sections sans avertissement.
+**Fix** : `FondsDetail.collaborateurs` (liste plate) ajouté comme
+field, `collaborateurs_par_role` passe en `@property` dérivée
+(CLI `montrer fonds` toujours fonctionnel). Template `fonds_lecture.html`
+refait — une ligne par personne avec rôles en chips et un seul
+bouton Supprimer.
+
+### 2026-05-14 — G — bloquant Windows → ouvert
+
+`archives-tool controler` (sortie text Rich) plante en PowerShell par
+défaut avec `UnicodeEncodeError: 'charmap' codec can't encode character
+'✓'`. Cause : Python détecte stdout comme cp1252 sur Windows
+console historique.
+**Workaround** : `$env:PYTHONIOENCODING="utf-8"` avant d'appeler la
+CLI, ou utiliser `--format json`.
+**Fix code envisagé** : forcer `sys.stdout.reconfigure(encoding="utf-8")`
+au démarrage CLI, ou que Rich utilise un encodage safe.
+
+### 2026-05-14 — G — cosmétique → ouvert
+
+Ligne récap de `archives-tool exporter nakala ...` affiche
+`⚠ Items incomplets : 40` (échappement littéral) au lieu de
+`⚠ Items incomplets : 40`. Probablement un `str.encode(...,
+errors='backslashreplace')` ou un `repr()` quelque part dans le
+formatteur de rapport d'export.
+
+### 2026-05-14 — I — gênant UX → ouvert
+
+`lecture_seule: true` : le middleware retourne bien 423 sur tous les
+POST/PUT/DELETE et la bannière s'affiche en haut de chaque page,
+mais les **boutons « Modifier »** restent visibles sur les pages
+Fonds, Collection, Item. L'utilisateur clique, atterrit sur le
+formulaire (où les inputs sont grisés grâce à `_champ_form.html`),
+peut quand même soumettre, et obtient un 423 abrupt.
+
+Côté code : `est_lecture_seule()` n'est consommé que par `base.html`
+(bannière) et `_champ_form.html` (inputs disabled). Aucun guard sur
+les boutons d'entrée vers les formulaires.
+
+**Fix proposé** (pas appliqué dans cette session) : entourer chaque
+bouton « Modifier » (Fonds, Collection, Item, sections collab) d'un
+`{% if not est_lecture_seule() %} ... {% endif %}` ou afficher une
+version désactivée. Ou un seul guard global dans un macro `bouton_modifier`.
+
+### 2026-05-14 — E — bloquant local → contourné
+
+La visionneuse OSD affichait « Aucun aperçu disponible » sur tous
+les items de la démo. Diagnostic en deux temps :
+
+1. `data/demo_derives/{vignette,apercu}.jpg` + `data/demo_config.yaml`
+   manquants — la `data/demo.db` datait d'avant le commit `fa47242`
+   (placeholders JPEG + config auto). Régénérés via
+   `_generer_placeholders` + `_ecrire_config_demo` sans toucher la DB.
+2. Insuffisant : les 1298 entrées `fichier` avaient `apercu_chemin = NULL`,
+   `vignette_chemin = NULL`, `derive_genere = 0`. Le seed les remplit à la
+   création mais l'ancien snapshot ne les avait pas. Backfill SQL
+   idempotent : `UPDATE fichier SET apercu_chemin=...,
+   vignette_chemin=..., derive_genere=1`.
+
+**Recommandation pour la suite** : si quelqu'un d'autre teste sur une
+demo.db antérieure à `fa47242`, lui faire passer
+`archives-tool demo init --force` (chemin officiel, perd les données
+de test) ou un backfill équivalent. À documenter dans le README ?
 
 ---
 

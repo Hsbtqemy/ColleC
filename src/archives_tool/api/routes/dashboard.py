@@ -99,6 +99,24 @@ def _contexte_base(
     return {"nom_base": nom_base, "utilisateur": utilisateur, **extra}
 
 
+def _annee_int_ou_none(v: str | None) -> int | None:
+    """Coerce une valeur de champ annee (chaine ou None) en `int | None`.
+
+    Le drawer Filtrer envoie `annee_de=&annee_a=` quand les inputs sont
+    vides, et l'utilisateur peut taper n'importe quoi. On accepte
+    silencieusement et on retombe sur None pour tout ce qui n'est pas
+    un entier dans [1000, 2100] — coherent avec la philosophie de
+    validation silencieuse des filtres collection.
+    """
+    if v is None or v.strip() == "":
+        return None
+    try:
+        n = int(v.strip())
+    except ValueError:
+        return None
+    return n if 1000 <= n <= 2100 else None
+
+
 # ---------------------------------------------------------------------------
 # Dashboard + listes
 # ---------------------------------------------------------------------------
@@ -322,8 +340,13 @@ def page_collection(
     type_coar: list[str] | None = Query(
         None, description="Filtre par type COAR (mêmes formats que `etat`)."
     ),
-    annee_de: int | None = Query(None, ge=1000, le=2100),
-    annee_a: int | None = Query(None, ge=1000, le=2100),
+    # `str | None` plutot que `int | None` : le drawer Filtrer soumet
+    # `annee_de=&annee_a=` quand les champs sont vides, ce que la
+    # validation int rejette en 422. On parse + filtre les valeurs
+    # invalides en silence (coherent avec `parser_filtres_collection`
+    # qui ignore les filtres hors options).
+    annee_de: str | None = Query(None),
+    annee_a: str | None = Query(None),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -342,8 +365,8 @@ def page_collection(
         etat=etat,
         langue=langue,
         type_coar=type_coar,
-        annee_de=annee_de,
-        annee_a=annee_a,
+        annee_de=_annee_int_ou_none(annee_de),
+        annee_a=_annee_int_ou_none(annee_a),
         options=detail.options_filtres,
     )
     listage = lister_items_collection(
@@ -360,6 +383,24 @@ def page_collection(
         annee_a=filtres.annee_a,
     )
     resolu = charger_colonnes_actives(db, utilisateur, collection.id, "items")
+    # HTMX swap (tri colonne, pagination) : on ne renvoie que le partial
+    # du tableau, pas la page entiere. Sinon HTMX injecte la page complete
+    # dans #tableau-items et tout s'imbrique.
+    if request.headers.get("HX-Request") == "true":
+        return templates.TemplateResponse(
+            request,
+            "partials/collection_items.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                items=listage,
+                cote=collection.cote,
+                colonnes_actives=resolu.actives,
+                collection_id=collection.id,
+                fonds_query=fonds,
+                filtres=filtres,
+            ),
+        )
     return templates.TemplateResponse(
         request,
         "pages/collection_lecture.html",

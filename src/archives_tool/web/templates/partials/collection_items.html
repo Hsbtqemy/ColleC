@@ -41,7 +41,7 @@
       'page': items.page, 'per_page': items.par_page,
       'total': items.total, 'pages': items.pages,
     },
-    'compteur_filtres': (nb_f|string ~ ' actifs') if nb_f > 0 else 'aucun',
+    'compteur_filtres': (nb_f|string ~ (' actif' if nb_f == 1 else ' actifs')) if nb_f > 0 else 'aucun',
     'nb_colonnes_actives': noms_cols|length,
     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
   }) }}

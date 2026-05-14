@@ -238,6 +238,9 @@
 
 {% block scripts %}
   <script src="{{ url_for('static', path='js/vendor/sortable/Sortable.min.js') }}"></script>
-  <script src="{{ url_for('static', path='js/panneau_filtres.js') }}"></script>
-  <script src="{{ url_for('static', path='js/panneau_colonnes.js') }}"></script>
+  {# `static_url` ajoute ?v=<mtime> pour bust le cache navigateur ;
+     sans ca, un edit du JS n'est pas pris en compte tant que
+     l'utilisateur n'a pas fait un hard refresh. #}
+  <script src="{{ static_url('js/panneau_filtres.js') }}"></script>
+  <script src="{{ static_url('js/panneau_colonnes.js') }}"></script>
 {% endblock %}

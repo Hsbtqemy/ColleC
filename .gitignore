@@ -14,6 +14,7 @@ data/*.log
 data/derivatives/
 data/demo_derives/
 data/demo_config.yaml
+data/_import_tmp/
 
 config_local.yaml
 .env

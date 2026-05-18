@@ -44,6 +44,15 @@ class TableurInvalide(Exception):
     """Le fichier uploadé n'est pas un tableur exploitable."""
 
 
+class MappingInvalide(Exception):
+    """Le mapping colonnes → champs proposé n'est pas exploitable."""
+
+
+# Cibles sentinelles du mapping (hors champs dédiés / metadonnées).
+CIBLE_META = "__meta__"      # → metadonnees.<slug de la colonne>
+CIBLE_IGNORE = "__ignore__"  # colonne non importée
+
+
 def creer_session(db: Session, utilisateur: str) -> SessionImport:
     """Crée une session d'import vierge à l'étape `tableur`."""
     session = SessionImport(utilisateur=utilisateur, etape="tableur")
@@ -177,6 +186,109 @@ def enregistrer_fonds(
     session.collection_miroir_data = collection_miroir_data
     session.modifie_le = datetime.now()
     _avancer_etape(session, "mapping")
+    db.commit()
+
+
+def construire_mapping(
+    colonnes: list[str], cibles: list[str]
+) -> dict[str, str]:
+    """Construit le dict de mapping `champ_cible → colonne` du profil.
+
+    `colonnes` et `cibles` sont alignés par position (la cible i
+    s'applique à la colonne i). Les cibles sentinelles `CIBLE_IGNORE`
+    (colonne écartée) et `CIBLE_META` (→ `metadonnees.<slug>`, slug
+    dédoublonné) sont traitées à part.
+
+    Lève `MappingInvalide` si deux colonnes visent le même champ dédié
+    ou si la `cote` — requise par l'import — n'est mappée nulle part.
+    """
+    from archives_tool.profils.generateur import _slugifier
+
+    if len(colonnes) != len(cibles):
+        raise MappingInvalide(
+            "Nombre de cibles incohérent avec le nombre de colonnes."
+        )
+    mapping: dict[str, str] = {}
+    slugs_pris: set[str] = set()
+    for colonne, cible in zip(colonnes, cibles):
+        if cible == CIBLE_IGNORE:
+            continue
+        if cible == CIBLE_META:
+            slug = _slugifier(colonne)
+            base, n = slug, 2
+            while slug in slugs_pris:
+                slug = f"{base}_{n}"
+                n += 1
+            slugs_pris.add(slug)
+            mapping[f"metadonnees.{slug}"] = colonne
+            continue
+        # Champ dédié : un seul mapping possible.
+        if cible in mapping:
+            raise MappingInvalide(
+                f"Deux colonnes visent le champ « {cible} » : "
+                f"« {mapping[cible]} » et « {colonne} »."
+            )
+        mapping[cible] = colonne
+
+    if "cote" not in mapping:
+        raise MappingInvalide(
+            "Au moins une colonne doit être mappée vers la cote — "
+            "c'est l'identifiant des items importés."
+        )
+    return mapping
+
+
+def cibles_proposees(session: SessionImport) -> list[str]:
+    """Cible de mapping proposée pour chaque colonne du tableur, dans
+    l'ordre de `colonnes_detectees`.
+
+    Si un mapping a déjà été enregistré (l'utilisateur revient sur
+    l'étape), on le restitue. Sinon on applique l'heuristique de
+    détection. Les colonnes vers `metadonnees.*` rendent `CIBLE_META`.
+    """
+    colonnes = list(session.colonnes_detectees or [])
+    col_vers_cible: dict[str, str] = {}
+
+    source = session.mappings
+    if source:
+        for cle, colonne in source.items():
+            col_vers_cible[colonne] = (
+                CIBLE_META if cle.startswith("metadonnees.") else cle
+            )
+        defaut = CIBLE_IGNORE
+    else:
+        from archives_tool.profils.generateur import proposer_mapping
+
+        for cible, colonne, _detecte in proposer_mapping(colonnes):
+            col_vers_cible[colonne] = (
+                CIBLE_META if cible.startswith("metadonnees.") else cible
+            )
+        defaut = CIBLE_META
+
+    return [col_vers_cible.get(c, defaut) for c in colonnes]
+
+
+def enregistrer_mapping(
+    db: Session, session: SessionImport, mapping: dict[str, str]
+) -> None:
+    """Stocke le mapping colonnes → champs, puis avance à l'étape
+    de résolution des fichiers."""
+    session.mappings = mapping
+    session.modifie_le = datetime.now()
+    _avancer_etape(session, "fichiers")
+    db.commit()
+
+
+def enregistrer_resolution(
+    db: Session,
+    session: SessionImport,
+    configuration: dict[str, Any] | None,
+) -> None:
+    """Stocke la configuration de résolution des fichiers (ou `None`
+    pour un import métadonnées seules), puis avance à l'étape aperçu."""
+    session.configuration_fichiers = configuration
+    session.modifie_le = datetime.now()
+    _avancer_etape(session, "apercu")
     db.commit()
 
 

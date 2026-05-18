@@ -1,6 +1,7 @@
-{# Étape 3 du wizard — stub. Le mapping colonnes → champs et la
-   résolution des fichiers arrivent à la sous-étape 3 de développement.
-   Variable : `session`. #}
+{# Étape 3 du wizard : mapping colonnes du tableur → champs item.
+   Variables : `session`, `lignes` (list[(colonne, cible)]),
+   `cibles_dediees` (list[(valeur, libellé)]), `cible_meta`,
+   `cible_ignore`, `erreur` (str | None). #}
 {% extends "base.html" %}
 {% from 'components/import_wizard.html' import wizard_etapes %}
 
@@ -19,33 +20,72 @@
 
   {{ wizard_etapes(session) }}
 
-  <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
-    Mapping des colonnes
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Associer les colonnes aux champs
   </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.5;">
+    Chaque colonne du tableur va vers un champ d'item, une métadonnée
+    personnalisée, ou est ignorée. La <strong>cote</strong> est
+    obligatoire — c'est l'identifiant des items.
+  </p>
 
-  <div class="bg-white rounded-lg"
-       style="border:1px solid rgba(0,0,0,0.08);padding:28px;">
-    <p style="font-size:13px;color:#6b7280;line-height:1.5;">
-      Le fonds <strong>{{ (session.fonds_data or {}).get('cote', '?') }}</strong>
-      est enregistré. L'écran de mapping colonne → champ et la
-      résolution des fichiers arrivent à la prochaine sous-étape de
-      développement.
-    </p>
-    {% if session.colonnes_detectees %}
-      <p style="font-size:12px;color:#9ca3af;margin-top:12px;">
-        {{ session.colonnes_detectees | length }} colonnes prêtes à mapper :
-        {{ session.colonnes_detectees | join(', ') }}
-      </p>
-    {% endif %}
-  </div>
+  {% if erreur %}
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#991b1b;
+                margin-bottom:16px;">
+      {{ erreur }}
+    </div>
+  {% endif %}
 
-  <div style="margin-top:18px;">
-    <a href="/import/{{ session.id }}/fonds" class="rounded hover:bg-gray-50"
-       style="padding:6px 14px;font-size:13px;color:#374151;
-              border:1px solid rgba(0,0,0,0.10);">
-      ← Fonds
-    </a>
-  </div>
+  <form method="post" action="/import/{{ session.id }}/mapping"
+        class="bg-white rounded-lg"
+        style="border:1px solid rgba(0,0,0,0.08);padding:8px 0;">
+    {% for colonne, cible in lignes %}
+      <div class="flex items-center gap-3 border-b last:border-b-0"
+           style="border-color:rgba(0,0,0,0.06);padding:8px 16px;">
+        <span class="font-mono grow min-w-0"
+              style="font-size:13px;color:#1f1f1f;overflow:hidden;
+                     text-overflow:ellipsis;white-space:nowrap;">
+          {{ colonne }}
+        </span>
+        <span aria-hidden="true" style="color:#d1d5db;">→</span>
+        <select name="cible"
+                style="font-size:13px;padding:4px 6px;border:1px solid #d1d5db;
+                       border-radius:3px;background:white;flex:0 0 220px;">
+          {% for valeur, libelle in cibles_dediees %}
+            <option value="{{ valeur }}"
+                    {{ 'selected' if cible == valeur else '' }}>
+              {{ libelle }}
+            </option>
+          {% endfor %}
+          <option value="{{ cible_meta }}"
+                  {{ 'selected' if cible == cible_meta else '' }}>
+            Métadonnée personnalisée
+          </option>
+          <option value="{{ cible_ignore }}"
+                  {{ 'selected' if cible == cible_ignore else '' }}>
+            — Ne pas importer
+          </option>
+        </select>
+      </div>
+    {% endfor %}
+
+    <div class="flex items-center gap-2" style="padding:16px;">
+      <a href="/import/{{ session.id }}/fonds"
+         class="rounded hover:bg-gray-50"
+         style="padding:8px 14px;font-size:13px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);">
+        ← Fonds
+      </a>
+      <button type="submit"
+              class="rounded hover:bg-gray-50"
+              style="padding:8px 16px;font-size:13px;font-weight:500;
+                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                     background:#fff;">
+        Fichiers →
+      </button>
+    </div>
+  </form>
 
 </div>
 {% endblock %}

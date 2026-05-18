@@ -1,0 +1,53 @@
+{# Étape 5 du wizard — stub. L'aperçu dry-run et l'exécution de
+   l'import arrivent à la sous-étape 4 de développement.
+   Variable : `session`. #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — aperçu — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
+    Aperçu et exécution
+  </h1>
+
+  <div class="bg-white rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:28px;">
+    <p style="font-size:13px;color:#6b7280;line-height:1.5;">
+      Mapping et résolution des fichiers enregistrés. L'aperçu dry-run
+      (validation, comptage des items et fichiers résolus) et le bouton
+      d'exécution arrivent à la prochaine sous-étape de développement.
+    </p>
+    <p style="font-size:12px;color:#9ca3af;margin-top:12px;">
+      {{ (session.mappings or {}) | length }} colonnes mappées
+      {%- if session.configuration_fichiers %}
+        · fichiers via la racine
+        « {{ session.configuration_fichiers.get('racine') }} »
+      {%- else %}
+        · import de métadonnées seules
+      {%- endif %}
+    </p>
+  </div>
+
+  <div style="margin-top:18px;">
+    <a href="/import/{{ session.id }}/fichiers" class="rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);">
+      ← Fichiers
+    </a>
+  </div>
+
+</div>
+{% endblock %}

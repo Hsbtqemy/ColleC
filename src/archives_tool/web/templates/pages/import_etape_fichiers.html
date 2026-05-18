@@ -1,0 +1,123 @@
+{# Étape 4 du wizard : résolution des fichiers (optionnelle).
+   Variables : `session`, `racines` (list[str] — racines configurées),
+   `config` (dict racine/motif_chemin/type_motif déjà saisis),
+   `erreur` (str | None). #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — fichiers — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Rattacher les fichiers scannés
+  </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.5;">
+    Optionnel. Indiquez où trouver les scans pour les rattacher aux
+    items. Laissez la racine vide pour un import de métadonnées seules.
+  </p>
+
+  {% if erreur %}
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#991b1b;
+                margin-bottom:16px;">
+      {{ erreur }}
+    </div>
+  {% endif %}
+
+  {% if not racines %}
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#92400e;
+                margin-bottom:16px;">
+      Aucune racine n'est configurée dans <span class="font-mono">config_local.yaml</span>.
+      L'import se fera sans fichiers — vous pourrez les rattacher plus tard.
+    </div>
+  {% endif %}
+
+  <form method="post" action="/import/{{ session.id }}/fichiers"
+        class="bg-white rounded-lg"
+        style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
+
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:4px;">
+      Racine des scans
+    </label>
+    <p style="font-size:12px;color:#9ca3af;margin-bottom:6px;">
+      Nom logique défini dans la config locale. Vide = sans fichiers.
+    </p>
+    <select name="racine"
+            style="width:100%;font-size:13px;padding:6px 8px;
+                   border:1px solid #d1d5db;border-radius:3px;
+                   background:white;margin-bottom:16px;">
+      <option value="">— Aucune (métadonnées seules)</option>
+      {% for r in racines %}
+        <option value="{{ r }}"
+                {{ 'selected' if config.get('racine') == r else '' }}>
+          {{ r }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:4px;">
+      Motif de chemin
+    </label>
+    <p style="font-size:12px;color:#9ca3af;margin-bottom:6px;">
+      Template (ex. <span class="font-mono">{cote}/*.tif</span>) ou
+      expression régulière selon le type ci-dessous.
+    </p>
+    <input type="text" name="motif_chemin"
+           value="{{ config.get('motif_chemin', '') }}"
+           placeholder="{cote}/*.tif"
+           style="width:100%;font-size:13px;padding:6px 8px;
+                  border:1px solid #d1d5db;border-radius:3px;
+                  margin-bottom:16px;">
+
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:6px;">
+      Type de motif
+    </label>
+    <div class="flex items-center gap-4" style="margin-bottom:20px;">
+      {% set tm = config.get('type_motif', 'template') %}
+      <label style="font-size:13px;color:#374151;">
+        <input type="radio" name="type_motif" value="template"
+               {{ 'checked' if tm != 'regex' else '' }}>
+        Template
+      </label>
+      <label style="font-size:13px;color:#374151;">
+        <input type="radio" name="type_motif" value="regex"
+               {{ 'checked' if tm == 'regex' else '' }}>
+        Expression régulière
+      </label>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <a href="/import/{{ session.id }}/mapping"
+         class="rounded hover:bg-gray-50"
+         style="padding:8px 14px;font-size:13px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);">
+        ← Mapping
+      </a>
+      <button type="submit"
+              class="rounded hover:bg-gray-50"
+              style="padding:8px 16px;font-size:13px;font-weight:500;
+                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                     background:#fff;">
+        Aperçu →
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

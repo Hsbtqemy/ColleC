@@ -19,23 +19,35 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.deps import (
+    get_db,
+    get_nom_base,
+    get_racines,
+    get_utilisateur_courant,
+)
 from archives_tool.api.routes._helpers import (
     charger_session_import_ou_404,
     contexte_base as _contexte_base,
 )
 from archives_tool.api.services.import_web import (
+    CIBLE_IGNORE,
+    CIBLE_META,
     TAILLE_MAX_TABLEUR,
+    MappingInvalide,
     TableurInvalide,
     abandonner_session,
     attacher_tableur,
+    cibles_proposees,
+    construire_mapping,
     creer_session,
     enregistrer_fonds,
+    enregistrer_mapping,
+    enregistrer_resolution,
     lister_sessions_en_cours,
 )
 from archives_tool.api.templating import templates
 from archives_tool.models import ETAPES_IMPORT, SessionImport
-from archives_tool.profils.schema import FondsProfil
+from archives_tool.profils.schema import FondsProfil, ResolutionFichiers
 
 router = APIRouter()
 
@@ -302,8 +314,46 @@ def soumettre_fonds(
 
 
 # ---------------------------------------------------------------------------
-# Étape 3 — mapping (stub : livré en sous-étape 3)
+# Étape 3 — mapping colonnes → champs
 # ---------------------------------------------------------------------------
+
+# Champs item proposables comme cible d'une colonne. `__meta__` et
+# `__ignore__` (sentinelles de import_web) sont rendus à part.
+_CIBLES_MAPPING: tuple[tuple[str, str], ...] = (
+    ("cote", "Cote"),
+    ("titre", "Titre"),
+    ("numero", "Numéro"),
+    ("date", "Date"),
+    ("annee", "Année"),
+    ("type_coar", "Type COAR"),
+    ("langue", "Langue"),
+    ("description", "Description"),
+    ("notes_internes", "Notes internes"),
+    ("doi_nakala", "DOI Nakala"),
+    ("doi_collection_nakala", "DOI collection"),
+)
+
+
+def _contexte_mapping(
+    nom_base: str,
+    utilisateur: str,
+    session: SessionImport,
+    cibles: list[str],
+    erreur: str | None,
+) -> dict[str, object]:
+    """Contexte du template mapping : colonnes + cible choisie pour
+    chacune (alignées par position)."""
+    colonnes = list(session.colonnes_detectees or [])
+    return _contexte_base(
+        nom_base,
+        utilisateur,
+        session=session,
+        lignes=list(zip(colonnes, cibles)),
+        cibles_dediees=_CIBLES_MAPPING,
+        cible_meta=CIBLE_META,
+        cible_ignore=CIBLE_IGNORE,
+        erreur=erreur,
+    )
 
 
 @router.get(
@@ -324,5 +374,155 @@ def etape_mapping(
     return templates.TemplateResponse(
         request,
         "pages/import_etape_mapping.html",
+        _contexte_mapping(
+            nom_base, utilisateur, session, cibles_proposees(session), None
+        ),
+    )
+
+
+@router.post(
+    "/import/{session_id}/mapping",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_mapping(
+    session_id: int,
+    request: Request,
+    cible: Annotated[list[str], Form()] = [],  # noqa: B006 — FastAPI relit Form().
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    session = charger_session_import_ou_404(db, session_id)
+    colonnes = list(session.colonnes_detectees or [])
+    try:
+        mapping = construire_mapping(colonnes, cible)
+    except MappingInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_mapping.html",
+            _contexte_mapping(nom_base, utilisateur, session, cible, str(e)),
+            status_code=400,
+        )
+    enregistrer_mapping(db, session, mapping)
+    return RedirectResponse(f"/import/{session.id}/fichiers", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Étape 4 — résolution des fichiers (optionnelle)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/import/{session_id}/fichiers",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def etape_fichiers(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+    racines: dict = Depends(get_racines),
+) -> HTMLResponse | RedirectResponse:
+    session = charger_session_import_ou_404(db, session_id)
+    if not _etape_accessible(session, "fichiers"):
+        return _rediriger_vers_etape_courante(session)
+    return templates.TemplateResponse(
+        request,
+        "pages/import_etape_fichiers.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            session=session,
+            racines=sorted(racines.keys()),
+            config=session.configuration_fichiers or {},
+            erreur=None,
+        ),
+    )
+
+
+@router.post(
+    "/import/{session_id}/fichiers",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_fichiers(
+    session_id: int,
+    request: Request,
+    racine: Annotated[str, Form()] = "",
+    motif_chemin: Annotated[str, Form()] = "",
+    type_motif: Annotated[str, Form()] = "template",
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+    racines: dict = Depends(get_racines),
+) -> HTMLResponse | RedirectResponse:
+    session = charger_session_import_ou_404(db, session_id)
+
+    def _rerendre(erreur: str) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_fichiers.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                session=session,
+                racines=sorted(racines.keys()),
+                config={
+                    "racine": racine,
+                    "motif_chemin": motif_chemin,
+                    "type_motif": type_motif,
+                },
+                erreur=erreur,
+            ),
+            status_code=400,
+        )
+
+    # Racine vide → import métadonnées seules (étape sautée).
+    if not racine.strip():
+        enregistrer_resolution(db, session, None)
+        return RedirectResponse(
+            f"/import/{session.id}/apercu", status_code=303
+        )
+
+    config = {
+        "racine": racine.strip(),
+        "motif_chemin": motif_chemin.strip(),
+        "type_motif": type_motif,
+    }
+    try:
+        ResolutionFichiers.model_validate(config)
+    except ValidationError as e:
+        premier = e.errors()[0]
+        return _rerendre(premier.get("msg", "Configuration fichiers invalide."))
+    enregistrer_resolution(db, session, config)
+    return RedirectResponse(f"/import/{session.id}/apercu", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Étape 5 — aperçu + exécution (stub : livré en sous-étape 4)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/import/{session_id}/apercu",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def etape_apercu(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    session = charger_session_import_ou_404(db, session_id)
+    if not _etape_accessible(session, "apercu"):
+        return _rediriger_vers_etape_courante(session)
+    return templates.TemplateResponse(
+        request,
+        "pages/import_etape_apercu.html",
         _contexte_base(nom_base, utilisateur, session=session),
     )

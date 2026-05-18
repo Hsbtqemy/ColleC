@@ -270,6 +270,39 @@ def generer_squelette(
     )
 
 
+def proposer_mapping(colonnes: list[str]) -> list[tuple[str, str, bool]]:
+    """Propose un mapping colonne → champ depuis les noms de colonnes.
+
+    Renvoie une liste de triplets `(champ_cible, colonne, detecte)` :
+    - `detecte=True` : la colonne a matché l'heuristique
+      `_detecter_champ_structurant` → mappée vers un champ dédié ;
+    - `detecte=False` : colonne sans correspondance → `metadonnees.<slug>`.
+
+    En cas de plusieurs colonnes candidates pour le même champ dédié
+    (ex. deux « Titre »), seule la première gagne ; les suivantes
+    basculent en `metadonnees.`. Les slugs en collision sont suffixés.
+    """
+    mappings: list[tuple[str, str, bool]] = []
+    dedies_pris: set[str] = set()
+    slugs_pris: set[str] = set()
+
+    for nom in colonnes:
+        champ_dedie = _detecter_champ_structurant(nom)
+        if champ_dedie and champ_dedie not in dedies_pris:
+            dedies_pris.add(champ_dedie)
+            mappings.append((champ_dedie, nom, True))
+            continue
+        slug = _slugifier(nom)
+        base = slug
+        n = 2
+        while slug in slugs_pris:
+            slug = f"{base}_{n}"
+            n += 1
+        slugs_pris.add(slug)
+        mappings.append((f"metadonnees.{slug}", nom, False))
+    return mappings
+
+
 def analyser_tableur(
     chemin_tableur: Path,
     feuille: str | None = None,
@@ -283,10 +316,6 @@ def analyser_tableur(
       (:func:`_detecter_champ_structurant`) sont mappées au champ
       dédié correspondant, marquées ``# détecté`` ;
     - les autres vont dans ``metadonnees.<slug>``.
-
-    En cas de plusieurs colonnes candidates pour le même champ dédié
-    (ex. deux colonnes "Titre"), seule la première gagne — les
-    suivantes basculent en ``metadonnees.``.
     """
     from archives_tool.importers.lecteur_tableur import (
         LectureTableurErreur,
@@ -305,30 +334,10 @@ def analyser_tableur(
     except LectureTableurErreur as e:
         raise ValueError(str(e)) from e
 
-    mappings: list[tuple[str, str, bool]] = []
-    dedies_pris: set[str] = set()
-    slugs_pris: set[str] = set()
-
-    for nom in colonnes:
-        champ_dedie = _detecter_champ_structurant(nom)
-        if champ_dedie and champ_dedie not in dedies_pris:
-            dedies_pris.add(champ_dedie)
-            mappings.append((champ_dedie, nom, True))
-            continue
-        slug = _slugifier(nom)
-        # Dé-doublonnage si deux colonnes produisent le même slug.
-        base = slug
-        n = 2
-        while slug in slugs_pris:
-            slug = f"{base}_{n}"
-            n += 1
-        slugs_pris.add(slug)
-        mappings.append((f"metadonnees.{slug}", nom, False))
-
     return _gabarit(
         cote=cote_collection or "A_COMPLETER",
         titre=titre_collection or "À compléter",
         chemin=chemin.name,
         granularite="item",
-        mappings=mappings,
+        mappings=proposer_mapping(colonnes),
     )

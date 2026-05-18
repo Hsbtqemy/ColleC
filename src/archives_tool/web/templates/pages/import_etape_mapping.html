@@ -1,0 +1,51 @@
+{# Étape 3 du wizard — stub. Le mapping colonnes → champs et la
+   résolution des fichiers arrivent à la sous-étape 3 de développement.
+   Variable : `session`. #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — mapping — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
+    Mapping des colonnes
+  </h1>
+
+  <div class="bg-white rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:28px;">
+    <p style="font-size:13px;color:#6b7280;line-height:1.5;">
+      Le fonds <strong>{{ (session.fonds_data or {}).get('cote', '?') }}</strong>
+      est enregistré. L'écran de mapping colonne → champ et la
+      résolution des fichiers arrivent à la prochaine sous-étape de
+      développement.
+    </p>
+    {% if session.colonnes_detectees %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:12px;">
+        {{ session.colonnes_detectees | length }} colonnes prêtes à mapper :
+        {{ session.colonnes_detectees | join(', ') }}
+      </p>
+    {% endif %}
+  </div>
+
+  <div style="margin-top:18px;">
+    <a href="/import/{{ session.id }}/fonds" class="rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);">
+      ← Fonds
+    </a>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,94 @@
+{# Étape 1 du wizard d'import : upload du tableur.
+   Variables : `session` (SessionImport), `erreur` (str | None). #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — tableur — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Choisir le tableur à importer
+  </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.5;">
+    Un fichier Excel (.xlsx, .xls) ou CSV (.csv, .tsv). Les colonnes
+    seront détectées automatiquement pour l'étape de mapping.
+  </p>
+
+  {% if erreur %}
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#991b1b;
+                margin-bottom:16px;">
+      {{ erreur }}
+    </div>
+  {% endif %}
+
+  {% if session.colonnes_detectees %}
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#166534;
+                margin-bottom:16px;">
+      Tableur actuel : <strong>{{ session.nom_tableur_original }}</strong>
+      — {{ session.colonnes_detectees | length }} colonnes détectées.
+      Re-déposer un fichier le remplacera.
+    </div>
+  {% endif %}
+
+  <form method="post" action="/import/{{ session.id }}/tableur"
+        enctype="multipart/form-data"
+        class="bg-white rounded-lg"
+        style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
+
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:6px;">
+      Fichier tableur
+    </label>
+    <input type="file" name="fichier" required
+           accept=".xlsx,.xls,.csv,.tsv"
+           style="font-size:13px;margin-bottom:16px;">
+
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:6px;">
+      Feuille
+      <span style="font-weight:400;color:#9ca3af;">
+        (Excel — laisser vide pour la première)
+      </span>
+    </label>
+    <input type="text" name="feuille"
+           value="{{ session.feuille or '' }}"
+           placeholder="Feuille 1"
+           style="width:100%;font-size:13px;padding:6px 8px;
+                  border:1px solid #d1d5db;border-radius:3px;
+                  margin-bottom:20px;">
+
+    <button type="submit"
+            class="rounded hover:bg-gray-50"
+            style="padding:8px 16px;font-size:13px;font-weight:500;
+                   color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                   background:#fff;">
+      Analyser le tableur →
+    </button>
+  </form>
+
+  <div style="margin-top:16px;">
+    <form method="post" action="/import/{{ session.id }}/abandonner">
+      <button type="submit" class="hover:underline"
+              style="font-size:12px;color:#991b1b;background:none;
+                     border:none;cursor:pointer;padding:0;">
+        Abandonner cet import
+      </button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,7 +1,8 @@
-"""Tests des routes de l'assistant d'import web (V0.7, sous-étape 1).
+"""Tests des routes de l'assistant d'import web (V0.7).
 
-Couvre le cycle de vie d'une SessionImport : accueil, création,
-reprise, abandon, 404.
+Sous-étape 1 : cycle de vie d'une SessionImport (accueil, création,
+reprise, abandon, 404).
+Sous-étape 2 : upload du tableur + saisie des métadonnées du fonds.
 """
 
 from __future__ import annotations
@@ -13,8 +14,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from archives_tool.api.main import app
+from archives_tool.api.services import import_web
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.models import Base, SessionImport
+
+CSV_DEMO = b"Cote;Titre;Date\nHK-1;Numero 1;1960\nHK-2;Numero 2;1961\n"
 
 
 @pytest.fixture
@@ -24,7 +28,15 @@ def client_vide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     Base.metadata.create_all(engine)
     engine.dispose()
     monkeypatch.setenv("ARCHIVES_DB", str(db_path))
+    # Tableurs temporaires isolés dans le tmp du test.
+    monkeypatch.setattr(import_web, "RACINE_IMPORT_TMP", tmp_path / "import_tmp")
     return TestClient(app)
+
+
+def _id_session(reponse) -> int:
+    """Extrait l'id de session de l'URL de redirection /import/{id}."""
+    loc = reponse.headers["location"]
+    return int(loc.rstrip("/").split("/import/")[1].split("/")[0])
 
 
 def _sessions(db_path: Path) -> list[SessionImport]:
@@ -110,21 +122,15 @@ def test_abandonner_idempotent(client_vide: TestClient) -> None:
 
 
 def test_abandonner_supprime_le_tableur_temporaire(
-    client_vide: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    client_vide: TestClient, tmp_path: Path
 ) -> None:
     """Abandonner une session efface son tableur temporaire du disque."""
-    from archives_tool.api.services import import_web
-
-    # Rediriger le dossier de travail des tableurs vers le tmp du test.
-    racine_tmp = tmp_path / "import_tmp"
-    racine_tmp.mkdir()
-    monkeypatch.setattr(import_web, "RACINE_IMPORT_TMP", racine_tmp)
-
     cree = client_vide.post("/import/nouveau", follow_redirects=False)
     session_id = int(cree.headers["location"].rsplit("/", 1)[1])
 
     # Simuler un tableur uploadé attaché à la session.
-    tableur = racine_tmp / f"session_{session_id}.xlsx"
+    import_web.RACINE_IMPORT_TMP.mkdir(parents=True, exist_ok=True)
+    tableur = import_web.RACINE_IMPORT_TMP / f"session_{session_id}.xlsx"
     tableur.write_bytes(b"fake")
     engine = creer_engine(tmp_path / "vide.db")
     factory = creer_session_factory(engine)
@@ -137,3 +143,103 @@ def test_abandonner_supprime_le_tableur_temporaire(
     assert tableur.is_file()
     client_vide.post(f"/import/{session_id}/abandonner")
     assert not tableur.exists()
+
+
+# ---------------------------------------------------------------------------
+# Sous-étape 2 — upload tableur + métadonnées du fonds
+# ---------------------------------------------------------------------------
+
+
+def test_upload_csv_detecte_colonnes(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    resp = client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("inventaire.csv", CSV_DEMO, "text/csv")},
+        data={"feuille": ""},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/import/{sid}/fonds"
+    rows = _sessions(tmp_path / "vide.db")
+    assert rows[0].colonnes_detectees == ["Cote", "Titre", "Date"]
+    assert rows[0].etape == "fonds"
+    assert rows[0].nom_tableur_original == "inventaire.csv"
+
+
+def test_upload_extension_invalide_rejetee(client_vide: TestClient) -> None:
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    resp = client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("notes.txt", b"pas un tableur", "text/plain")},
+        data={"feuille": ""},
+    )
+    assert resp.status_code == 400
+    assert "Format non supporté" in resp.text
+
+
+def test_etape_fonds_inaccessible_avant_upload(
+    client_vide: TestClient,
+) -> None:
+    """Sauter à /fonds sans avoir uploadé de tableur renvoie à l'étape
+    courante (tableur)."""
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    resp = client_vide.get(f"/import/{sid}/fonds", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/import/{sid}/tableur"
+
+
+def test_soumettre_fonds_valide_avance_au_mapping(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("inv.csv", CSV_DEMO, "text/csv")},
+        data={"feuille": ""},
+    )
+    resp = client_vide.post(
+        f"/import/{sid}/fonds",
+        data={"cote": "HK", "titre": "Hara-Kiri", "editeur": "Choron"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/import/{sid}/mapping"
+    rows = _sessions(tmp_path / "vide.db")
+    assert rows[0].fonds_data == {
+        "cote": "HK",
+        "titre": "Hara-Kiri",
+        "editeur": "Choron",
+    }
+    assert rows[0].etape == "mapping"
+
+
+def test_soumettre_fonds_sans_cote_rejete(client_vide: TestClient) -> None:
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("inv.csv", CSV_DEMO, "text/csv")},
+        data={"feuille": ""},
+    )
+    resp = client_vide.post(
+        f"/import/{sid}/fonds",
+        data={"cote": "", "titre": "Sans cote"},
+    )
+    assert resp.status_code == 400
+    assert "cote" in resp.text.lower()
+
+
+def test_import_id_redirige_vers_etape_courante(
+    client_vide: TestClient,
+) -> None:
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    resp = client_vide.get(f"/import/{sid}", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/import/{sid}/tableur"

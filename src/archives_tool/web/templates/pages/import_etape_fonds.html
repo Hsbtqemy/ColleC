@@ -1,0 +1,100 @@
+{# Étape 2 du wizard d'import : métadonnées du fonds.
+   Variables : `session`, `valeurs` (dict champ→valeur déjà saisie),
+   `champs` (tuple des clés à afficher), `erreurs` (dict champ→msg). #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — fonds — archives-tool{% endblock %}
+
+{# Libellé + aide par champ. Les champs absents d'ici tombent sur un
+   libellé dérivé de la clé. #}
+{% set _libelles = {
+  'cote': ('Cote du fonds', 'Identifiant court et unique. Obligatoire.'),
+  'titre': ('Titre', 'Nom du corpus. Obligatoire.'),
+  'description': ('Description', 'Présentation publique du fonds.'),
+  'description_interne': ('Description interne', 'Notes de chantier, non exportées.'),
+  'editeur': ('Éditeur', ''),
+  'lieu_edition': ('Lieu d\'édition', ''),
+  'periodicite': ('Périodicité', ''),
+  'issn': ('ISSN', ''),
+  'date_debut': ('Date de début', 'Format libre (EDTF toléré).'),
+  'date_fin': ('Date de fin', ''),
+  'responsable_archives': ('Responsable archives', ''),
+  'personnalite_associee': ('Personnalité associée', ''),
+} %}
+{% set _multiligne = ['description', 'description_interne'] %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Décrire le fonds
+  </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.5;">
+    Le fonds est le corpus que vous importez. Sa collection miroir
+    (qui regroupe tous ses items) sera créée automatiquement.
+  </p>
+
+  <form method="post" action="/import/{{ session.id }}/fonds"
+        class="bg-white rounded-lg"
+        style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
+
+    {% for champ in champs %}
+      {% set libelle, aide = _libelles.get(champ, (champ, '')) %}
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:13px;font-weight:500;
+                      color:#1f1f1f;margin-bottom:4px;">
+          {{ libelle }}
+        </label>
+        {% if aide %}
+          <p style="font-size:12px;color:#9ca3af;margin-bottom:6px;">{{ aide }}</p>
+        {% endif %}
+        {% if champ in _multiligne %}
+          <textarea name="{{ champ }}" rows="3"
+                    style="width:100%;font-size:13px;padding:6px 8px;
+                           border:1px solid {{ '#fca5a5' if champ in erreurs else '#d1d5db' }};
+                           border-radius:3px;resize:vertical;">{{ valeurs.get(champ, '') }}</textarea>
+        {% else %}
+          <input type="text" name="{{ champ }}"
+                 value="{{ valeurs.get(champ, '') }}"
+                 style="width:100%;font-size:13px;padding:6px 8px;
+                        border:1px solid {{ '#fca5a5' if champ in erreurs else '#d1d5db' }};
+                        border-radius:3px;">
+        {% endif %}
+        {% if champ in erreurs %}
+          <p style="font-size:12px;color:#991b1b;margin-top:4px;">
+            {{ erreurs[champ] }}
+          </p>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <div class="flex items-center gap-2" style="margin-top:20px;">
+      <a href="/import/{{ session.id }}/tableur"
+         class="rounded hover:bg-gray-50"
+         style="padding:8px 14px;font-size:13px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);">
+        ← Tableur
+      </a>
+      <button type="submit"
+              class="rounded hover:bg-gray-50"
+              style="padding:8px 16px;font-size:13px;font-weight:500;
+                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                     background:#fff;">
+        Mapping →
+      </button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

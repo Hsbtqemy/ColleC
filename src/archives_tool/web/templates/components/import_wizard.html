@@ -1,0 +1,57 @@
+{# Bandeau de progression du wizard d'import.
+   macro wizard_etapes(session) — `session` est un SessionImport.
+   Les étapes franchies sont cliquables, l'étape courante est mise en
+   évidence, les étapes futures sont grisées et non cliquables. #}
+
+{%- set _etapes = [
+  ('tableur', 'Tableur'),
+  ('fonds', 'Fonds'),
+  ('mapping', 'Mapping'),
+  ('fichiers', 'Fichiers'),
+  ('apercu', 'Aperçu'),
+] -%}
+
+{% macro wizard_etapes(session) -%}
+{%- set ordre = ['tableur', 'fonds', 'mapping', 'fichiers', 'apercu'] -%}
+{%- set rang_courant = ordre.index(session.etape) -%}
+<ol class="flex items-center gap-2" style="margin-bottom:24px;font-size:12px;">
+  {%- for cle, libelle in _etapes -%}
+    {%- set rang = ordre.index(cle) -%}
+    {%- set franchie = rang < rang_courant -%}
+    {%- set courante = rang == rang_courant -%}
+    <li class="flex items-center gap-2">
+      {%- if franchie -%}
+        <a href="/import/{{ session.id }}/{{ cle }}"
+           class="inline-flex items-center gap-1.5 hover:underline"
+           style="color:#374151;">
+          <span style="width:18px;height:18px;border-radius:9999px;
+                       background:#e5e7eb;color:#374151;display:inline-flex;
+                       align-items:center;justify-content:center;
+                       font-size:11px;">{{ rang + 1 }}</span>
+          {{ libelle }}
+        </a>
+      {%- elif courante -%}
+        <span class="inline-flex items-center gap-1.5"
+              style="color:#1f1f1f;font-weight:600;">
+          <span style="width:18px;height:18px;border-radius:9999px;
+                       background:#1f1f1f;color:#fff;display:inline-flex;
+                       align-items:center;justify-content:center;
+                       font-size:11px;">{{ rang + 1 }}</span>
+          {{ libelle }}
+        </span>
+      {%- else -%}
+        <span class="inline-flex items-center gap-1.5" style="color:#c4c4c4;">
+          <span style="width:18px;height:18px;border-radius:9999px;
+                       background:#f3f4f6;color:#c4c4c4;display:inline-flex;
+                       align-items:center;justify-content:center;
+                       font-size:11px;">{{ rang + 1 }}</span>
+          {{ libelle }}
+        </span>
+      {%- endif -%}
+      {%- if not loop.last -%}
+        <span aria-hidden="true" style="color:#d1d5db;">→</span>
+      {%- endif -%}
+    </li>
+  {%- endfor -%}
+</ol>
+{%- endmacro %}

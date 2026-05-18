@@ -74,12 +74,23 @@ def _chemin_tableur_absolu(session: SessionImport) -> Path | None:
 def abandonner_session(db: Session, session: SessionImport) -> None:
     """Marque une session abandonnée et supprime son tableur temporaire.
 
-    Idempotent : abandonner une session déjà abandonnée ne fait rien
-    de plus que retenter la suppression du fichier (no-op s'il est
-    déjà parti)."""
-    chemin = _chemin_tableur_absolu(session)
-    if chemin is not None and chemin.is_file():
-        chemin.unlink()
+    La transition de statut est committée *avant* de toucher au disque :
+    si la suppression du fichier échoue (handle ouvert, droits — cas
+    plausible sous Windows), la session reste cohérente en base. Le
+    tableur temporaire est du jetable gitignoré ; un échec de unlink
+    laisse au pire un fichier orphelin, sans casser l'état métier.
+
+    Idempotent : ré-abandonner une session déjà abandonnée ne fait que
+    re-committer le même statut et retenter le unlink (no-op si parti).
+    """
     session.statut = "abandonnee"
     session.modifie_le = datetime.now()
     db.commit()
+    chemin = _chemin_tableur_absolu(session)
+    if chemin is not None:
+        try:
+            chemin.unlink(missing_ok=True)
+        except OSError:
+            # Fichier verrouillé ou droits insuffisants : on laisse
+            # l'orphelin plutôt que de faire échouer l'abandon.
+            pass

@@ -69,6 +69,10 @@ def _creer_table_v2() -> None:
             "statut IN ('en_cours', 'validee', 'abandonnee')",
             name="ck_session_import_statut",
         ),
+        sa.CheckConstraint(
+            "etape IN ('tableur', 'fonds', 'mapping', 'fichiers', 'apercu')",
+            name="ck_session_import_etape",
+        ),
     )
     op.create_index(
         "ix_session_import_utilisateur", "session_import", ["utilisateur"]
@@ -119,6 +123,9 @@ def _creer_table_v1() -> None:
 
 
 def upgrade() -> None:
+    # Perte de données assumée : la table n'est peuplée nulle part
+    # (placeholder jusqu'ici). Si une base avait des sessions v1, elles
+    # seraient perdues silencieusement — improbable, mais explicite ici.
     op.drop_table("session_import")
     _creer_table_v2()
 

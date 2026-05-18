@@ -93,3 +93,47 @@ def test_abandonner_retire_de_l_accueil(client_vide: TestClient) -> None:
     client_vide.post(f"/import/{session_id}/abandonner")
     resp = client_vide.get("/import")
     assert "Aucun import en cours" in resp.text
+
+
+def test_abandonner_idempotent(client_vide: TestClient) -> None:
+    """Ré-abandonner une session déjà abandonnée reste un 303 propre."""
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    session_id = int(cree.headers["location"].rsplit("/", 1)[1])
+    r1 = client_vide.post(
+        f"/import/{session_id}/abandonner", follow_redirects=False
+    )
+    r2 = client_vide.post(
+        f"/import/{session_id}/abandonner", follow_redirects=False
+    )
+    assert r1.status_code == 303
+    assert r2.status_code == 303
+
+
+def test_abandonner_supprime_le_tableur_temporaire(
+    client_vide: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abandonner une session efface son tableur temporaire du disque."""
+    from archives_tool.api.services import import_web
+
+    # Rediriger le dossier de travail des tableurs vers le tmp du test.
+    racine_tmp = tmp_path / "import_tmp"
+    racine_tmp.mkdir()
+    monkeypatch.setattr(import_web, "RACINE_IMPORT_TMP", racine_tmp)
+
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    session_id = int(cree.headers["location"].rsplit("/", 1)[1])
+
+    # Simuler un tableur uploadé attaché à la session.
+    tableur = racine_tmp / f"session_{session_id}.xlsx"
+    tableur.write_bytes(b"fake")
+    engine = creer_engine(tmp_path / "vide.db")
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        sess = s.get(SessionImport, session_id)
+        sess.chemin_tableur = tableur.name
+        s.commit()
+    engine.dispose()
+
+    assert tableur.is_file()
+    client_vide.post(f"/import/{session_id}/abandonner")
+    assert not tableur.exists()

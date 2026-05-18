@@ -91,6 +91,12 @@ class SessionImport(Base):
             "statut IN ('en_cours', 'validee', 'abandonnee')",
             name="ck_session_import_statut",
         ),
+        CheckConstraint(
+            "etape IN ("
+            + ", ".join(f"'{e}'" for e in ETAPES_IMPORT)
+            + ")",
+            name="ck_session_import_etape",
+        ),
         Index("ix_session_import_utilisateur", "utilisateur"),
         Index("ix_session_import_statut", "statut"),
     )

@@ -8,27 +8,23 @@ fichiers, aperçu) sont livrées par les sous-étapes suivantes.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import get_db, get_nom_base, get_utilisateur_courant
+from archives_tool.api.routes._helpers import (
+    charger_session_import_ou_404,
+    contexte_base as _contexte_base,
+)
 from archives_tool.api.services.import_web import (
-    SessionImportIntrouvable,
     abandonner_session,
     creer_session,
-    lire_session,
     lister_sessions_en_cours,
 )
 from archives_tool.api.templating import templates
 
 router = APIRouter()
-
-
-def _contexte_base(
-    nom_base: str, utilisateur: str, **extra: object
-) -> dict[str, object]:
-    return {"nom_base": nom_base, "utilisateur": utilisateur, **extra}
 
 
 @router.get("/import", response_class=HTMLResponse)
@@ -57,13 +53,6 @@ def nouveau_import(
     return RedirectResponse(f"/import/{session.id}", status_code=303)
 
 
-def _charger_session_ou_404(db: Session, session_id: int):
-    try:
-        return lire_session(db, session_id)
-    except SessionImportIntrouvable as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
-
 @router.get("/import/{session_id}", response_class=HTMLResponse)
 def page_session_import(
     session_id: int,
@@ -74,7 +63,7 @@ def page_session_import(
 ) -> HTMLResponse:
     """Vue d'une session d'import. Sous-étape 1 : stub affichant
     l'étape courante. Le wizard complet arrive aux sous-étapes 2-4."""
-    session = _charger_session_ou_404(db, session_id)
+    session = charger_session_import_ou_404(db, session_id)
     return templates.TemplateResponse(
         request,
         "pages/import_session.html",
@@ -93,6 +82,6 @@ def abandonner_import(
 ) -> RedirectResponse:
     """Abandonne une session : statut `abandonnee`, tableur temporaire
     supprimé. Idempotent."""
-    session = _charger_session_ou_404(db, session_id)
+    session = charger_session_import_ou_404(db, session_id)
     abandonner_session(db, session)
     return RedirectResponse("/import", status_code=303)

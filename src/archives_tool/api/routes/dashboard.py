@@ -46,6 +46,7 @@ from archives_tool.api.services.collections import (
 )
 from archives_tool.api.routes._helpers import (
     charger_fonds_ou_404 as _charger_fonds_ou_404,
+    contexte_base as _contexte_base,
     resoudre_item_ou_404 as _resoudre_item_ou_404,
 )
 from archives_tool.api.services.dashboard import (
@@ -91,12 +92,6 @@ from archives_tool.models import (
 router = APIRouter()
 
 ROLES_OPTIONS: list[str] = [r.value for r in RoleCollaborateur]
-
-
-def _contexte_base(
-    nom_base: str, utilisateur: str, **extra: object
-) -> dict[str, object]:
-    return {"nom_base": nom_base, "utilisateur": utilisateur, **extra}
 
 
 def _annee_int_ou_none(v: str | None) -> int | None:

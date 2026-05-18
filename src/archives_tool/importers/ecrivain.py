@@ -418,7 +418,12 @@ def _executer_dry_run(
             rapport.erreurs.append(f"Item {prep.cote}: {e}")
             continue
         rapport.items_crees += 1
-        rapport.fichiers_ajoutes += len(fichiers)
+        # Ne compter que les fichiers réellement écrits par
+        # `_ecrire_fichiers` — un fichier sans source (ni chemin ni
+        # URL Nakala) y est écarté, le dry-run doit l'être aussi.
+        rapport.fichiers_ajoutes += sum(
+            1 for f in fichiers if f.chemin_relatif or f.iiif_url_nakala
+        )
 
 
 def _executer_reel(

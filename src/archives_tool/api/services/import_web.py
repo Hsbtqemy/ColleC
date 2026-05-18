@@ -278,11 +278,15 @@ def cibles_proposees(session: SessionImport) -> list[str]:
 
 
 def enregistrer_mapping(
-    db: Session, session: SessionImport, mapping: dict[str, str]
+    db: Session,
+    session: SessionImport,
+    mapping: dict[str, str],
+    granularite: str = "item",
 ) -> None:
-    """Stocke le mapping colonnes → champs, puis avance à l'étape
-    de résolution des fichiers."""
+    """Stocke le mapping colonnes → champs et la granularité du
+    tableur, puis avance à l'étape de résolution des fichiers."""
     session.mappings = mapping
+    session.granularite = granularite if granularite == "fichier" else "item"
     session.modifie_le = datetime.now()
     _avancer_etape(session, "fichiers")
     db.commit()
@@ -330,6 +334,7 @@ def composer_profil(
             "chemin": str(chemin.resolve()),
             "feuille": session.feuille or None,
         },
+        "granularite_source": session.granularite,
         "mapping": dict(session.mappings),
         "ignorer_lignes_sans_cote": ignorer_lignes_sans_cote,
     }

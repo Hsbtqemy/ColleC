@@ -345,9 +345,10 @@ def _contexte_mapping(
     session: SessionImport,
     cibles: list[str],
     erreur: str | None,
+    granularite: str = "item",
 ) -> dict[str, object]:
     """Contexte du template mapping : colonnes + cible choisie pour
-    chacune (alignées par position)."""
+    chacune (alignées par position) + granularité du tableur."""
     colonnes = list(session.colonnes_detectees or [])
     return _contexte_base(
         nom_base,
@@ -357,6 +358,7 @@ def _contexte_mapping(
         cibles_dediees=_CIBLES_MAPPING,
         cible_meta=CIBLE_META,
         cible_ignore=CIBLE_IGNORE,
+        granularite=granularite,
         erreur=erreur,
     )
 
@@ -380,7 +382,12 @@ def etape_mapping(
         request,
         "pages/import_etape_mapping.html",
         _contexte_mapping(
-            nom_base, utilisateur, session, cibles_proposees(session), None
+            nom_base,
+            utilisateur,
+            session,
+            cibles_proposees(session),
+            None,
+            granularite=session.granularite,
         ),
     )
 
@@ -394,6 +401,7 @@ def soumettre_mapping(
     session_id: int,
     request: Request,
     cible: Annotated[list[str], Form()] = [],  # noqa: B006 — FastAPI relit Form().
+    granularite: Annotated[str, Form()] = "item",
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -406,10 +414,12 @@ def soumettre_mapping(
         return templates.TemplateResponse(
             request,
             "pages/import_etape_mapping.html",
-            _contexte_mapping(nom_base, utilisateur, session, cible, str(e)),
+            _contexte_mapping(
+                nom_base, utilisateur, session, cible, str(e), granularite
+            ),
             status_code=400,
         )
-    enregistrer_mapping(db, session, mapping)
+    enregistrer_mapping(db, session, mapping, granularite)
     return RedirectResponse(f"/import/{session.id}/fichiers", status_code=303)
 
 

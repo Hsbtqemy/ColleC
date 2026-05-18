@@ -544,3 +544,71 @@ def test_executer_sans_tolerance_bloque_sur_ligne_sans_cote(
     resp = client_vide.post(f"/import/{sid}/executer")
     assert resp.status_code == 400
     assert "cote absente" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Granularité fichier : lignes regroupées par cote
+# ---------------------------------------------------------------------------
+
+# CSV à granularité fichier : 3 lignes, 2 cotes (PF-1 sur 2 lignes).
+CSV_GRANULARITE_FICHIER = (
+    b"Cote;Titre;Page\n"
+    b"PF-1;Numero 1;1\n"
+    b"PF-1;Numero 1;2\n"
+    b"PF-2;Numero 2;1\n"
+)
+
+
+def test_granularite_fichier_regroupe_par_cote(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    """Un tableur une-ligne-par-fichier importé en granularité fichier :
+    les 3 lignes (2 cotes) donnent 2 items, pas 3 collisions."""
+    from archives_tool.models import Fonds, Item
+
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("inv.csv", CSV_GRANULARITE_FICHIER, "text/csv")},
+        data={"feuille": ""},
+    )
+    client_vide.post(
+        f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"}
+    )
+    client_vide.post(
+        f"/import/{sid}/mapping",
+        data={"cible": ["cote", "titre", "__ignore__"],
+              "granularite": "fichier"},
+    )
+    client_vide.post(
+        f"/import/{sid}/fichiers",
+        data={"racine": "", "motif_chemin": "", "type_motif": "template"},
+    )
+    resp = client_vide.post(
+        f"/import/{sid}/executer", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/fonds/PF"
+
+    engine = creer_engine(tmp_path / "vide.db")
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "PF"))
+        nb = len(list(s.scalars(select(Item).where(Item.fonds_id == fonds.id))))
+        assert nb == 2  # PF-1 + PF-2, les 2 lignes PF-1 fusionnées
+    engine.dispose()
+
+
+def test_granularite_persistee_dans_la_session(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    """Le choix de granularité au mapping est mémorisé sur la session."""
+    sid = _session_a_l_etape_mapping(client_vide)
+    client_vide.post(
+        f"/import/{sid}/mapping",
+        data={"cible": ["cote", "titre", "__meta__"],
+              "granularite": "fichier"},
+    )
+    rows = _sessions(tmp_path / "vide.db")
+    assert rows[0].granularite == "fichier"

@@ -40,6 +40,27 @@
   <form method="post" action="/import/{{ session.id }}/mapping"
         class="bg-white rounded-lg"
         style="border:1px solid rgba(0,0,0,0.08);padding:8px 0;">
+
+    {# Granularité : que représente une ligne du tableur ? #}
+    <fieldset style="padding:12px 16px;border-bottom:1px solid rgba(0,0,0,0.06);">
+      <legend style="font-size:13px;font-weight:500;color:#1f1f1f;
+                     margin-bottom:6px;">
+        Chaque ligne du tableur représente…
+      </legend>
+      <label style="display:block;font-size:13px;color:#374151;
+                    margin-bottom:4px;">
+        <input type="radio" name="granularite" value="item"
+               {{ 'checked' if granularite != 'fichier' else '' }}>
+        un <strong>item</strong> (un numéro, un volume — une notice)
+      </label>
+      <label style="display:block;font-size:13px;color:#374151;">
+        <input type="radio" name="granularite" value="fichier"
+               {{ 'checked' if granularite == 'fichier' else '' }}>
+        un <strong>fichier</strong> (une page, un scan — les lignes
+        partageant la même cote sont regroupées en un item)
+      </label>
+    </fieldset>
+
     {% for colonne, cible in lignes %}
       <div class="flex items-center gap-3 border-b last:border-b-0"
            style="border-color:rgba(0,0,0,0.06);padding:8px 16px;">

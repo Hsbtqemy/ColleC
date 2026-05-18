@@ -67,6 +67,12 @@ class SessionImport(Base):
 
     # --- Étape mapping : colonne tableur → champ item ----------------
     mappings: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # Granularité du tableur : "item" (une ligne = un item) ou
+    # "fichier" (une ligne = un scan ; les lignes sont regroupées
+    # par cote à l'import).
+    granularite: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="item"
+    )
 
     # --- Étape fichiers : racine + motif de résolution ---------------
     configuration_fichiers: Mapped[dict[str, Any] | None] = mapped_column(JSON)
@@ -96,6 +102,10 @@ class SessionImport(Base):
             + ", ".join(f"'{e}'" for e in ETAPES_IMPORT)
             + ")",
             name="ck_session_import_etape",
+        ),
+        CheckConstraint(
+            "granularite IN ('item', 'fichier')",
+            name="ck_session_import_granularite",
         ),
         Index("ix_session_import_utilisateur", "utilisateur"),
         Index("ix_session_import_statut", "statut"),

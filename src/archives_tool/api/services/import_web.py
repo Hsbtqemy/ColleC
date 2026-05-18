@@ -368,7 +368,15 @@ def executer_import(
     utilisateur: str,
 ) -> RapportImport:
     """Exécute l'import réel. Si aucune erreur, marque la session
-    `validee` et mémorise le fonds créé."""
+    `validee` et mémorise le fonds créé.
+
+    Non-atomicité assumée : `ecrivain.importer` committe lui-même le
+    fonds et le journal `OperationImport`, puis on committe à part la
+    transition `validee`. Si ce second commit échouait (cas extrême :
+    un UPDATE d'une ligne), le fonds existerait sans que la session
+    le sache. Acceptable à l'échelle du projet (équipe réduite, pas
+    d'édition simultanée) — un statut transitoire en base serait
+    sur-ingénierie ici."""
     profil = composer_profil(session)
     rapport = importer(
         profil,

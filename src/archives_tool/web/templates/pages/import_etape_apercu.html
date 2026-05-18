@@ -118,7 +118,11 @@
         ← Fichiers
       </a>
       {% if not rapport.erreurs %}
-        <form method="post" action="/import/{{ session.id }}/executer">
+        {# onsubmit désactive le bouton : empêche le double-clic de
+           lancer deux imports (collision de cote au second). #}
+        <form method="post" action="/import/{{ session.id }}/executer"
+              onsubmit="var b=this.querySelector('button');
+                        b.disabled=true;b.textContent='Import en cours…';">
           <button type="submit"
                   class="rounded"
                   style="padding:8px 18px;font-size:13px;font-weight:600;

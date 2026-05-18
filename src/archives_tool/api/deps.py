@@ -7,6 +7,7 @@ config locale (ex. `ARCHIVES_DB=data/demo.db uvicorn ...`).
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from functools import lru_cache
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
+
+_logger = logging.getLogger(__name__)
 
 CHEMIN_DB_DEFAUT = Path("data/archives.db")
 CHEMIN_CONFIG_DEFAUT = Path("config_local.yaml")
@@ -55,7 +58,14 @@ def _charger_config_cache(chemin: Path, mtime_ns: int) -> ConfigLocale | None:
     """
     try:
         return charger_config(chemin)
-    except (FileNotFoundError, yaml.YAMLError, ValidationError, ValueError):
+    except FileNotFoundError:
+        return None
+    except (yaml.YAMLError, ValidationError, ValueError) as e:
+        # Le fichier existe mais est invalide (YAML cassé, racine
+        # inexistante…). On dégrade en "pas de config" pour ne pas
+        # planter l'app, mais on le signale — sinon l'utilisateur
+        # croit travailler avec sa config alors qu'elle est ignorée.
+        _logger.warning("Config locale %s ignorée (invalide) : %s", chemin, e)
         return None
 
 

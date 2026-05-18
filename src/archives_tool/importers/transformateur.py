@@ -35,6 +35,7 @@ COLONNES_ITEM = {
     "type_coar",
     "langue",
     "description",
+    "notes_internes",
     "doi_nakala",
     "doi_collection_nakala",
     "etat_catalogage",

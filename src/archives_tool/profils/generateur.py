@@ -79,6 +79,22 @@ def _slugifier(nom: str) -> str:
     return slug or "champ"
 
 
+def slug_metadonnee(nom: str, pris: set[str]) -> str:
+    """Slug de colonne pour `metadonnees.<slug>`, dédoublonné.
+
+    Slugifie `nom`, puis suffixe `_2`, `_3`… tant que le slug est déjà
+    dans `pris` (deux colonnes distinctes peuvent slugifier pareil).
+    Le slug retenu est ajouté à `pris` — l'appelant n'a rien à faire.
+    """
+    slug = _slugifier(nom)
+    base, n = slug, 2
+    while slug in pris:
+        slug = f"{base}_{n}"
+        n += 1
+    pris.add(slug)
+    return slug
+
+
 def _detecter_champ_structurant(nom_colonne: str) -> str | None:
     """Renvoie le nom du champ dédié si détecté, ``None`` sinon.
 
@@ -292,13 +308,7 @@ def proposer_mapping(colonnes: list[str]) -> list[tuple[str, str, bool]]:
             dedies_pris.add(champ_dedie)
             mappings.append((champ_dedie, nom, True))
             continue
-        slug = _slugifier(nom)
-        base = slug
-        n = 2
-        while slug in slugs_pris:
-            slug = f"{base}_{n}"
-            n += 1
-        slugs_pris.add(slug)
+        slug = slug_metadonnee(nom, slugs_pris)
         mappings.append((f"metadonnees.{slug}", nom, False))
     return mappings
 

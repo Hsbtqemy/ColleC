@@ -202,8 +202,13 @@ def construire_mapping(
     Lève `MappingInvalide` si deux colonnes visent le même champ dédié
     ou si la `cote` — requise par l'import — n'est mappée nulle part.
     """
-    from archives_tool.profils.generateur import _slugifier
+    from archives_tool.profils.generateur import slug_metadonnee
 
+    # Alignement positionnel : le formulaire rend un <select name="cible">
+    # par colonne dans l'ordre du tableur ; un champ form multi-valeur
+    # préserve l'ordre du document (spec HTML). Le garde de longueur
+    # ci-dessous attrape le cas d'un select manquant — la seule
+    # incohérence réaliste.
     if len(colonnes) != len(cibles):
         raise MappingInvalide(
             "Nombre de cibles incohérent avec le nombre de colonnes."
@@ -214,12 +219,7 @@ def construire_mapping(
         if cible == CIBLE_IGNORE:
             continue
         if cible == CIBLE_META:
-            slug = _slugifier(colonne)
-            base, n = slug, 2
-            while slug in slugs_pris:
-                slug = f"{base}_{n}"
-                n += 1
-            slugs_pris.add(slug)
+            slug = slug_metadonnee(colonne, slugs_pris)
             mapping[f"metadonnees.{slug}"] = colonne
             continue
         # Champ dédié : un seul mapping possible.

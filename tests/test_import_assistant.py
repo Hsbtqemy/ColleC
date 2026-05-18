@@ -612,3 +612,77 @@ def test_granularite_persistee_dans_la_session(
     )
     rows = _sessions(tmp_path / "vide.db")
     assert rows[0].granularite == "fichier"
+
+
+# ---------------------------------------------------------------------------
+# Mapping de niveau fichier (export Nakala : nom + hash + IIIF par ligne)
+# ---------------------------------------------------------------------------
+
+CSV_EXPORT_NAKALA = (
+    b"Cote;Titre;Filename;Hash;Iiif\n"
+    b"PF-1;Numero 1;pf1_p1.jpg;h1;https://api.nakala.fr/iiif/x/h1\n"
+    b"PF-1;Numero 1;pf1_p2.jpg;h2;https://api.nakala.fr/iiif/x/h2\n"
+    b"PF-2;Numero 2;pf2_p1.jpg;h3;https://api.nakala.fr/iiif/x/h3\n"
+)
+
+
+def test_mapping_fichier_cree_des_fichiers_nakala(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    """Colonnes mappées vers `fichier.*` + granularité fichier :
+    chaque ligne devient un Fichier Nakala-only rattaché à son item."""
+    from archives_tool.models import Fichier, Fonds, Item
+
+    cree = client_vide.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    client_vide.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("export.csv", CSV_EXPORT_NAKALA, "text/csv")},
+        data={"feuille": ""},
+    )
+    client_vide.post(
+        f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"}
+    )
+    client_vide.post(
+        f"/import/{sid}/mapping",
+        data={
+            "cible": [
+                "cote", "titre",
+                "fichier.nom_fichier",
+                "fichier.hash_sha256",
+                "fichier.iiif_url_nakala",
+            ],
+            "granularite": "fichier",
+        },
+    )
+    client_vide.post(
+        f"/import/{sid}/fichiers",
+        data={"racine": "", "motif_chemin": "", "type_motif": "template"},
+    )
+    resp = client_vide.post(
+        f"/import/{sid}/executer", follow_redirects=False
+    )
+    assert resp.status_code == 303
+
+    engine = creer_engine(tmp_path / "vide.db")
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "PF"))
+        items = list(s.scalars(select(Item).where(Item.fonds_id == fonds.id)))
+        assert len(items) == 2  # 3 lignes / 2 cotes
+        fichiers = list(s.scalars(select(Fichier)))
+        assert len(fichiers) == 3
+        # Fichiers Nakala-only : URL IIIF présente, pas de source disque.
+        for f in fichiers:
+            assert f.iiif_url_nakala.startswith("https://api.nakala.fr/")
+            assert f.chemin_relatif is None
+    engine.dispose()
+
+
+def test_mapping_propose_les_cibles_fichier(client_vide: TestClient) -> None:
+    """L'étape mapping expose les cibles « champ du fichier »."""
+    sid = _session_a_l_etape_mapping(client_vide)
+    resp = client_vide.get(f"/import/{sid}/mapping")
+    assert resp.status_code == 200
+    assert "fichier.iiif_url_nakala" in resp.text
+    assert "URL IIIF Nakala" in resp.text

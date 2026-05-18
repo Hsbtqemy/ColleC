@@ -72,21 +72,33 @@
         <span aria-hidden="true" style="color:#d1d5db;">→</span>
         <select name="cible"
                 style="font-size:13px;padding:4px 6px;border:1px solid #d1d5db;
-                       border-radius:3px;background:white;flex:0 0 220px;">
-          {% for valeur, libelle in cibles_dediees %}
-            <option value="{{ valeur }}"
-                    {{ 'selected' if cible == valeur else '' }}>
-              {{ libelle }}
+                       border-radius:3px;background:white;flex:0 0 240px;">
+          <optgroup label="Champ de l'item">
+            {% for valeur, libelle in cibles_item %}
+              <option value="{{ valeur }}"
+                      {{ 'selected' if cible == valeur else '' }}>
+                {{ libelle }}
+              </option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Champ du fichier (granularité fichier)">
+            {% for valeur, libelle in cibles_fichier %}
+              <option value="{{ valeur }}"
+                      {{ 'selected' if cible == valeur else '' }}>
+                {{ libelle }}
+              </option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Autre">
+            <option value="{{ cible_meta }}"
+                    {{ 'selected' if cible == cible_meta else '' }}>
+              Métadonnée personnalisée
             </option>
-          {% endfor %}
-          <option value="{{ cible_meta }}"
-                  {{ 'selected' if cible == cible_meta else '' }}>
-            Métadonnée personnalisée
-          </option>
-          <option value="{{ cible_ignore }}"
-                  {{ 'selected' if cible == cible_ignore else '' }}>
-            — Ne pas importer
-          </option>
+            <option value="{{ cible_ignore }}"
+                    {{ 'selected' if cible == cible_ignore else '' }}>
+              — Ne pas importer
+            </option>
+          </optgroup>
         </select>
       </div>
     {% endfor %}

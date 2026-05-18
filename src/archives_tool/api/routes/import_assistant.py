@@ -322,9 +322,10 @@ def soumettre_fonds(
 # Étape 3 — mapping colonnes → champs
 # ---------------------------------------------------------------------------
 
-# Champs item proposables comme cible d'une colonne. `__meta__` et
-# `__ignore__` (sentinelles de import_web) sont rendus à part.
-_CIBLES_MAPPING: tuple[tuple[str, str], ...] = (
+# Cibles de mapping d'une colonne. `__meta__` et `__ignore__`
+# (sentinelles de import_web) sont rendus à part.
+# Champs de niveau item :
+_CIBLES_ITEM: tuple[tuple[str, str], ...] = (
     ("cote", "Cote"),
     ("titre", "Titre"),
     ("numero", "Numéro"),
@@ -336,6 +337,12 @@ _CIBLES_MAPPING: tuple[tuple[str, str], ...] = (
     ("notes_internes", "Notes internes"),
     ("doi_nakala", "DOI Nakala"),
     ("doi_collection_nakala", "DOI collection"),
+)
+# Champs de niveau fichier (granularité fichier — une ligne = un scan).
+_CIBLES_FICHIER: tuple[tuple[str, str], ...] = (
+    ("fichier.nom_fichier", "Nom du fichier"),
+    ("fichier.hash_sha256", "Hash (empreinte)"),
+    ("fichier.iiif_url_nakala", "URL IIIF Nakala"),
 )
 
 
@@ -355,7 +362,8 @@ def _contexte_mapping(
         utilisateur,
         session=session,
         lignes=list(zip(colonnes, cibles)),
-        cibles_dediees=_CIBLES_MAPPING,
+        cibles_item=_CIBLES_ITEM,
+        cibles_fichier=_CIBLES_FICHIER,
         cible_meta=CIBLE_META,
         cible_ignore=CIBLE_IGNORE,
         granularite=granularite,

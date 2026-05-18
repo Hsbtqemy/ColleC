@@ -25,6 +25,7 @@ from archives_tool.api.routes._helpers import (
     contexte_base as _contexte_base,
 )
 from archives_tool.api.services.import_web import (
+    TAILLE_MAX_TABLEUR,
     TableurInvalide,
     abandonner_session,
     attacher_tableur,
@@ -155,7 +156,10 @@ def soumettre_tableur(
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
     session = charger_session_import_ou_404(db, session_id)
-    contenu = fichier.file.read()
+    # Lecture bornée : on ne charge jamais plus que la limite + 1 octet
+    # en mémoire. `attacher_tableur` rejette si la taille dépasse la
+    # limite — un upload géant est ainsi tronqué, pas avalé en entier.
+    contenu = fichier.file.read(TAILLE_MAX_TABLEUR + 1)
     try:
         attacher_tableur(
             db,

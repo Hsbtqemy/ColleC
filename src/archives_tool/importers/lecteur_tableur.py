@@ -27,6 +27,60 @@ class LectureTableurErreur(Exception):
     """Erreur de lecture du tableur (fichier absent, feuille manquante, ...)."""
 
 
+# Extensions de tableur reconnues par le lecteur.
+EXTENSIONS_TABLEUR: frozenset[str] = frozenset(
+    {".xlsx", ".xls", ".csv", ".tsv"}
+)
+
+
+def lire_entetes_tableur(
+    chemin: Path, feuille: str | None = None
+) -> list[str]:
+    """Lit la seule ligne d'en-tête d'un tableur et renvoie ses colonnes.
+
+    Lecture minimale (`nrows=1`) — utilisée par l'assistant d'import
+    web et par `profils.generateur.analyser_tableur`. Pour les CSV,
+    tente UTF-8 puis CP1252 (tableurs anciens sous Windows). Lève
+    `LectureTableurErreur` si l'extension est inconnue ou le fichier
+    illisible.
+    """
+    chemin = Path(chemin)
+    ext = chemin.suffix.lower()
+    if ext not in EXTENSIONS_TABLEUR:
+        raise LectureTableurErreur(f"Extension non supportée : {ext!r}.")
+    if not chemin.is_file():
+        raise LectureTableurErreur(f"Fichier tableur introuvable : {chemin}")
+    try:
+        if ext in (".xlsx", ".xls"):
+            df = pd.read_excel(
+                chemin,
+                sheet_name=feuille if feuille else 0,
+                dtype=str,
+                nrows=1,
+            )
+        else:
+            sep = "\t" if ext == ".tsv" else ";"
+            try:
+                df = pd.read_csv(
+                    chemin, sep=sep, encoding="utf-8", dtype=str, nrows=1
+                )
+            except UnicodeDecodeError:
+                df = pd.read_csv(
+                    chemin, sep=sep, encoding="cp1252", dtype=str, nrows=1
+                )
+    except LectureTableurErreur:
+        raise
+    except Exception as e:  # noqa: BLE001 — toute erreur pandas → message propre
+        raise LectureTableurErreur(
+            f"Lecture du tableur impossible : {e}"
+        ) from e
+
+    colonnes = [str(c).strip() for c in df.columns]
+    if not colonnes:
+        raise LectureTableurErreur("Le tableur ne contient aucune colonne.")
+    return colonnes
+
+
 def _normaliser_cellule(valeur: Any, valeurs_nulles: set[str]) -> Any:
     if valeur is None:
         return None

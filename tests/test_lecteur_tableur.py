@@ -9,6 +9,7 @@ import pytest
 
 from archives_tool.importers.lecteur_tableur import (
     LectureTableurErreur,
+    lire_entetes_tableur,
     lire_tableur,
 )
 from archives_tool.profils import charger_profil
@@ -129,3 +130,40 @@ mapping:
     profil = charger_profil(yml)
     with pytest.raises(LectureTableurErreur, match="Extension"):
         lire_tableur(profil, yml)
+
+
+# ---------------------------------------------------------------------------
+# lire_entetes_tableur — lecture des seules colonnes (assistant import web)
+# ---------------------------------------------------------------------------
+
+
+def test_entetes_csv(tmp_path: Path) -> None:
+    csv = tmp_path / "inv.csv"
+    csv.write_text("Cote;Titre;Date\nHK-1;Numero 1;1960\n", encoding="utf-8")
+    assert lire_entetes_tableur(csv) == ["Cote", "Titre", "Date"]
+
+
+def test_entetes_strip_les_espaces(tmp_path: Path) -> None:
+    """Les espaces parasites en bordure d'en-tête sont retirés."""
+    csv = tmp_path / "inv.csv"
+    csv.write_text(" Cote ;  Titre\nx;y\n", encoding="utf-8")
+    assert lire_entetes_tableur(csv) == ["Cote", "Titre"]
+
+
+def test_entetes_csv_cp1252_fallback(tmp_path: Path) -> None:
+    """Un CSV encodé CP1252 (tableur ancien) est lu malgré l'échec UTF-8."""
+    csv = tmp_path / "vieux.csv"
+    csv.write_bytes("Côte;Éditeur\nx;y\n".encode("cp1252"))
+    assert lire_entetes_tableur(csv) == ["Côte", "Éditeur"]
+
+
+def test_entetes_extension_inconnue(tmp_path: Path) -> None:
+    fichier = tmp_path / "notes.txt"
+    fichier.write_text("rien", encoding="utf-8")
+    with pytest.raises(LectureTableurErreur, match="Extension"):
+        lire_entetes_tableur(fichier)
+
+
+def test_entetes_fichier_absent(tmp_path: Path) -> None:
+    with pytest.raises(LectureTableurErreur, match="introuvable"):
+        lire_entetes_tableur(tmp_path / "n_existe_pas.csv")

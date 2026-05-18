@@ -20,16 +20,16 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.importers.lecteur_tableur import (
+    EXTENSIONS_TABLEUR,
+    LectureTableurErreur,
+    lire_entetes_tableur,
+)
 from archives_tool.models import ETAPES_IMPORT, SessionImport
 
 # Dossier de travail des tableurs uploadés. Sous `data/` (gitignoré),
 # distinct des bases. Créé à la demande.
 RACINE_IMPORT_TMP = Path("data") / "_import_tmp"
-
-# Extensions de tableur acceptées à l'upload.
-EXTENSIONS_TABLEUR: frozenset[str] = frozenset(
-    {".xlsx", ".xls", ".csv", ".tsv"}
-)
 
 # Taille maximale d'un tableur uploadé (octets). Un inventaire reste
 # petit ; cette borne protège surtout d'un upload accidentel énorme.
@@ -105,39 +105,16 @@ def _avancer_etape(session: SessionImport, vers: str) -> None:
 def lire_colonnes_tableur(
     chemin: Path, feuille: str | None = None
 ) -> list[str]:
-    """Lit les en-têtes de colonnes d'un tableur (xlsx/xls/csv/tsv).
+    """Détecte les colonnes d'un tableur, en traduisant l'erreur de
+    lecture en `TableurInvalide` (exception de l'assistant web).
 
-    Lève `TableurInvalide` si l'extension n'est pas gérée ou si le
-    fichier est illisible. Pour les CSV, tente UTF-8 puis CP1252
-    (tableurs anciens sous Windows) — détection bienveillante.
+    La lecture proprement dite est mutualisée avec le reste de
+    l'application via `importers.lecteur_tableur.lire_entetes_tableur`.
     """
-    import pandas as pd  # import local : pandas est lourd
-
-    ext = chemin.suffix.lower()
-    if ext not in EXTENSIONS_TABLEUR:
-        raise TableurInvalide(f"Extension non supportée : {ext!r}.")
     try:
-        if ext in (".xlsx", ".xls"):
-            df = pd.read_excel(
-                chemin, sheet_name=feuille if feuille else 0, dtype=str, nrows=1
-            )
-        else:
-            sep = "\t" if ext == ".tsv" else ";"
-            try:
-                df = pd.read_csv(chemin, sep=sep, encoding="utf-8", dtype=str, nrows=1)
-            except UnicodeDecodeError:
-                df = pd.read_csv(
-                    chemin, sep=sep, encoding="cp1252", dtype=str, nrows=1
-                )
-    except TableurInvalide:
-        raise
-    except Exception as e:  # noqa: BLE001 — toute erreur pandas → message propre
-        raise TableurInvalide(f"Lecture du tableur impossible : {e}") from e
-
-    colonnes = [str(c).strip() for c in df.columns]
-    if not colonnes:
-        raise TableurInvalide("Le tableur ne contient aucune colonne.")
-    return colonnes
+        return lire_entetes_tableur(chemin, feuille)
+    except LectureTableurErreur as e:
+        raise TableurInvalide(str(e)) from e
 
 
 def attacher_tableur(

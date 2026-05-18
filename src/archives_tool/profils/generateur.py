@@ -288,37 +288,28 @@ def analyser_tableur(
     (ex. deux colonnes "Titre"), seule la première gagne — les
     suivantes basculent en ``metadonnees.``.
     """
-    import pandas as pd  # import local : pandas est lourd
+    from archives_tool.importers.lecteur_tableur import (
+        LectureTableurErreur,
+        lire_entetes_tableur,
+    )
 
     chemin = Path(chemin_tableur)
     if not chemin.is_file():
         raise FileNotFoundError(f"Tableur introuvable : {chemin}")
 
-    ext = chemin.suffix.lower()
+    # Lecture des en-têtes mutualisée avec le reste de l'application.
+    # `analyser_tableur` n'exploite que les noms de colonnes — l'erreur
+    # de lecture est traduite en `ValueError` (contrat historique).
     try:
-        if ext in (".xlsx", ".xls"):
-            df = pd.read_excel(
-                chemin,
-                sheet_name=feuille if feuille else 0,
-                dtype=str,
-                nrows=500,
-            )
-        elif ext in (".csv", ".tsv"):
-            sep = "\t" if ext == ".tsv" else ";"
-            df = pd.read_csv(chemin, sep=sep, encoding="utf-8", dtype=str, nrows=500)
-        else:
-            raise ValueError(f"Extension non supportée : {ext}")
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"Lecture du tableur impossible : {e}") from e
+        colonnes = lire_entetes_tableur(chemin, feuille)
+    except LectureTableurErreur as e:
+        raise ValueError(str(e)) from e
 
     mappings: list[tuple[str, str, bool]] = []
     dedies_pris: set[str] = set()
     slugs_pris: set[str] = set()
 
-    for col in df.columns:
-        nom = str(col)
+    for nom in colonnes:
         champ_dedie = _detecter_champ_structurant(nom)
         if champ_dedie and champ_dedie not in dedies_pris:
             dedies_pris.add(champ_dedie)

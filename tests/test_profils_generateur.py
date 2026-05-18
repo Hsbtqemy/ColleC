@@ -28,9 +28,9 @@ def _ecrire_yaml_co_localise(yaml_str: str, dossier: Path) -> Path:
 
 def test_generer_squelette_minimal_contient_sections() -> None:
     yml = generer_squelette("HK", "Hara-Kiri", "tableur.csv")
-    # Sections obligatoires présentes.
-    assert "version_profil: 1" in yml
-    assert "collection:" in yml
+    # Sections obligatoires présentes (format v2 : section `fonds:`).
+    assert "version_profil: 2" in yml
+    assert "fonds:" in yml
     assert '  cote: "HK"' in yml
     assert '  titre: "Hara-Kiri"' in yml
     assert "tableur:" in yml

@@ -61,14 +61,14 @@ def test_cli_dry_run(env: dict[str, Path]) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "DRY-RUN" in result.output
-    assert "5 créés" in result.output
+    assert "Items créés : 5" in result.output
 
 
 def test_cli_mode_reel_ecrit_en_base(env: dict[str, Path]) -> None:
     from sqlalchemy import select
 
     from archives_tool.db import creer_session_factory
-    from archives_tool.models import Collection, OperationImport
+    from archives_tool.models import Fonds, OperationImport
 
     result = runner.invoke(
         app,
@@ -90,11 +90,10 @@ def test_cli_mode_reel_ecrit_en_base(env: dict[str, Path]) -> None:
     engine = creer_engine(env["db"])
     factory = creer_session_factory(engine)
     with factory() as session:  # type: Session
-        col = session.scalar(
-            select(Collection).where(Collection.cote_collection == "HK")
-        )
-        assert col is not None
-        assert col.cree_par == "Alice"
+        # L'import v2 crée un fonds (et sa miroir auto).
+        fonds = session.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        assert fonds is not None
+        assert fonds.cree_par == "Alice"
         journal = session.scalar(select(OperationImport))
         assert journal is not None
         assert journal.execute_par == "Alice"

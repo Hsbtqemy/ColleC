@@ -1,9 +1,10 @@
 """Service de l'assistant d'import web (V0.7).
 
-Orchestre les `SessionImport` : création, reprise, abandon. Les
-étapes du wizard (upload tableur, fonds, mapping, fichiers, aperçu)
-viendront enrichir ce module ; cette première passe ne porte que le
-cycle de vie d'une session.
+Orchestre les `SessionImport` de bout en bout : cycle de vie
+(création, reprise, abandon), étapes du wizard (tableur, fonds,
+mapping, fichiers), puis composition d'un profil v2 et exécution de
+l'import via le moteur `importers.ecrivain` — aucune logique métier
+dupliquée.
 
 Le tableur uploadé est stocké hors base, sous `data/_import_tmp/`
 (gitignoré). Le chemin stocké en base est relatif à ce dossier —
@@ -17,15 +18,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from archives_tool.config import ConfigLocale
+from archives_tool.importers.ecrivain import RapportImport, importer
 from archives_tool.importers.lecteur_tableur import (
     EXTENSIONS_TABLEUR,
     LectureTableurErreur,
     lire_entetes_tableur,
 )
 from archives_tool.models import ETAPES_IMPORT, SessionImport
+from archives_tool.profils.schema import Profil
 
 # Dossier de travail des tableurs uploadés. Sous `data/` (gitignoré),
 # distinct des bases. Créé à la demande.
@@ -46,6 +51,10 @@ class TableurInvalide(Exception):
 
 class MappingInvalide(Exception):
     """Le mapping colonnes → champs proposé n'est pas exploitable."""
+
+
+class ProfilIncomplet(Exception):
+    """La session ne contient pas de quoi composer un profil valide."""
 
 
 # Cibles sentinelles du mapping (hors champs dédiés / metadonnées).
@@ -290,6 +299,91 @@ def enregistrer_resolution(
     session.modifie_le = datetime.now()
     _avancer_etape(session, "apercu")
     db.commit()
+
+
+def composer_profil(session: SessionImport) -> Profil:
+    """Assemble un profil d'import v2 depuis l'état de la session.
+
+    Le `tableur.chemin` est absolu (le tableur vit dans le dossier de
+    travail) — la résolution `_chemin_tableur` le prend tel quel. Lève
+    `ProfilIncomplet` si une étape manque ou si le profil composé
+    échoue la validation Pydantic.
+    """
+    if not session.fonds_data or not session.mappings:
+        raise ProfilIncomplet(
+            "Le fonds ou le mapping n'a pas été renseigné."
+        )
+    chemin = _chemin_tableur_absolu(session)
+    if chemin is None or not chemin.is_file():
+        raise ProfilIncomplet("Le tableur de la session est introuvable.")
+
+    data: dict[str, Any] = {
+        "version_profil": 2,
+        "fonds": dict(session.fonds_data),
+        "tableur": {
+            "chemin": str(chemin.resolve()),
+            "feuille": session.feuille or None,
+        },
+        "mapping": dict(session.mappings),
+    }
+    if session.collection_miroir_data:
+        data["collection_miroir"] = dict(session.collection_miroir_data)
+    if session.configuration_fichiers:
+        data["fichiers"] = dict(session.configuration_fichiers)
+
+    try:
+        return Profil.model_validate(data)
+    except ValidationError as e:
+        premier = e.errors()[0]
+        raise ProfilIncomplet(
+            f"Profil d'import invalide : {premier.get('msg', 'erreur de validation')}."
+        ) from e
+
+
+def _chemin_profil_notionnel(session: SessionImport) -> Path:
+    """Chemin de profil passé au moteur d'import. Ne sert qu'à résoudre
+    les chemins relatifs (ici inutile : `tableur.chemin` est absolu) et
+    à renseigner `OperationImport.profil_chemin`."""
+    return RACINE_IMPORT_TMP / f"profil_session_{session.id}.yaml"
+
+
+def apercu_import(
+    db: Session, session: SessionImport, config: ConfigLocale
+) -> RapportImport:
+    """Exécute l'import en dry-run et retourne le rapport (rien écrit)."""
+    profil = composer_profil(session)
+    return importer(
+        profil,
+        _chemin_profil_notionnel(session),
+        db,
+        config,
+        dry_run=True,
+    )
+
+
+def executer_import(
+    db: Session,
+    session: SessionImport,
+    config: ConfigLocale,
+    utilisateur: str,
+) -> RapportImport:
+    """Exécute l'import réel. Si aucune erreur, marque la session
+    `validee` et mémorise le fonds créé."""
+    profil = composer_profil(session)
+    rapport = importer(
+        profil,
+        _chemin_profil_notionnel(session),
+        db,
+        config,
+        dry_run=False,
+        cree_par=utilisateur,
+    )
+    if not rapport.erreurs:
+        session.statut = "validee"
+        session.fonds_cree_id = rapport.fonds_id
+        session.modifie_le = datetime.now()
+        db.commit()
+    return rapport
 
 
 def abandonner_session(db: Session, session: SessionImport) -> None:

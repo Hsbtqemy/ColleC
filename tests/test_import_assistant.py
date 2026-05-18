@@ -375,3 +375,79 @@ def test_fichiers_racine_sans_motif_rejete(client_vide: TestClient) -> None:
         data={"racine": "scans", "motif_chemin": "", "type_motif": "template"},
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Sous-étape 4 — aperçu (dry-run) + exécution
+# ---------------------------------------------------------------------------
+
+
+def _session_prete_pour_apercu(client: TestClient) -> int:
+    """Session menée jusqu'à l'étape aperçu : tableur + fonds + mapping
+    + fichiers sautés (import métadonnées seules)."""
+    sid = _session_a_l_etape_fichiers(client)
+    client.post(
+        f"/import/{sid}/fichiers",
+        data={"racine": "", "motif_chemin": "", "type_motif": "template"},
+    )
+    return sid
+
+
+def test_apercu_dry_run_compte_les_items(client_vide: TestClient) -> None:
+    """L'aperçu simule l'import : le CSV de démo a 2 lignes → 2 items."""
+    sid = _session_prete_pour_apercu(client_vide)
+    resp = client_vide.get(f"/import/{sid}/apercu")
+    assert resp.status_code == 200
+    assert "Items à créer" in resp.text
+    assert ">2</strong>" in resp.text
+
+
+def test_executer_cree_le_fonds(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    from archives_tool.models import Fonds, Item
+
+    sid = _session_prete_pour_apercu(client_vide)
+    resp = client_vide.post(
+        f"/import/{sid}/executer", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/fonds/HK"
+
+    engine = creer_engine(tmp_path / "vide.db")
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        assert fonds is not None
+        nb_items = len(
+            list(s.scalars(select(Item).where(Item.fonds_id == fonds.id)))
+        )
+        assert nb_items == 2
+    engine.dispose()
+
+    rows = _sessions(tmp_path / "vide.db")
+    assert rows[0].statut == "validee"
+    assert rows[0].fonds_cree_id == fonds.id
+
+
+def test_executer_idempotent_redirige_vers_le_fonds(
+    client_vide: TestClient,
+) -> None:
+    """Re-POST sur une session déjà exécutée → redirection vers le fonds,
+    pas de second import."""
+    sid = _session_prete_pour_apercu(client_vide)
+    client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
+    resp = client_vide.post(
+        f"/import/{sid}/executer", follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/fonds/HK"
+
+
+def test_session_validee_disparait_de_l_accueil(
+    client_vide: TestClient,
+) -> None:
+    sid = _session_prete_pour_apercu(client_vide)
+    client_vide.post(f"/import/{sid}/executer")
+    resp = client_vide.get("/import")
+    assert "Aucun import en cours" in resp.text

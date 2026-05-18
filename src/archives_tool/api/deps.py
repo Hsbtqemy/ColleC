@@ -109,6 +109,20 @@ def get_racines() -> dict[str, Path]:
     return dict(config.racines) if config else {}
 
 
+def get_config() -> ConfigLocale:
+    """Config locale complète, ou une config vide si aucun fichier.
+
+    L'assistant d'import a besoin d'une `ConfigLocale` non nulle pour
+    appeler le moteur `importers.ecrivain`. Sans `config_local.yaml`,
+    on synthétise une config sans racines — l'import de métadonnées
+    seules reste possible.
+    """
+    config = _charger_config()
+    if config is not None:
+        return config
+    return ConfigLocale(utilisateur="anonyme", racines={})
+
+
 def get_nom_base() -> str:
     return chemin_base_courant().name
 

@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import (
+    get_config,
     get_db,
     get_nom_base,
     get_racines,
@@ -34,8 +35,10 @@ from archives_tool.api.services.import_web import (
     CIBLE_META,
     TAILLE_MAX_TABLEUR,
     MappingInvalide,
+    ProfilIncomplet,
     TableurInvalide,
     abandonner_session,
+    apercu_import,
     attacher_tableur,
     cibles_proposees,
     construire_mapping,
@@ -43,10 +46,12 @@ from archives_tool.api.services.import_web import (
     enregistrer_fonds,
     enregistrer_mapping,
     enregistrer_resolution,
+    executer_import,
     lister_sessions_en_cours,
 )
 from archives_tool.api.templating import templates
-from archives_tool.models import ETAPES_IMPORT, SessionImport
+from archives_tool.config import ConfigLocale
+from archives_tool.models import ETAPES_IMPORT, Fonds, SessionImport
 from archives_tool.profils.schema import FondsProfil, ResolutionFichiers
 
 router = APIRouter()
@@ -502,8 +507,16 @@ def soumettre_fichiers(
 
 
 # ---------------------------------------------------------------------------
-# Étape 5 — aperçu + exécution (stub : livré en sous-étape 4)
+# Étape 5 — aperçu (dry-run) + exécution
 # ---------------------------------------------------------------------------
+
+
+def _cote_fonds_cree(db: Session, session: SessionImport) -> str | None:
+    """Cote du fonds créé par une session déjà exécutée, ou None."""
+    if session.fonds_cree_id is None:
+        return None
+    fonds = db.get(Fonds, session.fonds_cree_id)
+    return fonds.cote if fonds is not None else None
 
 
 @router.get(
@@ -517,12 +530,93 @@ def etape_apercu(
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
+    config: ConfigLocale = Depends(get_config),
 ) -> HTMLResponse | RedirectResponse:
     session = charger_session_import_ou_404(db, session_id)
     if not _etape_accessible(session, "apercu"):
         return _rediriger_vers_etape_courante(session)
+
+    # Session déjà exécutée : on montre le résultat, pas un dry-run.
+    if session.statut == "validee":
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_apercu.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                session=session,
+                rapport=None,
+                erreur=None,
+                fonds_cote=_cote_fonds_cree(db, session),
+            ),
+        )
+
+    erreur: str | None = None
+    rapport = None
+    try:
+        rapport = apercu_import(db, session, config)
+    except ProfilIncomplet as e:
+        erreur = str(e)
     return templates.TemplateResponse(
         request,
         "pages/import_etape_apercu.html",
-        _contexte_base(nom_base, utilisateur, session=session),
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            session=session,
+            rapport=rapport,
+            erreur=erreur,
+            fonds_cote=None,
+        ),
+    )
+
+
+@router.post(
+    "/import/{session_id}/executer",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def executer_import_route(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+    config: ConfigLocale = Depends(get_config),
+) -> HTMLResponse | RedirectResponse:
+    session = charger_session_import_ou_404(db, session_id)
+
+    # Déjà exécutée : on renvoie vers le fonds créé (POST idempotent).
+    if session.statut == "validee":
+        cote = _cote_fonds_cree(db, session)
+        cible = f"/fonds/{cote}" if cote else "/import"
+        return RedirectResponse(cible, status_code=303)
+
+    if not _etape_accessible(session, "apercu"):
+        return _rediriger_vers_etape_courante(session)
+
+    def _rerendre(erreur: str | None, rapport) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_apercu.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                session=session,
+                rapport=rapport,
+                erreur=erreur,
+                fonds_cote=None,
+            ),
+            status_code=400,
+        )
+
+    try:
+        rapport = executer_import(db, session, config, utilisateur)
+    except ProfilIncomplet as e:
+        return _rerendre(str(e), None)
+    if rapport.erreurs:
+        return _rerendre(None, rapport)
+
+    return RedirectResponse(
+        f"/fonds/{rapport.fonds_cote}", status_code=303
     )

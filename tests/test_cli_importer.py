@@ -65,10 +65,10 @@ def test_cli_dry_run(env: dict[str, Path]) -> None:
 
 
 def test_cli_mode_reel_ecrit_en_base(env: dict[str, Path]) -> None:
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from archives_tool.db import creer_session_factory
-    from archives_tool.models import Fonds, OperationImport
+    from archives_tool.models import Fichier, Fonds, Item, OperationImport
 
     result = runner.invoke(
         app,
@@ -94,6 +94,13 @@ def test_cli_mode_reel_ecrit_en_base(env: dict[str, Path]) -> None:
         fonds = session.scalar(select(Fonds).where(Fonds.cote == "HK"))
         assert fonds is not None
         assert fonds.cree_par == "Alice"
+        # Les items et fichiers sont réellement écrits (pas seulement
+        # le fonds) — cas item_simple : 5 items, 3 fichiers résolus.
+        nb_items = session.scalar(
+            select(func.count(Item.id)).where(Item.fonds_id == fonds.id)
+        )
+        assert nb_items == 5
+        assert session.scalar(select(func.count(Fichier.id))) == 3
         journal = session.scalar(select(OperationImport))
         assert journal is not None
         assert journal.execute_par == "Alice"

@@ -451,3 +451,96 @@ def test_session_validee_disparait_de_l_accueil(
     client_vide.post(f"/import/{sid}/executer")
     resp = client_vide.get("/import")
     assert "Aucun import en cours" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Tolérance des lignes sans cote (documentation en pied de tableur)
+# ---------------------------------------------------------------------------
+
+# CSV avec 2 vraies lignes + 1 ligne de documentation sans cote.
+CSV_AVEC_LIGNE_SANS_COTE = (
+    b"Cote;Titre;Annee\n"
+    b"HK-1;Numero 1;1960\n"
+    b"HK-2;Numero 2;1961\n"
+    b";Liste des metadonnees du tableau;\n"
+)
+
+
+def _session_apercu_csv(client: TestClient, contenu: bytes) -> int:
+    """Mène une session jusqu'à l'aperçu avec un CSV fourni (colonnes
+    Cote/Titre/Annee), import métadonnées seules."""
+    cree = client.post("/import/nouveau", follow_redirects=False)
+    sid = _id_session(cree)
+    client.post(
+        f"/import/{sid}/tableur",
+        files={"fichier": ("inv.csv", contenu, "text/csv")},
+        data={"feuille": ""},
+    )
+    client.post(
+        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
+    )
+    client.post(
+        f"/import/{sid}/mapping",
+        data={"cible": ["cote", "titre", "annee"]},
+    )
+    client.post(
+        f"/import/{sid}/fichiers",
+        data={"racine": "", "motif_chemin": "", "type_motif": "template"},
+    )
+    return sid
+
+
+def test_apercu_ligne_sans_cote_en_erreur(client_vide: TestClient) -> None:
+    """Sans tolérance, une ligne sans cote bloque l'import et propose
+    de l'ignorer."""
+    sid = _session_apercu_csv(client_vide, CSV_AVEC_LIGNE_SANS_COTE)
+    resp = client_vide.get(f"/import/{sid}/apercu")
+    assert resp.status_code == 200
+    assert "cote absente" in resp.text
+    assert "tolerer_sans_cote=true" in resp.text  # le lien de rattrapage
+
+
+def test_apercu_tolere_les_lignes_sans_cote(client_vide: TestClient) -> None:
+    """Avec `?tolerer_sans_cote=true`, la ligne sans cote est ignorée :
+    2 items, plus d'erreur bloquante."""
+    sid = _session_apercu_csv(client_vide, CSV_AVEC_LIGNE_SANS_COTE)
+    resp = client_vide.get(
+        f"/import/{sid}/apercu?tolerer_sans_cote=true"
+    )
+    assert resp.status_code == 200
+    assert "ne peut pas s'exécuter" not in resp.text
+    assert ">2</strong>" in resp.text  # 2 items
+
+
+def test_executer_avec_tolerance_cree_le_fonds(
+    client_vide: TestClient, tmp_path: Path
+) -> None:
+    from archives_tool.models import Fonds, Item
+
+    sid = _session_apercu_csv(client_vide, CSV_AVEC_LIGNE_SANS_COTE)
+    resp = client_vide.post(
+        f"/import/{sid}/executer",
+        data={"tolerer_sans_cote": "true"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/fonds/HK"
+
+    engine = creer_engine(tmp_path / "vide.db")
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        assert fonds is not None
+        nb = len(list(s.scalars(select(Item).where(Item.fonds_id == fonds.id))))
+        assert nb == 2  # la ligne sans cote a été ignorée
+    engine.dispose()
+
+
+def test_executer_sans_tolerance_bloque_sur_ligne_sans_cote(
+    client_vide: TestClient,
+) -> None:
+    """Sans la tolérance, l'exécution échoue (400) et ne crée rien."""
+    sid = _session_apercu_csv(client_vide, CSV_AVEC_LIGNE_SANS_COTE)
+    resp = client_vide.post(f"/import/{sid}/executer")
+    assert resp.status_code == 400
+    assert "cote absente" in resp.text

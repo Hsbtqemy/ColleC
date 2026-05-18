@@ -527,11 +527,14 @@ def _cote_fonds_cree(db: Session, session: SessionImport) -> str | None:
 def etape_apercu(
     session_id: int,
     request: Request,
+    tolerer_sans_cote: bool = False,
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
     config: ConfigLocale = Depends(get_config),
 ) -> HTMLResponse | RedirectResponse:
+    """Aperçu dry-run. `?tolerer_sans_cote=true` relance la simulation
+    en ignorant les lignes sans cote au lieu de les compter en erreur."""
     session = charger_session_import_ou_404(db, session_id)
     if not _etape_accessible(session, "apercu"):
         return _rediriger_vers_etape_courante(session)
@@ -548,13 +551,16 @@ def etape_apercu(
                 rapport=None,
                 erreur=None,
                 fonds_cote=_cote_fonds_cree(db, session),
+                tolerer_sans_cote=False,
             ),
         )
 
     erreur: str | None = None
     rapport = None
     try:
-        rapport = apercu_import(db, session, config)
+        rapport = apercu_import(
+            db, session, config, ignorer_lignes_sans_cote=tolerer_sans_cote
+        )
     except ProfilIncomplet as e:
         erreur = str(e)
     return templates.TemplateResponse(
@@ -567,6 +573,7 @@ def etape_apercu(
             rapport=rapport,
             erreur=erreur,
             fonds_cote=None,
+            tolerer_sans_cote=tolerer_sans_cote,
         ),
     )
 
@@ -579,6 +586,7 @@ def etape_apercu(
 def executer_import_route(
     session_id: int,
     request: Request,
+    tolerer_sans_cote: Annotated[bool, Form()] = False,
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -606,12 +614,19 @@ def executer_import_route(
                 rapport=rapport,
                 erreur=erreur,
                 fonds_cote=None,
+                tolerer_sans_cote=tolerer_sans_cote,
             ),
             status_code=400,
         )
 
     try:
-        rapport = executer_import(db, session, config, utilisateur)
+        rapport = executer_import(
+            db,
+            session,
+            config,
+            utilisateur,
+            ignorer_lignes_sans_cote=tolerer_sans_cote,
+        )
     except ProfilIncomplet as e:
         return _rerendre(str(e), None)
     if rapport.erreurs:

@@ -270,6 +270,11 @@ class Profil(_ProfilBase):
     valeurs_par_defaut: dict[str, Any] = Field(default_factory=dict)
     decomposition_cote: DecompositionCote | None = None
     decomposition_type: DecompositionType | None = None
+    # Tolérance : une ligne sans cote est normalement une erreur
+    # bloquante. Mis à True, ces lignes sont simplement ignorées —
+    # utile quand un tableur d'inventaire contient des lignes de
+    # documentation / légende en pied de fichier (non catalographiques).
+    ignorer_lignes_sans_cote: bool = False
 
     @model_validator(mode="after")
     def _cote_requise_si_granularite_fichier(self) -> Profil:

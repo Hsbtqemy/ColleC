@@ -302,7 +302,9 @@ def _preparer_lignes(
             rapport.erreurs.append(f"Ligne {numero_ligne}: {e}")
             continue
         if prep is None:
-            rapport.lignes_ignorees.append((numero_ligne, "ligne entièrement vide"))
+            rapport.lignes_ignorees.append(
+                (numero_ligne, "ligne vide ou sans cote (ignorée)")
+            )
             continue
         try:
             fichiers = resoudre_fichiers_pour_item(

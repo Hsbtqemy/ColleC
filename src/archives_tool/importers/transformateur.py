@@ -222,6 +222,10 @@ def transformer_ligne(
     # 3. Cote : obligatoire, lève sinon.
     cote = item.champs_colonne.get("cote")
     if cote is None or (isinstance(cote, str) and not cote.strip()):
+        # Tolérance optionnelle : ligne sans cote ignorée plutôt que
+        # bloquante (lignes de documentation en pied de tableur).
+        if profil.ignorer_lignes_sans_cote:
+            return None
         raise ValueError(
             f"Ligne {numero_ligne} : cote absente ou vide "
             "(la cote est obligatoire, même en granularité fichier)."

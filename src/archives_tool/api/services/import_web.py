@@ -301,13 +301,19 @@ def enregistrer_resolution(
     db.commit()
 
 
-def composer_profil(session: SessionImport) -> Profil:
+def composer_profil(
+    session: SessionImport, *, ignorer_lignes_sans_cote: bool = False
+) -> Profil:
     """Assemble un profil d'import v2 depuis l'état de la session.
 
     Le `tableur.chemin` est absolu (le tableur vit dans le dossier de
     travail) — la résolution `_chemin_tableur` le prend tel quel. Lève
     `ProfilIncomplet` si une étape manque ou si le profil composé
     échoue la validation Pydantic.
+
+    `ignorer_lignes_sans_cote` : si True, les lignes du tableur sans
+    cote sont ignorées au lieu de bloquer l'import (lignes de
+    documentation en pied d'inventaire).
     """
     if not session.fonds_data or not session.mappings:
         raise ProfilIncomplet(
@@ -325,6 +331,7 @@ def composer_profil(session: SessionImport) -> Profil:
             "feuille": session.feuille or None,
         },
         "mapping": dict(session.mappings),
+        "ignorer_lignes_sans_cote": ignorer_lignes_sans_cote,
     }
     if session.collection_miroir_data:
         data["collection_miroir"] = dict(session.collection_miroir_data)
@@ -348,10 +355,16 @@ def _chemin_profil_notionnel(session: SessionImport) -> Path:
 
 
 def apercu_import(
-    db: Session, session: SessionImport, config: ConfigLocale
+    db: Session,
+    session: SessionImport,
+    config: ConfigLocale,
+    *,
+    ignorer_lignes_sans_cote: bool = False,
 ) -> RapportImport:
     """Exécute l'import en dry-run et retourne le rapport (rien écrit)."""
-    profil = composer_profil(session)
+    profil = composer_profil(
+        session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote
+    )
     return importer(
         profil,
         _chemin_profil_notionnel(session),
@@ -366,6 +379,8 @@ def executer_import(
     session: SessionImport,
     config: ConfigLocale,
     utilisateur: str,
+    *,
+    ignorer_lignes_sans_cote: bool = False,
 ) -> RapportImport:
     """Exécute l'import réel. Si aucune erreur, marque la session
     `validee` et mémorise le fonds créé.
@@ -377,7 +392,9 @@ def executer_import(
     le sache. Acceptable à l'échelle du projet (équipe réduite, pas
     d'édition simultanée) — un statut transitoire en base serait
     sur-ingénierie ici."""
-    profil = composer_profil(session)
+    profil = composer_profil(
+        session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote
+    )
     rapport = importer(
         profil,
         _chemin_profil_notionnel(session),

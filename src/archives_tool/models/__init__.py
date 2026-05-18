@@ -32,7 +32,7 @@ from .item_collection import ItemCollection
 from .journal import ModificationItem, OperationFichier, OperationImport
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
-from .session_import import SessionImport
+from .session_import import ETAPES_IMPORT, SessionImport
 
 __all__ = [
     "Base",
@@ -53,6 +53,7 @@ __all__ = [
     "OperationImport",
     "PreferencesAffichage",
     "SessionImport",
+    "ETAPES_IMPORT",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",

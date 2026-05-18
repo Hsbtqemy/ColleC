@@ -1,0 +1,83 @@
+{# Accueil de l'assistant d'import (V0.7, sous-étape 1).
+   Variables : `sessions` (list[SessionImport] en cours). #}
+{% extends "base.html" %}
+
+{% block title %}Importer — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer'},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Importer un fonds depuis un tableur
+  </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:24px;line-height:1.5;">
+    L'assistant lit un tableur Excel ou CSV, vous laisse décrire le
+    fonds et mapper les colonnes, puis crée les items en base.
+  </p>
+
+  <form method="post" action="/import/nouveau" style="margin-bottom:28px;">
+    <button type="submit"
+            class="inline-flex items-center gap-2 rounded hover:bg-gray-50"
+            style="padding:8px 16px;font-size:13px;font-weight:500;
+                   color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                   background:#fff;">
+      <span aria-hidden="true" style="font-size:15px;line-height:1;">+</span>
+      Nouvel import
+    </button>
+  </form>
+
+  {% if sessions %}
+    <h2 style="font-size:12px;color:#9ca3af;letter-spacing:.04em;
+               text-transform:uppercase;font-weight:500;margin-bottom:10px;">
+      Imports en cours ({{ sessions | length }})
+    </h2>
+    <ul class="bg-white rounded-lg overflow-hidden"
+        style="border:1px solid rgba(0,0,0,0.08);">
+      {% for s in sessions %}
+        <li class="flex items-center gap-3 border-b last:border-b-0"
+            style="border-color:rgba(0,0,0,0.06);padding:12px 16px;">
+          <div class="grow min-w-0">
+            <a href="/import/{{ s.id }}" class="hover:underline"
+               style="font-size:13px;color:#1f1f1f;">
+              {{ s.nom_tableur_original or "Import #" ~ s.id }}
+            </a>
+            <div style="font-size:12px;color:#9ca3af;margin-top:2px;">
+              Étape : {{ s.etape }}
+              <span aria-hidden="true" style="margin:0 4px;">·</span>
+              {{ s.utilisateur }}
+              <span aria-hidden="true" style="margin:0 4px;">·</span>
+              {{ s.cree_le | temps_relatif }}
+            </div>
+          </div>
+          <a href="/import/{{ s.id }}" class="rounded hover:bg-gray-50 shrink-0"
+             style="padding:5px 12px;font-size:12px;color:#374151;
+                    border:1px solid rgba(0,0,0,0.10);">
+            Reprendre
+          </a>
+          <form method="post" action="/import/{{ s.id }}/abandonner"
+                class="shrink-0">
+            <button type="submit"
+                    class="rounded hover:bg-red-50"
+                    style="padding:5px 12px;font-size:12px;color:#991b1b;
+                           border:1px solid rgba(0,0,0,0.10);background:#fff;">
+              Abandonner
+            </button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p style="font-size:13px;color:#9ca3af;font-style:italic;">
+      Aucun import en cours. Cliquez « Nouvel import » pour commencer.
+    </p>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{# Vue d'une session d'import (V0.7, sous-étape 1 — stub).
+   Le wizard complet (upload → fonds → mapping → fichiers → aperçu)
+   est livré par les sous-étapes 2 à 4.
+   Variables : `session` (SessionImport). #}
+{% extends "base.html" %}
+
+{% block title %}Import #{{ session.id }} — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:24px;">
+    {{ session.nom_tableur_original or "Import #" ~ session.id }}
+  </h1>
+
+  <div class="bg-white rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:28px;">
+    <p style="font-size:13px;color:#6b7280;line-height:1.5;">
+      Session ouverte à l'étape <strong>{{ session.etape }}</strong>.
+      Les écrans du wizard (tableur, fonds, mapping, fichiers, aperçu)
+      arrivent dans les prochaines sous-étapes de développement.
+    </p>
+  </div>
+
+  <div class="flex items-center gap-2" style="margin-top:18px;">
+    <a href="/import" class="rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);">
+      Retour à la liste
+    </a>
+    <form method="post" action="/import/{{ session.id }}/abandonner">
+      <button type="submit" class="rounded hover:bg-red-50"
+              style="padding:6px 14px;font-size:13px;color:#991b1b;
+                     border:1px solid rgba(0,0,0,0.10);background:#fff;">
+        Abandonner cet import
+      </button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

@@ -6,8 +6,8 @@ Routers enregistrés :
 - `preferences` : panneau de configuration des colonnes du tableau d'items.
 - `derives` : sert les vignettes / aperçus locaux sous `/derives/<racine>/<chemin>`
   pour la visionneuse OpenSeadragon de la page item.
-- `import_assistant` : placeholder `/import` (assistant d'import à
-  venir en V0.7+).
+- `import_assistant` : assistant d'import web (`/import`) — cycle de
+  vie des `SessionImport` ; le wizard est livré par sous-étapes.
 
 `routes/collaborateurs.py` est archivé en dette V0.8 — les
 collaborateurs sont gérés exclusivement au niveau fonds.

@@ -237,6 +237,24 @@ def _grouper_par_cote(
     return resultats
 
 
+def _cle_identite_fichier(
+    racine: str | None,
+    chemin_relatif: str | None,
+    iiif_url_nakala: str | None,
+    hash_sha256: str | None,
+) -> tuple:
+    """Clé d'identité d'un fichier pour la déduplication.
+
+    Un fichier disque s'identifie par (racine, chemin_relatif) ; un
+    fichier Nakala-only par son URL IIIF ; à défaut par son hash.
+    """
+    if chemin_relatif:
+        return ("disque", racine, chemin_relatif)
+    if iiif_url_nakala:
+        return ("nakala", iiif_url_nakala)
+    return ("hash", hash_sha256)
+
+
 def _ecrire_fichiers(
     item: Item,
     fichiers_prep: list[FichierPrepare],
@@ -251,15 +269,32 @@ def _ecrire_fichiers(
     """
     if not fichiers_prep:
         return
-    existants_par_chemin = {(f.racine, f.chemin_relatif): f for f in item.fichiers}
+    existants = {
+        _cle_identite_fichier(
+            f.racine, f.chemin_relatif, f.iiif_url_nakala, f.hash_sha256
+        )
+        for f in item.fichiers
+    }
     ordres_utilises = {f.ordre for f in item.fichiers}
     prochain_ordre = max(ordres_utilises, default=0) + 1
 
     for prep in fichiers_prep:
-        cle = (prep.racine, prep.chemin_relatif)
-        if cle in existants_par_chemin:
+        # Le modèle Fichier exige au moins une source (chemin local ou
+        # URL Nakala). Une ligne sans l'une ni l'autre est inexploitable.
+        if not prep.chemin_relatif and not prep.iiif_url_nakala:
+            rapport.warnings.append(
+                f"Fichier « {prep.nom_fichier} » ignoré : ni chemin "
+                "disque ni URL Nakala."
+            )
+            continue
+        cle = _cle_identite_fichier(
+            prep.racine, prep.chemin_relatif, prep.iiif_url_nakala,
+            prep.hash_sha256,
+        )
+        if cle in existants:
             rapport.fichiers_deja_connus += 1
             continue
+        existants.add(cle)
         ordre = prep.ordre if prep.ordre not in ordres_utilises else prochain_ordre
         ordres_utilises.add(ordre)
         if ordre >= prochain_ordre:
@@ -268,14 +303,44 @@ def _ecrire_fichiers(
             item_id=item.id,
             racine=prep.racine,
             chemin_relatif=prep.chemin_relatif,
+            iiif_url_nakala=prep.iiif_url_nakala,
             nom_fichier=prep.nom_fichier,
             hash_sha256=prep.hash_sha256,
             taille_octets=prep.taille_octets,
             format=prep.format,
             ordre=ordre,
         )
+        if prep.type_page:
+            fichier.type_page = prep.type_page
         session.add(fichier)
         rapport.fichiers_ajoutes += 1
+
+
+def _fichier_depuis_colonnes(
+    prep: ItemPrepare, ordre: int
+) -> FichierPrepare:
+    """Construit un `FichierPrepare` depuis les colonnes `fichier.*`
+    d'une ligne (granularité fichier, import d'un tableur où l'info
+    fichier vit dans les colonnes — typiquement un export Nakala).
+
+    Le fichier n'a pas de source disque : il est identifié par son
+    URL Nakala. `ordre` est provisoire — `_grouper_par_cote` le
+    réindexe par ordre d'apparition dans le groupe.
+    """
+    cf = prep.champs_fichier
+    nom = cf.get("nom_fichier") or f"{prep.cote}-{ordre:04d}"
+    return FichierPrepare(
+        nom_fichier=str(nom),
+        ordre=ordre,
+        hash_sha256=(cf.get("hash_sha256") or None),
+        iiif_url_nakala=(cf.get("iiif_url_nakala") or None),
+        type_page=(cf.get("type_page") or None),
+    )
+
+
+def _a_des_colonnes_fichier(prep: ItemPrepare) -> bool:
+    """Vrai si la ligne porte au moins une valeur de colonne `fichier.*`."""
+    return any(v for v in prep.champs_fichier.values())
 
 
 def _preparer_lignes(
@@ -306,15 +371,20 @@ def _preparer_lignes(
                 (numero_ligne, "ligne vide ou sans cote (ignorée)")
             )
             continue
-        try:
-            fichiers = resoudre_fichiers_pour_item(
-                prep, profil, config, avec_hash=not dry_run
-            )
-        except Exception as e:  # noqa: BLE001 — résolveur a plusieurs erreurs typées
-            rapport.erreurs.append(
-                f"Ligne {numero_ligne}: résolution fichiers : {e}"
-            )
-            continue
+        if _a_des_colonnes_fichier(prep):
+            # Le fichier est décrit par les colonnes `fichier.*` de la
+            # ligne — pas de résolution disque.
+            fichiers = [_fichier_depuis_colonnes(prep, numero_ligne)]
+        else:
+            try:
+                fichiers = resoudre_fichiers_pour_item(
+                    prep, profil, config, avec_hash=not dry_run
+                )
+            except Exception as e:  # noqa: BLE001 — résolveur a plusieurs erreurs typées
+                rapport.erreurs.append(
+                    f"Ligne {numero_ligne}: résolution fichiers : {e}"
+                )
+                continue
         items_et_fichiers.append((prep, fichiers))
 
     if profil.granularite_source == "fichier":

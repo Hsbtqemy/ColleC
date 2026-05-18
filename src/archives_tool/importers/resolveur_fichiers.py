@@ -30,13 +30,18 @@ class ResolutionFichiersErreur(Exception):
 
 @dataclass
 class FichierPrepare:
-    racine: str
-    chemin_relatif: str  # POSIX, NFC
     nom_fichier: str
     ordre: int  # 1-indexé
+    # Source locale (résolution disque) — ou Nakala-only : au moins
+    # l'une des deux doit être renseignée (chemin_relatif ou
+    # iiif_url_nakala), comme le CHECK du modèle Fichier l'impose.
+    racine: str | None = None
+    chemin_relatif: str | None = None  # POSIX, NFC
+    iiif_url_nakala: str | None = None
     hash_sha256: str | None = None
     taille_octets: int | None = None
     format: str | None = None
+    type_page: str | None = None
 
 
 def _valeurs_pour_substitution(item: ItemPrepare) -> dict[str, Any]:

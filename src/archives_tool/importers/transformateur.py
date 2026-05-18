@@ -49,6 +49,10 @@ class ItemPrepare:
     cote: str
     champs_colonne: dict[str, Any] = field(default_factory=dict)
     metadonnees: dict[str, Any] = field(default_factory=dict)
+    # Colonnes mappées vers `fichier.<attr>` : décrivent le fichier
+    # de la ligne (granularité fichier, import depuis colonnes plutôt
+    # que résolution disque). L'écrivain en fait un `FichierPrepare`.
+    champs_fichier: dict[str, Any] = field(default_factory=dict)
     hierarchie: dict[str, str] | None = None
     typologie: dict[str, str] | None = None
     ligne_source: int = 0
@@ -135,9 +139,11 @@ def _appliquer_mapping(
 
 
 def _classer(champ_cible: str) -> tuple[str, str]:
-    """Retourne (zone, cle) où zone ∈ {"colonne", "metadonnees"}."""
+    """Retourne (zone, cle) où zone ∈ {"colonne", "metadonnees", "fichier"}."""
     if champ_cible.startswith("metadonnees."):
         return ("metadonnees", champ_cible[len("metadonnees.") :])
+    if champ_cible.startswith("fichier."):
+        return ("fichier", champ_cible[len("fichier.") :])
     if champ_cible in COLONNES_ITEM:
         return ("colonne", champ_cible)
     # Clé inconnue : on tolère mais on range dans metadonnees, pour ne
@@ -203,19 +209,21 @@ def transformer_ligne(
     item = ItemPrepare(cote="", ligne_source=numero_ligne)
 
     # 1. Application du mapping.
+    _zones = {
+        "colonne": item.champs_colonne,
+        "metadonnees": item.metadonnees,
+        "fichier": item.champs_fichier,
+    }
     for champ_cible, mapping in profil.mapping.champs.items():
         valeur = _appliquer_mapping(champ_cible, mapping, ligne)
         zone, cle = _classer(champ_cible)
-        if zone == "colonne":
-            item.champs_colonne[cle] = valeur
-        else:
-            item.metadonnees[cle] = valeur
+        _zones[zone][cle] = valeur
 
     # 2. Valeurs par défaut : n'écrasent pas une valeur déjà présente,
     # mais couvrent les champs absents du mapping.
     for cle, val in profil.valeurs_par_defaut.items():
         zone, cle_locale = _classer(cle)
-        cible = item.champs_colonne if zone == "colonne" else item.metadonnees
+        cible = _zones[zone]
         if cle_locale not in cible or cible[cle_locale] is None:
             cible[cle_locale] = val
 

@@ -208,3 +208,49 @@ def test_cas_uri_dc_agregations(session: Session) -> None:
     assert sujets is not None
     # 3 colonnes sources, séparateur " | "
     assert "|" in sujets
+
+
+# ---------------------------------------------------------------------------
+# Cas fichier colonnes — granularité fichier, fichiers décrits par les
+# colonnes du tableur (export Nakala : nom + hash + URL IIIF par ligne)
+# ---------------------------------------------------------------------------
+
+
+def test_dry_run_cas_fichier_colonnes(session: Session) -> None:
+    """Dry-run : 3 lignes / 2 cotes → 2 items, 3 fichiers comptés."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    rapport = importer(profil, chemin, session, _config({}), dry_run=True)
+    assert rapport.erreurs == []
+    assert rapport.items_crees == 2
+    assert rapport.fichiers_ajoutes == 3
+    assert session.scalar(select(Fonds).where(Fonds.cote == "PFC")) is None
+
+
+def test_reel_cas_fichier_colonnes(session: Session) -> None:
+    """Mode réel : chaque ligne devient un Fichier Nakala-only rattaché
+    à l'item de sa cote — pas de résolution disque."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    assert rapport.items_crees == 2
+    assert rapport.fichiers_ajoutes == 3
+
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    assert fonds is not None
+
+    par_cote = {it.cote: it for it in fonds.items}
+    assert set(par_cote) == {"PFC-1", "PFC-2"}
+    # PFC-1 : 2 lignes fusionnées → 2 fichiers.
+    pfc1 = par_cote["PFC-1"]
+    assert len(pfc1.fichiers) == 2
+    f0 = sorted(pfc1.fichiers, key=lambda f: f.ordre)[0]
+    assert f0.nom_fichier == "pfc1_p01.jpg"
+    assert f0.hash_sha256 == "abc111"
+    assert f0.iiif_url_nakala.endswith("abc111/full/full/0/default.jpg")
+    # Fichier Nakala-only : aucune source disque.
+    assert f0.racine is None
+    assert f0.chemin_relatif is None
+    # PFC-2 : 1 ligne → 1 fichier.
+    assert len(par_cote["PFC-2"].fichiers) == 1

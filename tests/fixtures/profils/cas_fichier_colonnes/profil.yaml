@@ -1,0 +1,27 @@
+# Profil d'import — granularité fichier, fichiers décrits par les
+# colonnes du tableur (pas de résolution disque). Cas d'un export
+# Nakala : chaque ligne porte le nom, le hash et l'URL IIIF du scan.
+
+version_profil: 2
+
+fonds:
+  cote: "PFC"
+  titre: "Por Favor (colonnes)"
+  description_interne: "Fixture : import fichiers depuis colonnes."
+
+tableur:
+  chemin: "tableur.csv"
+  ligne_entete: 1
+  separateur_csv: ";"
+
+granularite_source: "fichier"
+
+mapping:
+  cote: "cote"
+  titre: "titre"
+  fichier.nom_fichier: "filename"
+  fichier.hash_sha256: "hash"
+  fichier.iiif_url_nakala: "iiif"
+
+valeurs_par_defaut:
+  langue: "spa"

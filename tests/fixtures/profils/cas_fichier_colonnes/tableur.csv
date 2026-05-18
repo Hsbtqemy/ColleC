@@ -1,0 +1,4 @@
+cote;titre;filename;hash;iiif
+PFC-1;Numero 1;pfc1_p01.jpg;abc111;https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/full/full/0/default.jpg
+PFC-1;Numero 1;pfc1_p02.jpg;def222;https://api.nakala.fr/iiif/10.34847/nkl.x/def222/full/full/0/default.jpg
+PFC-2;Numero 2;pfc2_p01.jpg;ghi333;https://api.nakala.fr/iiif/10.34847/nkl.x/ghi333/full/full/0/default.jpg

@@ -354,6 +354,28 @@ demo.db antérieure à `fa47242`, lui faire passer
 `archives-tool demo init --force` (chemin officiel, perd les données
 de test) ou un backfill équivalent. À documenter dans le README ?
 
+### 2026-05-14 — F — bloquant (périmètre) → ouvert
+
+**Impossible d'importer depuis l'interface web.** La route `/import`
+(menu Importer du dashboard) ne sert qu'un placeholder qui renvoie
+l'utilisateur vers la CLI. L'import réel passe exclusivement par
+`archives-tool importer profil.yaml` au terminal.
+
+Pour un utilisateur dont le modèle mental est « je travaille dans
+le navigateur », c'est un mur : tout le point d'entrée du chantier
+(amorçage d'un fonds depuis un tableur) exige la ligne de commande
+et la rédaction manuelle d'un profil YAML.
+
+Côté code : `import_assistant.py` documente lui-même l'assistant
+complet (upload, mappings, fichiers, aperçu, exécution) comme
+livrable V0.7 « par étapes » — jamais commencé. Le moteur d'import
+(`importers/`) est solide et testé ; il ne manque que la couche UI.
+
+**Conséquence sur le test d'usage** : la section F peut se faire
+en CLI (le moteur fonctionne), mais elle ne valide alors PAS le
+parcours utilisateur réel. L'import-UI est un candidat fort, voire
+LE candidat, du backlog Phase 2.
+
 ---
 
 ## Bilan final (à remplir à la fin du test)

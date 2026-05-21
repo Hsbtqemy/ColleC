@@ -404,16 +404,14 @@ _HINTS_CIBLES: dict[str, str] = {
     "metadonnees.sujet": "Sujet ou mots-clés (DC subject), texte libre.",
     "metadonnees.droits": "Licence ou statut de droits (DC rights).",
     "metadonnees.source": "Source d'origine de l'item (DC source).",
-    # Sentinelles.
-    CIBLE_META: (
-        "Stocke la valeur dans `Item.metadonnees` sous la clé "
-        "slugifiée du nom de colonne."
-    ),
-    CIBLE_META_FICHIER: (
-        "Stocke la valeur dans `Fichier.metadonnees` — propre à ce "
-        "scan, ne se mélange pas aux autres lignes de même cote."
-    ),
-    CIBLE_IGNORE: "La colonne est exclue de l'import.",
+    # Sentinelles : volontairement vides. Le libellé d'option dans le
+    # sélecteur (« Métadonnée personnalisée (item) », « — Ne pas
+    # importer ») se suffit à lui-même, et l'heuristique de proposition
+    # place beaucoup de colonnes sur `__meta__` au upload — répéter
+    # 25 fois la même phrase serait du bruit visuel.
+    CIBLE_META: "",
+    CIBLE_META_FICHIER: "",
+    CIBLE_IGNORE: "",
 }
 
 

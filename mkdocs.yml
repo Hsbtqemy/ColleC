@@ -54,6 +54,7 @@ extra:
 # contributeurs sans encombrer l'utilisateur).
 exclude_docs: |
   developpeurs/deploiement-future.md
+  developpeurs/v092-import-refonte.md
 
 markdown_extensions:
   - admonition

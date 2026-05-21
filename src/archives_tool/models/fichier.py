@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from typing import Any
+
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -66,6 +69,13 @@ class Fichier(Base):
     )
     derive_genere: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes_techniques: Mapped[str | None] = mapped_column(Text)
+    # Métadonnées libres par-fichier — pendant de `Item.metadonnees`.
+    # Sert aux champs propres à un scan (URLs Nakala data/embed/preview/thumb,
+    # hash dupliqués, infos techniques import) qui ne rentrent pas dans
+    # les colonnes dédiées. En granularité fichier, chaque ligne du
+    # tableur peut porter ses propres valeurs sans déclencher de
+    # warning de divergence à la fusion (cf. `_grouper_par_cote`).
+    metadonnees: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     ajoute_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

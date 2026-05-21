@@ -42,6 +42,10 @@ class FichierPrepare:
     taille_octets: int | None = None
     format: str | None = None
     type_page: str | None = None
+    # Champs libres propres à ce scan, alimentés par les colonnes
+    # `fichier.metadonnees.X` du mapping (granularité fichier).
+    # Persistés tels quels dans `Fichier.metadonnees` JSON.
+    metadonnees: dict[str, Any] | None = None
 
 
 def _valeurs_pour_substitution(item: ItemPrepare) -> dict[str, Any]:

@@ -28,6 +28,7 @@ Comportement :
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -190,9 +191,79 @@ def _int_ou_none(valeur: Any) -> int | None:
         return None
 
 
+def _ordres_depuis_nom(
+    fichiers: list[FichierPrepare],
+    regex: str,
+    cote: str,
+    rapport: RapportImport,
+) -> list[int] | None:
+    """Extrait un ordre par fichier depuis `nom_fichier` via regex.
+
+    Le groupe 1 de la regex doit capturer un entier (ex. `001` dans
+    `xxx_001.tif` avec `_(\\d+)\\.[^.]+$`).
+
+    Retourne None si au moins un fichier ne matche pas, si une valeur
+    n'est pas un entier, ou si les valeurs ne sont pas uniques —
+    caller retombe alors sur ordre séquentiel. Émet un warning dans
+    `rapport.warnings` dans tous les cas d'échec.
+    """
+    pattern = re.compile(regex)
+    extraits: list[int] = []
+    for f in fichiers:
+        m = pattern.search(f.nom_fichier)
+        if m is None or not m.groups():
+            rapport.warnings.append(
+                f"Cote {cote}: nom {f.nom_fichier!r} ne matche pas "
+                f"ordre_depuis_nom={regex!r}, ordre séquentiel utilisé."
+            )
+            return None
+        try:
+            extraits.append(int(m.group(1)))
+        except (ValueError, TypeError):
+            rapport.warnings.append(
+                f"Cote {cote}: ordre extrait de {f.nom_fichier!r} non entier "
+                f"({m.group(1)!r}), ordre séquentiel utilisé."
+            )
+            return None
+    if len(set(extraits)) != len(extraits):
+        rapport.warnings.append(
+            f"Cote {cote}: ordres extraits non uniques via ordre_depuis_nom, "
+            f"ordre séquentiel utilisé."
+        )
+        return None
+    return extraits
+
+
+def _reindexer_fichiers(
+    fichiers: list[FichierPrepare],
+    cote: str,
+    profil: Profil,
+    rapport: RapportImport,
+) -> None:
+    """Pose l'ordre final de chaque `FichierPrepare` d'un même item.
+
+    Si `profil.ordre_depuis_nom` est posé ET que tous les noms matchent
+    la regex avec des entiers uniques, sort les fichiers par ordre
+    extrait. Sinon réindexe séquentiellement (1..N) dans l'ordre
+    d'apparition courant.
+    """
+    if profil.ordre_depuis_nom:
+        extraits = _ordres_depuis_nom(
+            fichiers, profil.ordre_depuis_nom, cote, rapport
+        )
+        if extraits is not None:
+            for f, o in zip(fichiers, extraits):
+                f.ordre = o
+            fichiers.sort(key=lambda f: f.ordre)
+            return
+    for i, f in enumerate(fichiers):
+        f.ordre = i + 1
+
+
 def _grouper_par_cote(
     items_prep: list[tuple[ItemPrepare, list[FichierPrepare]]],
     rapport: RapportImport,
+    profil: Profil,
 ) -> list[tuple[ItemPrepare, list[FichierPrepare]]]:
     """Fusionne les lignes partageant la même cote (granularité fichier).
 
@@ -228,11 +299,9 @@ def _grouper_par_cote(
             fichiers_base.extend(fichiers)
         else:
             groupes[item.cote] = (item, list(fichiers))
-    # Réindexer l'ordre des fichiers après fusion, par groupe.
     resultats = []
     for cote, (item, fichiers) in groupes.items():
-        for i, f in enumerate(fichiers):
-            f.ordre = i + 1
+        _reindexer_fichiers(fichiers, cote, profil, rapport)
         resultats.append((item, fichiers))
     return resultats
 
@@ -309,6 +378,7 @@ def _ecrire_fichiers(
             taille_octets=prep.taille_octets,
             format=prep.format,
             ordre=ordre,
+            metadonnees=prep.metadonnees,
         )
         if prep.type_page:
             fichier.type_page = prep.type_page
@@ -326,21 +396,33 @@ def _fichier_depuis_colonnes(
     Le fichier n'a pas de source disque : il est identifié par son
     URL Nakala. `ordre` est provisoire — `_grouper_par_cote` le
     réindexe par ordre d'apparition dans le groupe.
+
+    Les colonnes `fichier.metadonnees.X` du mapping arrivent ici
+    via `prep.champs_fichier_metadonnees` et sont copiées telles
+    quelles dans `FichierPrepare.metadonnees` (les `None` sont
+    filtrés — inutile de polluer le JSON avec des absences).
     """
     cf = prep.champs_fichier
     nom = cf.get("nom_fichier") or f"{prep.cote}-{ordre:04d}"
+    meta = {
+        k: v for k, v in prep.champs_fichier_metadonnees.items() if v is not None
+    } or None
     return FichierPrepare(
         nom_fichier=str(nom),
         ordre=ordre,
         hash_sha256=(cf.get("hash_sha256") or None),
         iiif_url_nakala=(cf.get("iiif_url_nakala") or None),
         type_page=(cf.get("type_page") or None),
+        metadonnees=meta,
     )
 
 
 def _a_des_colonnes_fichier(prep: ItemPrepare) -> bool:
-    """Vrai si la ligne porte au moins une valeur de colonne `fichier.*`."""
-    return any(v for v in prep.champs_fichier.values())
+    """Vrai si la ligne porte au moins une valeur de colonne `fichier.*`
+    ou `fichier.metadonnees.*`."""
+    return any(v for v in prep.champs_fichier.values()) or any(
+        v for v in prep.champs_fichier_metadonnees.values()
+    )
 
 
 def _preparer_lignes(
@@ -388,7 +470,7 @@ def _preparer_lignes(
         items_et_fichiers.append((prep, fichiers))
 
     if profil.granularite_source == "fichier":
-        items_et_fichiers = _grouper_par_cote(items_et_fichiers, rapport)
+        items_et_fichiers = _grouper_par_cote(items_et_fichiers, rapport, profil)
     return items_et_fichiers
 
 

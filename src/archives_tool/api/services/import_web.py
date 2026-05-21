@@ -59,7 +59,24 @@ class ProfilIncomplet(Exception):
 
 # Cibles sentinelles du mapping (hors champs dédiés / metadonnées).
 CIBLE_META = "__meta__"      # → metadonnees.<slug de la colonne>
+CIBLE_META_FICHIER = "__meta_fichier__"  # → fichier.metadonnees.<slug>
 CIBLE_IGNORE = "__ignore__"  # colonne non importée
+
+# Clés `metadonnees.<champ>` traitées comme cibles dédiées dans
+# l'assistant (l'utilisateur peut les sélectionner explicitement
+# depuis le sélecteur, au lieu de la sentinelle `__meta__` générique).
+# Permet au sélecteur d'exposer « Auteur », « Éditeur », etc. sans
+# que ces champs deviennent des colonnes en base.
+_CIBLES_META_CANONIQUES: frozenset[str] = frozenset(
+    {
+        "metadonnees.auteur",
+        "metadonnees.editeur",
+        "metadonnees.contributeur",
+        "metadonnees.sujet",
+        "metadonnees.droits",
+        "metadonnees.source",
+    }
+)
 
 
 def creer_session(db: Session, utilisateur: str) -> SessionImport:
@@ -224,12 +241,17 @@ def construire_mapping(
         )
     mapping: dict[str, str] = {}
     slugs_pris: set[str] = set()
+    slugs_pris_fichier: set[str] = set()
     for colonne, cible in zip(colonnes, cibles):
         if cible == CIBLE_IGNORE:
             continue
         if cible == CIBLE_META:
             slug = slug_metadonnee(colonne, slugs_pris)
             mapping[f"metadonnees.{slug}"] = colonne
+            continue
+        if cible == CIBLE_META_FICHIER:
+            slug = slug_metadonnee(colonne, slugs_pris_fichier)
+            mapping[f"fichier.metadonnees.{slug}"] = colonne
             continue
         # Champ dédié : un seul mapping possible.
         if cible in mapping:
@@ -258,20 +280,31 @@ def cibles_proposees(session: SessionImport) -> list[str]:
     colonnes = list(session.colonnes_detectees or [])
     col_vers_cible: dict[str, str] = {}
 
+    def _normaliser(cle: str) -> str:
+        # Restitue la sentinelle ou la cible canonique qui correspond
+        # au préfixe — important pour que l'utilisateur revoie sa
+        # cible sélectionnée à l'identique en revenant sur l'étape.
+        # Les `metadonnees.<champ>` qui figurent dans la liste DC
+        # fréquente (auteur, éditeur…) restent tels quels ; les autres
+        # collapsent vers `__meta__` (slug libre).
+        if cle.startswith("fichier.metadonnees."):
+            return CIBLE_META_FICHIER
+        if cle in _CIBLES_META_CANONIQUES:
+            return cle
+        if cle.startswith("metadonnees."):
+            return CIBLE_META
+        return cle
+
     source = session.mappings
     if source:
         for cle, colonne in source.items():
-            col_vers_cible[colonne] = (
-                CIBLE_META if cle.startswith("metadonnees.") else cle
-            )
+            col_vers_cible[colonne] = _normaliser(cle)
         defaut = CIBLE_IGNORE
     else:
         from archives_tool.profils.generateur import proposer_mapping
 
         for cible, colonne, _detecte in proposer_mapping(colonnes):
-            col_vers_cible[colonne] = (
-                CIBLE_META if cible.startswith("metadonnees.") else cible
-            )
+            col_vers_cible[colonne] = _normaliser(cible)
         defaut = CIBLE_META
 
     return [col_vers_cible.get(c, defaut) for c in colonnes]
@@ -341,7 +374,19 @@ def composer_profil(
     if session.collection_miroir_data:
         data["collection_miroir"] = dict(session.collection_miroir_data)
     if session.configuration_fichiers:
-        data["fichiers"] = dict(session.configuration_fichiers)
+        config = dict(session.configuration_fichiers)
+        # `ordre_depuis_nom` est une option de l'assistant rangée à
+        # cote de la résolution disque pour simplifier le formulaire,
+        # mais elle vit au top-level du profil (s'applique aux deux
+        # paths : disque ET colonnes du tableur).
+        ordre_regex = config.pop("ordre_depuis_nom", None)
+        if ordre_regex:
+            data["ordre_depuis_nom"] = ordre_regex
+        # Le reste correspond à `ResolutionFichiers`. Vide possible si
+        # l'utilisateur n'a saisi que la regex ordre — auquel cas pas
+        # de bloc fichiers.
+        if config.get("racine"):
+            data["fichiers"] = config
 
     try:
         return Profil.model_validate(data)

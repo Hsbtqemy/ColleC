@@ -102,6 +102,24 @@
       </label>
     </div>
 
+    <label style="display:block;font-size:13px;font-weight:500;
+                  color:#1f1f1f;margin-bottom:4px;">
+      Extraire l'ordre depuis le nom de fichier
+    </label>
+    <p style="font-size:12px;color:#9ca3af;margin-bottom:6px;line-height:1.5;">
+      Optionnel. Regex appliquée au nom de chaque fichier ; le groupe 1
+      doit capturer un entier. Utile quand votre tableur n'a pas de
+      colonne « ordre » mais que les noms portent un suffixe type
+      <span class="font-mono">_001</span>, <span class="font-mono">_002</span>.
+      Laisser vide = ordre séquentiel d'apparition.
+    </p>
+    <input type="text" name="ordre_depuis_nom"
+           value="{{ config.get('ordre_depuis_nom', '') }}"
+           placeholder="_(\d+)\.[^.]+$"
+           style="width:100%;font-family:ui-monospace,monospace;font-size:13px;
+                  padding:6px 8px;border:1px solid #d1d5db;border-radius:3px;
+                  margin-bottom:20px;">
+
     <div class="flex items-center gap-2">
       <a href="/import/{{ session.id }}/mapping"
          class="rounded hover:bg-gray-50"

@@ -254,3 +254,74 @@ def test_reel_cas_fichier_colonnes(session: Session) -> None:
     assert f0.chemin_relatif is None
     # PFC-2 : 1 ligne → 1 fichier.
     assert len(par_cote["PFC-2"].fichiers) == 1
+
+
+def test_fichier_metadonnees_par_ligne(session: Session) -> None:
+    """`fichier.metadonnees.<cle>` : chaque ligne en granularité fichier
+    pose sa propre métadonnée sur le Fichier (et non sur Item.metadonnees)
+    — pas de warning de divergence quand plusieurs lignes partagent la
+    même cote avec des valeurs différentes."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # On détourne la colonne `hash` du mapping pour qu'elle aille sur
+    # `fichier.metadonnees.empreinte` au lieu de `fichier.hash_sha256`.
+    # Les 2 lignes de PFC-1 ont des hashes différents → on doit voir
+    # les 2 valeurs persistées (1 par fichier), sans warning.
+    from archives_tool.profils.schema import MappingSimple
+
+    del profil.mapping.champs["fichier.hash_sha256"]
+    profil.mapping.champs["fichier.metadonnees.empreinte"] = MappingSimple(
+        source="hash"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    # Pas de warning de divergence sur l'empreinte (chaque fichier a la sienne).
+    assert all("empreinte" not in w for w in rapport.warnings)
+
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    pfc1 = par_cote["PFC-1"]
+    fichiers_tries = sorted(pfc1.fichiers, key=lambda f: f.nom_fichier)
+    assert fichiers_tries[0].metadonnees == {"empreinte": "abc111"}
+    assert fichiers_tries[1].metadonnees == {"empreinte": "def222"}
+    # L'item lui-même ne doit pas porter ces empreintes.
+    assert "empreinte" not in (pfc1.metadonnees or {})
+
+
+def test_ordre_depuis_nom_extrait_du_suffixe(session: Session) -> None:
+    """`ordre_depuis_nom` : la regex extrait l'ordre depuis le nom de
+    fichier au lieu du séquentiel d'apparition. Utile quand le tableur
+    n'a pas de colonne « ordre » mais que les noms portent _001/_002."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # Les fichiers s'appellent pfc1_p01.jpg, pfc1_p02.jpg → ordre = 1, 2.
+    profil.ordre_depuis_nom = r"_p(\d+)\.[^.]+$"
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    pfc1 = par_cote["PFC-1"]
+    fichiers_tries = sorted(pfc1.fichiers, key=lambda f: f.ordre)
+    assert [f.ordre for f in fichiers_tries] == [1, 2]
+    assert fichiers_tries[0].nom_fichier == "pfc1_p01.jpg"
+    assert fichiers_tries[1].nom_fichier == "pfc1_p02.jpg"
+
+
+def test_ordre_depuis_nom_fallback_sequentiel_si_pas_match(
+    session: Session,
+) -> None:
+    """Si la regex ne matche pas tous les noms, fallback sur séquentiel
+    avec un warning explicatif. Pas d'échec — le caller est tolérant."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    profil.ordre_depuis_nom = r"_z(\d+)\.[^.]+$"  # ne matche aucun nom
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    assert any("ne matche pas" in w for w in rapport.warnings)
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    # Fallback séquentiel pour PFC-1 (2 fichiers) → ordres 1 et 2.
+    assert sorted(f.ordre for f in par_cote["PFC-1"].fichiers) == [1, 2]

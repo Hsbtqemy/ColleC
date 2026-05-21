@@ -53,6 +53,12 @@ class ItemPrepare:
     # de la ligne (granularité fichier, import depuis colonnes plutôt
     # que résolution disque). L'écrivain en fait un `FichierPrepare`.
     champs_fichier: dict[str, Any] = field(default_factory=dict)
+    # Colonnes mappées vers `fichier.metadonnees.<cle>` : champs libres
+    # propres à un scan (URLs Nakala data/embed/thumb, infos techniques
+    # spécifiques à un fichier). Sans cette zone, l'import était forcé
+    # de les pousser sur `Item.metadonnees` → divergences par ligne en
+    # granularité fichier.
+    champs_fichier_metadonnees: dict[str, Any] = field(default_factory=dict)
     hierarchie: dict[str, str] | None = None
     typologie: dict[str, str] | None = None
     ligne_source: int = 0
@@ -139,9 +145,17 @@ def _appliquer_mapping(
 
 
 def _classer(champ_cible: str) -> tuple[str, str]:
-    """Retourne (zone, cle) où zone ∈ {"colonne", "metadonnees", "fichier"}."""
+    """Retourne (zone, cle) où zone ∈ {colonne, metadonnees, fichier,
+    fichier_metadonnees}.
+
+    L'ordre des tests importe : `fichier.metadonnees.X` doit être
+    classé avant `fichier.X` sinon il tomberait dans la zone fichier
+    avec cle=`metadonnees.X` (ne ferait rien d'utile).
+    """
     if champ_cible.startswith("metadonnees."):
         return ("metadonnees", champ_cible[len("metadonnees.") :])
+    if champ_cible.startswith("fichier.metadonnees."):
+        return ("fichier_metadonnees", champ_cible[len("fichier.metadonnees.") :])
     if champ_cible.startswith("fichier."):
         return ("fichier", champ_cible[len("fichier.") :])
     if champ_cible in COLONNES_ITEM:
@@ -213,6 +227,7 @@ def transformer_ligne(
         "colonne": item.champs_colonne,
         "metadonnees": item.metadonnees,
         "fichier": item.champs_fichier,
+        "fichier_metadonnees": item.champs_fichier_metadonnees,
     }
     for champ_cible, mapping in profil.mapping.champs.items():
         valeur = _appliquer_mapping(champ_cible, mapping, ligne)

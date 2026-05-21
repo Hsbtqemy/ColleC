@@ -114,6 +114,77 @@ Le test qui compte. Sur un vrai mini-fonds (30-50 items minimum).
 - [ ] Le tableau d'items avec 30-50 lignes répond bien
 - [ ] La visionneuse charge des vrais scans (pas des placeholders)
 
+### Frictions assistant d'import (relevées 2026-05-15 sur fonds PF)
+
+Tentative d'import sur fonds PF (Por Favor, métadonnées Nakala) :
+44 373 warnings de divergence + 0 fichiers à rattacher malgré
+granularité=fichier correctement sélectionnée. Diagnostic en 4 points
+structurels, pas du tout du bug ponctuel.
+
+#### F1 — Pas de champ « auteur » dans le mapping item ⚠️ gênant
+
+`_CIBLES_ITEM` ([`routes/import_assistant.py:328-340`](src/archives_tool/api/routes/import_assistant.py#L328-L340))
+expose 11 cibles canoniques : cote, titre, numero, date, annee,
+type_coar, langue, description, notes_internes, doi_nakala,
+doi_collection_nakala. Pas d'auteur, pas d'éditeur, pas de
+responsable scientifique. C'est cohérent côté modèle (le modèle
+`Item` n'a pas ces colonnes — il pousse vers `Item.metadonnees`
+JSON) mais l'UX ne le rend pas évident : l'utilisateur cherche
+« auteur » dans la liste, ne le trouve pas, conclut que c'est
+manquant.
+
+**Fix proposé** : afficher la sentinelle « Métadonnée
+personnalisée » (`__meta__`) de manière plus discoverable, ou lister
+explicitement les champs DC fréquents (auteur, éditeur, sujet…)
+qui auto-routent vers `metadonnees.<slug>`. Tooltip / hint dans
+l'UI au-dessus du sélecteur.
+
+#### F2 — `Fichier.ordre` non dérivable du nom de fichier ⚠️ **bloquant**
+
+`_CIBLES_FICHIER` ([`routes/import_assistant.py:342-346`](src/archives_tool/api/routes/import_assistant.py#L342-L346))
+expose nom, hash, iiif_url. `Fichier.ordre` (NOT NULL) est assigné
+par l'importer comme séquence d'apparition dans le tableur. Pour
+un fonds dont la convention est `xxx_001.tif`, `xxx_002.tif`,
+si le tableur n'est pas trié par ce suffixe, l'ordre stocké en
+base sera faux — silencieusement.
+
+**Fix proposé** : ajouter une option dans la sous-étape « Fichiers »
+de l'assistant : « extraire l'ordre depuis le suffixe `_NNN` du
+nom de fichier » avec regex paramétrable (défaut `_(\d+)\.[^.]+$`).
+Au plan profil : champ `fichiers.ordre_depuis_nom: regex`.
+
+#### F3 — Pas de `Fichier.metadonnees` JSON ⚠️ gênant (limite modèle)
+
+Le modèle `Fichier` n'a pas de colonne `metadonnees` JSON. Les
+champs par-fichier hors socle canonique (hash dédié, iiif_url,
+ordre, format, taille…) doivent aller sur **`Item.metadonnees`**.
+En granularité fichier, plusieurs lignes partagent une même cote ;
+`_grouper_par_cote` ([`importers/ecrivain.py:193-237`](src/archives_tool/importers/ecrivain.py#L193-L237))
+fusionne les `metadonnees` et signale chaque divergence comme
+warning. D'où 44 373 warnings sur PF qui a 7 champs Nakala par
+fichier × ~10 lignes / item × 173 items.
+
+**Fix proposé** : migration alembic qui ajoute
+`Fichier.metadonnees JSON`. Routes assistant : nouvelle cible
+`fichier.__meta__` qui pousse vers `Fichier.metadonnees.<slug>`.
+Effet immédiat sur PF : les divergences disparaissent (chaque
+fichier porte ses propres valeurs).
+
+#### F4 — Mapping pas guidé sémantiquement ⚠️ gênant
+
+La liste de cibles est plate, sans groupe (« structurants » /
+« hors socle DC → métadonnées »), sans aide pour comprendre la
+différence entre `description` et `notes_internes`, entre
+`type_coar` (URI canonique) et un texte libre, etc. L'utilisateur
+prend des décisions à l'aveugle.
+
+**Fix proposé** : grouper les cibles par catégorie dans le
+sélecteur (`<optgroup>` ou sections visuelles : Identification /
+Date & période / Description / Identifiants externes /
+Métadonnées personnalisées). Hint contextuel sous le sélecteur
+quand une cible est choisie (ex. « type_coar : URI Coar Resource
+Type, ex. https://purl.org/coar/resource_type/c_18cf »).
+
 ---
 
 ## G — CLI ✅ (sur base demo)

@@ -686,3 +686,80 @@ def test_mapping_propose_les_cibles_fichier(client_vide: TestClient) -> None:
     assert resp.status_code == 200
     assert "fichier.iiif_url_nakala" in resp.text
     assert "URL IIIF Nakala" in resp.text
+
+
+def test_mapping_propose_les_meta_dc_frequentes(client_vide: TestClient) -> None:
+    """L'étape mapping expose les champs DC fréquents (auteur, éditeur…)
+    comme cibles dédiées, pas seulement la sentinelle générique."""
+    sid = _session_a_l_etape_mapping(client_vide)
+    resp = client_vide.get(f"/import/{sid}/mapping")
+    assert resp.status_code == 200
+    # Optgroup et libellés visibles, valeurs `metadonnees.X` posées.
+    assert "Métadonnée Dublin Core fréquente" in resp.text
+    for valeur, libelle in (
+        ("metadonnees.auteur", "Auteur"),
+        ("metadonnees.editeur", "Éditeur"),
+        ("metadonnees.sujet", "Sujet"),
+    ):
+        assert f'value="{valeur}"' in resp.text
+        assert libelle in resp.text
+
+
+def test_hints_couvrent_toutes_les_cibles() -> None:
+    """Garde-fou : chaque cible proposée dans l'UI (item, fichier, DC
+    fréquent, sentinelles) doit avoir un hint contextuel. Sinon le
+    paragraphe sous le sélecteur reste vide pour cette option, c'est
+    une régression silencieuse de F4."""
+    from archives_tool.api.routes import import_assistant as routes
+    from archives_tool.api.services.import_web import (
+        CIBLE_IGNORE,
+        CIBLE_META,
+        CIBLE_META_FICHIER,
+    )
+
+    cibles_attendues = {
+        v for v, _ in routes._CIBLES_ITEM
+    } | {
+        v for v, _ in routes._CIBLES_FICHIER
+    } | {
+        v for v, _ in routes._CIBLES_META_FREQUENTES
+    } | {CIBLE_META, CIBLE_META_FICHIER, CIBLE_IGNORE}
+    couvertes = set(routes._HINTS_CIBLES.keys())
+    manquantes = cibles_attendues - couvertes
+    assert not manquantes, f"hints absents pour : {sorted(manquantes)}"
+
+
+def test_mapping_rend_hints_et_script(client_vide: TestClient) -> None:
+    """L'étape mapping injecte le JSON des hints + charge le JS."""
+    sid = _session_a_l_etape_mapping(client_vide)
+    resp = client_vide.get(f"/import/{sid}/mapping")
+    assert resp.status_code == 200
+    assert '<script id="hints-cibles-data"' in resp.text
+    assert "data-cible-hint" in resp.text
+    assert "data-cible-select" in resp.text
+    assert "js/hints_cibles.js" in resp.text
+    # Au moins un hint de Item exposé dans le JSON inline.
+    assert "Identifiant unique de l" in resp.text  # hint de `cote`
+
+
+def test_alignement_meta_canoniques() -> None:
+    """Garde-fou : `_CIBLES_META_FREQUENTES` (routes) et
+    `_CIBLES_META_CANONIQUES` (services) doivent porter les mêmes
+    clés. Sans ça, l'utilisateur sélectionne « Auteur » dans l'UI
+    mais en revenant sur l'étape voit `__meta__` à la place."""
+    from archives_tool.api.routes import import_assistant as routes
+    from archives_tool.api.services import import_web as svc
+
+    cles_routes = {c for c, _libelle in routes._CIBLES_META_FREQUENTES}
+    assert cles_routes == svc._CIBLES_META_CANONIQUES
+
+
+def test_mapping_auteur_dedie_pas_de_collapse(client_vide: TestClient) -> None:
+    """Quand l'utilisateur sélectionne « Auteur » (cible
+    `metadonnees.auteur`), le mapping est écrit tel quel — pas
+    de slug renommé via `__meta__`. Le `construire_mapping` du
+    service garde la clé canonique."""
+    cols = ["cote", "titre_auteur"]
+    cibles = ["cote", "metadonnees.auteur"]
+    mapping = import_web.construire_mapping(cols, cibles)
+    assert mapping == {"cote": "cote", "metadonnees.auteur": "titre_auteur"}

@@ -275,6 +275,13 @@ class Profil(_ProfilBase):
     # utile quand un tableur d'inventaire contient des lignes de
     # documentation / légende en pied de fichier (non catalographiques).
     ignorer_lignes_sans_cote: bool = False
+    # Regex appliquée à `Fichier.nom_fichier` pour extraire l'ordre
+    # (numéro de page) de chaque scan. Le groupe 1 doit être un entier.
+    # Utile quand le tableur n'a pas de colonne « ordre » mais que le
+    # nom de fichier porte un suffixe `_001`, `_002`, etc.
+    # Si toutes les valeurs extraites sont uniques et entières, elles
+    # remplacent l'ordre séquentiel par défaut.
+    ordre_depuis_nom: str | None = None
 
     @model_validator(mode="after")
     def _cote_requise_si_granularite_fichier(self) -> Profil:
@@ -284,3 +291,19 @@ class Profil(_ProfilBase):
                 "clé 'cote' (utilisée pour regrouper les lignes en items)."
             )
         return self
+
+    @field_validator("ordre_depuis_nom")
+    @classmethod
+    def _valider_regex_ordre(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        try:
+            compile_ = re.compile(v)
+        except re.error as e:
+            raise ValueError(f"ordre_depuis_nom : regex invalide : {e}") from e
+        if compile_.groups < 1:
+            raise ValueError(
+                "ordre_depuis_nom : la regex doit contenir au moins un "
+                "groupe de capture (le numéro de page)."
+            )
+        return v

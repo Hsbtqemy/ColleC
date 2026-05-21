@@ -33,6 +33,7 @@ from archives_tool.api.routes._helpers import (
 from archives_tool.api.services.import_web import (
     CIBLE_IGNORE,
     CIBLE_META,
+    CIBLE_META_FICHIER,
     TAILLE_MAX_TABLEUR,
     MappingInvalide,
     ProfilIncomplet,
@@ -52,7 +53,7 @@ from archives_tool.api.services.import_web import (
 from archives_tool.api.templating import templates
 from archives_tool.config import ConfigLocale
 from archives_tool.models import ETAPES_IMPORT, Fonds, SessionImport
-from archives_tool.profils.schema import FondsProfil, ResolutionFichiers
+from archives_tool.profils.schema import FondsProfil, Profil, ResolutionFichiers
 
 router = APIRouter()
 
@@ -344,6 +345,76 @@ _CIBLES_FICHIER: tuple[tuple[str, str], ...] = (
     ("fichier.hash_sha256", "Hash (empreinte)"),
     ("fichier.iiif_url_nakala", "URL IIIF Nakala"),
 )
+# Champs DC fréquents qui n'ont pas de colonne dédiée sur `Item` mais
+# qui méritent d'apparaître dans le sélecteur — autrement l'utilisateur
+# cherche « auteur » dans la liste, ne trouve pas, et zappe la donnée
+# au lieu de la pousser via « Métadonnée personnalisée ». Chaque cible
+# est techniquement un préfixe `metadonnees.<slug>` traité comme un
+# champ dédié (mapping[clé] = colonne, déduplication d'office).
+# Les clés ici sont la source de vérité pour le sélecteur ; le service
+# `import_web` expose le set parallèle `_CIBLES_META_CANONIQUES` qui
+# doit rester synchronisé (cf. test `test_alignement_meta_canoniques`).
+_CIBLES_META_FREQUENTES: tuple[tuple[str, str], ...] = (
+    ("metadonnees.auteur", "Auteur"),
+    ("metadonnees.editeur", "Éditeur"),
+    ("metadonnees.contributeur", "Contributeur"),
+    ("metadonnees.sujet", "Sujet / mots-clés"),
+    ("metadonnees.droits", "Droits / licence"),
+    ("metadonnees.source", "Source"),
+)
+
+# Hints affichés sous le sélecteur quand une cible est choisie.
+# Texte court (< 100 char) qui explique ce que la cible attend, à
+# destination de l'utilisateur qui ne connait pas le vocabulaire
+# interne (type_coar, fichier.iiif_url_nakala, etc.). Les sentinelles
+# `__meta__` / `__meta_fichier__` / `__ignore__` ont aussi leur hint.
+_HINTS_CIBLES: dict[str, str] = {
+    # Item — structurants.
+    "cote": "Identifiant unique de l'item dans le fonds (obligatoire).",
+    "titre": "Titre principal de l'item, indexé pour la recherche.",
+    "numero": "Numéro ou tomaison (ex. « N°47 », « Tome II »).",
+    "date": (
+        "Date au format EDTF — accepte les dates incertaines "
+        "(`1923?`, `192X`, `1923/1924`)."
+    ),
+    "annee": "Année extraite, entier indexé (ex. 1923).",
+    "type_coar": (
+        "URI Coar Resource Type (ex. "
+        "`https://purl.org/coar/resource_type/c_18cf` pour Manuscrit)."
+    ),
+    "langue": "Code ISO 639-3 (ex. `fra`, `eng`, `spa`).",
+    "description": "Description publique destinée aux exports DC.",
+    "notes_internes": (
+        "Notes équipe pour le chantier — ne sont pas exportées en DC."
+    ),
+    "doi_nakala": "DOI Nakala de l'item publié (ex. `10.34847/nkl.xxx`).",
+    "doi_collection_nakala": (
+        "DOI Nakala de la collection-parent dans laquelle l'item est publié."
+    ),
+    # Fichier — propres à un scan.
+    "fichier.nom_fichier": "Nom du scan (ex. `xxx_001.tif`).",
+    "fichier.hash_sha256": "Empreinte SHA-256 du fichier source.",
+    "fichier.iiif_url_nakala": (
+        "URL `info.json` IIIF du fichier déposé sur Nakala."
+    ),
+    # Métadonnées DC fréquentes (rangées dans `Item.metadonnees`).
+    "metadonnees.auteur": "Auteur principal (DC creator), texte libre.",
+    "metadonnees.editeur": "Éditeur ou maison d'édition (DC publisher).",
+    "metadonnees.contributeur": "Contributeur secondaire (DC contributor).",
+    "metadonnees.sujet": "Sujet ou mots-clés (DC subject), texte libre.",
+    "metadonnees.droits": "Licence ou statut de droits (DC rights).",
+    "metadonnees.source": "Source d'origine de l'item (DC source).",
+    # Sentinelles.
+    CIBLE_META: (
+        "Stocke la valeur dans `Item.metadonnees` sous la clé "
+        "slugifiée du nom de colonne."
+    ),
+    CIBLE_META_FICHIER: (
+        "Stocke la valeur dans `Fichier.metadonnees` — propre à ce "
+        "scan, ne se mélange pas aux autres lignes de même cote."
+    ),
+    CIBLE_IGNORE: "La colonne est exclue de l'import.",
+}
 
 
 def _contexte_mapping(
@@ -364,8 +435,11 @@ def _contexte_mapping(
         lignes=list(zip(colonnes, cibles)),
         cibles_item=_CIBLES_ITEM,
         cibles_fichier=_CIBLES_FICHIER,
+        cibles_meta_frequentes=_CIBLES_META_FREQUENTES,
         cible_meta=CIBLE_META,
+        cible_meta_fichier=CIBLE_META_FICHIER,
         cible_ignore=CIBLE_IGNORE,
+        hints_cibles=_HINTS_CIBLES,
         granularite=granularite,
         erreur=erreur,
     )
@@ -477,12 +551,14 @@ def soumettre_fichiers(
     racine: Annotated[str, Form()] = "",
     motif_chemin: Annotated[str, Form()] = "",
     type_motif: Annotated[str, Form()] = "template",
+    ordre_depuis_nom: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
     racines: dict = Depends(get_racines),
 ) -> HTMLResponse | RedirectResponse:
     session = charger_session_import_ou_404(db, session_id)
+    ordre = ordre_depuis_nom.strip()
 
     def _rerendre(erreur: str) -> HTMLResponse:
         return templates.TemplateResponse(
@@ -497,15 +573,36 @@ def soumettre_fichiers(
                     "racine": racine,
                     "motif_chemin": motif_chemin,
                     "type_motif": type_motif,
+                    "ordre_depuis_nom": ordre,
                 },
                 erreur=erreur,
             ),
             status_code=400,
         )
 
-    # Racine vide → import métadonnées seules (étape sautée).
+    # Valider la regex `ordre_depuis_nom` independamment du reste —
+    # `Profil._valider_regex_ordre` lève si la regex ne compile pas
+    # ou n'a aucun groupe de capture.
+    if ordre:
+        try:
+            Profil.model_validate(
+                {
+                    "version_profil": 2,
+                    "fonds": {"cote": "_", "titre": "_"},
+                    "tableur": {"chemin": "_"},
+                    "mapping": {"cote": "_"},
+                    "ordre_depuis_nom": ordre,
+                }
+            )
+        except ValidationError as e:
+            premier = e.errors()[0]
+            return _rerendre(premier.get("msg", "Regex ordre invalide."))
+
+    # Racine vide → metadonnees seules ; mais on conserve `ordre_depuis_nom`
+    # si l'utilisateur en a posé une (cas Nakala / colonnes).
     if not racine.strip():
-        enregistrer_resolution(db, session, None)
+        config = {"ordre_depuis_nom": ordre} if ordre else None
+        enregistrer_resolution(db, session, config)
         return RedirectResponse(
             f"/import/{session.id}/apercu", status_code=303
         )
@@ -520,6 +617,8 @@ def soumettre_fichiers(
     except ValidationError as e:
         premier = e.errors()[0]
         return _rerendre(premier.get("msg", "Configuration fichiers invalide."))
+    if ordre:
+        config["ordre_depuis_nom"] = ordre
     enregistrer_resolution(db, session, config)
     return RedirectResponse(f"/import/{session.id}/apercu", status_code=303)
 

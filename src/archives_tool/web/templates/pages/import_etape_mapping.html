@@ -62,15 +62,16 @@
     </fieldset>
 
     {% for colonne, cible in lignes %}
-      <div class="flex items-center gap-3 border-b last:border-b-0"
+      <div data-cible-ligne class="border-b last:border-b-0"
            style="border-color:rgba(0,0,0,0.06);padding:8px 16px;">
+        <div class="flex items-center gap-3">
         <span class="font-mono grow min-w-0"
               style="font-size:13px;color:#1f1f1f;overflow:hidden;
                      text-overflow:ellipsis;white-space:nowrap;">
           {{ colonne }}
         </span>
         <span aria-hidden="true" style="color:#d1d5db;">→</span>
-        <select name="cible"
+        <select name="cible" data-cible-select
                 style="font-size:13px;padding:4px 6px;border:1px solid #d1d5db;
                        border-radius:3px;background:white;flex:0 0 240px;">
           <optgroup label="Champ de l'item">
@@ -89,10 +90,22 @@
               </option>
             {% endfor %}
           </optgroup>
+          <optgroup label="Métadonnée Dublin Core fréquente">
+            {% for valeur, libelle in cibles_meta_frequentes %}
+              <option value="{{ valeur }}"
+                      {{ 'selected' if cible == valeur else '' }}>
+                {{ libelle }}
+              </option>
+            {% endfor %}
+          </optgroup>
           <optgroup label="Autre">
             <option value="{{ cible_meta }}"
                     {{ 'selected' if cible == cible_meta else '' }}>
-              Métadonnée personnalisée
+              Métadonnée personnalisée (item)
+            </option>
+            <option value="{{ cible_meta_fichier }}"
+                    {{ 'selected' if cible == cible_meta_fichier else '' }}>
+              Métadonnée personnalisée (fichier)
             </option>
             <option value="{{ cible_ignore }}"
                     {{ 'selected' if cible == cible_ignore else '' }}>
@@ -100,6 +113,13 @@
             </option>
           </optgroup>
         </select>
+        </div>
+        {# Hint mis a jour cote client par hints_cibles.js sur change. #}
+        <p data-cible-hint
+           style="font-size:12px;color:#6b7280;margin:4px 0 0 0;
+                  padding-left:0;line-height:1.4;min-height:18px;">
+          {{ hints_cibles.get(cible, '') }}
+        </p>
       </div>
     {% endfor %}
 
@@ -121,4 +141,12 @@
   </form>
 
 </div>
+
+<script id="hints-cibles-data" type="application/json">
+  {{ hints_cibles|tojson }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static_url('js/hints_cibles.js') }}"></script>
 {% endblock %}

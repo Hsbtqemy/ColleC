@@ -163,17 +163,29 @@
                         suggestions.colonne_date) }}
     </fieldset>
 
-    {# Récap des colonnes restantes #}
-    {% set explicites = [suggestions.colonne_cote, suggestions.colonne_titre, suggestions.colonne_date]|select|list %}
-    {% set restantes = colonnes_disponibles|reject('in', explicites)|list %}
-    {% if restantes %}
+    {# Récap des colonnes restantes (Trou #2 V0.9.2-import : utilise
+       `apercu_repartition` pré-calculé côté Python plutôt que
+       compter naïvement les colonnes hors cote/titre/date — sans
+       ça, le récap sous-estimait grossièrement les champs dédiés
+       que Bug B promeut via les heuristiques nominatives). #}
+    {% set nb_promues = apercu_repartition.promues_dediees|length %}
+    {% set nb_libres = apercu_repartition.libres_item|length + apercu_repartition.libres_fichier|length %}
+    {% if nb_promues or nb_libres %}
       <div style="padding:12px 16px;font-size:12px;color:#6b7280;
                   background:#f9fafb;line-height:1.5;
                   border-bottom:1px solid rgba(0,0,0,0.06);">
-        Les {{ restantes|length }} autres colonnes
-        ({% for col in restantes[:4] %}<code style="color:#374151;">{{ col }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if restantes|length > 4 %} et {{ restantes|length - 4 }} de plus{% endif %})
-        iront en métadonnées personnalisées, classées automatiquement
-        par-item ou par-fichier selon leurs valeurs.
+        {% if nb_promues %}
+          <div style="margin-bottom:{% if nb_libres %}4px{% else %}0{% endif %};">
+            <strong style="color:#374151;">{{ nb_promues }}</strong> colonne{{ 's' if nb_promues > 1 else '' }} reconnue{{ 's' if nb_promues > 1 else '' }} et promue{{ 's' if nb_promues > 1 else '' }} en champ dédié
+            ({% for col in apercu_repartition.promues_dediees[:4] %}<code style="color:#374151;">{{ col }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if nb_promues > 4 %} et {{ nb_promues - 4 }} de plus{% endif %}).
+          </div>
+        {% endif %}
+        {% if nb_libres %}
+          <div>
+            <strong style="color:#374151;">{{ nb_libres }}</strong> colonne{{ 's' if nb_libres > 1 else '' }} ira en métadonnées personnalisées
+            {%- if apercu_repartition.libres_fichier %}, dont <strong style="color:#374151;">{{ apercu_repartition.libres_fichier|length }}</strong> par-page{% endif %}.
+          </div>
+        {% endif %}
       </div>
     {% endif %}
 

@@ -24,13 +24,22 @@ MAPPING_DC: dict[str, str] = {
     "description": f"{DC}description",
     "type_coar": f"{DC}type",
     "langue": f"{DC}language",
-    # Métadonnées étendues fréquemment présentes
+    # Métadonnées étendues fréquemment présentes — supporte singulier
+    # ET pluriel pour rétro-compat. Le mode simple (V0.9.2-import Bug B)
+    # promeut au SINGULIER via les heuristiques de `proposer_mapping`
+    # (`auteur`, `sujet`, `contributeur`), alors que les exports
+    # historiques attendaient le PLURIEL (`auteurs`, `sujets`,
+    # `collaborateurs`). Sans cet alias, toutes les données promues en
+    # singulier seraient silencieusement perdues à l'export DC/Nakala.
+    "metadonnees.auteur": f"{DC}creator",
     "metadonnees.auteurs": f"{DC}creator",
     "metadonnees.createurs": f"{DC}creator",
     "metadonnees.editeur": f"{DC}publisher",
     "metadonnees.publisher": f"{DC}publisher",
+    "metadonnees.sujet": f"{DC}subject",
     "metadonnees.sujets": f"{DC}subject",
     "metadonnees.rubrique": f"{DC}subject",
+    "metadonnees.contributeur": f"{DC}contributor",
     "metadonnees.collaborateurs": f"{DC}contributor",
     "metadonnees.droits": f"{DC}rights",
     "metadonnees.source": f"{DC}source",

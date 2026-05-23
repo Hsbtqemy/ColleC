@@ -62,6 +62,13 @@ _PATTERN_COTE_CANDIDATE = PATTERN_COTE
 # autres colonnes basculerait en erreur (la moitié des colonnes
 # par-item sortirait `par-fichier` parce que les groupes de filename
 # n'ont qu'une ligne chacun).
+#
+# Patterns alignés sur `profils.generateur._HEURISTIQUES` (champs fichier
+# dédiés) + `_HEURISTIQUES_FICHIER_META` (URLs Nakala par-page). Test
+# d'usage sur PF (2026-05-23) a révélé que `data_url`/`preview_url`/etc.
+# étaient pris pour cote à la place de `Nouvelle cote` (dupliquée sur
+# tous les scans, donc pas 100 % unique au global) — d'où ajout de
+# ces patterns ici.
 _PATTERNS_COTE_EXCLUS_DU_FALLBACK: tuple[re.Pattern[str], ...] = (
     re.compile(
         r"^filename$|^file_?name$|^nom_fichier$|^fichier$|^file$|^name$",
@@ -76,6 +83,13 @@ _PATTERNS_COTE_EXCLUS_DU_FALLBACK: tuple[re.Pattern[str], ...] = (
         re.IGNORECASE,
     ),
     re.compile(r"^doi$|^doi_item$|^doi_collection$", re.IGNORECASE),
+    # URLs Nakala par-page (data_url = URL du fichier, preview_url =
+    # vignette, embed_url = lecteur intégré, thumb = miniature).
+    # Toujours 100 % uniques sur un export Nakala typique.
+    re.compile(
+        r"^data_url$|^embed_url$|^preview_url$|^thumb$|^thumbnail$",
+        re.IGNORECASE,
+    ),
 )
 
 # Seuils de classification d'une colonne en par-item / par-fichier
@@ -157,23 +171,35 @@ def _normaliser_pour_analyse(valeur: Any) -> str | None:
     return brut
 
 
-def _identifier_colonne_cote(df: pd.DataFrame) -> str | None:
+def _identifier_colonne_cote(
+    df: pd.DataFrame, cote_col_force: str | None = None
+) -> str | None:
     """Devine quelle colonne du dataframe identifie chaque item.
 
-    Stratégie en deux temps :
+    Si `cote_col_force` est fourni (et existe dans le df), il est
+    retourné tel quel. Utilisé par l'assistant d'import quand
+    l'utilisateur a explicitement choisi sa cote en mode simple —
+    on contourne l'auto-détection pour recalculer la classif des
+    autres colonnes par rapport à la cote choisie (cf. bug PF
+    2026-05-23 : la cote "Nouvelle cote" répétée sur tous les scans
+    n'était pas 100 % unique, donc invisible au fallback).
+
+    Sinon stratégie en deux temps :
     1. Pattern nominatif (cote, cote_item, ...).
     2. Fallback : première colonne dont toutes les valeurs non-nulles
        sont distinctes (et au moins 2 lignes peuplées). Ce critère
        est strict — une colonne avec une seule valeur dupliquée
        casserait l'unicité. Les colonnes typiquement par-page
-       (filename, hash, iiif, doi) sont exclues du fallback : sinon
-       un tableur où elles précèdent la vraie cote verrait l'une
-       d'elles faussement prise pour cote et casserait toutes les
-       classifs en aval.
+       (filename, hash, iiif, doi, URLs Nakala) sont exclues du
+       fallback : sinon un tableur où elles précèdent la vraie cote
+       verrait l'une d'elles faussement prise pour cote et casserait
+       toutes les classifs en aval.
 
     Renvoie ``None`` si rien ne convient — la classif des autres
     colonnes basculera alors en ``indetermine``.
     """
+    if cote_col_force is not None:
+        return cote_col_force if cote_col_force in df.columns else None
     for col in df.columns:
         if _PATTERN_COTE_CANDIDATE.match(col):
             return col
@@ -222,9 +248,17 @@ def analyser_colonnes_tableur(
     chemin: Path,
     feuille: str | None = None,
     n_lignes_max: int = N_LIGNES_ECHANTILLON_MAX,
+    cote_col_force: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Calcule des statistiques d'échantillonnage et de classification
     par colonne.
+
+    `cote_col_force` (V0.9.x polish 2026-05-23) : si fourni, contourne
+    l'auto-détection de la colonne cote. Utile quand l'utilisateur a
+    choisi sa cote en mode simple — recalculer les classifs des autres
+    colonnes par rapport à la cote choisie permet la promotion auto
+    en `fichier.metadonnees.<slug>` même quand la cote n'est pas
+    100 % unique au global (cas tableur Nakala typique).
 
     Pour chaque colonne du tableur, retourne :
     - ``exemples`` : 3 premières valeurs non-nulles distinctes (ordre
@@ -297,7 +331,7 @@ def analyser_colonnes_tableur(
         df[col] = df[col].map(_normaliser_pour_analyse)
 
     total = int(len(df))
-    cote_col = _identifier_colonne_cote(df)
+    cote_col = _identifier_colonne_cote(df, cote_col_force=cote_col_force)
     stats: dict[str, dict[str, Any]] = {}
     for col in df.columns:
         # Après .map() qui retourne None pour les nulls, pandas peut

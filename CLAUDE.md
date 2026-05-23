@@ -263,6 +263,64 @@ cible ↔ classif avec un bouton client-side de correction sans POST
 intermédiaire. Roadmap complète :
 [`docs/developpeurs/v092-import-refonte.md`](docs/developpeurs/v092-import-refonte.md).
 
+**Passe correctifs Bug A/B/C + Trou #9 (2026-05-23)** — découverts au
+premier test d'usage sur un export Nakala réel (PF, 173 items, 7454
+scans Nakala-only) :
+
+- **Bug A** (`importers/ecrivain.py::_fichier_depuis_colonnes`) : en
+  granularité fichier sans racine disque ni `fichier.iiif_url_nakala`
+  mappé, les Fichier étaient silencieusement jetés par le CHECK SQL
+  `ck_fichier_source_au_moins_une`. Fix : `_promouvoir_url_source`
+  cherche une URL HTTP plausible dans `fichier.metadonnees.<X>` selon
+  une liste de slugs prioritaires (`iiif`/`iiif_url`/`info_json` →
+  `data_url` → `embed_url` → `preview_url` → `thumb`), la promeut
+  comme source primaire et conserve la valeur dans `metadonnees`.
+  Garde `startswith("http")` pour éviter qu'un mapping bizarre
+  (`fichier.metadonnees.thumb` ← colonne `hash`) promeuve un hash en
+  URL.
+
+- **Bug B** (`api/services/import_web.py::construire_mapping_depuis_simple`) :
+  mode simple ne promouvait pas les colonnes non choisies explicitement
+  vers leurs cibles dédiées DC, écrasant tout en `metadonnees.<slug>`.
+  Fix : pré-calcul `heuristiques: dict` via `proposer_mapping` sur
+  les colonnes hors explicites, filtrage des cibles `cote`/`titre`/
+  `date` (réservées au choix utilisateur), pré-population des sets de
+  slugs avec ceux revendiqués par les heuristiques (anti-collision),
+  suivi `cibles_dediees_prises` (défense en profondeur). Sur PF : 11
+  champs promus (`doi`→`doi_nakala`, `Langue`→`langue`, `Description`→
+  `description`, `Numéro`→`numero`, `author`→`metadonnees.auteur`,
+  `Sujet`→`metadonnees.sujet`, `filename`→`fichier.nom_fichier`,
+  `hash`→`fichier.hash_sha256`, etc.). `colonnes_champs_avances`
+  enrichi pour ne pas signaler de perte sur les colonnes que
+  l'heuristique re-détecte.
+
+- **Bug C** (`api/services/dashboard.py::composer_metadonnees_par_section`) :
+  la section « Champs personnalisés » de la page item n'itérait que
+  les `ChampPersonnalise` formels — or l'importer ne crée pas de
+  `ChampPersonnalise`, il dump les clés en JSON libre. Fix : après
+  les formels, fallback sur les clés libres de `item.metadonnees`
+  non vues, libellé synthétisé (`ancienne_cote` → `Ancienne cote`),
+  tri alphabétique, garde anti-shadow (`vus` pré-populé avec les
+  clés Identification/Identifiants/Description pour éviter les
+  doublons visuels si un mapping pousse `titre`/`cote` en libre).
+  Helpers extraits : `_valeur_metadonnee_str` (list→CSV, dict→`k:v`),
+  `_libelle_depuis_cle`.
+
+- **Trou #9** (`exporters/mapping_dc.py` + `exporters/nakala.py`) :
+  Bug B promeut au SINGULIER (`auteur`/`sujet`/`contributeur`,
+  alignement DC), alors que `MAPPING_DC` et le code hardcoded des
+  exporters n'attendaient que le PLURIEL (`auteurs`/`sujets`/
+  `collaborateurs`). Sans fix, toutes les données promues en mode
+  simple disparaissaient silencieusement à l'export DC, Nakala et
+  xlsx. Validé sur PF : 173 `<dc:creator>` + 173 `<dc:subject>` à
+  l'export (vs 0 avant). `MAPPING_DC` étendu pour reconnaître les
+  deux formes ; `_ligne_nakala` et `_verifier_createur` étendus
+  symétriquement.
+
+Validation manuelle : `scripts/reimport_pf.py` (re-import via service
+direct sans UI) — 173 items, 7454 Fichier, 11 champs promus DC, ~11
+clés libres en metadonnees affichées sur la page item.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

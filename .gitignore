@@ -15,6 +15,7 @@ data/derivatives/
 data/demo_derives/
 data/demo_config.yaml
 data/_import_tmp/
+data/_export_test_pf/
 
 config_local.yaml
 .env

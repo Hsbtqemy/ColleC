@@ -1028,37 +1028,303 @@ def test_colonnes_champs_avances_session_sans_mapping() -> None:
     assert colonnes_champs_avances(session) == []
 
 
+def test_colonnes_champs_avances_ignore_les_pertes_recuperables_par_heuristique() -> None:
+    """Bug B : si la colonne au nom évocateur (« Année », « Auteur »)
+    serait re-promue vers la même cible dédiée par l'heuristique du
+    mode simple, on ne signale PAS une perte. Évite la bannière
+    « champs avancés perdus » trompeuse quand le passage avancé →
+    simple est en réalité réversible sans intervention.
+
+    Seules les colonnes au nom abréviatif (« An », « Aut ») —
+    indétectables — sont listées comme pertes réelles."""
+    from archives_tool.api.services.import_web import colonnes_champs_avances
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=[
+            "Cote", "Année", "Auteur", "Langue", "An", "Aut", "DOI",
+        ],
+        mappings={
+            "cote": "Cote",
+            "annee": "Année",  # heuristique → annee : préservée
+            "metadonnees.auteur": "Auteur",  # heuristique → DC : préservée
+            "langue": "Langue",  # heuristique → langue : préservée
+            "doi_nakala": "DOI",  # heuristique → doi_nakala : préservée
+            "type_coar": "An",  # heuristique sur « An » → None : perdue
+            "metadonnees.contributeur": "Aut",  # heuristique → None : perdue
+        },
+    )
+    pertes = colonnes_champs_avances(session)
+    assert set(pertes) == {"An", "Aut"}
+
+
 def test_construire_mapping_simple_perte_champs_avances_documentee() -> None:
-    """Comportement documenté : un mapping qui contient des champs
-    dédiés hors cote/titre/date (annee, type_coar, DC canoniques)
-    est ramené en metadonnees.<slug> par construire_mapping_depuis_simple.
-    L'utilisateur est averti via une bannière (cf. test rendu)."""
+    """Comportement documenté Bug B V0.9.2-import : les colonnes au
+    nom abréviatif (« An », « Coar », « Aut ») ne sont pas reconnues
+    par les heuristiques nominatives — elles tombent en
+    `metadonnees.<slug>` au prochain submit en mode simple. L'utilisateur
+    est averti via une bannière (cf. test rendu).
+
+    Les colonnes au nom évocateur (« Année », « Auteur ») sont au
+    contraire préservées — voir
+    `test_construire_mapping_simple_heuristiques_*` ci-dessous."""
     from archives_tool.api.services.import_web import (
         construire_mapping_depuis_simple,
     )
 
     session = SessionImport(
         utilisateur="test",
-        colonnes_detectees=["c", "Année", "Auteur"],
+        colonnes_detectees=["c", "An", "Coar"],
         colonnes_echantillon={
             "c": {"classif": "cote"},
-            "Année": {"classif": "par-item"},
-            "Auteur": {"classif": "par-item"},
+            "An": {"classif": "par-item"},
+            "Coar": {"classif": "par-item"},
         },
         mappings={
             "cote": "c",
-            "annee": "Année",
-            "metadonnees.auteur": "Auteur",
+            "annee": "An",
+            "type_coar": "Coar",
         },
     )
     nouveau = construire_mapping_depuis_simple(session, colonne_cote="c")
     assert nouveau["cote"] == "c"
-    # `annee` champ dédié → écrasé par slugification automatique.
+    # « An » abréviation → pas reconnue, ramenée en metadonnees.an.
     assert "annee" not in nouveau
-    assert "metadonnees.annee" in nouveau
-    # `metadonnees.auteur` (DC canonique) → re-slugifié pareil
-    # textuellement, mais la sémantique « cible canonique » est perdue.
-    assert "metadonnees.auteur" in nouveau
+    assert nouveau["metadonnees.an"] == "An"
+    # « Coar » abréviation → pareil.
+    assert "type_coar" not in nouveau
+    assert nouveau["metadonnees.coar"] == "Coar"
+
+
+def test_construire_mapping_simple_heuristiques_promeut_dc_dedies() -> None:
+    """Bug B V0.9.2-import : les colonnes au nom évocateur (langue,
+    DOI, auteur, sujet, type, filename, …) sont promues vers leurs
+    cibles dédiées Item / Fichier / DC canonique — pas écrasées en
+    `metadonnees.<slug>` comme avant le fix. Cas typique : import
+    Nakala où mode simple devait écraser silencieusement 8 colonnes
+    DC reconnaissables."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=[
+            "Cote",
+            "doi",
+            "doi_collection",
+            "langue",
+            "type",
+            "auteur",
+            "editeur",
+            "sujet",
+            "filename",
+            "hash",
+            "iiif",
+        ],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "doi": {"classif": "par-item"},
+            "doi_collection": {"classif": "par-item"},
+            "langue": {"classif": "par-item"},
+            "type": {"classif": "par-item"},
+            "auteur": {"classif": "par-item"},
+            "editeur": {"classif": "par-item"},
+            "sujet": {"classif": "par-item"},
+            "filename": {"classif": "par-fichier"},
+            "hash": {"classif": "par-fichier"},
+            "iiif": {"classif": "par-fichier"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(session, colonne_cote="Cote")
+    # Champs Item dédiés reconnus par heuristique.
+    assert mapping["cote"] == "Cote"
+    assert mapping["doi_nakala"] == "doi"
+    assert mapping["doi_collection_nakala"] == "doi_collection"
+    assert mapping["langue"] == "langue"
+    # « type » ne matche aucune heuristique → fallback metadonnees.type.
+    # (le mapping vers `type_coar` n'est exposé que via _detecter_champ_structurant
+    # pour le cas COAR explicite. Pas de regex sur `^type$`.)
+    assert mapping["metadonnees.type"] == "type"
+    # DC canoniques.
+    assert mapping["metadonnees.auteur"] == "auteur"
+    assert mapping["metadonnees.editeur"] == "editeur"
+    assert mapping["metadonnees.sujet"] == "sujet"
+    # Champs Fichier dédiés reconnus par heuristique.
+    assert mapping["fichier.nom_fichier"] == "filename"
+    assert mapping["fichier.hash_sha256"] == "hash"
+    assert mapping["fichier.iiif_url_nakala"] == "iiif"
+
+
+def test_construire_mapping_simple_heuristique_ne_ecrase_pas_role_explicite() -> None:
+    """Bug B : si l'heuristique détecterait `titre` sur une colonne X
+    mais que l'utilisateur a explicitement choisi `colonne_titre=Y`,
+    l'heuristique est filtrée — la colonne X tombe en
+    `metadonnees.titre` au lieu d'écrire un doublon sur `titre`."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["Cote", "Titre", "Etiquette"],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "Titre": {"classif": "par-item"},
+            "Etiquette": {"classif": "par-item"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(
+        session, colonne_cote="Cote", colonne_titre="Etiquette"
+    )
+    # Le rôle `titre` revient à `Etiquette` (choix explicite).
+    assert mapping["titre"] == "Etiquette"
+    # « Titre » détectée par heuristique pour `titre`, mais ce rôle
+    # est pris — fallback slug par-item, sans écraser le choix explicite.
+    assert mapping["metadonnees.titre"] == "Titre"
+
+
+def test_construire_mapping_simple_promeut_patterns_fichier_meta() -> None:
+    """Bug B : les colonnes nommées `thumb`/`data_url`/`embed_url`/
+    `preview_url` (ou leurs variantes `url_*`) sont systématiquement
+    promues vers `fichier.metadonnees.<slug>` via le pattern
+    `_HEURISTIQUES_FICHIER_META`, indépendamment de leur classif. Ce
+    sont des informations propres au scan par nature (URLs Nakala
+    par-page) : leur permettre d'atterrir en `metadonnees.<slug>`
+    déclencherait des warnings de divergence à la fusion par cote.
+
+    Cas couvert même quand le tableur est mal classifié (par-item à
+    cause d'une particularité de la donnée) : le pattern nominatif
+    prime sur le signal statistique."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["Cote", "thumb", "data_url", "embed_url"],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            # On force `par-item` pour vérifier que le pattern prime
+            # sur la classif (cas typique : 1 ligne par cote, l'URL
+            # est constante).
+            "thumb": {"classif": "par-item"},
+            "data_url": {"classif": "par-item"},
+            "embed_url": {"classif": "par-fichier"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(session, colonne_cote="Cote")
+    assert mapping["cote"] == "Cote"
+    assert mapping["fichier.metadonnees.thumb"] == "thumb"
+    assert mapping["fichier.metadonnees.data_url"] == "data_url"
+    assert mapping["fichier.metadonnees.embed_url"] == "embed_url"
+
+
+def test_apercu_repartition_simple_compte_promues_vs_libres() -> None:
+    """Trou #2 V0.9.2-import : `apercu_repartition_simple` calcule le
+    breakdown (promues dédiées DC vs libres item vs libres fichier)
+    pour le récap inline en bas du mode simple. Sans ce service, le
+    récap actuel sous-estimait grossièrement les promotions Bug B."""
+    from archives_tool.api.services.import_web import (
+        SuggestionsModeSimple,
+        apercu_repartition_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=[
+            "Cote", "title", "Date", "doi", "langue", "auteur",
+            "filename", "thumb", "ancienne_cote", "Commentaire",
+        ],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "title": {"classif": "par-item"},
+            "Date": {"classif": "par-item"},
+            "doi": {"classif": "par-item"},
+            "langue": {"classif": "par-item"},
+            "auteur": {"classif": "par-item"},
+            "filename": {"classif": "par-fichier"},
+            "thumb": {"classif": "par-fichier"},
+            "ancienne_cote": {"classif": "par-item"},
+            "Commentaire": {"classif": "par-fichier"},
+        },
+    )
+    sugg = SuggestionsModeSimple(
+        colonne_cote="Cote",
+        colonne_titre="title",
+        colonne_date="Date",
+        granularite="fichier",
+    )
+    apercu = apercu_repartition_simple(session, sugg)
+    # Promues vers champ dédié Item/Fichier/DC canonique.
+    assert "doi" in apercu.promues_dediees  # → doi_nakala
+    assert "langue" in apercu.promues_dediees  # → langue
+    assert "auteur" in apercu.promues_dediees  # → metadonnees.auteur (DC)
+    assert "filename" in apercu.promues_dediees  # → fichier.nom_fichier
+    # `thumb` est promu via `_HEURISTIQUES_FICHIER_META` vers
+    # `fichier.metadonnees.thumb` — sémantiquement libre côté fichier.
+    assert "thumb" in apercu.libres_fichier
+    # Libres pour de vrai (pas de heuristique nominative).
+    assert "ancienne_cote" in apercu.libres_item
+    assert "Commentaire" in apercu.libres_fichier  # classif par-fichier
+    # Les colonnes explicites (cote/titre/date) ne sont jamais comptées.
+    for col in ("Cote", "title", "Date"):
+        assert col not in apercu.promues_dediees
+        assert col not in apercu.libres_item
+        assert col not in apercu.libres_fichier
+
+
+def test_apercu_repartition_simple_sans_suggestions_complet() -> None:
+    """Si pas de suggestion cote/titre/date encore choisie (premier
+    rendu sur un tableur où l'auto n'a pas détecté de cote), toutes
+    les colonnes tombent en libres (item ou fichier selon classif).
+    Pas de crash, juste un breakdown trivial."""
+    from archives_tool.api.services.import_web import (
+        SuggestionsModeSimple,
+        apercu_repartition_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["a", "b"],
+        colonnes_echantillon={
+            "a": {"classif": "par-item"},
+            "b": {"classif": "par-fichier"},
+        },
+    )
+    sugg = SuggestionsModeSimple(
+        colonne_cote=None, colonne_titre=None, colonne_date=None,
+        granularite="item",
+    )
+    apercu = apercu_repartition_simple(session, sugg)
+    assert apercu.promues_dediees == []
+    assert apercu.libres_item == ["a"]
+    assert apercu.libres_fichier == ["b"]
+
+
+def test_construire_mapping_simple_heuristique_dedup_inter_colonne() -> None:
+    """Bug B / défense en profondeur : deux colonnes au nom évocateur
+    de la même cible dédiée — la première gagne le champ dédié, la
+    seconde tombe en slug suffixé (`auteur_2`), sans écraser la
+    première via collision sur `metadonnees.auteur`."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["c", "Auteur", "AUTEUR"],
+        colonnes_echantillon={
+            "c": {"classif": "cote"},
+            "Auteur": {"classif": "par-item"},
+            "AUTEUR": {"classif": "par-item"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(session, colonne_cote="c")
+    # Première colonne « Auteur » prend la cible DC canonique.
+    assert mapping["metadonnees.auteur"] == "Auteur"
+    # Seconde « AUTEUR » ne doit pas écraser — suffixée en _2.
+    assert mapping["metadonnees.auteur_2"] == "AUTEUR"
 
 
 def test_mapping_simple_affiche_bannerre_si_champs_avances(

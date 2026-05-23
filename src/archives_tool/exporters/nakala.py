@@ -78,7 +78,15 @@ def _ligne_nakala(
     item = ipe.item
     meta = item.metadonnees or {}
     titre = item.titre or ""
-    createur = _joindre(meta.get("createurs") or meta.get("auteurs"))
+    # Singulier ET pluriel : Bug B V0.9.2-import promeut au singulier
+    # via `proposer_mapping`, alors que les imports historiques mettent
+    # parfois au pluriel.
+    createur = _joindre(
+        meta.get("createurs")
+        or meta.get("auteurs")
+        or meta.get("createur")
+        or meta.get("auteur")
+    )
     date = item.date or ""
     type_coar = item.type_coar or ""
     licence = meta.get("licence") or meta.get("rights") or licence_defaut
@@ -102,7 +110,11 @@ def _ligne_nakala(
         f"{DC}creator": createur,
         f"{DC}date": date,
         f"{DC}description": item.description or "",
-        f"{DC}subject": _joindre(meta.get("sujets") or meta.get("rubrique")),
+        f"{DC}subject": _joindre(
+            meta.get("sujets")
+            or meta.get("sujet")
+            or meta.get("rubrique")
+        ),
         f"{DC}language": item.langue or "",
         f"{DC}publisher": _joindre(meta.get("editeur") or meta.get("publisher")),
         f"{DC}type": type_coar,
@@ -116,10 +128,15 @@ def _ligne_nakala(
 
 
 def _verifier_createur(items: list[Item], rapport: RapportExport) -> None:
-    """Complète items_incomplets avec les items sans aucun créateur."""
+    """Complète items_incomplets avec les items sans aucun créateur.
+
+    Singulier ET pluriel : Bug B V0.9.2-import (cf. `_ligne_nakala`)."""
     for item in items:
-        createur = extraire_valeur(item, "metadonnees.createurs") or extraire_valeur(
-            item, "metadonnees.auteurs"
+        createur = (
+            extraire_valeur(item, "metadonnees.createurs")
+            or extraire_valeur(item, "metadonnees.auteurs")
+            or extraire_valeur(item, "metadonnees.createur")
+            or extraire_valeur(item, "metadonnees.auteur")
         )
         if createur:
             continue

@@ -105,3 +105,54 @@ def test_export_dc_titres_items_presents(
     assert "Numéro 1" in contenu
     assert "Numéro 2" in contenu
     assert "Numéro 3" in contenu
+
+
+def test_mapping_dc_couvre_singulier_et_pluriel() -> None:
+    """Trou #9 V0.9.2-import : Bug B promeut `author`/`Sujet`/etc. en
+    `metadonnees.auteur`/`sujet`/`contributeur` (singulier — alignement
+    DC), alors que les exports historiques attendaient le pluriel.
+    Sans les deux clés dans `MAPPING_DC`, les données promues par mode
+    simple étaient silencieusement perdues à l'export DC et Nakala."""
+    from archives_tool.exporters.mapping_dc import DC as DC_URI, MAPPING_DC
+
+    # Singulier (cible de Bug B / proposer_mapping)
+    assert MAPPING_DC["metadonnees.auteur"] == f"{DC_URI}creator"
+    assert MAPPING_DC["metadonnees.sujet"] == f"{DC_URI}subject"
+    assert MAPPING_DC["metadonnees.contributeur"] == f"{DC_URI}contributor"
+    # Pluriel (historique, conservé pour rétro-compat avec profils v1)
+    assert MAPPING_DC["metadonnees.auteurs"] == f"{DC_URI}creator"
+    assert MAPPING_DC["metadonnees.sujets"] == f"{DC_URI}subject"
+    assert MAPPING_DC["metadonnees.collaborateurs"] == f"{DC_URI}contributor"
+
+
+def test_export_dc_metadonnees_au_singulier_sortent_bien(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Trou #9 V0.9.2-import : un item dont les métadonnées ont été
+    promues au SINGULIER par Bug B (`metadonnees.auteur`, `sujet`,
+    `contributeur` via `proposer_mapping`) doit produire des
+    `<dc:creator>`, `<dc:subject>`, `<dc:contributor>` à l'export DC.
+    Sans le double-mapping singulier+pluriel dans `MAPPING_DC`, les
+    données passaient silencieusement à la trappe."""
+    from archives_tool.models import Item
+    from sqlalchemy import select
+
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
+    item = session_avec_export.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "auteur": "Wolinski",
+        "sujet": ["satire", "presse"],
+        "contributeur": "Cavanna",
+    }
+    session_avec_export.commit()
+
+    sortie = tmp_path / "hk_dc.xml"
+    exporter_dublin_core(session_avec_export, miroir, sortie)
+    contenu = sortie.read_text(encoding="utf-8")
+    assert "<dc:creator>Wolinski</dc:creator>" in contenu
+    assert "<dc:subject>satire</dc:subject>" in contenu
+    assert "<dc:subject>presse</dc:subject>" in contenu
+    assert "<dc:contributor>Cavanna</dc:contributor>" in contenu

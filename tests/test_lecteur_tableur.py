@@ -387,6 +387,33 @@ def test_classif_seuil_par_item_strict(tmp_path: Path) -> None:
     assert stats["Titre"]["classif"] == "par-item"
 
 
+def test_classif_fallback_cote_ignore_urls_nakala(tmp_path: Path) -> None:
+    """Test d'usage PF (2026-05-23) — `data_url` est 100 % unique sur un
+    export Nakala (1 URL par scan), placée APRÈS la vraie cote dans le
+    tableur. Sans cette exclusion, le fallback prenait `data_url` pour
+    cote (vraie cote dupliquée sur tous les scans, donc pas 100 % unique
+    au global) → toutes les classifs faussement par-item → mode simple
+    ne promouvait rien."""
+    lignes = ["cote_item;titre;data_url;preview_url;thumb"]
+    for i in range(1, 4):
+        for s in range(1, 4):
+            lignes.append(
+                f"PF-{i};Num {i};"
+                f"https://api.nakala.fr/data/x/{i}_{s};"
+                f"https://api.nakala.fr/embed/x/{i}_{s};"
+                f"https://api.nakala.fr/iiif/x/{i}_{s}"
+            )
+    csv = tmp_path / "t.csv"
+    csv.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+    stats = analyser_colonnes_tableur(csv)
+    # `cote_item` matche le pattern strict — c'est lui la cote.
+    assert stats["cote_item"]["classif"] == "cote"
+    # Les URLs Nakala sont par-fichier (varient au sein de chaque cote).
+    assert stats["data_url"]["classif"] == "par-fichier"
+    assert stats["preview_url"]["classif"] == "par-fichier"
+    assert stats["thumb"]["classif"] == "par-fichier"
+
+
 def test_classif_fallback_cote_ignore_filename(tmp_path: Path) -> None:
     """Si `filename` (typiquement 100 % unique) précède la vraie cote
     et qu'aucune colonne ne porte un nom canonique de cote, le fallback

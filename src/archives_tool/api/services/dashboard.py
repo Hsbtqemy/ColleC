@@ -1246,6 +1246,60 @@ CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
 )
 
 
+def _valeur_metadonnee_str(valeur: Any) -> str | None:
+    """Rend une valeur de `item.metadonnees` en string pour affichage.
+
+    Trois types non-triviaux à gérer :
+    - liste (vocabulaires multi-valeurs) → CSV ;
+    - dict (décompositions de cote / typologie produites par
+      l'importer dans `metadonnees.hierarchie`, `metadonnees.typologie`)
+      → `k: v, k: v` à plat ;
+    - vide (`None` ou `""`) → `None` pour que la macro Jinja affiche
+      « non renseigné » plutôt qu'une chaîne vide.
+    """
+    if isinstance(valeur, list):
+        return ", ".join(str(v) for v in valeur) or None
+    if isinstance(valeur, dict):
+        return ", ".join(f"{k}: {v}" for k, v in valeur.items()) or None
+    if valeur in (None, ""):
+        return None
+    return str(valeur)
+
+
+#: Acronymes à conserver en majuscules dans les libellés synthétisés
+#: depuis une slug de `metadonnees.<X>` (Trou #3 V0.9.2-import). Sans
+#: cette liste, `_libelle_depuis_cle("doi")` retournerait `"Doi"` —
+#: laid pour les utilisateurs habitués au DC.
+_ACRONYMES_LIBELLES: frozenset[str] = frozenset(
+    {"doi", "iiif", "url", "uri", "ocr", "edtf", "coar", "issn",
+     "isbn", "ark", "id", "pdf", "tiff", "jpeg", "png", "svg"}
+)
+
+
+def _libelle_depuis_cle(cle: str) -> str:
+    """Synthétise un libellé humain depuis une clé `metadonnees.<X>`
+    sans `ChampPersonnalise` déclaré (Bug C V0.9.2-import).
+
+    `ancienne_cote` → ``Ancienne cote``. Simple capitalisation du
+    premier mot (pas `title()` qui mettrait toutes les capitales).
+    Les mots dans :data:`_ACRONYMES_LIBELLES` (`doi`, `iiif`,
+    `url`...) restent en MAJUSCULES — `doi_collection` →
+    `DOI collection`, `iiif_url` → `IIIF URL`. Une clé vide tombe
+    sur elle-même pour éviter une ligne sans libellé."""
+    mots = cle.replace("_", " ").split()
+    if not mots:
+        return cle
+    rendu: list[str] = []
+    for i, mot in enumerate(mots):
+        if mot.lower() in _ACRONYMES_LIBELLES:
+            rendu.append(mot.upper())
+        elif i == 0:
+            rendu.append(mot[:1].upper() + mot[1:])
+        else:
+            rendu.append(mot)
+    return " ".join(rendu)
+
+
 def composer_metadonnees_par_section(
     item: Item,
     champs_personnalises: list[ChampPersonnalise],
@@ -1253,9 +1307,12 @@ def composer_metadonnees_par_section(
     """Organise les métadonnées de l'item en 4 sections affichables.
 
     - Identification : champs structurants (cote, titre, type, date, langue...)
-    - Champs personnalisés : extraits de `item.metadonnees` selon les
-      `ChampPersonnalise` des collections d'appartenance (déduplication
-      par `cle`, ordre stable).
+    - Champs personnalisés : d'abord les clés couvertes par un
+      `ChampPersonnalise` formel des collections d'appartenance
+      (déduplication par `cle`, ordre stable), puis (Bug C V0.9.2-import)
+      les clés libres restantes de `item.metadonnees` — l'import dump
+      tout en JSON sans créer de `ChampPersonnalise`, sans ce fallback
+      tout le travail descriptif resterait silencieusement invisible.
     - Identifiants externes : DOI Nakala (rendu en lien cliquable).
     - Description : texte libre multi-ligne.
 
@@ -1280,29 +1337,65 @@ def composer_metadonnees_par_section(
         )
 
     metadonnees_brutes = item.metadonnees or {}
-    vus: set[str] = set()
+    # Pré-peupler `vus` avec les clés déjà exposées dans les autres
+    # sections (Identification, Identifiants externes, Description) :
+    # si une clé homonyme apparaît dans `item.metadonnees` (cas
+    # pathologique d'un mapping qui pousserait p.ex. `titre` en JSON
+    # libre), on évite un doublon visuel et trompeur sur la page item
+    # (deux lignes « Titre » dont une vide). La valeur dédiée prime.
+    vus: set[str] = {cle for cle, _, _ in _LIBELLES_IDENTIFICATION} | {
+        "doi_nakala",
+        "doi_collection_nakala",
+        "description",
+        "notes_internes",
+    }
     perso: list[ChampMetadonnee] = []
     for champ in sorted(champs_personnalises, key=lambda c: (c.ordre, c.cle)):
         if champ.cle in vus:
             continue
         vus.add(champ.cle)
         valeur = metadonnees_brutes.get(champ.cle)
-        # Les listes (vocabulaires multi-valeurs) sont rendues en CSV.
-        if isinstance(valeur, list):
-            valeur_str: str | None = ", ".join(str(v) for v in valeur) or None
-        elif valeur in (None, ""):
-            valeur_str = None
-        else:
-            valeur_str = str(valeur)
         perso.append(
             ChampMetadonnee(
                 cle=champ.cle,
                 libelle=champ.libelle,
-                valeur=valeur_str,
+                valeur=_valeur_metadonnee_str(valeur),
                 type_donnee=champ.type,
                 # Les champs personnalisés vivent dans Item.metadonnees (JSON)
                 # et leur édition nécessitera une UI dédiée (vocabulaires,
                 # listes). Non éditables inline pour l'instant.
+                editable=False,
+            )
+        )
+
+    # Bug C V0.9.2-import : fallback pour les clés libres de
+    # `item.metadonnees` sans `ChampPersonnalise` déclaré. Trié
+    # alphabétiquement par clé (les ChampPersonnalise gardent leur
+    # ordre déclaré en tête, les libres viennent après).
+    for cle in sorted(metadonnees_brutes.keys()):
+        if cle in vus:
+            continue
+        vus.add(cle)
+        valeur_brute = metadonnees_brutes[cle]
+        valeur_str = _valeur_metadonnee_str(valeur_brute)
+        # Trou #4 V0.9.2-import : si la valeur est une URL HTTP, on
+        # type le champ `uri` pour que la macro Jinja la rende en
+        # lien cliquable via `lien_doi`. Détection conservative :
+        # str unique commençant par http(s):// — pas de cliquage de
+        # listes d'URLs ni de descriptions qui contiendraient un
+        # lien au milieu.
+        type_donnee: str | None = None
+        if (
+            isinstance(valeur_brute, str)
+            and valeur_brute.strip().startswith(("http://", "https://"))
+        ):
+            type_donnee = "uri"
+        perso.append(
+            ChampMetadonnee(
+                cle=cle,
+                libelle=_libelle_depuis_cle(cle),
+                valeur=valeur_str,
+                type_donnee=type_donnee,
                 editable=False,
             )
         )

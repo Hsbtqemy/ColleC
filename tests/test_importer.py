@@ -372,3 +372,279 @@ def test_ordre_depuis_nom_fallback_sequentiel_si_pas_match(
     par_cote = {it.cote: it for it in fonds.items}
     # Fallback séquentiel pour PFC-1 (2 fichiers) → ordres 1 et 2.
     assert sorted(f.ordre for f in par_cote["PFC-1"].fichiers) == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# Promotion d'URL depuis fichier.metadonnees → fichier.iiif_url_nakala
+# (V0.9.2-import bug A : mode simple sur un export Nakala promeut data_url/
+# embed_url/preview_url/thumb en fichier.metadonnees.<slug> sans qu'aucune
+# ne devienne source primaire — sans cette promotion, le CHECK SQL
+# rejette les Fichier et l'utilisateur perd silencieusement ses scans).
+# ---------------------------------------------------------------------------
+
+
+def test_promotion_url_metadonnees_si_iiif_absent(session: Session) -> None:
+    """Si `fichier.iiif_url_nakala` n'est pas mappé mais que les colonnes
+    `fichier.metadonnees.<X>` contiennent une URL plausible (embed_url,
+    data_url, …), la première trouvée selon l'ordre de préférence est
+    promue en `iiif_url_nakala` pour satisfaire le CHECK source primaire.
+    L'URL reste aussi dans `metadonnees` (pas de perte d'information)."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # Retire la cible dédiée et bascule la colonne `iiif` en
+    # fichier.metadonnees.embed_url — simule un mode simple où l'URL a
+    # été slug-promue plutôt qu'élue comme source primaire.
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    profil.mapping.champs["fichier.metadonnees.embed_url"] = MappingSimple(
+        source="iiif"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    # Tous les Fichier sont créés (pas de silent drop).
+    assert rapport.fichiers_ajoutes == 3
+
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    pfc1 = par_cote["PFC-1"]
+    fichiers_tries = sorted(pfc1.fichiers, key=lambda f: f.nom_fichier)
+    f0 = fichiers_tries[0]
+    # L'URL embed_url a été promue en iiif_url_nakala (la fichier est
+    # visible dans la viewer + CHECK satisfait).
+    assert f0.iiif_url_nakala is not None
+    assert f0.iiif_url_nakala.endswith("abc111/full/full/0/default.jpg")
+    # Et elle reste dans metadonnees (l'utilisateur peut basculer en
+    # mode avancé pour la remapper proprement sans perte de donnée).
+    assert f0.metadonnees == {
+        "embed_url": (
+            "https://api.nakala.fr/iiif/10.34847/nkl.x/"
+            "abc111/full/full/0/default.jpg"
+        )
+    }
+
+
+def test_promotion_url_ne_ecrase_pas_iiif_explicite(session: Session) -> None:
+    """Si `fichier.iiif_url_nakala` est mappé explicitement, la promotion
+    automatique depuis `fichier.metadonnees.*` ne s'enclenche pas — le
+    mapping utilisateur prime sur l'heuristique."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # `fichier.iiif_url_nakala` reste mappé sur la colonne `iiif`.
+    # On ajoute en parallèle `fichier.metadonnees.embed_url` sur la même
+    # colonne (cas absurde mais isole la garde).
+    profil.mapping.champs["fichier.metadonnees.embed_url"] = MappingSimple(
+        source="iiif"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    f0 = sorted(par_cote["PFC-1"].fichiers, key=lambda f: f.nom_fichier)[0]
+    # Vient bien du mapping explicite (la promotion aurait choisi la
+    # même valeur ici, mais on vérifie qu'aucun comportement ambigu
+    # n'apparaît si l'utilisateur a explicitement mappé iiif_url_nakala).
+    assert f0.iiif_url_nakala.endswith("abc111/full/full/0/default.jpg")
+
+
+def test_promotion_url_choisit_iiif_avant_data_url(session: Session) -> None:
+    """L'ordre de préférence privilégie les slugs IIIF-compatibles
+    (iiif, embed_url) avant les URLs de download (data_url) ou les
+    aperçus (preview_url, thumb). Cas typique : export Nakala où les
+    4 URLs sont présentes simultanément."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    # Plusieurs URLs simultanées sur la même colonne (la fixture n'a
+    # qu'une seule colonne URL — on simule les 4 slugs en pointant
+    # tous vers `iiif`, la promotion doit retenir le premier dans
+    # l'ordre de préférence : `iiif`).
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
+        source="iiif"
+    )
+    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(
+        source="iiif"
+    )
+    profil.mapping.champs["fichier.metadonnees.iiif"] = MappingSimple(
+        source="iiif"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    f0 = sorted(par_cote["PFC-1"].fichiers, key=lambda f: f.nom_fichier)[0]
+    assert f0.iiif_url_nakala is not None
+    # `iiif` est en tête de _SLUGS_URL_PROMUS_SOURCE → choisi en
+    # priorité quel que soit l'ordre d'apparition dans le mapping.
+    assert "iiif" in f0.metadonnees
+    assert f0.metadonnees["iiif"] == f0.iiif_url_nakala
+
+
+def test_pas_de_promotion_si_aucune_url_plausible(session: Session) -> None:
+    """Si `fichier.metadonnees.*` ne contient aucun slug d'URL connu,
+    pas de promotion : le Fichier sans source est rejeté avec warning
+    (comportement existant inchangé)."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    # `hash` slugifié — pas un nom d'URL.
+    profil.mapping.champs["fichier.metadonnees.empreinte_libre"] = MappingSimple(
+        source="hash"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    # Pas d'erreur fatale — juste des warnings + 0 fichiers ajoutés.
+    assert rapport.erreurs == []
+    assert rapport.fichiers_ajoutes == 0
+    assert any(
+        "ni chemin disque ni URL Nakala" in w for w in rapport.warnings
+    )
+
+
+def test_pas_de_promotion_si_slug_liste_mais_valeur_non_url(
+    session: Session,
+) -> None:
+    """Garde sur la forme : un slug listé (`thumb`, `data_url`, …) qui
+    porte une valeur non-URL (chaîne libre, hash, nombre stringifié)
+    ne déclenche PAS la promotion. Évite qu'un mapping bizarre
+    (`fichier.metadonnees.thumb` pointé sur une colonne « commentaire »)
+    se traduise par un Fichier avec une source absurde dans
+    `iiif_url_nakala`.
+
+    Sans cette garde, le `hash` slugifié sous une cible `thumb`
+    aurait été promu en iiif_url_nakala = "abc111", contredisant le
+    contrat du champ et faisant planter la visionneuse de manière
+    incompréhensible."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    # Le slug `thumb` est dans _SLUGS_URL_PROMUS_SOURCE — mais la
+    # valeur en provenance de la colonne `hash` (abc111, def222, …)
+    # n'est pas une URL.
+    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(
+        source="hash"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    # Aucun Fichier ajouté — la garde a empêché la promotion d'un hash
+    # vers iiif_url_nakala.
+    assert rapport.fichiers_ajoutes == 0
+    assert any(
+        "ni chemin disque ni URL Nakala" in w for w in rapport.warnings
+    )
+
+
+def test_promotion_url_emet_warning_agrege(session: Session) -> None:
+    """Trou #1 V0.9.2-import : quand Bug A promeut des URLs depuis
+    `fichier.metadonnees.<slug>` vers `iiif_url_nakala` faute de
+    mapping explicite, un warning agrégé par slug source apparaît
+    dans le rapport. UNE seule ligne par slug — pas N warnings par
+    fichier (sinon sur un export Nakala 7k scans on inonderait)."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    profil.mapping.champs["fichier.metadonnees.embed_url"] = MappingSimple(
+        source="iiif"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=True
+    )
+    assert rapport.erreurs == []
+    promotion_warnings = [
+        w for w in rapport.warnings if "URL promue depuis" in w
+    ]
+    # Une seule ligne pour les 3 fichiers (groupés par slug source).
+    assert len(promotion_warnings) == 1
+    msg = promotion_warnings[0]
+    assert "3 fichier(s)" in msg
+    assert "embed_url" in msg
+    assert "iiif_url_nakala" in msg
+    assert "mode avancé" in msg
+
+
+def test_promotion_url_pas_de_warning_si_mapping_explicite(
+    session: Session,
+) -> None:
+    """Trou #1 V0.9.2-import : si `fichier.iiif_url_nakala` est mappé
+    explicitement, pas de promotion → pas de warning. Confirme que le
+    warning Bug A est bien strictement informatif sur l'auto-promotion,
+    pas un signal général sur les fichiers Nakala-only."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=True
+    )
+    assert rapport.erreurs == []
+    assert not any("URL promue depuis" in w for w in rapport.warnings)
+
+
+def test_promotion_url_dedup_deterministe(session: Session) -> None:
+    """Trou #8 V0.9.2-import : la promotion d'URL est déterministe (ordre
+    figé dans `_SLUGS_URL_PROMUS_SOURCE`). Conséquence : deux passes
+    d'import sur le même tableur avec le même mapping aboutissent à la
+    même `iiif_url_nakala` — la dédup via `_cle_identite_fichier`
+    reconnaît correctement les Fichier déjà importés (champ
+    `fichiers_deja_connus` du rapport)."""
+    from archives_tool.importers.ecrivain import _fichier_depuis_colonnes
+    from archives_tool.importers.transformateur import ItemPrepare
+
+    prep1 = ItemPrepare(
+        cote="X-001",
+        champs_fichier={},
+        champs_fichier_metadonnees={
+            "data_url": "https://api.nakala.fr/data/abc/sha1",
+            "embed_url": "https://api.nakala.fr/embed/abc/sha1",
+            "thumb": "https://api.nakala.fr/iiif/abc/sha1/full/!200,200/0/default.jpg",
+        },
+    )
+    prep2 = ItemPrepare(
+        cote="X-001",
+        champs_fichier={},
+        champs_fichier_metadonnees={
+            "data_url": "https://api.nakala.fr/data/abc/sha1",
+            "embed_url": "https://api.nakala.fr/embed/abc/sha1",
+            "thumb": "https://api.nakala.fr/iiif/abc/sha1/full/!200,200/0/default.jpg",
+        },
+    )
+    f1 = _fichier_depuis_colonnes(prep1, ordre=1)
+    f2 = _fichier_depuis_colonnes(prep2, ordre=2)
+    # Même URL promue (depuis `data_url` car premier dans la liste
+    # `_SLUGS_URL_PROMUS_SOURCE` parmi ceux présents).
+    assert f1.iiif_url_nakala == f2.iiif_url_nakala
+    assert f1.url_promue_depuis == "data_url"
+    assert f2.url_promue_depuis == "data_url"
+
+
+def test_promotion_url_consistance_dry_run_et_reel(session: Session) -> None:
+    """Dry-run et mode réel doivent compter le MÊME nombre de Fichier
+    après promotion. Garantit que `_executer_dry_run`
+    (`f.chemin_relatif or f.iiif_url_nakala`) voit l'URL promue, et
+    pas seulement le mode réel via `_ecrire_fichiers`."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
+        source="iiif"
+    )
+    rapport_dry = importer(profil, chemin, session, _config({}), dry_run=True)
+    assert rapport_dry.erreurs == []
+    assert rapport_dry.fichiers_ajoutes == 3
+
+    rapport_reel = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport_reel.erreurs == []
+    assert rapport_reel.fichiers_ajoutes == 3

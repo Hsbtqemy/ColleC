@@ -436,21 +436,97 @@ def suggerer_reponses_simple(session: SessionImport) -> SuggestionsModeSimple:
     )
 
 
+@dataclass(frozen=True)
+class ApercuRepartitionSimple:
+    """Décompte par catégorie de cibles si l'utilisateur soumettait
+    le mode simple avec les suggestions actuelles (Trou #2 V0.9.2-import).
+
+    Sert au récap inline en bas du formulaire pour annoncer
+    honnêtement combien de colonnes seront promues en champ dédié vs
+    quelles iront vraiment en metadonnees libres — avant le fix Bug B,
+    tout tombait en libre et le récap actuel sous-estimerait
+    grossièrement les champs dédiés.
+    """
+
+    promues_dediees: list[str]  # cote/titre/date dédiés + DC canoniques + Fichier dédiés
+    libres_item: list[str]  # metadonnees.<slug> libres
+    libres_fichier: list[str]  # fichier.metadonnees.<slug> libres
+
+
+def apercu_repartition_simple(
+    session: SessionImport, suggestions: SuggestionsModeSimple | None
+) -> ApercuRepartitionSimple:
+    """Simule la promotion mode simple sans poser le mapping en base.
+
+    Lecture seule (pas d'écriture, pas de ré-analyse du tableur — on
+    s'appuie sur `colonnes_echantillon` déjà calculée à l'upload).
+    Appelée à chaque rendu de l'étape mapping simple pour montrer un
+    récap juste, sans coût notable.
+    """
+    from archives_tool.profils.generateur import proposer_mapping
+
+    colonnes = list(session.colonnes_detectees or [])
+    echantillons = session.colonnes_echantillon or {}
+    explicites: set[str] = set()
+    if suggestions:
+        for col in (
+            suggestions.colonne_cote,
+            suggestions.colonne_titre,
+            suggestions.colonne_date,
+        ):
+            if col:
+                explicites.add(col)
+
+    colonnes_hors = [c for c in colonnes if c not in explicites]
+    promues: list[str] = []
+    libres_item: list[str] = []
+    libres_fichier: list[str] = []
+    for cible, source, detecte in proposer_mapping(colonnes_hors):
+        if detecte and cible not in {"cote", "titre", "date"}:
+            if cible.startswith("fichier.metadonnees."):
+                # Slug libre côté fichier via `_est_pattern_fichier_meta`
+                # (thumb/data_url/embed_url/...) — sémantiquement libre,
+                # pas un champ dédié.
+                libres_fichier.append(source)
+            else:
+                # Champ Item dédié (langue, doi_nakala, ...) ou DC
+                # canonique (metadonnees.auteur, ...) ou Fichier dédié
+                # (fichier.nom_fichier, ...).
+                promues.append(source)
+            continue
+        classif = (echantillons.get(source) or {}).get("classif")
+        if classif == "par-fichier":
+            libres_fichier.append(source)
+        else:
+            libres_item.append(source)
+    return ApercuRepartitionSimple(
+        promues_dediees=promues,
+        libres_item=libres_item,
+        libres_fichier=libres_fichier,
+    )
+
+
 def colonnes_champs_avances(session: SessionImport) -> list[str]:
     """Colonnes du mapping existant qui seraient ramenées en
     ``metadonnees.<slug>`` si re-soumises depuis le mode simple
     (V0.9.2-import #3).
 
-    Le mode simple n'expose que cote / titre / date — tous les autres
-    champs dédiés (``annee``, ``type_coar``, ``langue``,
-    ``doi_nakala``, ``fichier.*``, ``metadonnees.<dc canonique>``)
-    sont écrasés au prochain submit par la slugification automatique.
-    Cette fonction liste les colonnes concernées pour qu'un
-    avertissement non-bloquant prévienne l'utilisateur (sinon perte
-    silencieuse au cours d'un aller-retour avancé → simple).
+    Le mode simple n'expose que cote / titre / date dans son
+    formulaire. Les autres champs dédiés (``annee``, ``type_coar``,
+    ``langue``, ``doi_nakala``, ``fichier.*``, ``metadonnees.<dc
+    canonique>``) sont reconstruits à partir des heuristiques
+    nominatives de :func:`proposer_mapping` (Bug B V0.9.2-import) :
+    si le nom de la colonne suffit à les redétecter, pas de perte.
+    Cette fonction ne liste donc que les colonnes dont le nom
+    n'évoque PAS leur cible dédiée — typiquement des abréviations
+    (``An`` pour année, ``Coar`` pour type COAR) — pour lesquelles
+    une bannière non-bloquante invitera l'utilisateur à basculer en
+    mode avancé.
 
     Retourne une liste vide si aucun mapping ou aucun champ avancé.
     """
+    from archives_tool.profils.generateur import proposer_mapping
+
     mappings = session.mappings or {}
     champs_exposes = {"cote", "titre", "date"}
     pertes: list[str] = []
@@ -463,7 +539,14 @@ def colonnes_champs_avances(session: SessionImport) -> list[str]:
             continue
         if cible.startswith("fichier.metadonnees."):
             continue
-        # Tout le reste est un champ dédié qui sera perdu.
+        # Bug B : si le nom de la colonne déclenche la même cible
+        # via les heuristiques nominatives, le mode simple la
+        # réaffectera spontanément — pas de perte.
+        propositions = proposer_mapping([colonne])
+        cible_heuristique = propositions[0][0] if propositions[0][2] else None
+        if cible_heuristique == cible:
+            continue
+        # Tout le reste est un champ dédié qui sera réellement perdu.
         pertes.append(colonne)
     return pertes
 
@@ -478,15 +561,32 @@ def construire_mapping_depuis_simple(
     simple (V0.9.2-import #3).
 
     Les colonnes explicitement choisies sont mappées sur leur champ
-    dédié (``cote`` / ``titre`` / ``date``). Toutes les autres
-    colonnes du tableur vont en ``metadonnees.<slug>`` — préfixées
-    par ``fichier.`` si la classif les a marquées par-fichier.
+    dédié (``cote`` / ``titre`` / ``date``). Pour les colonnes
+    restantes, on consulte d'abord les heuristiques nominatives de
+    :func:`proposer_mapping` — qui reconnaissent ``doi``, ``langue``,
+    ``type_coar``, ``filename``, ``hash``, ``iiif``, ``auteur``,
+    ``editeur``, etc. — afin de promouvoir vers les champs dédiés
+    Item / Fichier ou les cibles DC canoniques (``metadonnees.auteur``,
+    ``metadonnees.sujet``…). C'est la fix Bug B V0.9.2-import : sans
+    cette étape, mode simple écraserait silencieusement tous les champs
+    dédiés en ``metadonnees.<slug>``, ce que l'utilisateur ne voulait
+    pas en venant via la voie ergonomique.
+
+    Le fallback ``metadonnees.<slug>`` (préfixé ``fichier.`` selon la
+    classif) ne s'applique que si l'heuristique ne reconnaît rien.
+    Les rôles ``cote`` / ``titre`` / ``date`` restent exclusivement
+    contrôlés par l'utilisateur : une heuristique qui les détecterait
+    sur une autre colonne est filtrée (sinon mode simple promouvrait
+    deux colonnes sur ``titre``).
 
     Lève :class:`MappingInvalide` si la colonne cote n'existe pas
     dans le tableur, si une colonne titre/date inconnue est passée,
     ou si la même colonne est choisie pour plusieurs rôles.
     """
-    from archives_tool.profils.generateur import slug_metadonnee
+    from archives_tool.profils.generateur import (
+        proposer_mapping,
+        slug_metadonnee,
+    )
 
     colonnes = list(session.colonnes_detectees or [])
     echantillons = session.colonnes_echantillon or {}
@@ -497,6 +597,37 @@ def construire_mapping_depuis_simple(
             f"La colonne « {colonne_cote} » choisie pour la cote n'existe "
             "pas dans le tableur."
         )
+
+    # Recalcul classif si la cote choisie diffère de celle auto-détectée
+    # à l'upload (fix bug PF 2026-05-23). Cas courant : tableur Nakala
+    # où la vraie cote est dupliquée sur tous les scans (donc pas 100 %
+    # unique au global, donc invisible au fallback de
+    # `_identifier_colonne_cote`). L'auto détecte alors aucune cote (ou
+    # pire une fausse — data_url avant le fix #1) → classifs toutes
+    # `indetermine` → mode simple ne promeut rien. Une fois la cote
+    # choisie explicitement, on re-analyse le tableur en forçant cette
+    # cote pour faire émerger les vraies classifs par-fichier.
+    cote_auto = next(
+        (
+            col for col, s in echantillons.items()
+            if (s or {}).get("classif") == "cote"
+        ),
+        None,
+    )
+    if cote_auto != colonne_cote and session.chemin_tableur:
+        chemin = RACINE_IMPORT_TMP / session.chemin_tableur
+        if chemin.is_file():
+            try:
+                echantillons = analyser_colonnes_tableur(
+                    chemin, session.feuille, cote_col_force=colonne_cote
+                )
+            except LectureTableurErreur:
+                # Fallback : on garde la classif d'upload, le mode simple
+                # ne promouvra pas en `fichier.metadonnees.<slug>` mais
+                # le rapport dry-run remontera les divergences agrégées
+                # (T6) — l'utilisateur verra quand même les colonnes
+                # à reclasser.
+                pass
     if colonne_titre and colonne_titre not in colonnes_set:
         raise MappingInvalide(
             f"La colonne « {colonne_titre} » choisie pour le titre n'existe "
@@ -524,13 +655,55 @@ def construire_mapping_depuis_simple(
             )
         explicites[colonne_date] = "date"
 
+    # Bug B : pré-calcul des heuristiques nominatives sur les colonnes
+    # non choisies explicitement. `proposer_mapping` gère la dédup
+    # interne (deux colonnes « Titre » → la première gagne le champ
+    # dédié, la seconde tombe en slug). On filtre les heuristiques qui
+    # toucheraient un rôle explicite (cote/titre/date) — l'utilisateur
+    # a déjà tranché, on ne veut pas un doublon.
+    _ROLES_EXPLICITES = {"cote", "titre", "date"}
+    colonnes_hors_explicites = [c for c in colonnes if c not in explicites]
+    heuristiques: dict[str, str | None] = {}
+    for cible, source, detecte in proposer_mapping(colonnes_hors_explicites):
+        if detecte and cible not in _ROLES_EXPLICITES:
+            heuristiques[source] = cible
+        else:
+            heuristiques[source] = None
+
     mapping: dict[str, str] = {}
+    # Pré-peupler les sets de slugs avec ceux déjà revendiqués par les
+    # heuristiques DC canoniques (`metadonnees.auteur`, …) et par
+    # `_est_pattern_fichier_meta` (`fichier.metadonnees.thumb`, …) —
+    # évite qu'une colonne sans heuristique tombe sur le même slug et
+    # écrase la cible dédiée déjà posée. Ex : colonnes "Auteur" +
+    # "AUTEUR" → la première va en `metadonnees.auteur`, la seconde en
+    # `metadonnees.auteur_2` (sans cette pré-population, elle aurait
+    # repris `metadonnees.auteur` et écrasé la première).
     slugs_item: set[str] = set()
     slugs_fichier: set[str] = set()
+    for cible in heuristiques.values():
+        if cible is None:
+            continue
+        if cible.startswith("metadonnees."):
+            slugs_item.add(cible[len("metadonnees."):])
+        elif cible.startswith("fichier.metadonnees."):
+            slugs_fichier.add(cible[len("fichier.metadonnees."):])
+
+    # Suivi des cibles dédiées déjà posées pour défense en profondeur :
+    # même après le filtre `_ROLES_EXPLICITES`, deux heuristiques sur
+    # deux colonnes peuvent en théorie viser la même cible si la
+    # dédup interne de `proposer_mapping` rate (cas pathologique).
+    cibles_dediees_prises: set[str] = set(explicites.values())
+
     for colonne in colonnes:
         cible_explicite = explicites.get(colonne)
         if cible_explicite:
             mapping[cible_explicite] = colonne
+            continue
+        cible_heuristique = heuristiques.get(colonne)
+        if cible_heuristique and cible_heuristique not in cibles_dediees_prises:
+            mapping[cible_heuristique] = colonne
+            cibles_dediees_prises.add(cible_heuristique)
             continue
         classif = (echantillons.get(colonne) or {}).get("classif")
         if classif == "par-fichier":

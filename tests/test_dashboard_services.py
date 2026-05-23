@@ -826,3 +826,212 @@ def test_metadonnees_par_section_liste_rendue_csv(session_demo: Session) -> None
     sections = composer_metadonnees_par_section(item, champs)
     sujets = next(c for c in sections["Champs personnalisés"] if c.cle == "sujets")
     assert sujets.valeur == "révolution, almanach, satire"
+
+
+def test_metadonnees_par_section_clefs_libres_sans_champ_perso(
+    session_demo: Session,
+) -> None:
+    """Bug C V0.9.2-import : quand `item.metadonnees` contient des clés
+    libres sans `ChampPersonnalise` déclaré (cas typique post-import :
+    l'importer dump les colonnes inconnues en JSON sans créer de
+    champ), elles apparaissent quand même dans la section
+    « Champs personnalisés ». Sans ce fallback, tout le travail
+    descriptif d'un import Nakala restait silencieusement invisible
+    sur la page item."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "ancienne_cote": "PF-014-bis",
+        "num_files": "5",
+        "categories": "presse, satire",
+    }
+    sections = composer_metadonnees_par_section(item, [])
+    perso = sections["Champs personnalisés"]
+    cles = {c.cle for c in perso}
+    assert {"ancienne_cote", "num_files", "categories"} <= cles
+    # Le libellé synthétisé est lisible (capitalisation premier mot,
+    # underscores → espaces).
+    libelles = {c.libelle for c in perso}
+    assert "Ancienne cote" in libelles
+    assert "Num files" in libelles
+    # Et la valeur s'affiche.
+    ancienne = next(c for c in perso if c.cle == "ancienne_cote")
+    assert ancienne.valeur == "PF-014-bis"
+
+
+def test_metadonnees_par_section_champs_perso_prime_sur_libre(
+    session_demo: Session,
+) -> None:
+    """Bug C : si une clé est couverte par un `ChampPersonnalise`
+    formel ET présente dans `item.metadonnees`, on garde la version
+    formelle (libellé canonique de la collection, type_donnee). Pas
+    de doublon en section Champs personnalisés."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+    from archives_tool.models import ChampPersonnalise
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {"editeur": "Acme Press", "autre": "libre"}
+    champs = [
+        ChampPersonnalise(
+            collection_id=1, cle="editeur", libelle="Éditeur officiel",
+            type="texte", ordre=1,
+        ),
+    ]
+    sections = composer_metadonnees_par_section(item, champs)
+    perso = sections["Champs personnalisés"]
+    editeurs = [c for c in perso if c.cle == "editeur"]
+    # Une seule entrée pour `editeur`, avec le libellé formel.
+    assert len(editeurs) == 1
+    assert editeurs[0].libelle == "Éditeur officiel"
+    # La clé libre `autre` est bien là en plus.
+    assert any(c.cle == "autre" for c in perso)
+
+
+def test_metadonnees_par_section_ordre_formels_avant_libres(
+    session_demo: Session,
+) -> None:
+    """Bug C : ordre stable dans la section Champs personnalisés.
+    D'abord les `ChampPersonnalise` formels (selon leur `ordre`
+    déclaré), puis les clés libres de `item.metadonnees` triées
+    alphabétiquement — sans entrelacement."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+    from archives_tool.models import ChampPersonnalise
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "auteur": "Wolinski",
+        "zzz_libre": "fin",
+        "aaa_libre": "debut",
+        "editeur": "Acme",
+    }
+    champs = [
+        ChampPersonnalise(
+            collection_id=1, cle="editeur", libelle="Éditeur",
+            type="texte", ordre=2,
+        ),
+        ChampPersonnalise(
+            collection_id=1, cle="auteur", libelle="Auteur",
+            type="texte", ordre=1,
+        ),
+    ]
+    sections = composer_metadonnees_par_section(item, champs)
+    cles_ordre = [c.cle for c in sections["Champs personnalisés"]]
+    # Les 2 formels d'abord (selon leur `ordre` ChampPersonnalise),
+    # puis les 2 libres triées alphabétiquement.
+    assert cles_ordre == ["auteur", "editeur", "aaa_libre", "zzz_libre"]
+
+
+def test_metadonnees_par_section_clef_libre_ne_shadow_pas_identification(
+    session_demo: Session,
+) -> None:
+    """Bug C / défense en profondeur : une clé libre dans
+    `item.metadonnees` qui colliderait avec un champ d'Identification
+    (`titre`, `cote`, `langue`...) ou des sections DOI/Description est
+    silencieusement filtrée — sinon page item aurait une ligne
+    « Titre » vide en Identification et une autre en Champs
+    personnalisés, doublon trompeur."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "titre": "Titre alternatif libre",  # shadow Identification
+        "doi_nakala": "10.x/libre",  # shadow Identifiants externes
+        "description": "Description libre",  # shadow Description
+        "vrai_libre": "valeur",
+    }
+    sections = composer_metadonnees_par_section(item, [])
+    perso = sections["Champs personnalisés"]
+    cles_libres = {c.cle for c in perso}
+    # Seule la clé qui ne collide avec aucune section dédiée apparaît.
+    assert cles_libres == {"vrai_libre"}
+
+
+def test_libelle_depuis_cle_acronymes_majuscules(session_demo: Session) -> None:
+    """Trou #3 V0.9.2-import : `doi`, `iiif`, `url`, etc. restent en
+    MAJUSCULES dans les libellés synthétisés. `doi_collection` →
+    `DOI collection` (plutôt que `Doi collection` du `capitalize`
+    naïf). Les autres mots gardent leur capitalisation normale
+    (1er = majuscule, reste = lowercase)."""
+    from archives_tool.api.services.dashboard import _libelle_depuis_cle
+
+    assert _libelle_depuis_cle("doi") == "DOI"
+    assert _libelle_depuis_cle("doi_collection") == "DOI collection"
+    assert _libelle_depuis_cle("iiif_url") == "IIIF URL"
+    assert _libelle_depuis_cle("ancienne_cote") == "Ancienne cote"
+    assert _libelle_depuis_cle("num_files") == "Num files"
+    # Edge case : clé vide tombe sur elle-même.
+    assert _libelle_depuis_cle("___") == "___"
+
+
+def test_metadonnees_par_section_url_libre_type_uri(
+    session_demo: Session,
+) -> None:
+    """Trou #4 V0.9.2-import : une clé libre dont la valeur est une
+    URL HTTP est typée `uri` automatiquement — la macro Jinja la
+    rendra en lien cliquable via `lien_doi`. Cas typique sur PF :
+    `metadonnees.data_url` (si pas mappée explicitement) est utile
+    en lien plutôt qu'en texte brut."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "data_url": "https://api.nakala.fr/data/abc/xyz",
+        "commentaire": "Pas une URL",
+        "categories": ["a", "b"],  # liste, pas une URL même si "http" dedans
+    }
+    sections = composer_metadonnees_par_section(item, [])
+    perso = {c.cle: c for c in sections["Champs personnalisés"]}
+    assert perso["data_url"].type_donnee == "uri"
+    assert perso["commentaire"].type_donnee is None
+    assert perso["categories"].type_donnee is None
+
+
+def test_metadonnees_par_section_dict_rendu_a_plat(
+    session_demo: Session,
+) -> None:
+    """Bug C : les valeurs dict (typiquement `hierarchie` ou
+    `typologie` produites par les décompositions de l'importer) sont
+    rendues en `clef: valeur, clef: valeur` plutôt qu'en repr Python
+    (`{'fonds': 'PF', ...}`) — beaucoup plus lisible à l'écran."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    fonds, _ = _charger_item(session_demo, "HK", "HK-001")
+    item = session_demo.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {
+        "hierarchie": {"fonds": "PF", "numero": "014"},
+    }
+    sections = composer_metadonnees_par_section(item, [])
+    hierarchie = next(
+        c for c in sections["Champs personnalisés"] if c.cle == "hierarchie"
+    )
+    assert hierarchie.valeur == "fonds: PF, numero: 014"

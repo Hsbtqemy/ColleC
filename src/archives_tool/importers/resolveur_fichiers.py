@@ -46,6 +46,11 @@ class FichierPrepare:
     # `fichier.metadonnees.X` du mapping (granularité fichier).
     # Persistés tels quels dans `Fichier.metadonnees` JSON.
     metadonnees: dict[str, Any] | None = None
+    # Slug `fichier.metadonnees.<slug>` d'où une URL a été auto-promue
+    # vers `iiif_url_nakala` faute de mapping explicite (Bug A
+    # V0.9.2-import). Sert à émettre un warning informatif agrégé
+    # dans le rapport — pas persisté en base.
+    url_promue_depuis: str | None = None
 
 
 def _valeurs_pour_substitution(item: ItemPrepare) -> dict[str, Any]:

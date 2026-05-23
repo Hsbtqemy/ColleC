@@ -484,6 +484,62 @@ def _ecrire_fichiers(
         rapport.fichiers_ajoutes += 1
 
 
+#: Slugs de `fichier.metadonnees.<X>` qui désignent une URL distante
+#: pouvant servir de source primaire si aucune n'a été explicitement
+#: mappée sur `fichier.iiif_url_nakala`. Ordre = préférence :
+#: 1) vrais IIIF (info.json compatible) — chargement réussi en visionneuse ;
+#: 2) `data_url` (download binaire) — universel, fallback HTML mais
+#:    l'URL est utilisable pour télécharger ;
+#: 3) embed (iframe HTML), preview/thumb (JPEG) — fallback HTML pour OSD,
+#:    mais préserve l'info en base.
+#:
+#: Sert dans `_fichier_depuis_colonnes` pour qu'un Fichier issu d'un
+#: tableur Nakala ne soit pas silencieusement rejeté par `_ecrire_fichiers`
+#: (CHECK SQL exige au moins une source) quand le mode simple a poussé
+#: toutes ces colonnes en `fichier.metadonnees.<slug>` sans en élire
+#: une comme source primaire.
+_SLUGS_URL_PROMUS_SOURCE: tuple[str, ...] = (
+    "iiif",
+    "iiif_url",
+    "iiif_url_nakala",
+    "info_json",
+    "data_url",
+    "url_data",
+    "embed_url",
+    "url_embed",
+    "preview_url",
+    "url_preview",
+    "thumb",
+    "thumbnail",
+)
+
+
+def _promouvoir_url_source(meta: dict[str, Any]) -> tuple[str, str] | None:
+    """Cherche une URL plausible dans `meta` pour servir de source
+    primaire au Fichier. Retourne `(url, slug_source)` du premier
+    candidat selon l'ordre de :data:`_SLUGS_URL_PROMUS_SOURCE`, ou
+    `None` si rien.
+
+    Garde sur la forme : on n'accepte que des chaînes commençant par
+    `http://` ou `https://`. Sans cette garde, un mapping bizarre
+    (ex. `fichier.metadonnees.thumb` pointant sur une colonne texte
+    libre) promouvrait silencieusement un commentaire en
+    `iiif_url_nakala` — l'utilisateur verrait un Fichier avec une
+    source absurde, sans signal d'alerte.
+
+    Le slug retourné sert au warning informatif agrégé dans
+    `_warnings_promotion_url` (Trou #1 V0.9.2-import).
+    """
+    for slug in _SLUGS_URL_PROMUS_SOURCE:
+        valeur = meta.get(slug)
+        if not isinstance(valeur, str):
+            continue
+        candidat = valeur.strip()
+        if candidat.startswith(("http://", "https://")):
+            return candidat, slug
+    return None
+
+
 def _fichier_depuis_colonnes(
     prep: ItemPrepare, ordre: int
 ) -> FichierPrepare:
@@ -499,19 +555,35 @@ def _fichier_depuis_colonnes(
     via `prep.champs_fichier_metadonnees` et sont copiées telles
     quelles dans `FichierPrepare.metadonnees` (les `None` sont
     filtrés — inutile de polluer le JSON avec des absences).
+
+    Si aucune source n'est mappée (`fichier.iiif_url_nakala` absent),
+    on promeut automatiquement la première URL plausible trouvée dans
+    `fichier.metadonnees.<X>` vers `iiif_url_nakala` — sinon le
+    CHECK SQL `ck_fichier_source_au_moins_une` rejetterait la ligne
+    et `_ecrire_fichiers` la jetterait silencieusement. Cas typique :
+    mode simple sur un export Nakala où les URLs (embed_url, data_url,
+    preview_url, thumb) ont été slug-promues en `fichier.metadonnees.*`
+    sans qu'aucune ne soit élue comme source primaire.
     """
     cf = prep.champs_fichier
     nom = cf.get("nom_fichier") or f"{prep.cote}-{ordre:04d}"
     meta = {
         k: v for k, v in prep.champs_fichier_metadonnees.items() if v is not None
     } or None
+    iiif_url = cf.get("iiif_url_nakala") or None
+    url_promue_depuis: str | None = None
+    if iiif_url is None and meta:
+        promotion = _promouvoir_url_source(meta)
+        if promotion is not None:
+            iiif_url, url_promue_depuis = promotion
     return FichierPrepare(
         nom_fichier=str(nom),
         ordre=ordre,
         hash_sha256=(cf.get("hash_sha256") or None),
-        iiif_url_nakala=(cf.get("iiif_url_nakala") or None),
+        iiif_url_nakala=iiif_url,
         type_page=(cf.get("type_page") or None),
         metadonnees=meta,
+        url_promue_depuis=url_promue_depuis,
     )
 
 
@@ -569,7 +641,36 @@ def _preparer_lignes(
 
     if profil.granularite_source == "fichier":
         items_et_fichiers = _grouper_par_cote(items_et_fichiers, rapport, profil)
+    _warnings_promotion_url(items_et_fichiers, rapport)
     return items_et_fichiers
+
+
+def _warnings_promotion_url(
+    items_et_fichiers: list[tuple[ItemPrepare, list[FichierPrepare]]],
+    rapport: RapportImport,
+) -> None:
+    """Émet un warning agrégé par slug si Bug A a promu des URLs depuis
+    `fichier.metadonnees.*` vers `iiif_url_nakala` faute de mapping
+    explicite (Trou #1 V0.9.2-import).
+
+    Une seule ligne par slug source — sinon sur un export Nakala avec
+    7k+ scans on inonderait le rapport. L'utilisateur sait à quoi
+    s'attendre côté visionneuse (l'URL n'est probablement pas un
+    info.json IIIF, le viewer fera fallback HTML).
+    """
+    par_slug: dict[str, int] = {}
+    for _, fichiers in items_et_fichiers:
+        for f in fichiers:
+            if f.url_promue_depuis is not None:
+                par_slug[f.url_promue_depuis] = par_slug.get(f.url_promue_depuis, 0) + 1
+    for slug, nb in sorted(par_slug.items()):
+        rapport.warnings.append(
+            f"{nb} fichier(s) : URL promue depuis `fichier.metadonnees.{slug}` "
+            "vers `iiif_url_nakala` (faute de mapping explicite). Si la "
+            "visionneuse n'affiche pas correctement les scans, passer en "
+            "mode avancé et mapper la bonne colonne sur "
+            "`fichier.iiif_url_nakala`."
+        )
 
 
 def _executer_dry_run(

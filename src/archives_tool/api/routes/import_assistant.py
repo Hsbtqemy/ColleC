@@ -40,6 +40,7 @@ from archives_tool.api.services.import_web import (
     TableurInvalide,
     abandonner_session,
     apercu_import,
+    apercu_repartition_simple,
     attacher_tableur,
     cibles_proposees,
     colonnes_champs_avances,
@@ -477,6 +478,7 @@ def _contexte_mapping_simple(
         suggestions=suggestions,
         valeurs=valeurs or {},
         champs_avances_perdus=colonnes_champs_avances(session),
+        apercu_repartition=apercu_repartition_simple(session, suggestions),
         erreur=erreur,
     )
 

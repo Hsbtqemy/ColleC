@@ -85,3 +85,40 @@ def test_export_nakala_items_incomplets_signales(
     assert len(rapport.items_incomplets) == 3
     cotes_incompletes = {c for c, _ in rapport.items_incomplets}
     assert cotes_incompletes == {"HK-001", "HK-002", "HK-003"}
+
+
+def test_export_nakala_createur_singulier_reconnu(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Trou #9 V0.9.2-import : `metadonnees.auteur`/`createur` (singulier
+    — Bug B) doivent remplir la colonne créateur du CSV Nakala et
+    sortir l'item du rapport `items_incomplets`. Sans ce double-fallback
+    dans `_ligne_nakala` et `_verifier_createur`, les items promus en
+    mode simple seraient signalés comme « sans créateur » alors qu'ils
+    en ont un, et la colonne Nakala creator serait vide."""
+    from archives_tool.models import Item
+    from sqlalchemy import select
+
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
+    item = session_avec_export.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.metadonnees = {"auteur": "Reiser", "sujet": "satire"}
+    session_avec_export.commit()
+
+    sortie = tmp_path / "hk_nakala.csv"
+    rapport = exporter_nakala_csv(session_avec_export, miroir, sortie)
+
+    with sortie.open(encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f, delimiter=";")
+        ligne_hk001 = next(row for row in reader if row.get("http://purl.org/dc/terms/identifier") == "HK-001")
+    assert ligne_hk001["http://purl.org/dc/terms/creator"] == "Reiser"
+    assert ligne_hk001["http://purl.org/dc/terms/subject"] == "satire"
+    # HK-001 n'est plus dans incomplets sur le critère créateur (date
+    # et type_coar restent manquants — la liste contient toujours les
+    # autres motifs si applicables).
+    incomplets_pour_hk001 = next(
+        (motifs for c, motifs in rapport.items_incomplets if c == "HK-001"), []
+    )
+    assert "createur" not in incomplets_pour_hk001

@@ -9,8 +9,9 @@ Routers enregistrés :
 - `import_assistant` : assistant d'import web (`/import`) — cycle de
   vie des `SessionImport` ; le wizard est livré par sous-étapes.
 
-`routes/collaborateurs.py` est archivé en dette V0.8 — les
-collaborateurs sont gérés exclusivement au niveau fonds.
+Les collaborateurs sont gérés exclusivement au niveau fonds (V0.9.0+) —
+l'ancienne route `routes/collaborateurs.py` (V0.8 CollaborateurCollection)
+a été supprimée en lot de purge dead code.
 """
 
 from __future__ import annotations

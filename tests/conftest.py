@@ -34,8 +34,7 @@ from archives_tool.models import Base, Fonds, Item, ItemCollection
 # Collection/Item refondus, demo seeder, importers v2, exporters,
 # qa, renamer, derivatives, affichage CLI, routes web).
 collect_ignore = [
-    # CollaborateurCollection archivé : routes/services jamais mountés.
-    "test_collaborateurs.py",
+    # V0.9.0-alpha quarantine : fichiers à adapter ou supprimer.
     "test_contraintes.py",
     "test_derives_route.py",
     "test_mapping_dc.py",

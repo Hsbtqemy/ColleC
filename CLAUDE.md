@@ -229,6 +229,9 @@ Le pipeline d'import est découpé en quatre modules sous
 
 - `lecteur_tableur.py` : lit un CSV/Excel avec pandas en `dtype=str`,
   normalise NFC + strip, convertit les sentinelles nulles en `None`.
+  Expose aussi `analyser_colonnes_tableur` (V0.9.2-import #2) qui
+  calcule par colonne `{exemples, valeur_frequente, uniques, remplies,
+  total}` — alimente l'aperçu inline de l'étape mapping.
 - `transformateur.py` : fonction pure ligne → `ItemPrepare`, applique
   mapping, valeurs par défaut, décompositions, transformations.
 - `resolveur_fichiers.py` : cherche les fichiers sur disque selon
@@ -241,6 +244,24 @@ Le pipeline d'import est découpé en quatre modules sous
 
 CLI : `archives-tool importer <profil>` (Typer). Référence
 complète dans [`docs/guide/cli/importer.md`](docs/guide/cli/importer.md).
+
+Assistant web (V0.9.2-import) : l'étape mapping a été refondue en
+deux modes coexistants. Le **mode simple** (par défaut, #3) pose
+4 questions explicites — cote, granularité, titre, date — et
+classe automatiquement le reste des colonnes en métadonnées (item
+ou fichier selon la classif statistique). Le **mode avancé** reste
+accessible via `?avance=1` ou le lien « Affiner colonne par
+colonne » : il expose la grille de 28 sélecteurs historiques, avec
+sous chaque colonne un aperçu inline (3 valeurs, taux de remplissage,
+uniques — #2), des heuristiques nominatives élargies (#5) pour
+`filename`/`hash`/`iiif`/`auteur`/`editeur`/`sujet`/etc., un indice
+de **classif par-item / par-fichier** (#1, ≥90 % stables → par-item,
+>50 % variables → par-fichier), une **promotion automatique** des
+colonnes par-fichier vers `fichier.metadonnees.<slug>`, et une
+section **« Anomalies détectées »** (#4) qui signale les conflits
+cible ↔ classif avec un bouton client-side de correction sans POST
+intermédiaire. Roadmap complète :
+[`docs/developpeurs/v092-import-refonte.md`](docs/developpeurs/v092-import-refonte.md).
 
 ### CLI Collections
 
@@ -855,23 +876,206 @@ archives-tool/
 - ✅ Items sans fichier.
 - ✅ Doublons potentiels (même hash).
 
-### V0.9.1 — Renforcement mode local (préparation test d'usage)
+### V0.9.1 — Renforcement mode local (préparation test d'usage) ✅ livrée
 
-Cible : 1 session ~6h. Pas de nouvelles fonctionnalités majeures —
-durcissement avant test d'usage sur un mini-fonds réel.
+Durcissement avant test d'usage sur un mini-fonds réel. Tous les
+items en place :
 
-- Activation explicite de SQLite en mode WAL (vérification du
-  pragma dans `db.py`).
-- Verrou optimiste sur `Item`, `Collection`, `Fonds` : le champ
-  `version` existe déjà via `TracabiliteMixin`, à exploiter au
-  save (compare → conflit éventuel → message « modifié par X
-  depuis votre ouverture, recharger ou forcer ? »).
-- Mode lecture seule activable via `config_local.yaml`
-  (`mode: lecture_seule`) : désactive tous les boutons d'édition.
-- Format JSON pour `archives-tool renommer` (parité avec
-  `controler` et `montrer`).
-- Documentation : « Installation locale + ShareDocs en WebDAV »
-  pas-à-pas (Windows, macOS, Linux).
+- ✅ SQLite en mode WAL explicite : `db.py::configurer_sqlite`
+  applique `journal_mode=WAL`, `synchronous=NORMAL`,
+  `foreign_keys=ON`, `temp_store=MEMORY`, `mmap_size=256MB` à
+  chaque connexion via le hook SQLAlchemy `connect`.
+- ✅ Verrou optimiste sur `Item`, `Collection`, `Fonds` :
+  `TracabiliteMixin.version` mappé en `version_id_col` (SQLAlchemy
+  ajoute `AND version=?` au `WHERE` de l'UPDATE). Service
+  `api.services.conflits.verifier_et_incrementer_version`
+  compare la version du formulaire à celle en base et lève
+  `ConflitVersion` si divergence ; contexte manager
+  `convertir_stale_data` traduit le `StaleDataError` cross-process
+  en la même exception. Intégré dans `modifier_item` /
+  `modifier_collection` / `modifier_fonds`.
+- ✅ Mode lecture seule activable via `config_local.yaml`
+  (`lecture_seule: true`) : middleware `middleware_lecture_seule`
+  retourne 423 sur POST/PUT/PATCH/DELETE, bannière `Mode lecture
+  seule` dans `base.html` via le filtre Jinja `est_lecture_seule`.
+- ✅ Format JSON pour `archives-tool renommer {appliquer, annuler,
+  historique}` (parité avec `controler` et `montrer` via l'enum
+  partagée `_FormatRapport`).
+- ✅ Documentation
+  [`docs/premiers-pas/installation-locale-webdav.md`](docs/premiers-pas/installation-locale-webdav.md)
+  pas-à-pas Windows / macOS / Linux + sections WAL / verrou
+  optimiste / lecture seule / sauvegarde.
+
+**Passe de revue 2026-05-23** (compléments) :
+
+- ✅ `tests/test_db_pragmas.py` — garde-fou que les 5 pragmas SQLite
+  sont effectivement appliqués à chaque connexion (si quelqu'un
+  casse le hook `_set_pragmas`, le test saute).
+- ✅ `ConflitVersion.version_actuelle` accepte `int | None` ; le
+  sentinel `None` signale un conflit cross-process dont la version
+  réelle n'est pas lisible sans relancer une transaction. Le message
+  d'erreur s'adapte (« version actuelle non lisible — race
+  cross-process » au lieu du trompeur « version 0 en base »).
+  `convertir_stale_data` pose maintenant `None` ; les 3 routes
+  consumers (`fonds_modifier` / `collection_modifier` / `item_modifier`)
+  + le partial `inline_edit_conflit.html` gèrent le cas.
+- ✅ Middleware lecture seule fait du **content-negotiation**
+  (`Accept: text/html` → page HTML avec lien retour, sinon JSON).
+  Avant, un utilisateur qui soumettait un form sur un poste en mode
+  lecture seule voyait `{"detail": "..."}` brut dans le navigateur.
+
+**Passe « trous documentés » 2026-05-23 (Phase A du T1)** :
+
+Les boutons d'édition sont masqués sur les pages les plus visibles
+en mode lecture seule, via wrap `{% if not est_lecture_seule() %}`
+dans les templates :
+
+- ✅ `pages/fonds_lecture.html` : « Modifier le fonds », « Créer une
+  collection libre », formulaire de suppression et d'ajout de
+  collaborateur — tous masqués en lecture seule.
+- ✅ `pages/collection_lecture.html` : « Modifier » et « Ajouter
+  des items » — masqués.
+- ✅ `components/bandeau_item.html` : bouton « Modifier » du bandeau
+  item — masqué.
+- ✅ `pages/item_lecture.html` : `inline_edit.js` n'est plus chargé
+  en lecture seule (les hooks `data-edit-field` restent dormants —
+  l'utilisateur ne peut plus ouvrir un input par accident).
+- ✅ `pages/import_accueil.html` : bouton « Nouvel import » remplacé
+  par un message explicite (« imports désactivés »), bouton
+  « Abandonner » sur les sessions en cours également masqué.
+
+Tests `test_lecture_seule.py` enrichis : 4 nouveaux tests
+intégration sur DB peuplée (fixture `client_demo_lecture_seule`
+combinant `peupler_base` + config `lecture_seule: true`).
+
+**Phase B 2026-05-23 (pages modifier)** :
+
+- ✅ `pages/fonds_modifier.html`, `pages/collection_modifier.html`,
+  `pages/item_modifier.html` : le bouton « Enregistrer » est
+  remplacé par un message explicite « Enregistrement désactivé
+  (mode lecture seule) » et « Annuler » devient « Retour ». Si
+  l'utilisateur arrive par URL directe (ex. bookmark) ou en
+  développant les flux de redirection, il voit le formulaire en
+  consultation mais ne peut plus soumettre.
+
+**Phase C 2026-05-23 (composants + étapes import)** :
+
+- ✅ `components/panneau_colonnes_modale.html` : boutons
+  « Appliquer » et « Réinitialiser » masqués en lecture seule
+  (préférences UI restent visualisables, sauvegarde désactivée).
+  Le bouton « Annuler » devient « Fermer ».
+- ✅ `pages/items_picker.html` : bouton « Ajouter à la collection »
+  remplacé par message ; « Annuler » devient « Retour ».
+- ✅ Étapes internes import (6 fichiers : `tableur`, `fonds`,
+  `mapping`, `mapping_simple`, `fichiers`, `apercu`) : le bouton
+  d'avancement de chaque étape est remplacé par le message
+  « Import désactivé (mode lecture seule) ». Sur `import_etape_tableur`,
+  le bouton « Abandonner cet import » est aussi masqué (cohérent
+  avec l'accueil).
+- ✅ Tests : 2 nouveaux dans `test_lecture_seule.py`
+  (`test_import_etape_tableur_desactive_en_lecture_seule` crée une
+  `SessionImport` directement en base — le POST `/import/nouveau`
+  étant bloqué — et vérifie le rendu).
+
+**Dead code identifié pendant la passe** :
+
+- `pages/collection_nouvelle.html` : template sans route active
+  (création de collection libre passe par d'autres flux). Modifié
+  pour cohérence en lecture seule, mais inaccessible via URL.
+- `components/section_collaborateurs.html` + `partials/_formulaire_collaborateur.html` :
+  utilisaient l'ancienne route `collaborateurs.py` archivée en
+  V0.8 (CLAUDE.md note explicite). Non touchés — dette V0.8.
+
+**T1 désormais entièrement résolu.** Les seuls boutons de mutation
+qui restent cliquables en lecture seule sont les bookmarks
+hypothétiques vers l'ancienne route collaborateurs (dette V0.8,
+non mountée).
+
+**Polish C + D 2026-05-23 (trous T2/T3/T4/T5/T9 + dead code V0.8 + drag-drop lecture seule)** :
+
+- ✅ **Dead code V0.8 supprimé** : `routes/collaborateurs.py`,
+  `services/collaborateurs.py`, `templates/components/section_collaborateurs.html`,
+  `templates/partials/_formulaire_collaborateur.html`,
+  `templates/pages/collection_nouvelle.html`, `tests/test_collaborateurs.py`.
+  Tous référençaient la route `collaborateurs.py` archivée V0.8 et
+  jamais montée par `main.py`. Le modèle `CollaborateurCollection`
+  + la relation `Collection.collaborateurs` restent (utilisés
+  potentiellement par les exports). `conftest.py::collect_ignore`
+  nettoyé en conséquence.
+- ✅ **T3 — centralisation pattern cote** :
+  `profils.generateur.PATTERN_COTE` exporté, importé dans
+  `importers.lecteur_tableur` (`_identifier_colonne_cote`).
+  Plus de duplication littérale du regex — un seul endroit pour
+  faire évoluer le pattern.
+- ✅ **T5 — a11y bandeau anomalies** : `role="region"` +
+  `aria-label="Anomalies de mapping détectées"` sur
+  `import_etape_mapping.html` (bandeau mode avancé). `role="alert"`
+  + `aria-label` sur le bandeau « champs avancés perdus » dans
+  `import_etape_mapping_simple.html`.
+- ✅ **T9 — distinguer None vs ""** dans le macro
+  `select_colonne` du mode simple : `valeur_active is none` pose
+  la suggestion (première visite), `valeur_active == ""` respecte
+  un choix « Aucune » explicite (re-render après erreur).
+- ✅ **T4 — « Garder » persistant via localStorage** : le bouton
+  « Garder le choix actuel » du bandeau anomalies stocke
+  `{colonne, classif}` dans `localStorage.colleC-import-{sid}-
+  anomalies-acceptees`. Au prochain rendu, `anomalies.js` filtre
+  les `<li>` déjà acceptées. Scope par session — une autre import
+  ne re-affiche pas les anomalies acceptées ailleurs. Le bandeau
+  porte `data-session-id` ; les `<li>` portent `data-classif`.
+- ✅ **Drag-drop Sortable désactivé en lecture seule** :
+  `panneau_colonnes_modale.html` pose `data-lecture-seule="1"` ;
+  `panneau_colonnes.js` skip `Sortable.create()` si l'attribut est
+  présent. L'utilisateur ne peut plus déplacer visuellement les
+  colonnes sans pouvoir sauver (UX trompeuse fermée).
+- ✅ **T2 — double lecture du tableur** : `attacher_tableur` ne
+  lit plus le tableur deux fois (`nrows=1` + `nrows=5000`). Une
+  seule lecture via `analyser_colonnes_tableur`, les colonnes sont
+  dérivées de `list(echantillons.keys())`. Économise ~1s d'upload
+  sur PF.
+
+**Skip décisions documentées** :
+- **T7** : validation serveur cote/titre/date différentes — déjà
+  couvert côté service via `construire_mapping_depuis_simple`.
+  Test de garde-fou existant suffit, pas besoin de validation
+  HTML supplémentaire.
+- **T8** : récap « N autres colonnes » figé sur suggestions —
+  nécessiterait du JS qui réagit aux changements de selects.
+  Coût UI > valeur (informationnel pur, l'utilisateur quitte la
+  page après submit).
+- **Macro Jinja `action_mutation`** : refusée définitivement —
+  le pattern inline `{% if est_lecture_seule() %}<span>...</span>
+  {% else %}<button>...</button>{% endif %}` est plus lisible
+  que la macro paramétrée (qui devrait recevoir style/classes/
+  label/message à chaque appel — pas de DRY réel).
+
+**Passe de revue Phase C 2026-05-23** :
+
+Trouvaille principale : le `<form method="post">` reste ouvert sur les
+pages en lecture seule (bouton submit masqué, mais form actif). Si
+l'utilisateur appuie sur Entrée dans un `<input type="text">`, le
+navigateur déclenche le submit DOM par défaut — le middleware bloque
+en 423, mais l'écran devient moche. Filet de sécurité ajouté dans
+`base.html` : un listener global `addEventListener("submit", ...)` qui
+intercepte tous les submits POST en amont quand `est_lecture_seule()`
+est vrai. Un seul fix, couvre les ~11 formulaires de mutation. Les
+requêtes HTMX (`hx-post`) passent par leur propre canal et ne sont
+pas concernées — leurs boutons sont déjà masqués en template.
+
+Tests `test_filet_securite_javascript_present_en_lecture_seule`
++ `_absent_en_mode_normal` (pas de surcoût en mode normal).
+
+**Trouvailles laissées non corrigées dans cette passe** :
+
+- Drag-drop Sortable sur `panneau_colonnes_modale.html` reste actif
+  en lecture seule (l'utilisateur peut réordonner visuellement, mais
+  « Appliquer » masqué → rien n'est sauvé). UX dégradée mais sans
+  effet de bord. Pour fixer proprement : conditionner le chargement
+  de Sortable côté template ou ajouter un check côté JS.
+- Pattern `{% if est_lecture_seule() %}<span>...</span>{% else %}<button>...</button>{% endif %}`
+  dupliqué ~11 fois. Refactor possible en macro Jinja
+  `action_mutation(label, style, ...)` — bénéfice maintenabilité,
+  coût modéré, repoussé.
 
 ### V0.9.2 — Restauration ergonomique des pages détail
 

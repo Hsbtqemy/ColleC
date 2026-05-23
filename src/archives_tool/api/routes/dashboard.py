@@ -221,6 +221,17 @@ def soumettre_modification_fonds(
         modifier_fonds(db, fonds.id, formulaire, modifie_par=utilisateur)
     except ConflitVersion as e:
         formulaire.version = fonds.version
+        if e.version_actuelle is None:
+            detail = (
+                "modification cross-process détectée — la version "
+                "actuelle ne peut pas être lue depuis la transaction "
+                "courante"
+            )
+        else:
+            detail = (
+                f"version {e.version_actuelle} en base, "
+                f"vous avez {e.version_attendue}"
+            )
         return templates.TemplateResponse(
             request,
             "pages/fonds_modifier.html",
@@ -231,11 +242,9 @@ def soumettre_modification_fonds(
                 formulaire=formulaire,
                 erreurs={
                     "_version": (
-                        "Ce fonds a été modifié entre-temps "
-                        f"(version {e.version_actuelle} en base, "
-                        f"vous avez {e.version_attendue}). Vérifiez "
-                        "les valeurs et resoumettez si vous souhaitez "
-                        "écraser."
+                        f"Ce fonds a été modifié entre-temps ({detail}). "
+                        "Vérifiez les valeurs et resoumettez si vous "
+                        "souhaitez écraser."
                     )
                 },
                 phases=list(PhaseChantier),
@@ -469,6 +478,17 @@ def soumettre_collection_modifier(
         modifier_collection(db, collection.id, formulaire, modifie_par=utilisateur)
     except ConflitVersion as e:
         formulaire.version = collection.version
+        if e.version_actuelle is None:
+            detail = (
+                "modification cross-process détectée — la version "
+                "actuelle ne peut pas être lue depuis la transaction "
+                "courante"
+            )
+        else:
+            detail = (
+                f"version {e.version_actuelle} en base, "
+                f"vous avez {e.version_attendue}"
+            )
         return templates.TemplateResponse(
             request,
             "pages/collection_modifier.html",
@@ -479,11 +499,9 @@ def soumettre_collection_modifier(
                 formulaire=formulaire,
                 erreurs={
                     "_version": (
-                        "Cette collection a été modifiée entre-temps "
-                        f"(version {e.version_actuelle} en base, "
-                        f"vous avez {e.version_attendue}). Vérifiez "
-                        "les valeurs et resoumettez si vous souhaitez "
-                        "écraser."
+                        f"Cette collection a été modifiée entre-temps "
+                        f"({detail}). Vérifiez les valeurs et resoumettez "
+                        "si vous souhaitez écraser."
                     )
                 },
                 fonds_query=fonds,
@@ -750,6 +768,17 @@ def soumettre_modification_item(
         # l'utilisateur pour qu'il puisse les ressoumettre sans tout
         # retaper.
         formulaire.version = item.version
+        if e.version_actuelle is None:
+            detail = (
+                "modification cross-process détectée — la version "
+                "actuelle ne peut pas être lue depuis la transaction "
+                "courante"
+            )
+        else:
+            detail = (
+                f"version {e.version_actuelle} en base, "
+                f"vous avez {e.version_attendue}"
+            )
         return templates.TemplateResponse(
             request,
             "pages/item_modifier.html",
@@ -761,11 +790,9 @@ def soumettre_modification_item(
                 formulaire=formulaire,
                 erreurs={
                     "_version": (
-                        "Cet item a été modifié entre-temps "
-                        f"(version {e.version_actuelle} en base, "
-                        f"vous avez {e.version_attendue}). Vérifiez "
-                        "les valeurs et resoumettez si vous souhaitez "
-                        "écraser."
+                        f"Cet item a été modifié entre-temps ({detail}). "
+                        "Vérifiez les valeurs et resoumettez si vous "
+                        "souhaitez écraser."
                     )
                 },
                 etats=list(EtatCatalogage),

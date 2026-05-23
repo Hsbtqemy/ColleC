@@ -33,15 +33,36 @@ class ConflitVersion(Exception):
     l'utilisateur un message lui demandant de recharger la page
     pour récupérer les modifications de l'autre auteur avant de
     ressoumettre.
+
+    `version_actuelle=None` signale un conflit cross-process détecté
+    via `StaleDataError` (le `WHERE version=?` de l'UPDATE a matché
+    0 ligne, donc on ne connaît pas la valeur réelle sans relire).
+    Le message s'adapte en conséquence — affiché tel quel par les
+    routes / la CLI, ou interprété via `e.version_actuelle is None`.
     """
 
-    def __init__(self, *, version_attendue: int, version_actuelle: int) -> None:
-        super().__init__(
-            f"Conflit de version : formulaire soumis avec version "
-            f"{version_attendue}, mais la base est à la version "
-            f"{version_actuelle}. Rechargez la page pour voir les "
-            "modifications avant de ressoumettre."
-        )
+    def __init__(
+        self,
+        *,
+        version_attendue: int,
+        version_actuelle: int | None,
+    ) -> None:
+        if version_actuelle is None:
+            message = (
+                f"Conflit de version : formulaire soumis avec version "
+                f"{version_attendue}, mais l'entité a été modifiée "
+                "entre votre lecture et votre commit (version actuelle "
+                "non lisible — race cross-process). Rechargez la page "
+                "pour voir les modifications avant de ressoumettre."
+            )
+        else:
+            message = (
+                f"Conflit de version : formulaire soumis avec version "
+                f"{version_attendue}, mais la base est à la version "
+                f"{version_actuelle}. Rechargez la page pour voir les "
+                "modifications avant de ressoumettre."
+            )
+        super().__init__(message)
         self.version_attendue = version_attendue
         self.version_actuelle = version_actuelle
 
@@ -82,7 +103,12 @@ def convertir_stale_data(version_attendue: int | None) -> Iterator[None]:
     try:
         yield
     except StaleDataError as e:
+        # `version_actuelle=None` : sentinel « non lisible ». On ne peut
+        # pas re-lire la valeur sans relancer une transaction (la session
+        # courante est dans un état rollback-needed). Le caller doit faire
+        # `session.rollback() + session.refresh(entite)` s'il veut afficher
+        # la valeur réelle ; le message de ConflitVersion gère le cas.
         raise ConflitVersion(
             version_attendue=version_attendue or 0,
-            version_actuelle=0,
+            version_actuelle=None,
         ) from e

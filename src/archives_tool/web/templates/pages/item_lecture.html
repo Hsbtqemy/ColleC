@@ -47,5 +47,12 @@
 {% block scripts %}
   <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
   <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
-  <script src="{{ static_url('js/inline_edit.js') }}"></script>
+  {# inline_edit.js POSTe au blur/change sur /item/.../champ/...
+     En mode lecture seule, le middleware bloque ces POSTs (423),
+     mais l'utilisateur peut quand même cliquer sur un champ et
+     voir un input s'ouvrir — UX trompeur. On ne charge pas le
+     script du tout, les hooks `data-edit-field` restent dormants. #}
+  {% if not est_lecture_seule() %}
+    <script src="{{ static_url('js/inline_edit.js') }}"></script>
+  {% endif %}
 {% endblock %}

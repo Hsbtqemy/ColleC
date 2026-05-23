@@ -104,13 +104,19 @@
     <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
        class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
        style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
-      Annuler
+      {% if est_lecture_seule() %}Retour{% else %}Annuler{% endif %}
     </a>
-    <button type="submit"
-            class="inline-flex items-center gap-1.5 rounded"
-            style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
-      Enregistrer
-    </button>
+    {% if est_lecture_seule() %}
+      <span style="padding:6px 14px;font-size:13px;color:#92400e;font-style:italic;">
+        Enregistrement désactivé (mode lecture seule)
+      </span>
+    {% else %}
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Enregistrer
+      </button>
+    {% endif %}
   </div>
 </form>
 {% endblock %}

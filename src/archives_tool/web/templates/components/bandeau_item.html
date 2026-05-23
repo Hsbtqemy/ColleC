@@ -72,11 +72,13 @@
           Suivant <span aria-hidden="true">›</span>
         </span>
       {% endif %}
+      {% if not est_lecture_seule() %}
       <a href="/item/{{ item.cote }}/modifier?fonds={{ fonds.cote }}"
          class="inline-flex items-center gap-1 rounded hover:bg-gray-50"
          style="padding:5px 10px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
         Modifier
       </a>
+      {% endif %}
     </nav>
   </div>
 

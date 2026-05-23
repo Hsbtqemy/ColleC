@@ -71,15 +71,22 @@
                   border:1px solid #d1d5db;border-radius:3px;
                   margin-bottom:20px;">
 
-    <button type="submit"
-            class="rounded hover:bg-gray-50"
-            style="padding:8px 16px;font-size:13px;font-weight:500;
-                   color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
-                   background:#fff;">
-      Analyser le tableur →
-    </button>
+    {% if est_lecture_seule() %}
+      <span style="padding:8px 16px;font-size:13px;color:#92400e;font-style:italic;">
+        Import désactivé (mode lecture seule)
+      </span>
+    {% else %}
+      <button type="submit"
+              class="rounded hover:bg-gray-50"
+              style="padding:8px 16px;font-size:13px;font-weight:500;
+                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                     background:#fff;">
+        Analyser le tableur →
+      </button>
+    {% endif %}
   </form>
 
+  {% if not est_lecture_seule() %}
   <div style="margin-top:16px;">
     <form method="post" action="/import/{{ session.id }}/abandonner">
       <button type="submit" class="hover:underline"
@@ -89,6 +96,7 @@
       </button>
     </form>
   </div>
+  {% endif %}
 
 </div>
 {% endblock %}

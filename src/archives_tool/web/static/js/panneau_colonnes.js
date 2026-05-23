@@ -27,6 +27,22 @@
   }
 
   function gerePanneau(modale) {
+    // Fermeture : toujours câblée (lecture seule ou non — l'utilisateur
+    // doit pouvoir refermer la modale qu'il a ouverte).
+    modale.querySelector("[data-modal-overlay]")?.addEventListener(
+      "click", fermerModale
+    );
+    modale.querySelectorAll("[data-fermer-modale]").forEach((b) =>
+      b.addEventListener("click", fermerModale)
+    );
+
+    // En mode lecture seule (V0.9.1 T1 Phase C polish) : skip Sortable
+    // ET les listeners click sur -/+. Le bouton « Appliquer » est masqué
+    // côté template — sans cette protection, l'utilisateur pourrait
+    // réordonner / ajouter / retirer des colonnes visuellement sans
+    // pouvoir sauver. UX trompeuse, fermée ici.
+    if (modale.dataset.lectureSeule === "1") return;
+
     instancier(modale);
 
     const listeActive = modale.querySelector("[data-cols-active]");
@@ -107,12 +123,6 @@
     }
     listeDediees.addEventListener("click", gestionnaireAjout);
     listeMetas.addEventListener("click", gestionnaireAjout);
-
-    // Fermeture : overlay, Annuler, Escape.
-    modale.querySelector("[data-modal-overlay]")?.addEventListener("click", fermerModale);
-    modale.querySelectorAll("[data-fermer-modale]").forEach((b) =>
-      b.addEventListener("click", fermerModale)
-    );
   }
 
   // Écoute les ajouts au body : à chaque réception de la modale, la

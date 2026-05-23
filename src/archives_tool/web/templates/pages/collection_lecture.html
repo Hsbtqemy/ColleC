@@ -69,7 +69,7 @@
           Voir le fonds
         </a>
       {% endif %}
-      {% if not est_miroir %}
+      {% if not est_miroir and not est_lecture_seule() %}
         <a href="/collection/{{ col.cote }}/modifier{% if detail.fonds_parent %}?fonds={{ detail.fonds_parent.cote }}{% endif %}"
            class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
           Modifier
@@ -158,7 +158,7 @@
     <h2 class="text-lg font-medium">
       Items
     </h2>
-    {% if not est_miroir %}
+    {% if not est_miroir and not est_lecture_seule() %}
       <a href="/collection/{{ col.cote }}/items/picker{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
          class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
         + Ajouter des items

@@ -145,7 +145,9 @@ def test_modifier_collection_verrou(session: Session, fonds_existant) -> None:
 
 def test_convertir_stale_data_traduit_en_conflit_version() -> None:
     """`convertir_stale_data` transforme `StaleDataError` en
-    `ConflitVersion` pour offrir une UX uniforme côté caller."""
+    `ConflitVersion` pour offrir une UX uniforme côté caller. La
+    `version_actuelle=None` signale que la valeur n'est pas lisible
+    sans relancer une transaction (race cross-process)."""
     from sqlalchemy.orm.exc import StaleDataError
 
     from archives_tool.api.services.conflits import convertir_stale_data
@@ -154,6 +156,13 @@ def test_convertir_stale_data_traduit_en_conflit_version() -> None:
         with convertir_stale_data(version_attendue=3):
             raise StaleDataError("UPDATE statement matched 0 rows")
     assert exc.value.version_attendue == 3
+    # `version_actuelle=None` : sentinel « non lisible » (passe de revue
+    # V0.9.1). Avant, on retournait 0 et le message d'erreur disait
+    # « version 0 en base » — trompeur pour l'utilisateur.
+    assert exc.value.version_actuelle is None
+    # Le message s'adapte au cas cross-process.
+    assert "non lisible" in str(exc.value)
+    assert "cross-process" in str(exc.value)
 
 
 def test_modifier_fonds_race_cross_process_simulee(

@@ -15,6 +15,7 @@
    sauvegarde — `panneau_colonnes.js` écoute pour fermer la modale. #}
 
 <div data-modal-colonnes
+     {% if est_lecture_seule() %}data-lecture-seule="1"{% endif %}
      class="fixed inset-0 z-50 flex justify-end"
      style="background:rgba(0,0,0,0.32);">
 
@@ -36,12 +37,14 @@
       <div class="border-b" style="border-color:rgba(0,0,0,0.08);padding:14px 18px;">
         <div class="flex items-center justify-between" style="margin-bottom:4px;">
           <h3 style="font-size:14px;font-weight:500;color:#1f1f1f;">Colonnes du tableau</h3>
-          <button type="button"
-                  hx-post="/preferences/colonnes/items/{{ collection.id }}/reset"
-                  hx-target="#tableau-items" hx-swap="outerHTML"
-                  class="hover:text-gray-800" style="font-size:12px;color:#6b7280;">
-            Réinitialiser
-          </button>
+          {% if not est_lecture_seule() %}
+            <button type="button"
+                    hx-post="/preferences/colonnes/items/{{ collection.id }}/reset"
+                    hx-target="#tableau-items" hx-swap="outerHTML"
+                    class="hover:text-gray-800" style="font-size:12px;color:#6b7280;">
+              Réinitialiser
+            </button>
+          {% endif %}
         </div>
         <p style="font-size:12px;color:#9ca3af;">
           <span data-cnt-actives class="font-tabular text-gray-700">{{ actives|length }}</span>
@@ -95,14 +98,24 @@
       {# Footer #}
       <div class="border-t flex items-center justify-between gap-3"
            style="border-color:rgba(0,0,0,0.08);padding:10px 18px;">
-        <p style="font-size:11px;color:#9ca3af;">Préférences sauvegardées par collection</p>
+        <p style="font-size:11px;color:#9ca3af;">
+          {% if est_lecture_seule() %}
+            Sauvegarde désactivée (mode lecture seule)
+          {% else %}
+            Préférences sauvegardées par collection
+          {% endif %}
+        </p>
         <div class="flex items-center gap-2">
           <button type="button" data-fermer-modale
                   class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
-                  style="padding:4px 10px;font-size:12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">Annuler</button>
-          <button type="submit"
-                  class="inline-flex items-center gap-1.5 rounded"
-                  style="padding:4px 10px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">Appliquer</button>
+                  style="padding:4px 10px;font-size:12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+            {% if est_lecture_seule() %}Fermer{% else %}Annuler{% endif %}
+          </button>
+          {% if not est_lecture_seule() %}
+            <button type="submit"
+                    class="inline-flex items-center gap-1.5 rounded"
+                    style="padding:4px 10px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">Appliquer</button>
+          {% endif %}
         </div>
       </div>
     </form>

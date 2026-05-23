@@ -26,6 +26,25 @@
     </main>
   </div>
   <script src="{{ url_for('static', path='js/vendor/htmx/htmx.min.js') }}"></script>
+  {% if est_lecture_seule() %}
+    {# Filet de sécurité : si un utilisateur appuie sur Entrée dans un
+       input texte d'un form POST (les boutons submit sont masqués
+       côté template, mais l'attribut form method=post reste actif),
+       le navigateur déclencherait quand même un submit. Le middleware
+       renverrait alors 423 — le formulaire ne mute rien, mais l'écran
+       deviendrait moche. Ce listener bloque la soumission DOM standard
+       en amont. Les requêtes HTMX (hx-post) passent par leur propre
+       canal et ne sont pas concernées — leurs boutons sont déjà masqués
+       en template. #}
+    <script>
+      document.addEventListener("submit", function (e) {
+        var f = e.target;
+        if (f && f.method && f.method.toLowerCase() === "post") {
+          e.preventDefault();
+        }
+      });
+    </script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

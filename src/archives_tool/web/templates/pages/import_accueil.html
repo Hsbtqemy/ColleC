@@ -22,16 +22,27 @@
     fonds et mapper les colonnes, puis crée les items en base.
   </p>
 
-  <form method="post" action="/import/nouveau" style="margin-bottom:28px;">
-    <button type="submit"
-            class="inline-flex items-center gap-2 rounded hover:bg-gray-50"
-            style="padding:8px 16px;font-size:13px;font-weight:500;
-                   color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
-                   background:#fff;">
-      <span aria-hidden="true" style="font-size:15px;line-height:1;">+</span>
-      Nouvel import
-    </button>
-  </form>
+  {% if est_lecture_seule() %}
+    <p style="font-size:13px;color:#92400e;background:#fffbeb;
+              border:1px solid #fcd34d;border-radius:4px;
+              padding:10px 14px;margin-bottom:28px;line-height:1.5;">
+      Mode lecture seule actif — les imports sont désactivés.
+      Désactivez <code style="font-family:monospace;">lecture_seule</code>
+      dans <code style="font-family:monospace;">config_local.yaml</code>
+      pour autoriser un nouvel import.
+    </p>
+  {% else %}
+    <form method="post" action="/import/nouveau" style="margin-bottom:28px;">
+      <button type="submit"
+              class="inline-flex items-center gap-2 rounded hover:bg-gray-50"
+              style="padding:8px 16px;font-size:13px;font-weight:500;
+                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                     background:#fff;">
+        <span aria-hidden="true" style="font-size:15px;line-height:1;">+</span>
+        Nouvel import
+      </button>
+    </form>
+  {% endif %}
 
   {% if sessions %}
     <h2 style="font-size:12px;color:#9ca3af;letter-spacing:.04em;
@@ -61,21 +72,26 @@
                     border:1px solid rgba(0,0,0,0.10);">
             Reprendre
           </a>
-          <form method="post" action="/import/{{ s.id }}/abandonner"
-                class="shrink-0">
-            <button type="submit"
-                    class="rounded hover:bg-red-50"
-                    style="padding:5px 12px;font-size:12px;color:#991b1b;
-                           border:1px solid rgba(0,0,0,0.10);background:#fff;">
-              Abandonner
-            </button>
-          </form>
+          {% if not est_lecture_seule() %}
+            <form method="post" action="/import/{{ s.id }}/abandonner"
+                  class="shrink-0">
+              <button type="submit"
+                      class="rounded hover:bg-red-50"
+                      style="padding:5px 12px;font-size:12px;color:#991b1b;
+                             border:1px solid rgba(0,0,0,0.10);background:#fff;">
+                Abandonner
+              </button>
+            </form>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
   {% else %}
     <p style="font-size:13px;color:#9ca3af;font-style:italic;">
-      Aucun import en cours. Cliquez « Nouvel import » pour commencer.
+      Aucun import en cours.
+      {% if not est_lecture_seule() %}
+        Cliquez « Nouvel import » pour commencer.
+      {% endif %}
     </p>
   {% endif %}
 

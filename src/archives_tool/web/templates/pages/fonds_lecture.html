@@ -28,10 +28,12 @@
         <p class="text-sm text-gray-700 mt-1">{{ detail.fonds.description }}</p>
       {% endif %}
     </div>
-    <a href="/fonds/{{ detail.fonds.cote }}/modifier"
-       class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
-      Modifier le fonds
-    </a>
+    {% if not est_lecture_seule() %}
+      <a href="/fonds/{{ detail.fonds.cote }}/modifier"
+         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+        Modifier le fonds
+      </a>
+    {% endif %}
   </div>
 
   {# Bandeau métadonnées : seuls les champs renseignés s'affichent. #}
@@ -101,10 +103,12 @@
   {% else %}
     <p class="text-sm text-gray-500">Aucune collection. (Anomalie : un fonds doit toujours avoir sa miroir.)</p>
   {% endif %}
-  <p class="mt-3 text-sm">
-    <a href="/collections/nouvelle?fonds={{ detail.fonds.cote }}"
-       class="text-blue-600 hover:underline">+ Créer une collection libre</a>
-  </p>
+  {% if not est_lecture_seule() %}
+    <p class="mt-3 text-sm">
+      <a href="/collections/nouvelle?fonds={{ detail.fonds.cote }}"
+         class="text-blue-600 hover:underline">+ Créer une collection libre</a>
+    </p>
+  {% endif %}
 </section>
 
 <section class="mb-8">
@@ -129,14 +133,16 @@
               <span class="text-gray-500 text-xs">· {{ c.periode }}</span>
             {% endif %}
           </div>
-          <form method="post"
-                action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
-                onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
-                class="inline shrink-0">
-            <button type="submit" class="text-xs text-red-600 hover:underline">
-              Supprimer
-            </button>
-          </form>
+          {% if not est_lecture_seule() %}
+            <form method="post"
+                  action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
+                  onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
+                  class="inline shrink-0">
+              <button type="submit" class="text-xs text-red-600 hover:underline">
+                Supprimer
+              </button>
+            </form>
+          {% endif %}
         </li>
       {% endfor %}
     </ul>
@@ -144,6 +150,7 @@
     <p class="text-sm text-gray-500">Aucun collaborateur sur ce fonds.</p>
   {% endif %}
 
+  {% if not est_lecture_seule() %}
   <details class="mt-3">
     <summary class="cursor-pointer text-sm text-blue-600 hover:underline">
       + Ajouter un collaborateur
@@ -196,6 +203,7 @@
       </button>
     </form>
   </details>
+  {% endif %}
 </section>
 
 {% if detail.items_recents %}

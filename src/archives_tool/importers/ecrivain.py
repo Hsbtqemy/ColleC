@@ -73,6 +73,36 @@ from archives_tool.profils.schema import (
 )
 
 
+#: Marqueur partagé entre le producteur (_grouper_par_cote) et les
+#: consommateurs qui veulent filtrer les warnings flat de divergence
+#: (déjà résumés dans `RapportImport.divergences_aggregees` côté UI/CLI).
+#: Doit apparaître dans CHAQUE message de divergence émis par
+#: `_grouper_par_cote` — c'est la garantie sur laquelle reposent
+#: `_autres_warnings` (route apercu) et le filtre du CLI verbose.
+MARQUEUR_WARNING_DIVERGENCE = "divergence sur "
+
+
+@dataclass
+class DivergenceAgreg:
+    """Agrégat des divergences sur un champ pendant la fusion par cote.
+
+    Quand une colonne par-fichier est mappée en niveau item (override
+    de la promotion auto V0.9.2-import #1), l'import rencontre N-1
+    valeurs ignorées par cote. Sans cette agrégation, le rapport
+    produit N-1 warnings par cote × M cotes — sur PF (173 cotes,
+    ligne par scan) : ~44 000 lignes individuelles. Au lieu de
+    quoi cette dataclass résume : « champ X : 173 cotes affectées,
+    7466 valeurs ignorées, exemples : 1, 2, 3 ».
+    """
+
+    champ: str  # ex. "chiffre" (niveau item) ou "metadonnees.chiffre"
+    niveau: str  # "item" (champ dédié) ou "metadonnees"
+    nb_cotes_affectees: int
+    nb_divergences: int  # total des lignes ignorées
+    exemple_cote: str
+    exemples_valeurs: list[str]  # 3 premières valeurs distinctes
+
+
 @dataclass
 class RapportImport:
     dry_run: bool
@@ -93,6 +123,10 @@ class RapportImport:
     fichiers_orphelins: list[str] = field(default_factory=list)
     lignes_ignorees: list[tuple[int, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Agrégat des divergences (V0.9.2-import T6) : remplit en parallèle
+    # de `warnings` pour les rendus UI / CLI qui veulent une vue
+    # résumée. Backward-compatible : vide si pas de divergence.
+    divergences_aggregees: list[DivergenceAgreg] = field(default_factory=list)
     erreurs: list[str] = field(default_factory=list)
     duree_secondes: float = 0.0
 
@@ -267,10 +301,17 @@ def _grouper_par_cote(
 ) -> list[tuple[ItemPrepare, list[FichierPrepare]]]:
     """Fusionne les lignes partageant la même cote (granularité fichier).
 
-    Première valeur non-None retenue par champ ; divergences → warning.
+    Première valeur non-None retenue par champ ; divergences → warning
+    individuel (rétro-compat) **et** agrégation dans
+    `rapport.divergences_aggregees` (V0.9.2-import T6 : éviter qu'une
+    colonne par-fichier mal mappée en niveau item produise 44k lignes
+    de bruit dans le rapport).
+
     Fichiers concaténés dans l'ordre d'apparition.
     """
     groupes: dict[str, tuple[ItemPrepare, list[FichierPrepare]]] = {}
+    # Agrégat des divergences pendant la fusion : clef (niveau, champ).
+    agreg: dict[tuple[str, str], dict[str, Any]] = {}
     for item, fichiers in items_prep:
         if item.cote in groupes:
             base, fichiers_base = groupes[item.cote]
@@ -282,8 +323,12 @@ def _grouper_par_cote(
                     base.champs_colonne[cle] = val
                 elif ancienne != val:
                     rapport.warnings.append(
-                        f"Cote {item.cote}: divergence sur {cle!r} entre "
-                        f"lignes (garde {ancienne!r}, ignore {val!r})."
+                        f"Cote {item.cote}: {MARQUEUR_WARNING_DIVERGENCE}"
+                        f"{cle!r} entre lignes "
+                        f"(garde {ancienne!r}, ignore {val!r})."
+                    )
+                    _enregistrer_divergence_agreg(
+                        agreg, "item", cle, item.cote, ancienne, val
                     )
             for cle, val in item.metadonnees.items():
                 if val is None:
@@ -293,8 +338,12 @@ def _grouper_par_cote(
                     base.metadonnees[cle] = val
                 elif ancienne != val:
                     rapport.warnings.append(
-                        f"Cote {item.cote}: divergence sur metadonnees.{cle} "
+                        f"Cote {item.cote}: {MARQUEUR_WARNING_DIVERGENCE}"
+                        f"metadonnees.{cle} "
                         f"(garde {ancienne!r}, ignore {val!r})."
+                    )
+                    _enregistrer_divergence_agreg(
+                        agreg, "metadonnees", cle, item.cote, ancienne, val
                     )
             fichiers_base.extend(fichiers)
         else:
@@ -303,7 +352,56 @@ def _grouper_par_cote(
     for cote, (item, fichiers) in groupes.items():
         _reindexer_fichiers(fichiers, cote, profil, rapport)
         resultats.append((item, fichiers))
+
+    # Convertir l'agrégat en liste de DivergenceAgreg, triée par
+    # nb_divergences décroissant pour mettre les plus bruyantes en
+    # tête du rendu (les colonnes vraiment problématiques).
+    for (niveau, champ), data in agreg.items():
+        rapport.divergences_aggregees.append(
+            DivergenceAgreg(
+                champ=champ,
+                niveau=niveau,
+                nb_cotes_affectees=len(data["cotes"]),
+                nb_divergences=data["nb"],
+                exemple_cote=data["exemple_cote"],
+                exemples_valeurs=data["exemples"],
+            )
+        )
+    rapport.divergences_aggregees.sort(
+        key=lambda d: d.nb_divergences, reverse=True
+    )
     return resultats
+
+
+def _enregistrer_divergence_agreg(
+    agreg: dict[tuple[str, str], dict[str, Any]],
+    niveau: str,
+    champ: str,
+    cote: str,
+    ancienne: Any,
+    val: Any,
+) -> None:
+    """Accumule une divergence dans le dict d'agrégation par (niveau, champ).
+
+    Garde un set des cotes touchées (pour le compte distinct), le total
+    des divergences, et jusqu'à 3 valeurs distinctes vues pour
+    illustrer (`ancienne` la première fois, puis chaque `val` nouvelle).
+    """
+    cle = (niveau, champ)
+    if cle not in agreg:
+        agreg[cle] = {
+            "cotes": set(),
+            "nb": 0,
+            "exemple_cote": cote,
+            "exemples": [],
+        }
+    d = agreg[cle]
+    d["cotes"].add(cote)
+    d["nb"] += 1
+    for v in (ancienne, val):
+        s = str(v)
+        if s not in d["exemples"] and len(d["exemples"]) < 3:
+            d["exemples"].append(s)
 
 
 def _cle_identite_fichier(

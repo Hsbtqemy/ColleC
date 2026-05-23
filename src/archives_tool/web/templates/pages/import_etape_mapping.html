@@ -37,6 +37,59 @@
     </div>
   {% endif %}
 
+  {# Section anomalies (V0.9.2-import #4) : conflits cible ↔ classif.
+     Les boutons « Corriger » / « Garder » sont gérés par anomalies.js
+     côté client — pas de POST intermédiaire, l'utilisateur soumet le
+     form complet quand il est prêt. #}
+  {% if anomalies %}
+    <div data-anomalies data-session-id="{{ session.id }}"
+         role="region"
+         aria-label="Anomalies de mapping détectées"
+         style="background:#fffbeb;border:1px solid #fcd34d;
+                border-radius:4px;padding:10px 14px;margin-bottom:16px;">
+      <p style="font-size:13px;font-weight:500;color:#92400e;margin:0 0 8px 0;">
+        ⚠ Anomalies détectées ({{ anomalies|length }})
+      </p>
+      <ul data-anomalies-list
+          style="list-style:none;margin:0;padding:0;">
+        {% for a in anomalies %}
+          <li data-anomalie
+              data-colonne="{{ a.colonne }}"
+              data-classif="{{ a.classif }}"
+              style="font-size:13px;color:#374151;padding:6px 0;
+                     border-top:1px solid rgba(0,0,0,0.05);
+                     {% if loop.first %}border-top:0;{% endif %}">
+            <p style="margin:0 0 6px 0;line-height:1.5;">{{ a.message }}</p>
+            <div style="display:flex;gap:6px;">
+              {% if a.cible_suggeree %}
+                <button type="button" data-action-corriger
+                        data-colonne="{{ a.colonne }}"
+                        data-cible-suggeree="{{ a.cible_suggeree }}"
+                        style="font-size:12px;padding:4px 10px;
+                               background:#fff;color:#1f1f1f;
+                               border:1px solid #d1d5db;border-radius:3px;
+                               cursor:pointer;">
+                  {% if a.cible_suggeree == cible_meta_fichier %}
+                    Déplacer en niveau fichier
+                  {% elif a.cible_suggeree == cible_meta %}
+                    Déplacer en niveau item
+                  {% endif %}
+                </button>
+              {% endif %}
+              <button type="button" data-action-garder
+                      style="font-size:12px;padding:4px 10px;
+                             background:transparent;color:#6b7280;
+                             border:1px solid transparent;
+                             cursor:pointer;">
+                Garder le choix actuel
+              </button>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
   <form method="post" action="/import/{{ session.id }}/mapping"
         class="bg-white rounded-lg"
         style="border:1px solid rgba(0,0,0,0.08);padding:8px 0;">
@@ -62,16 +115,59 @@
     </fieldset>
 
     {% for colonne, cible in lignes %}
-      <div data-cible-ligne class="border-b last:border-b-0"
+      {% set ech = echantillons.get(colonne) %}
+      <div data-cible-ligne data-colonne="{{ colonne }}"
+           class="border-b last:border-b-0"
            style="border-color:rgba(0,0,0,0.06);padding:8px 16px;">
         <div class="flex items-center gap-3">
-        <span class="font-mono grow min-w-0"
-              style="font-size:13px;color:#1f1f1f;overflow:hidden;
-                     text-overflow:ellipsis;white-space:nowrap;">
-          {{ colonne }}
-        </span>
+        <div class="grow min-w-0">
+          <span class="font-mono"
+                style="font-size:13px;color:#1f1f1f;display:block;
+                       overflow:hidden;text-overflow:ellipsis;
+                       white-space:nowrap;">
+            {{ colonne }}
+          </span>
+          {% if ech and (ech.exemples or ech.total) %}
+            <p data-cible-echantillon
+               style="font-size:11px;color:#6b7280;margin:2px 0 0 0;
+                      line-height:1.4;overflow:hidden;
+                      text-overflow:ellipsis;white-space:nowrap;">
+              {% if ech.exemples %}
+                ex.
+                {% for v in ech.exemples -%}
+                  <span style="color:#374151;">« {{ v|truncate(30, true, '…') }} »</span>{% if not loop.last %}, {% endif %}
+                {%- endfor %}
+                {% if ech.total %} · {% endif %}
+              {% endif %}
+              {% if ech.total %}
+                {{ ech.remplies }}/{{ ech.total }} remplis · {{ ech.uniques }} valeur{{ 's' if ech.uniques != 1 else '' }} unique{{ 's' if ech.uniques != 1 else '' }}
+              {% endif %}
+            </p>
+          {% endif %}
+          {# Indice classif : on affiche uniquement les surprises (cote,
+             par-fichier, mélange). `par-item` est le défaut attendu —
+             le signaler sur ~80 % des colonnes serait du bruit visuel.
+             L'attribut data-classif reste sur toutes les colonnes
+             non-indéterminées (utile pour les tests / un futur diagnostic). #}
+          {% if ech and ech.classif and ech.classif not in ('indetermine', 'par-item') %}
+            <p data-cible-classif data-classif="{{ ech.classif }}"
+               style="font-size:11px;margin:2px 0 0 0;line-height:1.4;
+                      {% if ech.classif == 'par-fichier' %}color:#7c2d12;
+                      {% elif ech.classif == 'melange' %}color:#92400e;
+                      {% elif ech.classif == 'cote' %}color:#1e3a8a;
+                      {% else %}color:#6b7280;{% endif %}">
+              {% if ech.classif == 'cote' %}
+                ⓘ identifie chaque item (colonne cote)
+              {% elif ech.classif == 'par-fichier' %}
+                ⓘ varie au sein de chaque cote — métadonnée de fichier
+              {% elif ech.classif == 'melange' %}
+                ⚠ valeurs mêlées par cote — choix à vérifier
+              {% endif %}
+            </p>
+          {% endif %}
+        </div>
         <span aria-hidden="true" style="color:#d1d5db;">→</span>
-        <select name="cible" data-cible-select
+        <select name="cible" data-cible-select data-colonne="{{ colonne }}"
                 style="font-size:13px;padding:4px 6px;border:1px solid #d1d5db;
                        border-radius:3px;background:white;flex:0 0 240px;">
           <optgroup label="Champ de l'item">
@@ -130,13 +226,24 @@
                 border:1px solid rgba(0,0,0,0.10);">
         ← Fonds
       </a>
-      <button type="submit"
-              class="rounded hover:bg-gray-50"
-              style="padding:8px 16px;font-size:13px;font-weight:500;
-                     color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
-                     background:#fff;">
-        Fichiers →
-      </button>
+      {% if est_lecture_seule() %}
+        <span style="padding:8px 16px;font-size:13px;color:#92400e;font-style:italic;">
+          Import désactivé (mode lecture seule)
+        </span>
+      {% else %}
+        <button type="submit"
+                class="rounded hover:bg-gray-50"
+                style="padding:8px 16px;font-size:13px;font-weight:500;
+                       color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                       background:#fff;">
+          Fichiers →
+        </button>
+      {% endif %}
+      <a href="/import/{{ session.id }}/mapping"
+         style="margin-left:auto;font-size:12px;color:#6b7280;
+                text-decoration:underline;">
+        ← Revenir au mode simple
+      </a>
     </div>
   </form>
 
@@ -149,4 +256,5 @@
 
 {% block scripts %}
   <script src="{{ static_url('js/hints_cibles.js') }}"></script>
+  <script src="{{ static_url('js/anomalies.js') }}"></script>
 {% endblock %}

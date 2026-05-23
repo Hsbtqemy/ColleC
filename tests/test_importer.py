@@ -289,6 +289,53 @@ def test_fichier_metadonnees_par_ligne(session: Session) -> None:
     assert "empreinte" not in (pfc1.metadonnees or {})
 
 
+def test_divergences_aggregees_par_champ(session: Session) -> None:
+    """V0.9.2-import T6 — quand une colonne par-fichier (qui varie au
+    sein d'une cote) est mappée en niveau item, l'import remonte une
+    entrée par champ dans `rapport.divergences_aggregees` (et plus
+    seulement N warnings individuels)."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # Force `hash` sur `metadonnees.hash` (niveau item) — chaque cote
+    # avec plusieurs fichiers verra une divergence. PFC-1 a 2 hashes
+    # différents → 1 divergence sur 1 cote.
+    del profil.mapping.champs["fichier.hash_sha256"]
+    profil.mapping.champs["metadonnees.hash"] = MappingSimple(source="hash")
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=True, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    # La flat list de warnings reste remplie (rétro-compat).
+    assert any("hash" in w for w in rapport.warnings)
+    # Et l'agrégation est présente.
+    assert len(rapport.divergences_aggregees) >= 1
+    divs_hash = [
+        d for d in rapport.divergences_aggregees if d.champ == "hash"
+    ]
+    assert len(divs_hash) == 1
+    div = divs_hash[0]
+    assert div.niveau == "metadonnees"
+    assert div.nb_cotes_affectees == 1  # seule PFC-1 a des divergences
+    assert div.nb_divergences == 1  # 1 valeur ignorée (def222 vs abc111)
+    assert div.exemple_cote == "PFC-1"
+    # Les 2 valeurs distinctes vues figurent en exemples.
+    assert "abc111" in div.exemples_valeurs
+    assert "def222" in div.exemples_valeurs
+
+
+def test_divergences_aggregees_vide_si_pas_de_conflit(session: Session) -> None:
+    """Pas de divergence : `rapport.divergences_aggregees` est vide
+    (backward-compat — les tests existants qui ignorent ce champ
+    continuent à passer)."""
+    profil, chemin = _profil("cas_item_simple")
+    rapport = importer(
+        profil, chemin, session, _config({"scans_revues": FIXTURES / "cas_item_simple" / "arbre"}),
+        dry_run=True,
+    )
+    assert rapport.divergences_aggregees == []
+
+
 def test_ordre_depuis_nom_extrait_du_suffixe(session: Session) -> None:
     """`ordre_depuis_nom` : la regex extrait l'ordre depuis le nom de
     fichier au lieu du séquentiel d'apparition. Utile quand le tableur

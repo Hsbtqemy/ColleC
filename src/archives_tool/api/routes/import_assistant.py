@@ -42,13 +42,17 @@ from archives_tool.api.services.import_web import (
     apercu_import,
     attacher_tableur,
     cibles_proposees,
+    colonnes_champs_avances,
     construire_mapping,
+    construire_mapping_depuis_simple,
     creer_session,
+    detecter_anomalies_mapping,
     enregistrer_fonds,
     enregistrer_mapping,
     enregistrer_resolution,
     executer_import,
     lister_sessions_en_cours,
+    suggerer_reponses_simple,
 )
 from archives_tool.api.templating import templates
 from archives_tool.config import ConfigLocale
@@ -424,7 +428,8 @@ def _contexte_mapping(
     granularite: str = "item",
 ) -> dict[str, object]:
     """Contexte du template mapping : colonnes + cible choisie pour
-    chacune (alignées par position) + granularité du tableur."""
+    chacune (alignées par position) + granularité + anomalies
+    détectées entre cibles et classif (V0.9.2-import #4)."""
     colonnes = list(session.colonnes_detectees or [])
     return _contexte_base(
         nom_base,
@@ -438,7 +443,40 @@ def _contexte_mapping(
         cible_meta_fichier=CIBLE_META_FICHIER,
         cible_ignore=CIBLE_IGNORE,
         hints_cibles=_HINTS_CIBLES,
+        echantillons=session.colonnes_echantillon or {},
+        anomalies=detecter_anomalies_mapping(session, cibles),
         granularite=granularite,
+        erreur=erreur,
+    )
+
+
+def _contexte_mapping_simple(
+    nom_base: str,
+    utilisateur: str,
+    session: SessionImport,
+    suggestions,
+    erreur: str | None,
+    valeurs: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Contexte du template mapping simple : 4 questions explicites.
+
+    `valeurs` permet de réafficher les choix utilisateur tels quels en
+    cas d'erreur de validation (sinon les radio/select retomberaient
+    sur les suggestions par défaut).
+
+    `champs_avances_perdus` (V0.9.2-import #3) liste les colonnes du
+    mapping existant qui seraient ramenées en metadonnees au prochain
+    submit simple — le template affiche un avertissement non-bloquant
+    si la liste n'est pas vide."""
+    return _contexte_base(
+        nom_base,
+        utilisateur,
+        session=session,
+        colonnes_disponibles=list(session.colonnes_detectees or []),
+        echantillons=session.colonnes_echantillon or {},
+        suggestions=suggestions,
+        valeurs=valeurs or {},
+        champs_avances_perdus=colonnes_champs_avances(session),
         erreur=erreur,
     )
 
@@ -451,25 +489,108 @@ def _contexte_mapping(
 def etape_mapping(
     session_id: int,
     request: Request,
+    avance: bool = False,
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
+    """Étape mapping. Mode simple par défaut (4 questions, V0.9.2-import
+    #3). `?avance=1` ouvre le mode avancé historique (28 selects)."""
     session = charger_session_import_ou_404(db, session_id)
     if not _etape_accessible(session, "mapping"):
         return _rediriger_vers_etape_courante(session)
+    if avance:
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_mapping.html",
+            _contexte_mapping(
+                nom_base,
+                utilisateur,
+                session,
+                cibles_proposees(session),
+                None,
+                granularite=session.granularite,
+            ),
+        )
     return templates.TemplateResponse(
         request,
-        "pages/import_etape_mapping.html",
-        _contexte_mapping(
+        "pages/import_etape_mapping_simple.html",
+        _contexte_mapping_simple(
             nom_base,
             utilisateur,
             session,
-            cibles_proposees(session),
+            suggerer_reponses_simple(session),
             None,
-            granularite=session.granularite,
         ),
     )
+
+
+@router.post(
+    "/import/{session_id}/mapping/simple",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_mapping_simple(
+    session_id: int,
+    request: Request,
+    colonne_cote: Annotated[str, Form()] = "",
+    granularite: Annotated[str, Form()] = "item",
+    colonne_titre: Annotated[str, Form()] = "",
+    colonne_date: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """V0.9.2-import #3 — soumission du mode simple (4 questions).
+
+    Construit un mapping complet : colonnes explicitement choisies →
+    champs dédiés, le reste → metadonnees.<slug> (item ou fichier
+    selon la classif statistique). Re-render avec erreur si validation
+    échoue."""
+    session = charger_session_import_ou_404(db, session_id)
+    valeurs = {
+        "colonne_cote": colonne_cote,
+        "granularite": granularite,
+        "colonne_titre": colonne_titre,
+        "colonne_date": colonne_date,
+    }
+    if not colonne_cote.strip():
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_mapping_simple.html",
+            _contexte_mapping_simple(
+                nom_base,
+                utilisateur,
+                session,
+                suggerer_reponses_simple(session),
+                "Choisissez la colonne qui identifie chaque item.",
+                valeurs=valeurs,
+            ),
+            status_code=400,
+        )
+    try:
+        mapping = construire_mapping_depuis_simple(
+            session,
+            colonne_cote=colonne_cote.strip(),
+            colonne_titre=colonne_titre.strip() or None,
+            colonne_date=colonne_date.strip() or None,
+        )
+    except MappingInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/import_etape_mapping_simple.html",
+            _contexte_mapping_simple(
+                nom_base,
+                utilisateur,
+                session,
+                suggerer_reponses_simple(session),
+                str(e),
+                valeurs=valeurs,
+            ),
+            status_code=400,
+        )
+    enregistrer_mapping(db, session, mapping, granularite)
+    return RedirectResponse(f"/import/{session.id}/fichiers", status_code=303)
 
 
 @router.post(
@@ -634,6 +755,24 @@ def _cote_fonds_cree(db: Session, session: SessionImport) -> str | None:
     return fonds.cote if fonds is not None else None
 
 
+def _autres_warnings(rapport) -> list[str]:
+    """Warnings hors divergences déjà résumées dans `divergences_aggregees`.
+
+    V0.9.2-import T6 — les divergences agrégées sont rendues dans
+    un bloc résumé séparé ; on filtre les warnings flat qui les
+    portent (via `MARQUEUR_WARNING_DIVERGENCE`) pour éviter le doublon
+    dans le bloc « Autres avertissements ».
+    """
+    from archives_tool.importers.ecrivain import MARQUEUR_WARNING_DIVERGENCE
+
+    if rapport is None:
+        return []
+    return [
+        w for w in rapport.warnings
+        if MARQUEUR_WARNING_DIVERGENCE not in w
+    ]
+
+
 @router.get(
     "/import/{session_id}/apercu",
     response_class=HTMLResponse,
@@ -664,6 +803,7 @@ def etape_apercu(
                 utilisateur,
                 session=session,
                 rapport=None,
+                autres_warnings=[],
                 erreur=None,
                 fonds_cote=_cote_fonds_cree(db, session),
                 tolerer_sans_cote=False,
@@ -686,6 +826,7 @@ def etape_apercu(
             utilisateur,
             session=session,
             rapport=rapport,
+            autres_warnings=_autres_warnings(rapport),
             erreur=erreur,
             fonds_cote=None,
             tolerer_sans_cote=tolerer_sans_cote,
@@ -727,6 +868,7 @@ def executer_import_route(
                 utilisateur,
                 session=session,
                 rapport=rapport,
+                autres_warnings=_autres_warnings(rapport),
                 erreur=erreur,
                 fonds_cote=None,
                 tolerer_sans_cote=tolerer_sans_cote,

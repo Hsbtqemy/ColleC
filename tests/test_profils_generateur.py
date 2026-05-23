@@ -11,7 +11,10 @@ from archives_tool.profils import (
     charger_profil,
     generer_squelette,
 )
-from archives_tool.profils.generateur import _slugifier
+from archives_tool.profils.generateur import (
+    _slugifier,
+    proposer_mapping,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "profils"
 
@@ -191,3 +194,119 @@ def test_analyser_tableur_personnalise_collection(tmp_path: Path) -> None:
 )
 def test_slugifier(entree: str, attendu: str) -> None:
     assert _slugifier(entree) == attendu
+
+
+# ---------- proposer_mapping — heuristiques enrichies V0.9.2-import #5 ----------
+
+
+@pytest.mark.parametrize(
+    "colonne,cible_attendue",
+    [
+        # Item — déjà couverts en V0.9.0, on re-vérifie qu'on n'a rien cassé.
+        ("Cote", "cote"),
+        ("cote_collection", "cote"),
+        ("cote_item", "cote"),
+        ("Titre", "titre"),
+        ("title", "titre"),
+        ("Date", "date"),
+        ("Année", "annee"),
+        ("year", "annee"),
+        ("Numéro", "numero"),
+        ("Langue", "langue"),
+        ("language", "langue"),
+        ("Description", "description"),
+        # DOI item / collection — formes courtes (regex) et composées
+        # (cas spécial "doi" + "nakala" dans `_detecter_champ_structurant`).
+        ("doi", "doi_nakala"),
+        ("DOI_item", "doi_nakala"),
+        ("doi_collection", "doi_collection_nakala"),
+        ("DOI Nakala", "doi_nakala"),
+        ("DOI collection Nakala", "doi_collection_nakala"),
+        ("doi_nakala_collection", "doi_collection_nakala"),
+        # Fichier — nouveaux patterns V0.9.2-import.
+        ("filename", "fichier.nom_fichier"),
+        ("file_name", "fichier.nom_fichier"),
+        ("nom_fichier", "fichier.nom_fichier"),
+        ("name", "fichier.nom_fichier"),
+        ("hash", "fichier.hash_sha256"),
+        ("sha256", "fichier.hash_sha256"),
+        ("checksum", "fichier.hash_sha256"),
+        ("empreinte", "fichier.hash_sha256"),
+        ("iiif", "fichier.iiif_url_nakala"),
+        ("iiif_url", "fichier.iiif_url_nakala"),
+        ("info.json", "fichier.iiif_url_nakala"),
+        # DC fréquents (Item.metadonnees.*).
+        ("auteur", "metadonnees.auteur"),
+        ("author", "metadonnees.auteur"),
+        ("creator", "metadonnees.auteur"),
+        ("editeur", "metadonnees.editeur"),
+        ("éditeur", "metadonnees.editeur"),
+        ("publisher", "metadonnees.editeur"),
+        ("contributeur", "metadonnees.contributeur"),
+        ("contributor", "metadonnees.contributeur"),
+        ("sujet", "metadonnees.sujet"),
+        ("keywords", "metadonnees.sujet"),
+        ("mots-cles", "metadonnees.sujet"),
+        ("droits", "metadonnees.droits"),
+        ("license", "metadonnees.droits"),
+        ("source", "metadonnees.source"),
+    ],
+)
+def test_proposer_mapping_pattern_detecte(
+    colonne: str, cible_attendue: str
+) -> None:
+    """Chaque pattern enrichi en V0.9.2-import #5 doit être détecté
+    comme structurant (detecte=True) et router vers la bonne cible."""
+    triplets = proposer_mapping([colonne])
+    assert len(triplets) == 1
+    cible, source, detecte = triplets[0]
+    assert source == colonne
+    assert detecte is True
+    assert cible == cible_attendue
+
+
+@pytest.mark.parametrize(
+    "colonne",
+    [
+        "thumb",
+        "thumbnail",
+        "thumb_url",
+        "vignette",
+        "data_url",
+        "embed_url",
+        "preview_url",
+        "url_preview",
+    ],
+)
+def test_proposer_mapping_fichier_metadonnee(colonne: str) -> None:
+    """Les patterns de scan par-page (thumb, URLs Nakala) sont pré-classés
+    en `fichier.metadonnees.<slug>` — pas un champ dédié, mais un préfixe
+    qui évite les warnings de divergence à la fusion par cote."""
+    triplets = proposer_mapping([colonne])
+    assert len(triplets) == 1
+    cible, _source, detecte = triplets[0]
+    assert detecte is True
+    assert cible.startswith("fichier.metadonnees.")
+
+
+def test_proposer_mapping_fichier_metadonnee_multiples_distinctes() -> None:
+    """Plusieurs colonnes scan-niveau peuvent être pré-classées en
+    `fichier.metadonnees.*` ensemble — pas de collision sur un champ
+    dédié unique (les slugs sont dédoublonnés indépendamment)."""
+    triplets = proposer_mapping(
+        ["thumb_url", "data_url", "embed_url", "preview_url"]
+    )
+    cibles = [c for c, _, _ in triplets]
+    assert all(c.startswith("fichier.metadonnees.") for c in cibles)
+    assert len(set(cibles)) == 4  # 4 slugs distincts, pas de collision
+
+
+def test_proposer_mapping_dedup_champ_dedie() -> None:
+    """Deux colonnes qui matchent le même champ dédié (ex. deux variantes
+    de hash) : la première gagne, la seconde bascule en metadonnees."""
+    triplets = proposer_mapping(["hash", "sha256"])
+    assert triplets[0] == ("fichier.hash_sha256", "hash", True)
+    cible_2, source_2, detecte_2 = triplets[1]
+    assert source_2 == "sha256"
+    assert detecte_2 is False
+    assert cible_2.startswith("metadonnees.")

@@ -31,11 +31,27 @@ _DC_INVERSE: dict[str, str] = {
     uri: champ for champ, uri in MAPPING_DC.items() if "." not in champ
 }
 
+# Pattern nominatif de la colonne « cote » — exporté pour être
+# réutilisé par `importers.lecteur_tableur._identifier_colonne_cote`
+# (le fallback de classif par-item/fichier de V0.9.2-import #1 doit
+# utiliser le MÊME pattern que la détection structurante, sinon un
+# drift entre les deux casse silencieusement la classif).
+PATTERN_COTE = re.compile(
+    r"^cote$|^cote_collection$|^cote_item$|^côte$", re.IGNORECASE
+)
+
 # Détection nom de colonne → champ structurant (heuristique conservatrice).
 # En cas de doute on range plutôt dans metadonnees, qu'on impose au
 # code une fausse détection ennuyeuse à corriger.
+#
+# La cible peut être :
+# - un champ dédié d'Item ("cote", "titre", "doi_nakala"...) ;
+# - un champ dédié de Fichier ("fichier.nom_fichier"...) ;
+# - une métadonnée DC fréquente ("metadonnees.auteur"...) traitée comme
+#   champ dédié (un seul mapping possible).
 _HEURISTIQUES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"^cote$|^cote_collection$|^côte$", re.IGNORECASE), "cote"),
+    # --- Champs structurants Item ---
+    (PATTERN_COTE, "cote"),
     (re.compile(r"^titre$|^title$", re.IGNORECASE), "titre"),
     (re.compile(r"^date$", re.IGNORECASE), "date"),
     (re.compile(r"^annee$|^année$|^year$", re.IGNORECASE), "annee"),
@@ -48,10 +64,90 @@ _HEURISTIQUES: list[tuple[re.Pattern[str], str]] = [
         "langue",
     ),
     (
-        re.compile(r"^description$|^desc$|^résumé$|^resume$|^summary$", re.IGNORECASE),
+        re.compile(
+            r"^description$|^desc$|^résumé$|^resume$|^summary$",
+            re.IGNORECASE,
+        ),
         "description",
     ),
+    # Identifiant DOI sur l'item. Le cas spécial "doi" + "nakala" dans
+    # `_detecter_champ_structurant` reste pour les composés (`doi nakala
+    # item`, ...). Ici on capture les noms courts usuels.
+    (re.compile(r"^doi$|^doi_item$|^item_doi$", re.IGNORECASE), "doi_nakala"),
+    (
+        re.compile(r"^doi_collection$|^collection_doi$", re.IGNORECASE),
+        "doi_collection_nakala",
+    ),
+    # --- Champs Fichier ---
+    (
+        re.compile(
+            r"^filename$|^file_?name$|^nom_fichier$|^fichier$|^file$|^name$",
+            re.IGNORECASE,
+        ),
+        "fichier.nom_fichier",
+    ),
+    (
+        re.compile(
+            r"^hash$|^sha$|^sha256$|^hash_?sha256$|^checksum$|^empreinte$",
+            re.IGNORECASE,
+        ),
+        "fichier.hash_sha256",
+    ),
+    (
+        re.compile(
+            r"^iiif$|^iiif_url$|^iiif_url_nakala$|^info\.json$|^info_json$",
+            re.IGNORECASE,
+        ),
+        "fichier.iiif_url_nakala",
+    ),
+    # --- Métadonnées DC fréquentes (rangées dans Item.metadonnees) ---
+    (
+        re.compile(
+            r"^auteur$|^auteurs$|^author$|^authors$|^creator$|^createur$|^créateur$",
+            re.IGNORECASE,
+        ),
+        "metadonnees.auteur",
+    ),
+    (
+        re.compile(r"^editeur$|^éditeur$|^publisher$", re.IGNORECASE),
+        "metadonnees.editeur",
+    ),
+    (
+        re.compile(
+            r"^contributeur$|^contributeurs$|^contributor$|^contributors$",
+            re.IGNORECASE,
+        ),
+        "metadonnees.contributeur",
+    ),
+    (
+        re.compile(
+            r"^sujet$|^sujets$|^subject$|^subjects$"
+            r"|^mots[-_ ]?cles?$|^mots[-_ ]?clés$|^keywords?$",
+            re.IGNORECASE,
+        ),
+        "metadonnees.sujet",
+    ),
+    (
+        re.compile(r"^droits$|^licence$|^license$|^rights$", re.IGNORECASE),
+        "metadonnees.droits",
+    ),
+    (re.compile(r"^source$|^sources$", re.IGNORECASE), "metadonnees.source"),
 ]
+
+# Patterns qui forcent un classement en niveau-fichier (préfixe
+# `fichier.metadonnees.<slug>`) sans être un champ dédié unique :
+# plusieurs colonnes peuvent y atterrir (chacune avec son propre slug).
+# Concerne typiquement les URLs Nakala (data_url, embed_url, ...) et les
+# vignettes — varient page-par-page, doivent donc vivre côté Fichier
+# pour éviter les warnings de divergence à la fusion par cote.
+_HEURISTIQUES_FICHIER_META: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^thumb$|^thumbnail$|^thumb_url$|^vignette$|^miniature$", re.IGNORECASE),
+    re.compile(
+        r"^data_url$|^embed_url$|^preview_url$"
+        r"|^url_data$|^url_embed$|^url_preview$",
+        re.IGNORECASE,
+    ),
+)
 
 
 def _yaml_str(s: str) -> str:
@@ -100,8 +196,9 @@ def _detecter_champ_structurant(nom_colonne: str) -> str | None:
 
     Reconnaît :
     - les URI Dublin Core (via :data:`_DC_INVERSE`) ;
-    - quelques noms de colonnes usuels (cote, titre, date, ...) ;
-    - les colonnes contenant "doi" et "nakala" → ``doi_nakala``.
+    - les patterns de :data:`_HEURISTIQUES` (cote, titre, fichier.*,
+      metadonnees.auteur, ...) ;
+    - les colonnes composées contenant "doi" et "nakala" → ``doi_nakala``.
     """
     nom = nom_colonne.strip()
     if nom.startswith(DC) and nom in _DC_INVERSE:
@@ -111,8 +208,25 @@ def _detecter_champ_structurant(nom_colonne: str) -> str | None:
             return champ
     bas = nom.lower()
     if "doi" in bas and "nakala" in bas:
+        # "doi collection nakala", "doi_nakala_collection"… → DOI de la
+        # collection Nakala (champ dédié distinct du DOI de l'item).
+        if "collection" in bas:
+            return "doi_collection_nakala"
         return "doi_nakala"
     return None
+
+
+def _est_pattern_fichier_meta(nom_colonne: str) -> bool:
+    """Vrai si le nom de colonne désigne typiquement une donnée propre
+    à un scan (thumb, URLs Nakala data/embed/preview...).
+
+    Pour ces colonnes, l'heuristique pré-remplit
+    ``fichier.metadonnees.<slug>`` plutôt que ``metadonnees.<slug>`` —
+    elles varieraient par-page sinon et déclencheraient des warnings
+    de divergence à la fusion par cote.
+    """
+    nom = nom_colonne.strip()
+    return any(p.match(nom) for p in _HEURISTIQUES_FICHIER_META)
 
 
 def _entete_squelette(
@@ -290,9 +404,11 @@ def proposer_mapping(colonnes: list[str]) -> list[tuple[str, str, bool]]:
     """Propose un mapping colonne → champ depuis les noms de colonnes.
 
     Renvoie une liste de triplets `(champ_cible, colonne, detecte)` :
-    - `detecte=True` : la colonne a matché l'heuristique
-      `_detecter_champ_structurant` → mappée vers un champ dédié ;
-    - `detecte=False` : colonne sans correspondance → `metadonnees.<slug>`.
+    - `detecte=True` : la colonne a matché un pattern connu — soit un
+      champ dédié (cote, fichier.nom_fichier, metadonnees.auteur...),
+      soit forcée en `fichier.metadonnees.<slug>` (thumb, URLs Nakala
+      par-page) ;
+    - `detecte=False` : pas de pattern → `metadonnees.<slug>`.
 
     En cas de plusieurs colonnes candidates pour le même champ dédié
     (ex. deux « Titre »), seule la première gagne ; les suivantes
@@ -301,12 +417,17 @@ def proposer_mapping(colonnes: list[str]) -> list[tuple[str, str, bool]]:
     mappings: list[tuple[str, str, bool]] = []
     dedies_pris: set[str] = set()
     slugs_pris: set[str] = set()
+    slugs_pris_fichier: set[str] = set()
 
     for nom in colonnes:
         champ_dedie = _detecter_champ_structurant(nom)
         if champ_dedie and champ_dedie not in dedies_pris:
             dedies_pris.add(champ_dedie)
             mappings.append((champ_dedie, nom, True))
+            continue
+        if _est_pattern_fichier_meta(nom):
+            slug = slug_metadonnee(nom, slugs_pris_fichier)
+            mappings.append((f"fichier.metadonnees.{slug}", nom, True))
             continue
         slug = slug_metadonnee(nom, slugs_pris)
         mappings.append((f"metadonnees.{slug}", nom, False))

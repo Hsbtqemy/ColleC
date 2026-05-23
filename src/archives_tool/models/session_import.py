@@ -60,6 +60,11 @@ class SessionImport(Base):
     nom_tableur_original: Mapped[str | None] = mapped_column(String(500))
     feuille: Mapped[str | None] = mapped_column(String(200))
     colonnes_detectees: Mapped[list[Any] | None] = mapped_column(JSON)
+    # Statistiques d'échantillonnage par colonne (V0.9.2-import #2).
+    # `{nom_colonne: {exemples, valeur_frequente, uniques, remplies, total}}`
+    # — peuplé à l'upload, consommé par l'étape mapping pour afficher
+    # un aperçu inline du contenu de chaque colonne.
+    colonnes_echantillon: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     # --- Étape fonds : section `fonds:` + `collection_miroir:` -------
     fonds_data: Mapped[dict[str, Any] | None] = mapped_column(JSON)

@@ -190,10 +190,40 @@ def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
         for e in rapport.erreurs:
             typer.echo(f"  - {e}", err=True)
 
+    # Affichage agrégé des divergences (V0.9.2-import T6) — toujours
+    # visible (même sans --verbose), c'est un signal utile pour
+    # corriger le mapping. La flat list `warnings` reste réservée au
+    # mode verbose pour les autres avertissements.
+    if rapport.divergences_aggregees:
+        typer.echo(
+            f"\n{len(rapport.divergences_aggregees)} colonne(s) à reclasser "
+            "(valeurs ignorées à la fusion par cote) :"
+        )
+        for d in rapport.divergences_aggregees:
+            prefixe = "metadonnees." if d.niveau == "metadonnees" else ""
+            exemples = ", ".join(d.exemples_valeurs[:3])
+            typer.echo(
+                f"  - {prefixe}{d.champ} : {d.nb_cotes_affectees} cote(s) "
+                f"affectée(s), {d.nb_divergences} valeur(s) ignorée(s)"
+                f"{' (ex. ' + exemples + ')' if exemples else ''}"
+            )
+
     if verbose:
-        if rapport.warnings:
+        # Warnings non-divergences (fichiers orphelins, ordre_depuis_nom
+        # qui ne matche pas, etc.). Filtrer les divergences déjà
+        # résumées au-dessus pour éviter le bruit. Marqueur partagé
+        # avec le producteur dans `importers.ecrivain`.
+        from archives_tool.importers.ecrivain import (
+            MARQUEUR_WARNING_DIVERGENCE,
+        )
+
+        autres = [
+            w for w in rapport.warnings
+            if MARQUEUR_WARNING_DIVERGENCE not in w
+        ]
+        if autres:
             typer.echo("\nWarnings :")
-            for w in rapport.warnings:
+            for w in autres:
                 typer.echo(f"  - {w}")
         if rapport.lignes_ignorees:
             typer.echo("\nLignes ignorées :")

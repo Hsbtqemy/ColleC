@@ -113,15 +113,48 @@
         <strong class="font-tabular">{{ rapport.fichiers_ajoutes }}</strong>
       </div>
 
-      {% if rapport.warnings %}
+      {% if rapport.divergences_aggregees %}
+        {# Vue agrégée des divergences (V0.9.2-import T6) : 1 entrée par
+           colonne mal classée, au lieu de N warnings par cote × M cotes
+           (~44k lignes sur un fonds Nakala-typique). #}
+        <div style="margin-top:12px;padding-top:12px;
+                    border-top:1px solid rgba(0,0,0,0.06);">
+          <p style="font-size:12px;font-weight:500;color:#92400e;
+                    margin-bottom:6px;">
+            {{ rapport.divergences_aggregees|length }} colonne{{ 's' if rapport.divergences_aggregees|length != 1 else '' }} à reclasser
+          </p>
+          <ul style="font-size:12px;color:#92400e;padding-left:16px;
+                     line-height:1.5;">
+            {% for d in rapport.divergences_aggregees %}
+              <li style="margin-bottom:4px;">
+                <code style="color:#374151;">{% if d.niveau == 'metadonnees' %}metadonnees.{% endif %}{{ d.champ }}</code>
+                varie au sein de
+                <strong class="font-tabular">{{ d.nb_cotes_affectees }}</strong>
+                cote{{ 's' if d.nb_cotes_affectees != 1 else '' }}
+                ({{ d.nb_divergences }} valeur{{ 's' if d.nb_divergences != 1 else '' }} ignorée{{ 's' if d.nb_divergences != 1 else '' }}{% if d.exemples_valeurs %}, ex. {% for v in d.exemples_valeurs %}<span style="color:#374151;">« {{ v|truncate(30, true, '…') }} »</span>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}). Probablement propre au fichier.
+              </li>
+            {% endfor %}
+          </ul>
+          <p style="font-size:11px;color:#9ca3af;margin-top:6px;font-style:italic;">
+            Pour préserver toutes les valeurs, revenir au mapping et basculer ces colonnes en niveau fichier.
+          </p>
+        </div>
+      {% endif %}
+
+      {# Warnings non-divergence (orphelins, ordre_depuis_nom qui ne
+         matche pas, etc.). Pré-calculé dans la route — quand
+         `divergences_aggregees` est rempli, les warnings flat de
+         divergence sont déjà résumés au-dessus et `autres_warnings`
+         les exclut. Sinon `autres_warnings` == `rapport.warnings`. #}
+      {% if autres_warnings %}
         <div style="margin-top:12px;padding-top:12px;
                     border-top:1px solid rgba(0,0,0,0.06);">
           <p style="font-size:12px;font-weight:500;color:#92400e;
                     margin-bottom:4px;">
-            {{ rapport.warnings|length }} avertissement(s)
+            {{ autres_warnings|length }} autre{{ 's' if autres_warnings|length != 1 else '' }} avertissement{{ 's' if autres_warnings|length != 1 else '' }}
           </p>
           <ul style="font-size:12px;color:#92400e;padding-left:16px;">
-            {% for w in rapport.warnings[:10] %}<li>{{ w }}</li>{% endfor %}
+            {% for w in autres_warnings[:10] %}<li>{{ w }}</li>{% endfor %}
           </ul>
         </div>
       {% endif %}
@@ -140,6 +173,11 @@
         ← Fichiers
       </a>
       {% if not rapport.erreurs %}
+        {% if est_lecture_seule() %}
+          <span style="padding:8px 18px;font-size:13px;color:#92400e;font-style:italic;">
+            Import désactivé (mode lecture seule)
+          </span>
+        {% else %}
         {# onsubmit désactive le bouton : empêche le double-clic de
            lancer deux imports (collision de cote au second). #}
         <form method="post" action="/import/{{ session.id }}/executer"
@@ -156,6 +194,7 @@
             Lancer l'import ({{ rapport.items_crees }} items)
           </button>
         </form>
+        {% endif %}
       {% endif %}
     </div>
   {% endif %}

@@ -1,0 +1,209 @@
+{# Étape 3 du wizard — mode simple (V0.9.2-import #3).
+   4 questions explicites au lieu de 28 selects ; le reste est classé
+   automatiquement par-item / par-fichier selon la classif statistique.
+   Variables : session, colonnes_disponibles (list[str]), echantillons
+   (dict), suggestions (SuggestionsModeSimple), valeurs (dict de reprise
+   en cas d'erreur), erreur. #}
+{% extends "base.html" %}
+{% from 'components/import_wizard.html' import wizard_etapes %}
+
+{% block title %}Import — mapping — archives-tool{% endblock %}
+
+{% macro select_colonne(name, valeur_active, suggestion, requis=False, libelle_vide="— Aucune —") %}
+  {# T9 : distinguer `valeur_active is none` (pas de choix utilisateur,
+     première visite — on prend la suggestion) de `valeur_active == ""`
+     (l'utilisateur a explicitement choisi « Aucune » et re-render
+     après erreur — on respecte). Sans ça, un choix vide explicite
+     se faisait écraser par la suggestion à chaque re-render. #}
+  {% set effective = suggestion if valeur_active is none else valeur_active %}
+  <select name="{{ name }}"
+          {{ 'required' if requis else '' }}
+          style="font-size:13px;padding:6px 8px;border:1px solid #d1d5db;
+                 border-radius:3px;background:white;width:100%;max-width:380px;">
+    <option value=""
+            {{ 'selected' if not effective else '' }}>
+      {{ libelle_vide }}
+    </option>
+    {% for col in colonnes_disponibles %}
+      {% set ech = echantillons.get(col) %}
+      <option value="{{ col }}"
+              {{ 'selected' if col == effective else '' }}>
+        {{ col }}{% if ech and ech.exemples %} — ex. « {{ ech.exemples[0]|truncate(25, true, '…') }} »{% endif %}
+      </option>
+    {% endfor %}
+  </select>
+{% endmacro %}
+
+{% block content %}
+<div style="max-width:680px;">
+
+  {% with crumbs=[
+    {'label': 'Tableau de bord', 'href': '/'},
+    {'label': 'Importer', 'href': '/import'},
+    {'label': 'Import #' ~ session.id},
+  ] %}
+    {% include "components/breadcrumb.html" %}
+  {% endwith %}
+
+  {{ wizard_etapes(session) }}
+
+  <h1 class="text-2xl font-medium" style="margin-bottom:8px;">
+    Configurer l'import
+  </h1>
+  <p style="font-size:13px;color:#6b7280;margin-bottom:20px;line-height:1.5;">
+    Quatre questions suffisent — le reste des colonnes
+    ({{ colonnes_disponibles|length }} au total) sera classé
+    automatiquement en métadonnées personnalisées.
+  </p>
+
+  {% if erreur %}
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;
+                padding:10px 14px;font-size:13px;color:#991b1b;
+                margin-bottom:16px;">
+      {{ erreur }}
+    </div>
+  {% endif %}
+
+  {# Avertissement non-bloquant si l'utilisateur revient en mode simple
+     depuis un mapping avancé qui utilisait des champs dédiés hors
+     cote/titre/date. Sans ce signal, soumettre ce form les écraserait
+     silencieusement en metadonnees.<slug>. #}
+  {% if champs_avances_perdus %}
+    <div data-avertissement-pertes
+         role="region"
+         aria-label="Avertissement : champs avancés qui seront ramenés en métadonnées"
+         style="background:#fffbeb;border:1px solid #fcd34d;
+                border-radius:4px;padding:10px 14px;margin-bottom:16px;
+                font-size:13px;color:#92400e;line-height:1.5;">
+      ⚠ Votre mapping actuel utilise {{ champs_avances_perdus|length }} colonne{{ 's' if champs_avances_perdus|length > 1 else '' }}
+      sur des champs avancés ({% for c in champs_avances_perdus[:4] %}<code style="color:#374151;">{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if champs_avances_perdus|length > 4 %} et {{ champs_avances_perdus|length - 4 }} de plus{% endif %}). Soumettre ce formulaire les ramènera en métadonnées personnalisées.
+      <a href="/import/{{ session.id }}/mapping?avance=1"
+         style="color:#92400e;text-decoration:underline;font-weight:500;">
+        Passer en mode avancé
+      </a>
+      pour les préserver.
+    </div>
+  {% endif %}
+
+  <form method="post" action="/import/{{ session.id }}/mapping/simple"
+        class="bg-white rounded-lg"
+        style="border:1px solid rgba(0,0,0,0.08);">
+
+    {# Q1 — Cote #}
+    <fieldset style="padding:14px 16px;border-bottom:1px solid rgba(0,0,0,0.06);">
+      <legend style="font-size:13px;font-weight:500;color:#1f1f1f;
+                     margin-bottom:8px;">
+        1. Quelle colonne identifie chaque item ?
+        <span style="color:#dc2626;">*</span>
+      </legend>
+      <p style="font-size:12px;color:#6b7280;margin:0 0 8px 0;line-height:1.4;">
+        L'identifiant unique de chaque item dans le fonds — souvent
+        appelé « cote ».
+      </p>
+      {{ select_colonne('colonne_cote',
+                        valeurs.get('colonne_cote'),
+                        suggestions.colonne_cote,
+                        requis=True,
+                        libelle_vide='— Choisir une colonne —') }}
+    </fieldset>
+
+    {# Q2 — Granularité #}
+    <fieldset style="padding:14px 16px;border-bottom:1px solid rgba(0,0,0,0.06);">
+      <legend style="font-size:13px;font-weight:500;color:#1f1f1f;
+                     margin-bottom:8px;">
+        2. Chaque ligne du tableur représente…
+      </legend>
+      {% set granularite_active = valeurs.get('granularite') or suggestions.granularite %}
+      <label style="display:block;font-size:13px;color:#374151;
+                    margin-bottom:4px;">
+        <input type="radio" name="granularite" value="item"
+               {{ 'checked' if granularite_active != 'fichier' else '' }}>
+        un <strong>item</strong> (un numéro, un volume — une notice)
+      </label>
+      <label style="display:block;font-size:13px;color:#374151;">
+        <input type="radio" name="granularite" value="fichier"
+               {{ 'checked' if granularite_active == 'fichier' else '' }}>
+        un <strong>fichier</strong> (une page, un scan — les lignes
+        partageant la même cote sont regroupées en un item)
+      </label>
+      {% if suggestions.granularite == 'fichier' and not valeurs.get('granularite') %}
+        <p style="font-size:11px;color:#7c2d12;margin:6px 0 0 0;">
+          ⓘ La majorité des colonnes varient au sein de chaque cote —
+          un tableur où une ligne = un scan est probable.
+        </p>
+      {% endif %}
+    </fieldset>
+
+    {# Q3 — Titre #}
+    <fieldset style="padding:14px 16px;border-bottom:1px solid rgba(0,0,0,0.06);">
+      <legend style="font-size:13px;font-weight:500;color:#1f1f1f;
+                     margin-bottom:8px;">
+        3. Titre <span style="color:#6b7280;font-weight:400;">(optionnel)</span>
+      </legend>
+      <p style="font-size:12px;color:#6b7280;margin:0 0 8px 0;line-height:1.4;">
+        Le titre principal de chaque item, indexé pour la recherche.
+      </p>
+      {{ select_colonne('colonne_titre',
+                        valeurs.get('colonne_titre'),
+                        suggestions.colonne_titre) }}
+    </fieldset>
+
+    {# Q4 — Date #}
+    <fieldset style="padding:14px 16px;border-bottom:1px solid rgba(0,0,0,0.06);">
+      <legend style="font-size:13px;font-weight:500;color:#1f1f1f;
+                     margin-bottom:8px;">
+        4. Date <span style="color:#6b7280;font-weight:400;">(optionnel)</span>
+      </legend>
+      <p style="font-size:12px;color:#6b7280;margin:0 0 8px 0;line-height:1.4;">
+        Format EDTF — accepte les dates incertaines (« 1923? »,
+        « 192X », « 1923/1924 »).
+      </p>
+      {{ select_colonne('colonne_date',
+                        valeurs.get('colonne_date'),
+                        suggestions.colonne_date) }}
+    </fieldset>
+
+    {# Récap des colonnes restantes #}
+    {% set explicites = [suggestions.colonne_cote, suggestions.colonne_titre, suggestions.colonne_date]|select|list %}
+    {% set restantes = colonnes_disponibles|reject('in', explicites)|list %}
+    {% if restantes %}
+      <div style="padding:12px 16px;font-size:12px;color:#6b7280;
+                  background:#f9fafb;line-height:1.5;
+                  border-bottom:1px solid rgba(0,0,0,0.06);">
+        Les {{ restantes|length }} autres colonnes
+        ({% for col in restantes[:4] %}<code style="color:#374151;">{{ col }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if restantes|length > 4 %} et {{ restantes|length - 4 }} de plus{% endif %})
+        iront en métadonnées personnalisées, classées automatiquement
+        par-item ou par-fichier selon leurs valeurs.
+      </div>
+    {% endif %}
+
+    <div class="flex items-center gap-2" style="padding:16px;">
+      <a href="/import/{{ session.id }}/fonds"
+         class="rounded hover:bg-gray-50"
+         style="padding:8px 14px;font-size:13px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);">
+        ← Fonds
+      </a>
+      {% if est_lecture_seule() %}
+        <span style="padding:8px 16px;font-size:13px;color:#92400e;font-style:italic;">
+          Import désactivé (mode lecture seule)
+        </span>
+      {% else %}
+        <button type="submit"
+                class="rounded hover:bg-gray-50"
+                style="padding:8px 16px;font-size:13px;font-weight:500;
+                       color:#1f1f1f;border:1px solid rgba(0,0,0,0.15);
+                       background:#fff;">
+          Fichiers →
+        </button>
+      {% endif %}
+      <a href="/import/{{ session.id }}/mapping?avance=1"
+         style="margin-left:auto;font-size:12px;color:#6b7280;
+                text-decoration:underline;">
+        Affiner colonne par colonne (mode avancé) →
+      </a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

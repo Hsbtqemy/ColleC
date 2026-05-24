@@ -1,0 +1,61 @@
+{# visionneuse_consultation.html — dispatcher de visionneuse pour la
+   liseuse (Lot 2 V0.9.x).
+
+   Choisit le bon viewer selon `fichier.extension` :
+   - pdf → `visionneuse_pdf` (PDF.js minimal embarqué)
+   - jpg/png/tiff/webp/jp2 → `visionneuse_osd` (OpenSeadragon IIIF)
+   - autres → fallback HTML « Aucun aperçu — Télécharger »
+
+   Pour les Fichier Nakala-only PDF, on utilise
+   `fichier.url_telechargement_externe` (URL Nakala data directe)
+   comme source PDF.js — sans ça, la route locale
+   `/item/.../fichiers/<id>` retournerait 404.
+
+   Variables :
+   - fichier : FichierResume (extension, nom_fichier, source_image,
+     url_telechargement_externe)
+   - cote : cote de l'item (pour href de téléchargement local)
+   - fonds_cote : pour le query string
+#}
+
+{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+{% from 'components/visionneuse_pdf.html' import visionneuse_pdf %}
+
+{%- set _EXTENSIONS_OSD = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] -%}
+
+{% macro visionneuse_consultation(fichier, cote, fonds_cote) -%}
+{%- if not fichier %}
+  <div class="flex items-center justify-center h-full bg-gray-50 rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);">
+    <p class="text-sm text-gray-500">Aucun fichier rattaché à cet item.</p>
+  </div>
+{%- elif fichier.extension == 'pdf' %}
+  {# URL : Nakala data si externe, sinon route locale. Le PDF.js minimal
+     a besoin d'une URL atteignable avec CORS (Nakala expose CORS). #}
+  {%- set pdf_url = fichier.url_telechargement_externe or
+       ('/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote) %}
+  {{ visionneuse_pdf(pdf_url, fichier.nom_fichier, fichier.id) }}
+{%- elif fichier.extension in _EXTENSIONS_OSD %}
+  {{ visionneuse_osd(fichier, cote, fonds_cote) }}
+{%- else %}
+  {# Autres (json, xlsx, csv, mp3, mp4, zip…) : fallback HTML.
+     Lot 2 ne couvre que PDF + images. xlsx/csv/audio/video sont
+     en backlog (cf. roadmap CLAUDE.md Liseuse). #}
+  {%- set src_brut = fichier.url_telechargement_externe or
+       ('/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote) %}
+  <div class="flex flex-col items-center justify-center h-full bg-gray-50 rounded-lg"
+       style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
+    <p class="text-sm text-gray-600 text-center" style="max-width:360px;">
+      Aucun aperçu disponible pour ce type de fichier
+      <span class="font-mono text-xs text-gray-500">.{{ fichier.extension }}</span>.
+    </p>
+    <a href="{{ src_brut }}"
+       {% if fichier.url_telechargement_externe %}target="_blank" rel="noopener"{% endif %}
+       class="inline-flex items-center gap-1.5 rounded mt-3"
+       style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;
+              border:1px solid #1f1f1f;">
+      Télécharger {{ fichier.nom_fichier }}
+    </a>
+  </div>
+{%- endif %}
+{%- endmacro %}

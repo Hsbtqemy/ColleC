@@ -51,4 +51,29 @@ copierFichier(
   "htmx.min.js",
 );
 
+// PDF.js : visionneuse PDF pour la liseuse consultation (Lot 2).
+// On utilise le build LEGACY (et non `build/`) car le build courant
+// pdfjs-dist v5.6 utilise des features ES2024 (notamment
+// Map.prototype.getOrInsertComputed) que les navigateurs récents
+// mais pas bleeding-edge ne supportent pas encore. Le legacy cible
+// les navigateurs avec ~2 ans de retard et reste full-featured.
+copierFichier(
+  "node_modules/pdfjs-dist/legacy/build/pdf.min.mjs",
+  join(RACINE_VENDOR, "pdfjs"),
+  "pdf.min.mjs",
+);
+copierFichier(
+  "node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+  join(RACINE_VENDOR, "pdfjs"),
+  "pdf.worker.min.mjs",
+);
+// WASM (OpenJPEG pour JPEG 2000, JBIG2, qcms) : nécessaire pour
+// décoder les images embarquées dans les fac-similés Nakala (JP2
+// notamment). Sans ces fichiers, le PDF se charge mais les images
+// ne s'affichent pas (seul le texte OCR reste).
+copierDossier(
+  "node_modules/pdfjs-dist/wasm",
+  join(RACINE_VENDOR, "pdfjs", "wasm"),
+);
+
 console.log("✓ Vendors synchronisés.");

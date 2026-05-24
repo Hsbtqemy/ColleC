@@ -488,6 +488,48 @@ Limites MVP (Lot 1) :
 - Pas de bascule auto vers l'item suivant en fin de séquence
   (choix utilisateur : boutons explicites séparés préférés).
 
+**Liseuse Lot 2 : PDF.js avec text layer (2026-05-24)** — viewer
+PDF embarqué pour les fac-similés Nakala (un PDF du numéro entier
+par item PF). Composant `visionneuse_pdf.html` + dispatcher
+`visionneuse_consultation.html` qui choisit selon `fichier.extension` :
+PDF → PDF.js, image → OSD, autres → fallback HTML « Télécharger ».
+
+Vendor : `pdfjs-dist` 5.6 **build legacy** (la build courante utilise
+des features ES2024 — Map.prototype.getOrInsertComputed — que les
+navigateurs récents-mais-pas-bleeding-edge ne supportent pas). Le
+script `scripts/vendor.mjs` copie `pdf.min.mjs`, `pdf.worker.min.mjs`,
+et le dossier `wasm/` complet (openjpeg, jbig2, qcms) dans
+`static/js/vendor/pdfjs/`.
+
+JP2 critique : les fac-similés Nakala utilisent JPEG 2000 pour les
+images de scan. PDF.js a besoin du WASM OpenJPEG pour décoder. Sans
+le `wasmUrl: "/static/js/vendor/pdfjs/wasm/"` passé à `getDocument()`,
+les pages se chargent mais ne montrent QUE la couche OCR (pas
+d'image). Test régression `test_liseuse_pdf_inclut_wasm_url_et_text_layer`.
+
+ESM via import dynamique : `pdfjs-dist` v5+ est ESM uniquement. Les
+`<script type="module">` injectés par HTMX swap ne s'exécutent pas
+toujours selon les navigateurs ; on utilise `<script>` classique
+avec `import("...")` dynamique pour fiabilité cross-swap.
+
+Couche texte OCR : `new pdfjsLib.TextLayer({...})` rend une couche
+`<span>` transparente positionnée par-dessus le canvas après chaque
+rendu de page. Sélection texte + `Ctrl+F` natif fonctionnent. Pour
+les PDF scannés sans OCR, la couche est vide (non-bloquant).
+
+Viewer minimal : barre de contrôles compacte (page ‹ N/M ›, zoom
+−/+/ajuster largeur, lien Télécharger). Navigation pages **internes
+au PDF** distincte de la navigation `Page ← →` du bandeau liseuse
+(qui change de Fichier). Hi-DPI géré via `transform` PDF.js + DPR.
+
+Limites MVP (Lot 2) :
+- Pas de cancellation du `textLayer.render()` (race si swap rapide,
+  text layer ancien peut rester par-dessus nouveau canvas — mineur).
+- xlsx / csv / audio / vidéo restent en fallback (Lot futur).
+- Pas de cache-busting sur les assets vendor pdfjs (le browser cache
+  `pdf.min.mjs` ; relancer `npm run vendor` + hard refresh quand on
+  upgrade pdfjs).
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

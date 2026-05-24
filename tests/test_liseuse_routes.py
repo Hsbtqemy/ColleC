@@ -247,6 +247,163 @@ def test_liseuse_panneau_vignettes_utilise_hx_get(
     assert 'hx-target="#zone-visionneuse"' in response.text
 
 
+def test_liseuse_pdf_inclut_wasm_url_et_text_layer(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Lot 2 V0.9.x : le composant PDF doit servir 2 éléments
+    critiques pour que les fac-similés Nakala s'affichent correctement :
+    - `wasmUrl: "/static/js/vendor/pdfjs/wasm/"` (sinon JP2 = OCR seul,
+      pas d'image)
+    - couche text layer pour sélection + Ctrl+F
+    Régression test : sans ces éléments, l'UX se dégrade silencieusement
+    (pas de crash, mais lecture devient impossible)."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_pdf = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="check.pdf",
+            ordre=96,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/jp2",
+        )
+        db.add(f_pdf)
+        db.commit()
+        fid = f_pdf.id
+
+    try:
+        response = client_demo.get("/lire/HK/HK-001?fichier=96")
+        assert response.status_code == 200
+        # wasmUrl indispensable pour décoder JP2 (cas typique Nakala).
+        assert 'wasmUrl: "/static/js/vendor/pdfjs/wasm/"' in response.text
+        # Text layer : div + appel TextLayer API
+        assert "visionneuse-pdf-textlayer" in response.text
+        assert "new pdfjsLib.TextLayer" in response.text
+        # Worker setup
+        assert "pdf.worker.min.mjs" in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
+def test_liseuse_dispatcher_pdf_charge_pdfjs(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Lot 2 V0.9.x : un Fichier .pdf déclenche le viewer PDF.js
+    embarqué (canvas + controls + script import dynamique) au lieu
+    du fallback HTML « Aucun aperçu disponible »."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_pdf = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="numero.pdf",
+            ordre=99,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/abc",
+        )
+        db.add(f_pdf)
+        db.commit()
+        fid = f_pdf.id
+
+    try:
+        response = client_demo.get("/lire/HK/HK-001?fichier=99")
+        assert response.status_code == 200
+        # Marqueurs du composant visionneuse_pdf
+        assert "visionneuse-pdf" in response.text
+        assert "visionneuse-pdf-canvas" in response.text
+        assert "/static/js/vendor/pdfjs/pdf.min.mjs" in response.text
+        # Le href Télécharger pointe sur Nakala data (pas la route locale)
+        assert "https://api.nakala.fr/data/10.1/x/abc" in response.text
+        # On ne doit PAS voir le fallback "Aucun aperçu"
+        assert "Aucun aperçu disponible" not in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
+def test_liseuse_dispatcher_xlsx_tombe_en_fallback(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Lot 2 V0.9.x : un Fichier .xlsx tombe en fallback HTML
+    (« Aucun aperçu disponible »). Pas crash, juste pas de viewer."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_xlsx = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="tableur.xlsx",
+            ordre=98,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/def",
+        )
+        db.add(f_xlsx)
+        db.commit()
+        fid = f_xlsx.id
+
+    try:
+        response = client_demo.get("/lire/HK/HK-001?fichier=98")
+        assert response.status_code == 200
+        # Fallback message visible (texte exact dispatcher)
+        assert "Aucun aperçu disponible pour ce type" in response.text
+        assert ".xlsx" in response.text
+        # Pas de visionneuse PDF ni OSD
+        assert "visionneuse-pdf-canvas" not in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
+def test_liseuse_partial_pdf_renvoie_pdfjs(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Le partial HTMX renvoie aussi du PDF.js pour un Fichier .pdf
+    (cohérent avec la page complète — le dispatcher est partagé)."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_pdf = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="doc.pdf",
+            ordre=97,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/ghi",
+        )
+        db.add(f_pdf)
+        db.commit()
+        fid = f_pdf.id
+
+    try:
+        response = client_demo.get(f"/lire/HK/HK-001/visionneuse/{fid}")
+        assert response.status_code == 200
+        assert "visionneuse-pdf" in response.text
+        # Le partial doit toujours contenir les 3 fragments OOB
+        assert 'hx-swap-oob="outerHTML:#bandeau-liseuse"' in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
 def test_liseuse_bandeau_navigation_page_separee_de_item(
     client_demo: TestClient,
 ) -> None:

@@ -18,7 +18,7 @@
 #}
 {% from 'components/bandeau_lire.html' import bandeau_lire %}
 {% from 'components/panneau_fichiers.html' import liste_vignettes %}
-{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+{% from 'components/visionneuse_consultation.html' import visionneuse_consultation %}
 
 {% set item = detail.item %}
 {% set fonds = detail.fonds %}
@@ -39,8 +39,9 @@
                      mode_consultation=True) }}
 </div>
 
-{# Contenu principal : swap dans #zone-visionneuse. #}
-{{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+{# Contenu principal : swap dans #zone-visionneuse. Le dispatcher
+   choisit OSD / PDF.js / fallback selon l'extension du fichier. #}
+{{ visionneuse_consultation(f_courant, item.cote, fonds_cote) }}
 
 {# Ré-instancier OSD côté JS après swap HTMX. visionneuse_osd.js
    écoute DOMContentLoaded — qui ne se redéclenche pas sur un swap. #}

@@ -25,6 +25,17 @@ module.exports = {
           "Menlo", "Consolas", "monospace",
         ],
       },
+      // Tailwind defaults : text-xs=12px, text-sm=14px. Sur écran
+      // large + corpus à lire (descriptions, métadonnées tabulaires),
+      // 14px reste un peu serré. On bump à 13/15 pour gagner ~7% de
+      // confort de lecture sans faire grossir l'interface comme un
+      // passage direct à text-base (16px). Les `style="font-size:13px"`
+      // inline dans les composants gardent leur valeur — ce sont les
+      // classes `text-sm`/`text-xs` qui bougent.
+      fontSize: {
+        xs: ["0.8125rem", { lineHeight: "1.15rem" }],  // 13px
+        sm: ["0.9375rem", { lineHeight: "1.4rem" }],   // 15px
+      },
       colors: {
         // Bordures fines : 1 px CSS, l'opacité du noir varie.
         border: {

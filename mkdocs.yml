@@ -92,6 +92,7 @@ nav:
     - Vue d'ensemble: guide/index.md
     - Concepts: guide/concepts.md
     - Interface web: guide/interface-web.md
+    - Recherche: guide/recherche.md
     - CLI:
       - Vue d'ensemble: guide/cli/index.md
       - importer: guide/cli/importer.md

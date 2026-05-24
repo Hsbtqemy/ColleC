@@ -117,6 +117,26 @@ levées dans des versions ultérieures — voir
   pour une version future. V0.9.0 utilise un `<img>` direct
   pour les formats raster supportés navigateur.
 
+## Recherche
+
+- **OCR des documents non indexé** : la recherche FTS5 couvre
+  cote / titre / description / notes internes / métadonnées libres
+  des items, fonds et collections. Le texte océrisé des fichiers
+  scannés n'est pas encore indexé — roadmap V3. Voir
+  [Recherche](../guide/recherche.md) pour la liste exhaustive
+  des champs indexés.
+- **Pas de live-search dropdown** : la barre globale soumet en
+  GET vers `/recherche` (page complète). Acceptable pour un usage
+  archivistique où la requête se réfléchit avant d'être lancée.
+- **Pas de surlignage dans la page item cliquée** : un résultat
+  cliqué amène à la page de l'item sans les termes recherchés
+  surlignés. À itérer V2 via `?q=` propagé.
+- **Cap dur de 5000 résultats par type** : au-delà, seuls les
+  5000 premiers (par score) sont paginables. Très rare en
+  pratique ; affinez via filtres avancés ou raffinement `q2`
+  si la limite gêne. Un message discret apparaît au-dessus des
+  résultats quand le cap est atteint.
+
 ## Fonctionnalités hors scope V0.9.0
 
 - **Dépôt automatique vers Nakala** via leur API : hors scope.

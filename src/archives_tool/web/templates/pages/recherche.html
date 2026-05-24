@@ -33,29 +33,38 @@
        précise (pour retirer une pastille parmi plusieurs)
      - `omit_periode` : omet annee_min ET annee_max
   #}
-  {% macro _query_string(
+  {# Toutes les valeurs string sont urlencodées par robustesse :
+     etat/langue sont des slugs ASCII safe en pratique, mais
+     type_coar est une URI (`http://purl.org/coar/...`) avec `:`
+     et `/` qui doivent être encodés pour produire une query
+     string valide. Le préfixe défensif protège aussi un futur
+     slug qui contiendrait `&` ou `=`.
+
+     `page_num` injecte explicitement un &page=N (utilisé par les
+     liens de pagination). `omit_pagination` retire page+par_page
+     (utilisé quand on modifie un filtre — retourner à la page 1
+     du nouveau résultat). #}
+  {%- macro _query_string(
       omit_scope=False, omit_types=False, omit_filtres=False,
       omit_q2=False, omit_etat=None, omit_langue=None,
-      omit_type_coar=None, omit_periode=False
-  ) -%}
-    {#- Toutes les valeurs string sont urlencodées par robustesse :
-        etat/langue sont des slugs ASCII safe en pratique, mais
-        type_coar est une URI (`http://purl.org/coar/...`) avec `:`
-        et `/` qui doivent être encodés pour produire une query
-        string valide. Le préfixe défensif protège aussi un futur
-        slug qui contiendrait `&` ou `=`. -#}
-    /recherche?q={{ q | urlencode }}
-    {%- if not omit_scope and fonds_scope %}&fonds_id={{ fonds_scope.id }}{% endif -%}
-    {%- if not omit_scope and collection_scope %}&collection_id={{ collection_scope.id }}{% endif -%}
-    {%- if not omit_types and types_filtres %}{% for t in types_filtres %}&types={{ t | urlencode }}{% endfor %}{% endif -%}
-    {%- if not omit_filtres and filtres -%}
-      {%- if not omit_q2 and filtres.q_dans_resultats %}&q2={{ filtres.q_dans_resultats | urlencode }}{% endif -%}
-      {%- for e in filtres.etats %}{% if e != omit_etat %}&etat={{ e | urlencode }}{% endif %}{% endfor -%}
-      {%- for lang in filtres.langues %}{% if lang != omit_langue %}&langue={{ lang | urlencode }}{% endif %}{% endfor -%}
-      {%- for t in filtres.types_coar %}{% if t != omit_type_coar %}&type_coar={{ t | urlencode }}{% endif %}{% endfor -%}
-      {%- if not omit_periode and filtres.annee_min is not none %}&annee_min={{ filtres.annee_min }}{% endif -%}
-      {%- if not omit_periode and filtres.annee_max is not none %}&annee_max={{ filtres.annee_max }}{% endif -%}
-    {%- endif -%}
+      omit_type_coar=None, omit_periode=False, page_num=None,
+      omit_pagination=False
+  ) -%}/recherche?q={{ q | urlencode -}}
+{%- if not omit_scope and fonds_scope %}&fonds_id={{ fonds_scope.id }}{% endif -%}
+{%- if not omit_scope and collection_scope %}&collection_id={{ collection_scope.id }}{% endif -%}
+{%- if not omit_types and types_filtres %}{% for t in types_filtres %}&types={{ t | urlencode }}{% endfor %}{% endif -%}
+{%- if not omit_filtres and filtres -%}
+{%- if not omit_q2 and filtres.q_dans_resultats %}&q2={{ filtres.q_dans_resultats | urlencode }}{% endif -%}
+{%- for e in filtres.etats %}{% if e != omit_etat %}&etat={{ e | urlencode }}{% endif %}{% endfor -%}
+{%- for lang in filtres.langues %}{% if lang != omit_langue %}&langue={{ lang | urlencode }}{% endif %}{% endfor -%}
+{%- for t in filtres.types_coar %}{% if t != omit_type_coar %}&type_coar={{ t | urlencode }}{% endif %}{% endfor -%}
+{%- if not omit_periode and filtres.annee_min is not none %}&annee_min={{ filtres.annee_min }}{% endif -%}
+{%- if not omit_periode and filtres.annee_max is not none %}&annee_max={{ filtres.annee_max }}{% endif -%}
+{%- endif -%}
+{%- if not omit_pagination -%}
+{%- if page_num is not none %}&page={{ page_num }}{% endif -%}
+{%- if par_page is defined and par_page != 50 %}&par_page={{ par_page }}{% endif -%}
+{%- endif -%}
   {%- endmacro %}
 
   <h1 class="text-2xl font-medium mb-4">Recherche</h1>
@@ -172,7 +181,10 @@
           </fieldset>
         {% endif %}
 
-        {# Langue (items only) #}
+        {# Langue (items only). Affiche le libellé humain (« Français »)
+           via `libelle_langue` ; la valeur stockée reste le code ISO
+           639-3 (« fra ») exposée en `<code>` pour les utilisateurs
+           bibliothéconomiques qui le reconnaissent. #}
         {% if options_filtres and options_filtres.langues %}
           <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
                            padding:6px 10px;margin:0;">
@@ -180,16 +192,20 @@
                            padding:0 4px;">Langue</legend>
             {% for lang in options_filtres.langues %}
               <label style="display:flex;align-items:center;gap:4px;
-                            font-size:12px;line-height:1.6;">
+                            font-size:12px;line-height:1.6;"
+                     title="ISO 639-3 : {{ lang }}">
                 <input type="checkbox" name="langue" value="{{ lang }}"
                        {% if filtres and lang in filtres.langues %}checked{% endif %}>
-                <code class="font-mono">{{ lang }}</code>
+                {{ lang | libelle_langue }}
               </label>
             {% endfor %}
           </fieldset>
         {% endif %}
 
-        {# Type COAR (items only) #}
+        {# Type COAR (items only). Affiche le libellé humain
+           (« Périodique ») via `libelle_coar` ; l'URI canonique reste
+           visible au survol via `title` (utile pour vérifier qu'on a
+           bien la bonne classification COAR). #}
         {% if options_filtres and options_filtres.types_coar %}
           <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
                            padding:6px 10px;margin:0;">
@@ -201,10 +217,7 @@
                      title="{{ t }}">
                 <input type="checkbox" name="type_coar" value="{{ t }}"
                        {% if filtres and t in filtres.types_coar %}checked{% endif %}>
-                <span style="white-space:nowrap;overflow:hidden;
-                             text-overflow:ellipsis;max-width:180px;">
-                  {{ t.rsplit('/', 1)[-1] if '/' in t else t }}
-                </span>
+                {{ t | libelle_coar }}
               </label>
             {% endfor %}
           </fieldset>
@@ -285,8 +298,9 @@
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
                   color:#374151;border-radius:9999px;padding:3px 10px;
-                  font-size:12px;text-decoration:none;">
-          Langue : <code class="font-mono">{{ lang }}</code> ×
+                  font-size:12px;text-decoration:none;"
+           title="ISO 639-3 : {{ lang }}">
+          Langue : <strong>{{ lang | libelle_langue }}</strong> ×
         </a>
       {% endfor %}
       {% for t in filtres.types_coar %}
@@ -296,7 +310,7 @@
                   color:#374151;border-radius:9999px;padding:3px 10px;
                   font-size:12px;text-decoration:none;"
            title="{{ t }}">
-          Type : <strong>{{ t.rsplit('/', 1)[-1] if '/' in t else t }}</strong> ×
+          Type : <strong>{{ t | libelle_coar }}</strong> ×
         </a>
       {% endfor %}
       {% if filtres.annee_min is not none or filtres.annee_max is not none %}
@@ -333,31 +347,24 @@
     </p>
   {% elif q %}
     {# Compteur principal = total EXACT (compte FTS5 COUNT sans
-       LIMIT). Si on a tronqué l'affichage, on indique aussi le
-       nombre rendu : « 173 résultats trouvés (100 affichés) ». #}
+       LIMIT). Quand paginé, indique aussi la tranche affichée :
+       « 173 résultats trouvés (51–100) ». #}
     <p class="text-sm text-gray-500 mb-4">
       <strong>{{ total_global }}</strong> résultat{{ 's' if total_global > 1 else '' }} trouvé{{ 's' if total_global > 1 else '' }} pour
       <strong>« {{ q }} »</strong>{% if fonds_scope %}
       dans le fonds <code class="font-mono">{{ fonds_scope.cote }}</code>{% endif %}{% if collection_scope %}
-      dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}{% if types_tronques %}
-      <span class="text-gray-400">({{ resultats|length }} affiché{{ 's' if resultats|length > 1 else '' }})</span>{% endif %}.
+      dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}{% if nb_pages > 1 %}
+      <span class="text-gray-400">(<strong>{{ premier_index }}–{{ dernier_index }}</strong> sur cette page)</span>{% endif %}.
     </p>
 
-    {# Note d'affichage : un ou plusieurs types ont plus de résultats
-       que la limite affichée. Ton neutre — c'est de l'info, pas une
-       erreur. Liens pour monter la limite (cap 1000). Préserve scope,
-       types et filtres avancés via `_query_string`. #}
-    {% if types_tronques %}
-      {% set labels = {'item': 'items', 'fonds': 'fonds', 'collection': 'collections'} %}
+    {# Cap dur dépassé (>5000 résultats dans un type) : avertissement
+       discret. Ne devrait quasi jamais arriver en pratique ; affiner
+       avec les filtres. #}
+    {% if cap_atteint %}
       <p class="text-xs text-gray-500 mb-4" style="line-height:1.5;">
-        Affichage limité à <strong>{{ limite }}</strong> résultat{{ 's' if limite > 1 else '' }} par type ·
-        {% for t in types_tronques %}{{ total_par_type[t] }} {{ labels[t] }}{% if not loop.last %}, {% endif %}{% endfor %} au total.
-        Afficher
-        <a href="{{ _query_string() }}&limite=500"
-           class="hover:underline" style="color:#374151;">jusqu'à 500</a>
-        ·
-        <a href="{{ _query_string() }}&limite=1000"
-           class="hover:underline" style="color:#374151;">jusqu'à 1000</a>.
+        Recherche très large : seuls les premiers résultats sont
+        triables. Affinez avec les filtres avancés pour explorer
+        au-delà.
       </p>
     {% endif %}
 
@@ -425,6 +432,61 @@
         </li>
       {% endfor %}
     </ul>
+
+    {# Pagination en bas : visible dès qu'il y a plus d'une page.
+       Préserve scope, types et filtres avancés via `_query_string`.
+       Pas de HTMX : navigation reload classique (la recherche est
+       une page entière, pas un partiel). #}
+    {% if nb_pages > 1 %}
+      <div class="flex items-center justify-between mt-6"
+           style="border-top:1px solid rgba(0,0,0,0.08);padding:12px 4px;
+                  font-size:13px;color:#6b7280;">
+        <span style="font-variant-numeric:tabular-nums;">
+          {{ premier_index }}–{{ dernier_index }} sur {{ total_global }}
+        </span>
+        <div class="flex items-center" style="gap:2px;">
+          {% if page > 1 %}
+            <a href="{{ _query_string(page_num=page - 1) }}"
+               class="inline-flex items-center justify-center rounded hover:bg-gray-100"
+               style="min-width:28px;height:28px;padding:0 8px;color:#374151;
+                      text-decoration:none;"
+               aria-label="Page précédente">‹</a>
+          {% else %}
+            <span class="inline-flex items-center justify-center"
+                  style="min-width:28px;height:28px;padding:0 8px;color:#d1d5db;"
+                  aria-hidden="true">‹</span>
+          {% endif %}
+          {% for n in pages_visibles(page, nb_pages) %}
+            {% if n is string %}
+              <span class="inline-flex items-center justify-center"
+                    style="min-width:28px;height:28px;color:#9ca3af;">…</span>
+            {% elif n == page %}
+              <span class="inline-flex items-center justify-center rounded"
+                    style="min-width:28px;height:28px;padding:0 8px;
+                           background:#1f1f1f;color:white;
+                           font-variant-numeric:tabular-nums;"
+                    aria-current="page">{{ n }}</span>
+            {% else %}
+              <a href="{{ _query_string(page_num=n) }}"
+                 class="inline-flex items-center justify-center rounded hover:bg-gray-100"
+                 style="min-width:28px;height:28px;padding:0 8px;color:#374151;
+                        text-decoration:none;font-variant-numeric:tabular-nums;">{{ n }}</a>
+            {% endif %}
+          {% endfor %}
+          {% if page < nb_pages %}
+            <a href="{{ _query_string(page_num=page + 1) }}"
+               class="inline-flex items-center justify-center rounded hover:bg-gray-100"
+               style="min-width:28px;height:28px;padding:0 8px;color:#374151;
+                      text-decoration:none;"
+               aria-label="Page suivante">›</a>
+          {% else %}
+            <span class="inline-flex items-center justify-center"
+                  style="min-width:28px;height:28px;padding:0 8px;color:#d1d5db;"
+                  aria-hidden="true">›</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
   {% else %}
     <p class="text-sm text-gray-500 italic">
       Tapez une requête pour rechercher dans les cotes, titres,

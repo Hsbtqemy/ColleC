@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from math import ceil
 from typing import Literal
 
 from sqlalchemy import select, text
@@ -122,44 +123,60 @@ class OptionsFiltresRecherche:
 
 @dataclass(frozen=True)
 class ResultatsRecherche:
-    """Réponse de `rechercher` : liste tronquée + totaux exacts.
+    """Réponse de `rechercher` : page courante + totaux exacts.
 
-    Distinguer le nombre AFFICHÉ (`len(resultats)`, tronqué à
-    `limite_par_type` × types) du nombre TROUVÉ (`total_par_type`,
-    compte exact via COUNT FTS5 sans limit). Permet d'afficher
-    « 173 résultats trouvés, 100 affichés » plutôt que de masquer
-    silencieusement les matchs après la limite.
+    Pagination globale (tous types confondus) sur la liste plate
+    triée par pertinence BM25. Le compteur exact par type est
+    conservé pour le contexte (« 173 items, 1 fonds, 1 collection »).
     """
 
-    resultats: list[ResultatRecherche]  # tronqués
+    resultats: list[ResultatRecherche]  # page courante seulement
     total_par_type: dict[TypeEntite, int]  # comptes exacts
+    page: int = 1
+    par_page: int = 50
+    cap_atteint: bool = False  # True si > `cap_par_type` matchs dans un type
+    paginable_max: int | None = None  # cap effectif (cap_par_type * types)
 
     def __iter__(self):
-        """Itère les résultats (compat code qui faisait `for r in
-        rechercher(...)` quand l'API retournait list[Resultat])."""
+        """Itère les résultats de la page courante (compat code
+        qui faisait `for r in rechercher(...)`)."""
         return iter(self.resultats)
 
     def __len__(self) -> int:
-        """Nombre AFFICHÉ (tronqué). Pour le total exact, voir
-        `.total` ou `.total_par_type`."""
+        """Nombre de résultats sur la page courante. Pour le total
+        exact, voir `.total` ou `.total_par_type`."""
         return len(self.resultats)
 
     @property
     def total(self) -> int:
-        """Total tous types confondus (exact, non tronqué)."""
+        """Total tous types confondus (exact, non paginé)."""
         return sum(self.total_par_type.values())
 
     @property
-    def tronques(self) -> set[TypeEntite]:
-        """Types qui ont plus de résultats qu'affichés (= types pour
-        lesquels la limite a été atteinte)."""
-        affiches_par_type: dict[TypeEntite, int] = {}
-        for r in self.resultats:
-            affiches_par_type[r.type_entite] = affiches_par_type.get(r.type_entite, 0) + 1
-        return {
-            t for t, n in self.total_par_type.items()
-            if n > affiches_par_type.get(t, 0)
-        }
+    def nb_pages(self) -> int:
+        """Nombre de pages effectivement paginables (≥ 1).
+
+        Cappé à `paginable_max` si le cap dur SQL a été atteint —
+        au-delà, la liste plate triée ne contient pas tous les
+        résultats annoncés par `total`, donc paginer trop loin
+        renverrait des pages vides. On préfère ne montrer que les
+        pages effectivement remplies.
+        """
+        if self.par_page <= 0:
+            return 1
+        effectif = min(self.total, self.paginable_max) if self.paginable_max else self.total
+        return max(1, ceil(effectif / self.par_page))
+
+    @property
+    def premier_index(self) -> int:
+        """Index 1-based du premier résultat de la page (pour
+        afficher « 51–100 sur 173 »)."""
+        return (self.page - 1) * self.par_page + 1 if self.resultats else 0
+
+    @property
+    def dernier_index(self) -> int:
+        """Index 1-based du dernier résultat de la page."""
+        return self.premier_index + len(self.resultats) - 1 if self.resultats else 0
 
 
 @dataclass(frozen=True)
@@ -231,9 +248,11 @@ def rechercher(
     scope: Scope | None = None,
     types: set[TypeEntite] | None = None,
     filtres: FiltresRecherche | None = None,
-    limite_par_type: int = 100,
+    page: int = 1,
+    par_page: int = 50,
+    cap_par_type: int = 5000,
 ) -> ResultatsRecherche:
-    """Recherche full-text dans item/fonds/collection.
+    """Recherche full-text dans item/fonds/collection avec pagination.
 
     Args:
         db : session SQLAlchemy
@@ -247,14 +266,21 @@ def rechercher(
             (les fonds/collections passent à travers — choix d'UX
             V0.9.x). `q_dans_resultats` s'applique aux 3 types via
             concaténation FTS5 (AND implicite).
-        limite_par_type : nombre max de résultats AFFICHÉS par type.
-            Le total exact (non-tronqué) est aussi retourné via
-            `ResultatsRecherche.total_par_type`.
+        page : numéro de page (1-based).
+        par_page : nombre de résultats par page (typiquement 10-200).
+        cap_par_type : limite dure de chargement par type SQL — évite
+            de matérialiser des milliers d'objets si la query est
+            très large. Au-delà, on signale `cap_atteint=True` (le
+            total exact reste dispo via COUNT séparé).
 
-    Retourne `ResultatsRecherche` avec la liste plate triée par
-    score (bm25 ASC — meilleur en premier) ET le compte exact par
-    type. Si la requête est invalide ou vide, retourne un objet
-    vide (resultats=[], total_par_type={...: 0}).
+    Retourne `ResultatsRecherche` avec la page courante triée par
+    score (bm25 ASC — meilleur en premier), le compte exact par type,
+    et les méta de pagination (`page`, `par_page`, `nb_pages`).
+
+    Charge jusqu'à `cap_par_type` résultats par type via SQL, puis
+    trie en Python sur le score, puis applique l'offset/limite de
+    la page. Acceptable jusqu'à ~5000 résultats (mémoire négligeable
+    pour un outil interne) ; au-delà, affiner via filtres.
     """
     filtres = filtres or FiltresRecherche()
     # `q_dans_resultats` est un raffinement : concaténer à `q` avec
@@ -269,28 +295,49 @@ def rechercher(
         return ResultatsRecherche(
             resultats=[],
             total_par_type={t: 0 for t in types_eff},
+            page=page,
+            par_page=par_page,
         )
 
     scope = scope or Scope()
-    resultats: list[ResultatRecherche] = []
+    resultats_tous: list[ResultatRecherche] = []
     totaux: dict[TypeEntite, int] = {}
 
     if "item" in types_eff:
-        resultats.extend(
-            _rechercher_items(db, requete_fts, scope, filtres, limite_par_type)
+        resultats_tous.extend(
+            _rechercher_items(db, requete_fts, scope, filtres, cap_par_type)
         )
         totaux["item"] = _compter_items(db, requete_fts, scope, filtres)
     if "fonds" in types_eff:
-        resultats.extend(_rechercher_fonds(db, requete_fts, scope, limite_par_type))
+        resultats_tous.extend(_rechercher_fonds(db, requete_fts, scope, cap_par_type))
         totaux["fonds"] = _compter_fonds(db, requete_fts, scope)
     if "collection" in types_eff:
-        resultats.extend(
-            _rechercher_collections(db, requete_fts, scope, limite_par_type)
+        resultats_tous.extend(
+            _rechercher_collections(db, requete_fts, scope, cap_par_type)
         )
         totaux["collection"] = _compter_collections(db, requete_fts, scope)
 
-    resultats.sort(key=lambda r: r.score)
-    return ResultatsRecherche(resultats=resultats, total_par_type=totaux)
+    # Tri global par pertinence (bm25 ASC = meilleur en premier),
+    # puis pagination en Python sur la liste plate.
+    resultats_tous.sort(key=lambda r: r.score)
+    offset = max(0, (page - 1) * par_page)
+    page_courante = resultats_tous[offset:offset + par_page]
+    # `cap_atteint` signale qu'un type a dépassé le cap dur (et donc
+    # qu'on a tronqué côté SQL) — utile pour afficher un message
+    # discret + capper `nb_pages` à `paginable_max` (sinon clic sur
+    # la dernière page tomberait sur une page vide).
+    cap_atteint = any(totaux.get(t, 0) > cap_par_type for t in types_eff)
+    paginable_max = (
+        cap_par_type * len(types_eff) if cap_atteint else None
+    )
+    return ResultatsRecherche(
+        resultats=page_courante,
+        total_par_type=totaux,
+        page=page,
+        par_page=par_page,
+        cap_atteint=cap_atteint,
+        paginable_max=paginable_max,
+    )
 
 
 def _clause_filtres_items(filtres: FiltresRecherche) -> tuple[str, dict]:

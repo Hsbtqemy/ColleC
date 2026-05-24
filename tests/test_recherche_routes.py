@@ -201,39 +201,151 @@ def test_script_raccourci_recherche_charge(client_demo: TestClient) -> None:
     assert "js/recherche_globale.js" in response.text
 
 
-def test_route_recherche_limite_par_defaut_100(
+def test_route_recherche_par_page_defaut_50(
+    client_demo: TestClient,
+) -> None:
+    """Par défaut, la pagination est de 50 résultats par page.
+    Sur le seeder demo où `numero` matche ~330 items, on a donc
+    plusieurs pages et une pagination visible en bas."""
+    response = client_demo.get("/recherche?q=numero")
+    assert response.status_code == 200
+    # Pagination visible (plus d'une page) — au moins le lien « › »
+    # ou la page courante encadrée
+    assert 'aria-current="page"' in response.text
+
+
+def test_route_recherche_pagination_par_page_personnalise(
+    client_demo: TestClient,
+) -> None:
+    """`?par_page=10` génère plus de pages que `par_page=50` pour
+    une même recherche, et la pagination est visible."""
+    p10 = client_demo.get("/recherche?q=numero&par_page=10").text
+    p50 = client_demo.get("/recherche?q=numero&par_page=50").text
+    # Avec par_page=10 on a beaucoup plus de pages → au moins un
+    # numéro de page plus grand
+    import re
+    nums_10 = [int(m) for m in re.findall(r'>(\d+)</a>', p10)]
+    nums_50 = [int(m) for m in re.findall(r'>(\d+)</a>', p50)]
+    if nums_10 and nums_50:
+        assert max(nums_10) > max(nums_50)
+
+
+def test_route_recherche_page_2_differente_de_page_1(
+    client_demo: TestClient,
+) -> None:
+    """La page 2 affiche des résultats différents de la page 1."""
+    p1 = client_demo.get("/recherche?q=numero&par_page=10&page=1").text
+    p2 = client_demo.get("/recherche?q=numero&par_page=10&page=2").text
+    # Au moins une cote présente sur p1 et absente sur p2 (ou inverse)
+    import re
+    cotes_p1 = set(re.findall(r'/item/([A-Z]+-\d+)', p1))
+    cotes_p2 = set(re.findall(r'/item/([A-Z]+-\d+)', p2))
+    assert cotes_p1 != cotes_p2
+    assert cotes_p1 - cotes_p2  # au moins une cote unique à p1
+
+
+def test_route_recherche_par_page_cap_200(client_demo: TestClient) -> None:
+    """Pydantic rejette `?par_page=9` (sous min 10) et `?par_page=201`
+    (au-dessus cap 200) → 422."""
+    assert client_demo.get("/recherche?q=test&par_page=9").status_code == 422
+    assert client_demo.get("/recherche?q=test&par_page=201").status_code == 422
+
+
+def test_route_recherche_pagination_preserve_filtres(
+    client_demo: TestClient,
+) -> None:
+    """Les liens de pagination préservent q, scope, types, filtres
+    avancés (sinon naviguer perdait le contexte)."""
+    response = client_demo.get(
+        "/recherche?q=numero&par_page=10&etat=brouillon&types=item"
+    )
+    assert response.status_code == 200
+    # Les liens de pagination contiennent les filtres
+    import re
+    # Cherche un href vers la page 2 (ou autre) qui devrait contenir
+    # les filtres etat et types
+    pattern = r'href="(/recherche\?[^"]*page=\d+[^"]*)"'
+    hrefs = re.findall(pattern, response.text)
+    assert hrefs, "Aucun href de pagination trouvé"
+    # Au moins un href contient etat=brouillon et types=item
+    assert any("etat=brouillon" in h and "types=item" in h for h in hrefs)
+
+
+def test_route_recherche_libelles_humains_coar_et_langue(
     client_demo: TestClient, base_demo_path: Path,
 ) -> None:
-    """La limite par défaut est 100 résultats par type — couvre la
-    plupart des cas (la base demo HK a 3 items, FA a 100+, etc.)."""
-    # Mot du seeder qui matche beaucoup (numéro mensuel dans la
-    # description de tous les items HK).
-    response = client_demo.get("/recherche?q=mensuel")
+    """Trou identifié au test PF : `Type COAR / c_3e5a` au lieu de
+    `Périodique`. Les filtres Jinja `libelle_coar` / `libelle_langue`
+    convertissent l'URI/code en libellé humain via les options du
+    module vocabulaires (mêmes tables que l'édition inline).
+
+    Crée un item avec type_coar URI canonique + langue fra, puis
+    vérifie que :
+    - la checkbox du fieldset affiche « Périodique » et « Français »
+    - la pastille active affiche « Type : Périodique » + « Langue : Français »
+    - le suffixe technique (`c_3e5a`, `fra` brut sans context) n'est
+      PAS rendu comme libellé visible
+    """
+    from archives_tool.api.services.fonds import (
+        FormulaireFonds, creer_fonds, lire_fonds_par_cote,
+    )
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.db import reindexer_fts
+
+    engine = creer_engine(base_demo_path)
+    SessionLocal = creer_session_factory(engine)
+    with SessionLocal() as db:
+        creer_fonds(db, FormulaireFonds(cote="VOCAB-T", titre="Test vocab"))
+        fonds = lire_fonds_par_cote(db, "VOCAB-T")
+        creer_item(
+            db,
+            FormulaireItem(
+                cote="VOCAB-T-001",
+                titre="Item test vocab humain",
+                fonds_id=fonds.id,
+                type_coar="http://purl.org/coar/resource_type/c_3e5a",  # Périodique
+                langue="fra",
+            ),
+        )
+    reindexer_fts(engine)
+    engine.dispose()
+
+    # Sans filtre actif : les checkboxes COAR/Langue affichent les libellés
+    response = client_demo.get("/recherche?q=vocab")
     assert response.status_code == 200
-    # Pas d'avertissement saturation pour HK (3 items)
-    assert "ont matché — seuls" not in response.text
+    assert "Périodique" in response.text  # libellé COAR humain
+    assert "Français" in response.text  # libellé langue humain
+
+    # Avec filtre actif : la pastille affiche le libellé humain (pas l'URI/code)
+    response2 = client_demo.get(
+        "/recherche?q=vocab"
+        "&type_coar=http%3A%2F%2Fpurl.org%2Fcoar%2Fresource_type%2Fc_3e5a"
+        "&langue=fra"
+    )
+    assert response2.status_code == 200
+    assert "Type :" in response2.text and "Périodique" in response2.text
+    assert "Langue :" in response2.text and "Français" in response2.text
 
 
-def test_route_recherche_avertissement_saturation_avec_limite_petite(
-    client_demo: TestClient, base_demo_path: Path,
+def test_route_recherche_pastille_revient_page_1(
+    client_demo: TestClient,
 ) -> None:
-    """Avec `?limite=10` (min Pydantic) et un mot qui matche plus de
-    10 items, l'avertissement saturation apparait avec un lien pour
-    monter (`?limite=500` ou `?limite=1000` cap)."""
-    # « numero » matche tous les items du seeder demo (~330 items
-    # `Numéro {i} de Hara-Kiri` + `Numéro semestriel` + ...) — donc
-    # 10 sera saturé pour le type item.
-    response = client_demo.get("/recherche?q=numero&limite=10")
+    """Retirer un filtre via pastille doit retourner à la page 1
+    du nouveau résultat (pas garder la page courante d'un résultat
+    différent — risque de page vide)."""
+    # Pastille q2 retirée → href sans `page=` (donc page 1 par défaut)
+    response = client_demo.get(
+        "/recherche?q=numero&par_page=10&page=3&q2=foo"
+    )
     assert response.status_code == 200
-    # Avertissement visible
-    assert "ont matché" in response.text or "limite=500" in response.text
-
-
-def test_route_recherche_limite_cap_1000(client_demo: TestClient) -> None:
-    """Pydantic rejette les limites hors borne : 9 (sous min) ou
-    1001 (au-dessus cap) → 422."""
-    assert client_demo.get("/recherche?q=test&limite=9").status_code == 422
-    assert client_demo.get("/recherche?q=test&limite=1001").status_code == 422
+    # Cherche le href de la pastille q2 (lien × pour retirer q2)
+    import re
+    # Le href ne doit pas contenir page=3
+    pattern = r'href="(/recherche\?[^"]*)"[^>]*title="Retirer le raffinement'
+    matches = re.findall(pattern, response.text)
+    assert matches, "Pastille q2 non trouvée"
+    href = matches[0]
+    assert "page=3" not in href  # retour page 1 implicite
 
 
 def test_route_recherche_query_invalide_pas_de_crash(

@@ -281,23 +281,54 @@ def test_recherche_requete_vide_retourne_vide(
     assert rechercher(session_avec_corpus, "   ").total == 0
 
 
-def test_recherche_total_par_type_vs_affiche(
+def test_recherche_total_par_type_vs_page(
     session_avec_corpus: Session,
 ) -> None:
     """`ResultatsRecherche` distingue total EXACT (compte FTS5
-    sans LIMIT) du nombre AFFICHÉ (tronqué à `limite_par_type`).
-    Critique pour signaler la troncature à l'utilisateur sans
-    masquer silencieusement les matchs."""
+    sans LIMIT) du nombre sur la PAGE COURANTE (paginé). Permet
+    d'afficher « 173 résultats trouvés (51–100 sur cette page) »."""
     # Cherche `numero` qui matche les 5 items du corpus de test
-    res = rechercher(session_avec_corpus, "numero", limite_par_type=2)
+    res = rechercher(session_avec_corpus, "numero", par_page=2, page=1)
     # Total exact 5 items (HK-001/002/003 + PF-001/002 ont tous
     # "Numéro" dans le titre)
     assert res.total_par_type["item"] >= 5
-    # Mais on n'a affiché que 2 par type
-    items_affiches = [r for r in res if r.type_entite == "item"]
-    assert len(items_affiches) == 2
-    # `tronques` signale les types saturés
-    assert "item" in res.tronques
+    # Mais on n'affiche que `par_page=2` résultats sur la page
+    assert len(res.resultats) == 2
+    # nb_pages calculé sur le total global
+    assert res.nb_pages >= 3  # 5 items / 2 par page = 3 pages
+
+    # Page 2 : 2 autres résultats
+    res2 = rechercher(session_avec_corpus, "numero", par_page=2, page=2)
+    assert len(res2.resultats) == 2
+    # Les résultats de page 2 sont différents de page 1
+    assert {r.id for r in res.resultats} != {r.id for r in res2.resultats}
+
+
+def test_recherche_page_hors_borne_retourne_vide(
+    session_avec_corpus: Session,
+) -> None:
+    """Une page au-delà du nb_pages retourne une liste vide sans
+    crash (offset > taille de la liste = slice vide en Python)."""
+    res = rechercher(session_avec_corpus, "numero", par_page=10, page=999)
+    assert res.resultats == []
+    # Le total exact reste correct
+    assert res.total >= 5
+    assert res.page == 999
+
+
+def test_recherche_pagination_meta(
+    session_avec_corpus: Session,
+) -> None:
+    """Propriétés méta de pagination : nb_pages, premier_index,
+    dernier_index sont cohérentes avec page et par_page."""
+    res = rechercher(session_avec_corpus, "numero", par_page=3, page=2)
+    # par_page=3, page=2 → résultats 4, 5, 6 (index 1-based)
+    assert res.premier_index == 4
+    assert res.dernier_index == 4 + len(res.resultats) - 1
+    # Si total=7 items + 2 fonds + 0 col, nb_pages = ceil(9/3) = 3
+    total = res.total
+    expected_pages = (total + 2) // 3  # math.ceil
+    assert res.nb_pages == max(1, expected_pages)
 
 
 # ---------------------------------------------------------------------------

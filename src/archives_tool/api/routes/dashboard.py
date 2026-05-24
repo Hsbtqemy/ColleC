@@ -152,9 +152,10 @@ def page_recherche(
     q2: str = Query(
         "", description="Raffinement query (concaténé à q avec AND FTS5).",
     ),
-    limite: int = Query(
-        100, ge=10, le=1000,
-        description="Max résultats par type d'entité. Cap 1000.",
+    page: int = Query(1, ge=1, description="Numéro de page (1-based)."),
+    par_page: int = Query(
+        50, ge=10, le=200,
+        description="Résultats par page (cap 200).",
     ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
@@ -175,7 +176,8 @@ def page_recherche(
       de la base (scope-aware).
     - `q2` : raffinement de la query principale, appliqué aux 3 types
       via AND FTS5 implicite.
-    - `limite` : nombre max de résultats PAR TYPE. Défaut 100, cap 1000.
+    - `page` / `par_page` : pagination de la liste plate triée par
+      pertinence (BM25). Défaut 50/page, cap 200/page.
     """
     from archives_tool.api.services.recherche import (
         Scope, TypeEntite, calculer_options_filtres_recherche,
@@ -207,13 +209,12 @@ def page_recherche(
         options=options_filtres,
     )
 
-    # `rechercher` retourne ResultatsRecherche avec liste tronquée
-    # à `limite_par_type` ET totaux exacts (COUNT séparé pour savoir
-    # combien il y aurait sans limite — utile pour signaler la
-    # troncature à l'utilisateur).
+    # `rechercher` retourne ResultatsRecherche avec la page courante
+    # ET les totaux exacts par type (COUNT séparé sans LIMIT — utile
+    # pour le compteur principal et le calcul de nb_pages).
     res = rechercher(
         db, q, scope=scope, types=types_filtres,
-        filtres=filtres, limite_par_type=limite,
+        filtres=filtres, page=page, par_page=par_page,
     )
 
     fonds_scope = None
@@ -233,12 +234,16 @@ def page_recherche(
             resultats=res.resultats,
             total_par_type=res.total_par_type,
             total_global=res.total,
-            types_tronques=res.tronques,
+            cap_atteint=res.cap_atteint,
+            page=res.page,
+            par_page=res.par_page,
+            nb_pages=res.nb_pages,
+            premier_index=res.premier_index,
+            dernier_index=res.dernier_index,
             fonds_scope=fonds_scope,
             collection_scope=collection_scope,
             types_filtres=types_filtres or set(),
             tous_types=list(types_valides),
-            limite=limite,
             filtres=filtres,
             options_filtres=options_filtres,
             etats_disponibles=list(EtatCatalogage),

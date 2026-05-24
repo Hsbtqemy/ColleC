@@ -17,6 +17,11 @@ from archives_tool.affichage.formatters import (
     temps_relatif,
 )
 from archives_tool.api.deps import est_lecture_seule
+from archives_tool.api.services.vocabulaires import (
+    LANGUES_OPTIONS,
+    TYPES_COAR_OPTIONS,
+    libelle_pour_valeur,
+)
 from archives_tool.models import (
     LIBELLES_ROLE,
     EtatCatalogage,
@@ -140,6 +145,17 @@ templates.env.filters["libelle_phase"] = lambda p: (
 )
 templates.env.filters["libelle_etat"] = _libelle_etat
 templates.env.filters["libelle_role"] = _libelle_role
+# Vocabulaires contrôlés : URI/code → libellé humain via la table
+# `TYPES_COAR_OPTIONS` / `LANGUES_OPTIONS` partagée avec l'édition
+# inline. Si la valeur n'est pas dans la table (legacy / hors
+# référentiel), retourne la valeur brute — l'UI continue de
+# l'afficher, l'utilisateur peut la corriger via inline edit.
+templates.env.filters["libelle_coar"] = lambda v: libelle_pour_valeur(
+    v, TYPES_COAR_OPTIONS
+)
+templates.env.filters["libelle_langue"] = lambda v: libelle_pour_valeur(
+    v, LANGUES_OPTIONS
+)
 templates.env.filters["temps_relatif"] = temps_relatif
 templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri

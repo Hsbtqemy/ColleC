@@ -19,10 +19,49 @@
 {% block content %}
 <div style="max-width:900px;margin:0 auto;">
 
+  {# Macro unique pour forger les URLs /recherche?... — source de
+     vérité partagée par : pastilles (retrait d'un filtre précis),
+     lien « (lever) » du scope, bouton « Tout réinitialiser »,
+     liens « afficher jusqu'à N ». Paramètres `omit_*` permettent
+     d'exclure sélectivement un fragment de la query string.
+
+     - `omit_scope` : omet fonds_id et collection_id
+     - `omit_types` : omet le filtre types
+     - `omit_filtres` : omet TOUS les filtres avancés (raz)
+     - `omit_q2` : omet uniquement le raffinement
+     - `omit_etat` / `omit_langue` / `omit_type_coar` : omet la valeur
+       précise (pour retirer une pastille parmi plusieurs)
+     - `omit_periode` : omet annee_min ET annee_max
+  #}
+  {% macro _query_string(
+      omit_scope=False, omit_types=False, omit_filtres=False,
+      omit_q2=False, omit_etat=None, omit_langue=None,
+      omit_type_coar=None, omit_periode=False
+  ) -%}
+    {#- Toutes les valeurs string sont urlencodées par robustesse :
+        etat/langue sont des slugs ASCII safe en pratique, mais
+        type_coar est une URI (`http://purl.org/coar/...`) avec `:`
+        et `/` qui doivent être encodés pour produire une query
+        string valide. Le préfixe défensif protège aussi un futur
+        slug qui contiendrait `&` ou `=`. -#}
+    /recherche?q={{ q | urlencode }}
+    {%- if not omit_scope and fonds_scope %}&fonds_id={{ fonds_scope.id }}{% endif -%}
+    {%- if not omit_scope and collection_scope %}&collection_id={{ collection_scope.id }}{% endif -%}
+    {%- if not omit_types and types_filtres %}{% for t in types_filtres %}&types={{ t | urlencode }}{% endfor %}{% endif -%}
+    {%- if not omit_filtres and filtres -%}
+      {%- if not omit_q2 and filtres.q_dans_resultats %}&q2={{ filtres.q_dans_resultats | urlencode }}{% endif -%}
+      {%- for e in filtres.etats %}{% if e != omit_etat %}&etat={{ e | urlencode }}{% endif %}{% endfor -%}
+      {%- for lang in filtres.langues %}{% if lang != omit_langue %}&langue={{ lang | urlencode }}{% endif %}{% endfor -%}
+      {%- for t in filtres.types_coar %}{% if t != omit_type_coar %}&type_coar={{ t | urlencode }}{% endif %}{% endfor -%}
+      {%- if not omit_periode and filtres.annee_min is not none %}&annee_min={{ filtres.annee_min }}{% endif -%}
+      {%- if not omit_periode and filtres.annee_max is not none %}&annee_max={{ filtres.annee_max }}{% endif -%}
+    {%- endif -%}
+  {%- endmacro %}
+
   <h1 class="text-2xl font-medium mb-4">Recherche</h1>
 
-  {# Barre de recherche + filtres scope/types. Submit GET pour
-     bookmark URL friendly. #}
+  {# Barre de recherche + filtres scope/types + filtres avancés.
+     Tout dans un seul form GET pour bookmark URL friendly. #}
   <form method="get" action="/recherche"
         class="mb-6"
         style="background:#f9fafb;border:1px solid rgba(0,0,0,0.06);
@@ -50,8 +89,9 @@
         <label style="display:flex;align-items:center;gap:6px;">
           <input type="hidden" name="fonds_id" value="{{ fonds_scope.id }}">
           <span>Limité au fonds <code class="font-mono">{{ fonds_scope.cote }}</code></span>
-          <a href="/recherche?q={{ q | urlencode }}"
-             style="color:#6b7280;text-decoration:underline;font-size:12px;">
+          <a href="{{ _query_string(omit_scope=True) }}"
+             style="color:#6b7280;text-decoration:underline;font-size:12px;"
+             title="Élargir la recherche à tout l'outil en conservant les filtres en cours.">
             (lever)
           </a>
         </label>
@@ -59,8 +99,9 @@
         <label style="display:flex;align-items:center;gap:6px;">
           <input type="hidden" name="collection_id" value="{{ collection_scope.id }}">
           <span>Limité à la collection <code class="font-mono">{{ collection_scope.cote }}</code></span>
-          <a href="/recherche?q={{ q | urlencode }}"
-             style="color:#6b7280;text-decoration:underline;font-size:12px;">
+          <a href="{{ _query_string(omit_scope=True) }}"
+             style="color:#6b7280;text-decoration:underline;font-size:12px;"
+             title="Élargir la recherche à tout l'outil en conservant les filtres en cours.">
             (lever)
           </a>
         </label>
@@ -75,7 +116,214 @@
         </label>
       {% endfor %}
     </div>
+
+    {# Filtres avancés (état, langue, type COAR, période, raffinement).
+       Repliable via <details> — ouvert d'office si au moins un filtre
+       est actif pour que l'utilisateur voie tout de suite ce qui est
+       posé. Les filtres item-specific ne s'appliquent qu'aux items
+       (les fonds/collections passent à travers — c'est le choix d'UX
+       V0.9.x, signalé visuellement). #}
+    <details {% if filtres and filtres.actifs %}open{% endif %}
+             style="margin-top:14px;border-top:1px solid rgba(0,0,0,0.05);
+                    padding-top:10px;">
+      <summary style="cursor:pointer;font-size:13px;color:#374151;
+                      user-select:none;">
+        Filtres avancés{% if filtres and filtres.actifs %}
+          <span style="color:#6b7280;font-size:12px;">
+            · {{ filtres.nb_filtres_actifs }} actif{{ 's' if filtres.nb_filtres_actifs > 1 else '' }}
+          </span>
+        {% endif %}
+      </summary>
+
+      <div style="margin-top:12px;display:grid;
+                  grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+                  gap:14px;font-size:13px;color:#374151;">
+
+        {# Raffinement query (s'applique aux 3 types) #}
+        <div style="grid-column:1/-1;">
+          <label for="q2" style="display:block;font-weight:500;margin-bottom:4px;
+                                 color:#1f1f1f;">
+            Rechercher dans les résultats
+          </label>
+          <input id="q2" type="search" name="q2"
+                 value="{{ filtres.q_dans_resultats if filtres else '' }}"
+                 placeholder="Affiner la recherche par un mot supplémentaire…"
+                 style="width:100%;padding:6px 10px;font-size:13px;
+                        border:1px solid rgba(0,0,0,0.15);border-radius:4px;
+                        background:white;">
+        </div>
+
+        {# État de catalogage (items only) #}
+        {% if options_filtres and options_filtres.etats %}
+          <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                           padding:6px 10px;margin:0;">
+            <legend style="font-weight:500;font-size:12px;color:#374151;
+                           padding:0 4px;">État</legend>
+            {% for etat in etats_disponibles %}
+              {% if etat.value in options_filtres.etats %}
+                <label style="display:flex;align-items:center;gap:4px;
+                              font-size:12px;line-height:1.6;">
+                  <input type="checkbox" name="etat" value="{{ etat.value }}"
+                         {% if filtres and etat.value in filtres.etats %}checked{% endif %}>
+                  {{ etat.value | libelle_etat }}
+                </label>
+              {% endif %}
+            {% endfor %}
+          </fieldset>
+        {% endif %}
+
+        {# Langue (items only) #}
+        {% if options_filtres and options_filtres.langues %}
+          <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                           padding:6px 10px;margin:0;">
+            <legend style="font-weight:500;font-size:12px;color:#374151;
+                           padding:0 4px;">Langue</legend>
+            {% for lang in options_filtres.langues %}
+              <label style="display:flex;align-items:center;gap:4px;
+                            font-size:12px;line-height:1.6;">
+                <input type="checkbox" name="langue" value="{{ lang }}"
+                       {% if filtres and lang in filtres.langues %}checked{% endif %}>
+                <code class="font-mono">{{ lang }}</code>
+              </label>
+            {% endfor %}
+          </fieldset>
+        {% endif %}
+
+        {# Type COAR (items only) #}
+        {% if options_filtres and options_filtres.types_coar %}
+          <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                           padding:6px 10px;margin:0;">
+            <legend style="font-weight:500;font-size:12px;color:#374151;
+                           padding:0 4px;">Type COAR</legend>
+            {% for t in options_filtres.types_coar %}
+              <label style="display:flex;align-items:center;gap:4px;
+                            font-size:12px;line-height:1.6;"
+                     title="{{ t }}">
+                <input type="checkbox" name="type_coar" value="{{ t }}"
+                       {% if filtres and t in filtres.types_coar %}checked{% endif %}>
+                <span style="white-space:nowrap;overflow:hidden;
+                             text-overflow:ellipsis;max-width:180px;">
+                  {{ t.rsplit('/', 1)[-1] if '/' in t else t }}
+                </span>
+              </label>
+            {% endfor %}
+          </fieldset>
+        {% endif %}
+
+        {# Période (items only) #}
+        {% if options_filtres and options_filtres.annee_min_base is not none %}
+          <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                           padding:6px 10px;margin:0;">
+            <legend style="font-weight:500;font-size:12px;color:#374151;
+                           padding:0 4px;">Période</legend>
+            <div style="display:flex;gap:6px;align-items:center;
+                        font-size:12px;line-height:1.6;">
+              <input type="number" name="annee_min"
+                     value="{{ filtres.annee_min if filtres and filtres.annee_min is not none else '' }}"
+                     placeholder="{{ options_filtres.annee_min_base }}"
+                     min="{{ options_filtres.annee_min_base }}"
+                     max="{{ options_filtres.annee_max_base }}"
+                     style="width:70px;padding:3px 6px;font-size:12px;
+                            border:1px solid rgba(0,0,0,0.15);border-radius:3px;
+                            background:white;">
+              <span style="color:#9ca3af;">à</span>
+              <input type="number" name="annee_max"
+                     value="{{ filtres.annee_max if filtres and filtres.annee_max is not none else '' }}"
+                     placeholder="{{ options_filtres.annee_max_base }}"
+                     min="{{ options_filtres.annee_min_base }}"
+                     max="{{ options_filtres.annee_max_base }}"
+                     style="width:70px;padding:3px 6px;font-size:12px;
+                            border:1px solid rgba(0,0,0,0.15);border-radius:3px;
+                            background:white;">
+            </div>
+          </fieldset>
+        {% endif %}
+      </div>
+
+      {% if filtres and filtres.affecte_items_seulement %}
+        <p style="font-size:11px;color:#9ca3af;margin-top:10px;font-style:italic;">
+          État, langue, type et période ne filtrent que les items
+          (fonds et collections continuent d'apparaître).
+        </p>
+      {% endif %}
+    </details>
   </form>
+
+  {# Pastilles de filtres actifs avec retrait individuel.
+     Chaque pastille forge une URL `/recherche?...` qui omet le filtre
+     concerné — tous les autres paramètres sont préservés via la macro
+     `_query_string` définie au sommet du template. #}
+  {% if q and filtres and filtres.actifs %}
+    <div class="flex flex-wrap gap-2 mb-3">
+      {% if filtres.q_dans_resultats %}
+        {# Tronque visuellement à 40 chars pour éviter qu'une pastille
+           q2 longue déborde la zone — full text au survol via title. #}
+        {% set q2_court = filtres.q_dans_resultats[:40] ~ '…' if filtres.q_dans_resultats|length > 40 else filtres.q_dans_resultats %}
+        <a href="{{ _query_string(omit_q2=True) }}"
+           title="Retirer le raffinement : {{ filtres.q_dans_resultats }}"
+           style="display:inline-flex;align-items:center;gap:6px;
+                  background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;
+                  border-radius:9999px;padding:3px 10px;font-size:12px;
+                  text-decoration:none;max-width:360px;">
+          dans :
+          <strong style="overflow:hidden;text-overflow:ellipsis;
+                         white-space:nowrap;">{{ q2_court }}</strong>
+          ×
+        </a>
+      {% endif %}
+      {% for e in filtres.etats %}
+        <a href="{{ _query_string(omit_etat=e) }}"
+           style="display:inline-flex;align-items:center;gap:6px;
+                  background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
+                  color:#374151;border-radius:9999px;padding:3px 10px;
+                  font-size:12px;text-decoration:none;">
+          État : <strong>{{ e | libelle_etat }}</strong> ×
+        </a>
+      {% endfor %}
+      {% for lang in filtres.langues %}
+        <a href="{{ _query_string(omit_langue=lang) }}"
+           style="display:inline-flex;align-items:center;gap:6px;
+                  background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
+                  color:#374151;border-radius:9999px;padding:3px 10px;
+                  font-size:12px;text-decoration:none;">
+          Langue : <code class="font-mono">{{ lang }}</code> ×
+        </a>
+      {% endfor %}
+      {% for t in filtres.types_coar %}
+        <a href="{{ _query_string(omit_type_coar=t) }}"
+           style="display:inline-flex;align-items:center;gap:6px;
+                  background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
+                  color:#374151;border-radius:9999px;padding:3px 10px;
+                  font-size:12px;text-decoration:none;"
+           title="{{ t }}">
+          Type : <strong>{{ t.rsplit('/', 1)[-1] if '/' in t else t }}</strong> ×
+        </a>
+      {% endfor %}
+      {% if filtres.annee_min is not none or filtres.annee_max is not none %}
+        <a href="{{ _query_string(omit_periode=True) }}"
+           style="display:inline-flex;align-items:center;gap:6px;
+                  background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
+                  color:#374151;border-radius:9999px;padding:3px 10px;
+                  font-size:12px;text-decoration:none;">
+          Période :
+          <strong>{{ filtres.annee_min if filtres.annee_min is not none else '…' }}–{{ filtres.annee_max if filtres.annee_max is not none else '…' }}</strong>
+          ×
+        </a>
+      {% endif %}
+      {# Bouton « Tout réinitialiser » : visible dès qu'au moins 2
+         dimensions sont actives, pour éviter le clic à répétition
+         sur les pastilles. Conserve q + scope + types, retire tous
+         les filtres avancés. #}
+      {% if filtres.nb_filtres_actifs > 1 %}
+        <a href="{{ _query_string(omit_filtres=True) }}"
+           style="display:inline-flex;align-items:center;gap:4px;
+                  color:#6b7280;border-radius:9999px;padding:3px 10px;
+                  font-size:12px;text-decoration:underline;">
+          Tout réinitialiser
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
 
   {% if q and not resultats %}
     <p class="text-sm text-gray-500 italic">
@@ -84,12 +332,34 @@
       dans la collection {{ collection_scope.cote }}{% endif %}.
     </p>
   {% elif q %}
+    {# Compteur principal = total EXACT (compte FTS5 COUNT sans
+       LIMIT). Si on a tronqué l'affichage, on indique aussi le
+       nombre rendu : « 173 résultats trouvés (100 affichés) ». #}
     <p class="text-sm text-gray-500 mb-4">
-      <strong>{{ resultats|length }}</strong> résultat{{ 's' if resultats|length > 1 else '' }} pour
+      <strong>{{ total_global }}</strong> résultat{{ 's' if total_global > 1 else '' }} trouvé{{ 's' if total_global > 1 else '' }} pour
       <strong>« {{ q }} »</strong>{% if fonds_scope %}
       dans le fonds <code class="font-mono">{{ fonds_scope.cote }}</code>{% endif %}{% if collection_scope %}
-      dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}.
+      dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}{% if types_tronques %}
+      <span class="text-gray-400">({{ resultats|length }} affiché{{ 's' if resultats|length > 1 else '' }})</span>{% endif %}.
     </p>
+
+    {# Note d'affichage : un ou plusieurs types ont plus de résultats
+       que la limite affichée. Ton neutre — c'est de l'info, pas une
+       erreur. Liens pour monter la limite (cap 1000). Préserve scope,
+       types et filtres avancés via `_query_string`. #}
+    {% if types_tronques %}
+      {% set labels = {'item': 'items', 'fonds': 'fonds', 'collection': 'collections'} %}
+      <p class="text-xs text-gray-500 mb-4" style="line-height:1.5;">
+        Affichage limité à <strong>{{ limite }}</strong> résultat{{ 's' if limite > 1 else '' }} par type ·
+        {% for t in types_tronques %}{{ total_par_type[t] }} {{ labels[t] }}{% if not loop.last %}, {% endif %}{% endfor %} au total.
+        Afficher
+        <a href="{{ _query_string() }}&limite=500"
+           class="hover:underline" style="color:#374151;">jusqu'à 500</a>
+        ·
+        <a href="{{ _query_string() }}&limite=1000"
+           class="hover:underline" style="color:#374151;">jusqu'à 1000</a>.
+      </p>
+    {% endif %}
 
     <ul class="space-y-3">
       {% for r in resultats %}

@@ -24,6 +24,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from archives_tool.affichage.formatters import temps_relatif
+from archives_tool.api.services._filtres_communs import (
+    clamper_annee,
+    csv_to_liste,
+)
 from archives_tool.api.services.collaborateurs_fonds import (
     CollaborateurFondsResume,
     lister_collaborateurs_fonds,
@@ -852,38 +856,6 @@ class FiltresCollection:
         return "&".join(params)
 
 
-def _csv_to_liste(valeur: str | list[str] | None) -> list[str]:
-    """Parse une valeur multi-valuée en liste de chaînes.
-
-    Accepte deux formats :
-    - chaîne CSV `a,b,c` (depuis un lien forgé à la main),
-    - liste de chaînes `["a", "b"]` (depuis un `<select multiple>`
-      qui envoie `?key=a&key=b` — FastAPI déserialise en liste).
-
-    Strip + dédoublonne en préservant l'ordre. Vide sur None ou vide.
-    """
-    if valeur is None:
-        return []
-    parts: list[str]
-    if isinstance(valeur, str):
-        parts = valeur.split(",")
-    else:
-        # FastAPI passe `list[str]` quand la query a la même clé
-        # plusieurs fois ; chaque valeur peut elle-même contenir une
-        # CSV (cas mixte) — on aplatit.
-        parts = []
-        for v in valeur:
-            parts.extend(v.split(","))
-    vu: set[str] = set()
-    sortie: list[str] = []
-    for part in parts:
-        v = part.strip()
-        if v and v not in vu:
-            vu.add(v)
-            sortie.append(v)
-    return sortie
-
-
 def parser_filtres_collection(
     *,
     etat: str | list[str] | None,
@@ -905,23 +877,19 @@ def parser_filtres_collection(
     `annee_de` / `annee_a` : entiers, clampés à `[annee_min, annee_max]`.
     Si `annee_de > annee_a` (intervalle inversé), on swap pour donner
     une plage cohérente plutôt qu'un résultat vide muet.
+
+    Note : etat est validé contre l'enum global `EtatCatalogage`
+    (pas contre les options de la collection) — cohérent avec la
+    page Collection qui affiche tous les états même non présents,
+    pour permettre de pré-filtrer avant d'avoir des items à cet état.
     """
     etats_valides = {e.value for e in EtatCatalogage}
-    etats = tuple(e for e in _csv_to_liste(etat) if e in etats_valides)
-    langues = tuple(lang for lang in _csv_to_liste(langue) if lang in options.langues)
-    types_coar = tuple(t for t in _csv_to_liste(type_coar) if t in options.types_coar)
+    etats = tuple(e for e in csv_to_liste(etat) if e in etats_valides)
+    langues = tuple(lang for lang in csv_to_liste(langue) if lang in options.langues)
+    types_coar = tuple(t for t in csv_to_liste(type_coar) if t in options.types_coar)
 
-    def _valider_annee(v: int | None) -> int | None:
-        if v is None:
-            return None
-        if options.annee_min is None or options.annee_max is None:
-            return None
-        if v < options.annee_min or v > options.annee_max:
-            return None
-        return v
-
-    de = _valider_annee(annee_de)
-    a = _valider_annee(annee_a)
+    de = clamper_annee(annee_de, options.annee_min, options.annee_max)
+    a = clamper_annee(annee_a, options.annee_min, options.annee_max)
     if de is not None and a is not None and de > a:
         # Intervalle inversé : on swap pour donner un résultat
         # exploitable (la pastille affichera la plage normalisée).

@@ -141,6 +141,21 @@ def page_recherche(
     types: list[str] | None = Query(
         None, description="Types entité (item/fonds/collection). Tous si vide.",
     ),
+    # Filtres avancés (items only sauf q2 qui raffine tout).
+    etat: list[str] | None = Query(None, description="Filtre par état (items)."),
+    langue: list[str] | None = Query(None, description="Filtre par langue (items)."),
+    type_coar: list[str] | None = Query(
+        None, description="Filtre par type COAR (items)."
+    ),
+    annee_min: str | None = Query(None, description="Année min EDTF (items)."),
+    annee_max: str | None = Query(None, description="Année max EDTF (items)."),
+    q2: str = Query(
+        "", description="Raffinement query (concaténé à q avec AND FTS5).",
+    ),
+    limite: int = Query(
+        100, ge=10, le=1000,
+        description="Max résultats par type d'entité. Cap 1000.",
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -154,9 +169,17 @@ def page_recherche(
     - `types` : filtre les entités à inclure. Valeurs reconnues :
       `item`, `fonds`, `collection`. Casse silencieusement les
       invalides.
+    - `etat` / `langue` / `type_coar` / `annee_min` / `annee_max` :
+      filtres avancés items-only (les fonds/collections passent à
+      travers). Validés silencieusement contre les options dynamiques
+      de la base (scope-aware).
+    - `q2` : raffinement de la query principale, appliqué aux 3 types
+      via AND FTS5 implicite.
+    - `limite` : nombre max de résultats PAR TYPE. Défaut 100, cap 1000.
     """
     from archives_tool.api.services.recherche import (
-        Scope, TypeEntite, rechercher,
+        Scope, TypeEntite, calculer_options_filtres_recherche,
+        parser_filtres_recherche, rechercher,
     )
     from archives_tool.models import Collection, Fonds
 
@@ -170,9 +193,29 @@ def page_recherche(
         collection_id=collection_id,
     )
 
-    resultats = rechercher(db, q, scope=scope, types=types_filtres)
+    # Options dynamiques scope-aware (limite aux valeurs effectivement
+    # présentes dans le périmètre — un fonds en français n'affiche pas
+    # « polonais » dans la liste).
+    options_filtres = calculer_options_filtres_recherche(db, scope)
+    filtres = parser_filtres_recherche(
+        etat=etat,
+        langue=langue,
+        type_coar=type_coar,
+        annee_min=_annee_int_ou_none(annee_min),
+        annee_max=_annee_int_ou_none(annee_max),
+        q_dans_resultats=q2,
+        options=options_filtres,
+    )
 
-    # Métadonnées du scope pour l'affichage (libellé filtre actif).
+    # `rechercher` retourne ResultatsRecherche avec liste tronquée
+    # à `limite_par_type` ET totaux exacts (COUNT séparé pour savoir
+    # combien il y aurait sans limite — utile pour signaler la
+    # troncature à l'utilisateur).
+    res = rechercher(
+        db, q, scope=scope, types=types_filtres,
+        filtres=filtres, limite_par_type=limite,
+    )
+
     fonds_scope = None
     collection_scope = None
     if fonds_id is not None:
@@ -187,13 +230,18 @@ def page_recherche(
             nom_base,
             utilisateur,
             q=q,
-            resultats=resultats,
+            resultats=res.resultats,
+            total_par_type=res.total_par_type,
+            total_global=res.total,
+            types_tronques=res.tronques,
             fonds_scope=fonds_scope,
             collection_scope=collection_scope,
             types_filtres=types_filtres or set(),
-            # On expose tous les types possibles pour le rendu des
-            # cases à cocher.
             tous_types=list(types_valides),
+            limite=limite,
+            filtres=filtres,
+            options_filtres=options_filtres,
+            etats_disponibles=list(EtatCatalogage),
         ),
     )
 

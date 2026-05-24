@@ -274,9 +274,285 @@ def test_recherche_score_pertinence(session_avec_corpus: Session) -> None:
 def test_recherche_requete_vide_retourne_vide(
     session_avec_corpus: Session,
 ) -> None:
-    """Recherche vide → liste vide (pas de match « tout »)."""
-    assert rechercher(session_avec_corpus, "") == []
-    assert rechercher(session_avec_corpus, "   ") == []
+    """Recherche vide → resultats vides (pas de match « tout »)."""
+    res = rechercher(session_avec_corpus, "")
+    assert len(res) == 0
+    assert res.total == 0
+    assert rechercher(session_avec_corpus, "   ").total == 0
+
+
+def test_recherche_total_par_type_vs_affiche(
+    session_avec_corpus: Session,
+) -> None:
+    """`ResultatsRecherche` distingue total EXACT (compte FTS5
+    sans LIMIT) du nombre AFFICHÉ (tronqué à `limite_par_type`).
+    Critique pour signaler la troncature à l'utilisateur sans
+    masquer silencieusement les matchs."""
+    # Cherche `numero` qui matche les 5 items du corpus de test
+    res = rechercher(session_avec_corpus, "numero", limite_par_type=2)
+    # Total exact 5 items (HK-001/002/003 + PF-001/002 ont tous
+    # "Numéro" dans le titre)
+    assert res.total_par_type["item"] >= 5
+    # Mais on n'a affiché que 2 par type
+    items_affiches = [r for r in res if r.type_entite == "item"]
+    assert len(items_affiches) == 2
+    # `tronques` signale les types saturés
+    assert "item" in res.tronques
+
+
+# ---------------------------------------------------------------------------
+# Filtres avancés (état, langue, type COAR, période) + q_dans_resultats
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def session_avec_corpus_filtrable(session: Session) -> Session:
+    """Corpus avec items aux champs état/langue/type_coar/annee variés
+    pour tester les filtres avancés et le calcul des options dynamiques."""
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+
+    creer_fonds(session, FormulaireFonds(cote="REVS", titre="Revues"))
+    fonds = lire_fonds_par_cote(session, "REVS")
+
+    # Items aux états/langues/types/années distincts pour vérifier
+    # que chaque filtre discrimine correctement.
+    specs = [
+        # (cote, etat, langue, type_coar, annee)
+        ("R-001", "brouillon", "fra", "journal", 1965),
+        ("R-002", "verifie", "fra", "journal", 1966),
+        ("R-003", "valide", "spa", "book", 1972),
+        ("R-004", "a_verifier", "eng", "journal", 1980),
+    ]
+    for cote, etat, langue, type_coar, annee in specs:
+        creer_item(
+            session,
+            FormulaireItem(
+                cote=cote,
+                titre=f"Titre {cote}",
+                description=f"Description pour matcher : caricature {cote}",
+                fonds_id=fonds.id,
+                etat_catalogage=etat,
+                langue=langue,
+                type_coar=type_coar,
+                annee=annee,
+            ),
+        )
+    return session
+
+
+def test_calculer_options_filtres_global(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """`calculer_options_filtres_recherche` agrège les valeurs
+    distinctes (état, langue, type COAR, bornes années) sur toute
+    la base quand scope est global."""
+    from archives_tool.api.services.recherche import (
+        calculer_options_filtres_recherche,
+    )
+
+    options = calculer_options_filtres_recherche(session_avec_corpus_filtrable)
+    assert "brouillon" in options.etats
+    assert "verifie" in options.etats
+    assert "valide" in options.etats
+    assert "fra" in options.langues
+    assert "spa" in options.langues
+    assert "eng" in options.langues
+    assert "journal" in options.types_coar
+    assert "book" in options.types_coar
+    assert options.annee_min_base == 1965
+    assert options.annee_max_base == 1980
+
+
+def test_calculer_options_filtres_scope_fonds(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Avec scope fonds_id, les options sont restreintes au périmètre.
+    Un fonds en français seulement n'affiche pas espagnol/anglais."""
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.api.services.recherche import (
+        Scope, calculer_options_filtres_recherche,
+    )
+
+    creer_fonds(session_avec_corpus_filtrable, FormulaireFonds(cote="MONO", titre="Mono"))
+    fonds_mono = lire_fonds_par_cote(session_avec_corpus_filtrable, "MONO")
+    creer_item(
+        session_avec_corpus_filtrable,
+        FormulaireItem(
+            cote="M-001", titre="seul", fonds_id=fonds_mono.id,
+            langue="ita", annee=2000,
+        ),
+    )
+
+    options_mono = calculer_options_filtres_recherche(
+        session_avec_corpus_filtrable, scope=Scope(fonds_id=fonds_mono.id),
+    )
+    assert options_mono.langues == ("ita",)
+    assert "fra" not in options_mono.langues  # pas dans ce fonds
+    assert options_mono.annee_min_base == 2000
+    assert options_mono.annee_max_base == 2000
+
+
+def test_parser_filtres_silencieux_hors_options(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Les valeurs hors whitelist sont silencieusement ignorées.
+    Jamais de 400 sur paramètre invalide (cohérent avec
+    `parser_filtres_collection`)."""
+    from archives_tool.api.services.recherche import (
+        OptionsFiltresRecherche, parser_filtres_recherche,
+    )
+
+    options = OptionsFiltresRecherche(
+        etats=("brouillon", "valide"),
+        langues=("fra",),
+        types_coar=("journal",),
+        annee_min_base=1900, annee_max_base=2000,
+    )
+    filtres = parser_filtres_recherche(
+        etat=["brouillon", "INEXISTANT"],  # INEXISTANT ignoré
+        langue=["fra", "klingon"],  # klingon ignoré
+        type_coar=["journal", "fake"],  # fake ignoré
+        annee_min=1800,  # hors bornes → ignoré
+        annee_max=1950,
+        q_dans_resultats="  raffin  ",  # stripé
+        options=options,
+    )
+    assert filtres.etats == ("brouillon",)
+    assert filtres.langues == ("fra",)
+    assert filtres.types_coar == ("journal",)
+    assert filtres.annee_min is None  # rejeté (< 1900)
+    assert filtres.annee_max == 1950
+    assert filtres.q_dans_resultats == "raffin"
+
+
+def test_parser_filtres_swap_intervalle_inverse(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Si annee_min > annee_max, on swap pour donner un résultat
+    exploitable plutôt qu'une plage vide muette."""
+    from archives_tool.api.services.recherche import (
+        OptionsFiltresRecherche, parser_filtres_recherche,
+    )
+
+    options = OptionsFiltresRecherche(annee_min_base=1900, annee_max_base=2000)
+    filtres = parser_filtres_recherche(
+        etat=None, langue=None, type_coar=None,
+        annee_min=1980, annee_max=1920,
+        q_dans_resultats=None, options=options,
+    )
+    assert filtres.annee_min == 1920
+    assert filtres.annee_max == 1980
+
+
+def test_rechercher_filtre_etat(session_avec_corpus_filtrable: Session) -> None:
+    """Avec un filtre `etats=('brouillon',)`, seuls les items en
+    brouillon remontent — même si la query matche d'autres états."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    res = rechercher(
+        session_avec_corpus_filtrable, "caricature",
+        filtres=FiltresRecherche(etats=("brouillon",)),
+    )
+    items = [r for r in res if r.type_entite == "item"]
+    cotes = {r.cote for r in items}
+    assert cotes == {"R-001"}  # brouillon uniquement
+
+
+def test_rechercher_filtre_langue(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Filtre langue multi-valeur."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    res = rechercher(
+        session_avec_corpus_filtrable, "caricature",
+        filtres=FiltresRecherche(langues=("fra", "spa")),
+    )
+    items = [r for r in res if r.type_entite == "item"]
+    cotes = {r.cote for r in items}
+    assert "R-001" in cotes  # fra
+    assert "R-002" in cotes  # fra
+    assert "R-003" in cotes  # spa
+    assert "R-004" not in cotes  # eng exclu
+
+
+def test_rechercher_filtre_annee_plage(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Filtre par plage d'années (min ET max)."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    res = rechercher(
+        session_avec_corpus_filtrable, "caricature",
+        filtres=FiltresRecherche(annee_min=1970, annee_max=1985),
+    )
+    items = [r for r in res if r.type_entite == "item"]
+    cotes = {r.cote for r in items}
+    # R-001 (1965) et R-002 (1966) exclus, R-003 (1972) et R-004 (1980) inclus
+    assert cotes == {"R-003", "R-004"}
+
+
+def test_rechercher_q_dans_resultats_raffine(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """`q_dans_resultats` raffine la query principale via AND FTS5
+    implicite : `q=caricature` + `q2=R-003` ne retourne que R-003."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    # Sans raffinement : tous les 4 items matchent (caricature)
+    sans = rechercher(session_avec_corpus_filtrable, "caricature")
+    assert len([r for r in sans if r.type_entite == "item"]) == 4
+
+    # Avec raffinement sur "R-003"
+    avec = rechercher(
+        session_avec_corpus_filtrable, "caricature",
+        filtres=FiltresRecherche(q_dans_resultats="R-003"),
+    )
+    items = [r for r in avec if r.type_entite == "item"]
+    cotes = {r.cote for r in items}
+    assert cotes == {"R-003"}
+
+
+def test_rechercher_filtres_items_n_affecte_pas_fonds(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Choix d'UX V0.9.x : les filtres item-specific (état, langue,
+    type, période) ne s'appliquent qu'aux items. Les fonds et
+    collections continuent d'apparaître normalement."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    # Filtre très restrictif sur les items (état seulement)
+    res = rechercher(
+        session_avec_corpus_filtrable, "Revues",
+        filtres=FiltresRecherche(etats=("brouillon",)),
+    )
+    # Le fonds REVS matche son titre "Revues" et doit toujours apparaître
+    # même si aucun item n'est en brouillon ne matche cette query.
+    fonds_trouves = [r for r in res if r.type_entite == "fonds"]
+    cotes_fonds = {r.cote for r in fonds_trouves}
+    assert "REVS" in cotes_fonds
+
+
+def test_filtres_recherche_actifs_et_affecte_items(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """`FiltresRecherche.actifs` et `.affecte_items_seulement`
+    distinguent l'état des filtres pour piloter l'affichage du
+    template (pastilles, repli de la section)."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    vide = FiltresRecherche()
+    assert not vide.actifs
+    assert not vide.affecte_items_seulement
+
+    avec_q2 = FiltresRecherche(q_dans_resultats="raffin")
+    assert avec_q2.actifs
+    assert not avec_q2.affecte_items_seulement  # q2 affecte les 3 types
+
+    avec_etat = FiltresRecherche(etats=("brouillon",))
+    assert avec_etat.actifs
+    assert avec_etat.affecte_items_seulement
 
 
 def test_reindexer_fts_idempotent_et_compte_correct(

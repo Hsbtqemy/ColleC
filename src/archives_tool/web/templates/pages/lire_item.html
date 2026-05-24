@@ -27,11 +27,31 @@
 {% block title %}Consultation — {{ item.titre or item.cote }} — archives-tool{% endblock %}
 
 {% block content %}
+{# Loading state HTMX : pendant le swap, on dimme légèrement la
+   visionneuse pour signaler l'attente. HTMX ajoute la classe
+   `htmx-request` sur l'élément déclencheur (vignette ou bouton
+   Page) — on capture l'effet visuel sur la zone cible via une
+   règle CSS sur le wrapper qui contient #zone-visionneuse. #}
+<style>
+  /* Loading state HTMX : pendant un swap, on dimme la zone visionneuse
+     pour signaler l'attente. La classe `en-chargement` est ajoutée par
+     `liseuse.js` sur les events `htmx:beforeRequest`/`afterSwap` —
+     marche pour les deux sources (vignette panneau ET bouton Page
+     bandeau, le bandeau étant hors de .layout-liseuse donc non couvert
+     par hx-indicator hérité). Délai 60ms pour ne pas flasher sur
+     swap rapide (cache navigateur). */
+  #zone-visionneuse.en-chargement {
+    opacity: 0.55;
+    transition: opacity 80ms ease-out 60ms;
+    pointer-events: none;
+  }
+</style>
+
 {{ bandeau_lire(item, fonds, detail.position_courante, detail.nb_fichiers,
                 detail.navigation, fichier_precedent_id, fichier_suivant_id) }}
 
 <div class="layout-liseuse flex gap-4"
-     style="height:calc(100vh - 220px);min-height:520px;">
+     style="height:calc(100vh - 240px);min-height:500px;">
 
   {# Gauche : cartouche métadonnées. La macro pose `data-editable="0"`
      sur les lignes sans `editable` — `cartouche_metadonnees` est déjà
@@ -74,10 +94,31 @@
     </div>
   </aside>
 </div>
+
+{# Raccourcis discoverable — pied de page discret en gris pâle.
+   Sert aussi de signalement que le clavier est actif. #}
+<p class="text-xs text-gray-400 mt-3"
+   style="text-align:center;letter-spacing:0.02em;">
+  <kbd style="font-family:monospace;background:#f3f4f6;padding:1px 5px;
+              border:1px solid rgba(0,0,0,0.10);border-radius:3px;
+              font-size:11px;">←</kbd>
+  <kbd style="font-family:monospace;background:#f3f4f6;padding:1px 5px;
+              border:1px solid rgba(0,0,0,0.10);border-radius:3px;
+              font-size:11px;">→</kbd>
+  page ·
+  <kbd style="font-family:monospace;background:#f3f4f6;padding:1px 5px;
+              border:1px solid rgba(0,0,0,0.10);border-radius:3px;
+              font-size:11px;">Esc</kbd>
+  retour catalogage
+</p>
 {% endblock %}
 
 {% block scripts %}
   <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
   <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
+  {# Lot 3 : raccourcis clavier ← → page · Esc retour catalogage.
+     Script chargé sur la page complète seulement — pas dans le partial
+     swap (le listener global keydown reste persistent). #}
+  <script src="{{ static_url('js/liseuse.js') }}"></script>
   {# Pas de inline_edit.js : consultation pure. #}
 {% endblock %}

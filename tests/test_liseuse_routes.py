@@ -441,6 +441,45 @@ def test_liseuse_partial_pdf_renvoie_pdfjs(
                 db.commit()
 
 
+def test_liseuse_charge_script_clavier(client_demo: TestClient) -> None:
+    """Lot 3 V0.9.x : la page liseuse charge `js/liseuse.js` qui pose
+    le listener clavier global ← → Esc."""
+    response = client_demo.get("/lire/HK/HK-001")
+    assert response.status_code == 200
+    assert "js/liseuse.js" in response.text
+
+
+def test_liseuse_affiche_raccourcis_clavier_discoverable(
+    client_demo: TestClient,
+) -> None:
+    """Lot 3 V0.9.x : pied de page liseuse mentionne les raccourcis
+    (← → page · Esc retour catalogage) avec <kbd> stylés. Sert à
+    signaler que le clavier est utilisable et lequel utiliser."""
+    response = client_demo.get("/lire/HK/HK-001")
+    assert response.status_code == 200
+    # Les 3 raccourcis principaux mentionnés dans le footer
+    assert "<kbd" in response.text
+    assert "Esc" in response.text
+    assert "retour catalogage" in response.text
+
+
+def test_liseuse_loading_state_classe_en_chargement(
+    client_demo: TestClient,
+) -> None:
+    """Lot 3 V0.9.x : la zone visionneuse est dimmée pendant les
+    swaps HTMX via la classe `.en-chargement` toggleée par
+    `liseuse.js` sur les events `htmx:beforeRequest`/`afterSwap`.
+    Approche JS (vs hx-indicator) car le bandeau est hors de
+    .layout-liseuse — l'indicator inherited ne couvrait pas les
+    boutons Page."""
+    response = client_demo.get("/lire/HK/HK-001")
+    assert response.status_code == 200
+    # CSS du loading state présent
+    assert "en-chargement" in response.text
+    # Le JS qui toggle la classe est chargé
+    assert "js/liseuse.js" in response.text
+
+
 def test_liseuse_bandeau_navigation_page_separee_de_item(
     client_demo: TestClient,
 ) -> None:

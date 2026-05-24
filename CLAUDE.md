@@ -530,6 +530,44 @@ Limites MVP (Lot 2) :
   `pdf.min.mjs` ; relancer `npm run vendor` + hard refresh quand on
   upgrade pdfjs).
 
+**Liseuse Lot 3 : clavier + loading state + raccourcis discoverable
+(2026-05-24)** — polish UX final de la liseuse consultation.
+
+`static/js/liseuse.js` charge sur la page complète (pas les partials
+HTMX) un listener global `keydown` :
+- `←` → clic sur le bouton « Page précédente » du bandeau (qui
+  déclenche le swap HTMX déjà câblé)
+- `→` → clic sur « Page suivante »
+- `Esc` → clic sur « Cataloguer » (retour `/item/<cote>?fonds=<f>`)
+Skip si focus dans input/textarea/contenteditable pour ne pas
+casser la sélection texte (notamment PDF.js text layer).
+
+Selection des boutons par `title` exact (`Page précédente`/`Page
+suivante`) plutôt que par position : sans ça, sur la page 1 où ‹
+est désactivé en `<span>`, `:first-of-type` matchait › et `←`
+déclenchait ›.
+
+Loading state HTMX : `liseuse.js` écoute `htmx:beforeRequest` /
+`htmx:afterSwap` et toggle `.en-chargement` sur `#zone-visionneuse`
+quand le swap cible cette zone. CSS dimme à 55% d'opacité avec
+60ms de délai (évite le flash sur swap rapide). Approche JS plutôt
+que `hx-indicator` car le bandeau (boutons Page) est hors de
+`.layout-liseuse` — l'indicator hérité ne couvrait que les vignettes
+du panneau droit.
+
+Pied de page raccourcis discoverable : `[←][→] page · [Esc] retour
+catalogage` en `<kbd>` gris pâle stylés. Signale visuellement que
+le clavier est utilisable.
+
+Limites Lot 3 :
+- Sur la page PDF, `←`/`→` naviguent entre fichiers de l'item (pas
+  dans les pages du PDF). Pour naviguer dans le PDF lui-même,
+  utiliser les boutons internes ‹/› du PDF.js. Comportement
+  cohérent avec le scope « liseuse = entre fichiers » mais peut
+  surprendre.
+- Pas de raccourci `F` (fullscreen) ni `M` (toggle meta) initialement
+  prévus — pas dans ce lot, reportable si besoin.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

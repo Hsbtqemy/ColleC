@@ -86,8 +86,14 @@ _HEURISTIQUES: list[tuple[re.Pattern[str], str]] = [
     # `_detecter_champ_structurant` reste pour les composés (`doi nakala
     # item`, ...). Ici on capture les noms courts usuels.
     (re.compile(r"^doi$|^doi_item$|^item_doi$", re.IGNORECASE), "doi_nakala"),
+    # Tolérant à l'espace / tiret / underscore entre `doi` et
+    # `collection` : sur Nakala, les exports utilisent souvent
+    # « DOI collection » avec espace plutôt qu'un slug technique.
     (
-        re.compile(r"^doi_collection$|^collection_doi$", re.IGNORECASE),
+        re.compile(
+            r"^doi[\s_-]?collection$|^collection[\s_-]?doi$",
+            re.IGNORECASE,
+        ),
         "doi_collection_nakala",
     ),
     # --- Champs Fichier ---

@@ -1301,6 +1301,33 @@ def test_apercu_repartition_simple_sans_suggestions_complet() -> None:
     assert apercu.libres_fichier == ["b"]
 
 
+def test_construire_mapping_simple_promeut_doi_collection_avec_espace() -> None:
+    """#3 V0.9.2-import : l'heuristique `doi_collection` est désormais
+    tolérante à l'espace/tiret entre `doi` et `collection` — match
+    `DOI collection` (cas typique export Nakala). Avant ce fix,
+    `DOI collection` tombait en `metadonnees.doi_collection` libre
+    (perdu en tant que champ dédié)."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["Cote", "DOI collection", "doi-collection"],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "DOI collection": {"classif": "par-item"},
+            "doi-collection": {"classif": "par-item"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(session, colonne_cote="Cote")
+    # Première colonne reconnue → champ dédié.
+    assert mapping["doi_collection_nakala"] == "DOI collection"
+    # Deuxième avec même cible : fallback slug (proposer_mapping
+    # dédupe via dedies_pris interne).
+    assert "doi-collection" in mapping.values()
+
+
 def test_construire_mapping_simple_filtre_colonnes_absentes_d_echantillons() -> None:
     """Safe-guard #2 V0.9.2-import : si `colonnes_detectees` contient
     une colonne absente de `colonnes_echantillon` (filtré comme vide

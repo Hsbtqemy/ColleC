@@ -388,6 +388,36 @@ table d'alias, la valeur originale est conservée (l'utilisateur
 http://purl.org/coar/resource_type/c_3e5a` (Périodique) sur les
 173 items.
 
+**DOI collection auto-promu + propagation Collection (2026-05-24)** —
+deux fixes complémentaires sur le DOI Nakala collection.
+
+Heuristique élargie dans `profils.generateur._HEURISTIQUES` :
+`^doi[\s_-]?collection$|^collection[\s_-]?doi$` (au lieu de
+`^doi_collection$|^collection_doi$`). Tolère l'espace et le tiret
+entre les mots — sur Nakala, les exports utilisent souvent
+`DOI collection` avec espace plutôt qu'un slug. Sans ce match,
+`DOI collection` tombait en `metadonnees.doi_collection` libre.
+
+Propagation auto dans
+`importers/ecrivain.py::_propager_doi_collection_sur_miroir` :
+après création de tous les items, si tous partagent un seul
+`doi_collection_nakala` non vide ET que la miroir n'a pas déjà un
+`doi_nakala` (le choix utilisateur via `collection_miroir.doi_nakala`
+du profil prime), on copie la valeur sur `Collection.miroir.doi_nakala`.
+Sémantique Nakala respectée : un DOI collection est une propriété
+de la collection elle-même, pas dupliquée 173 fois sur les items.
+L'autonomie des items est conservée (chaque item garde aussi sa
+valeur — principe doc).
+
+Sur PF : `Item.doi_collection_nakala = 10.34847/nkl.716dhx95` sur
+173 items + `Collection.miroir.doi_nakala = 10.34847/nkl.716dhx95`.
+metadonnees libres réduits à 5 clés (perte de `doi_collection` libre
+absorbée par le champ dédié).
+
+`Collection.doi_nakala` est UNIQUE en SQL : `IntegrityError` swallowed
+avec warning si conflit (DOI déjà utilisé par une autre collection).
+Les items gardent leur valeur quoi qu'il arrive.
+
 **Miniatures Nakala et filtrage colonnes vides (2026-05-24)** —
 deux fixes UX en lot après le test PF.
 

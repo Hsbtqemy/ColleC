@@ -776,6 +776,7 @@ def _executer_reel(
             rapport.erreurs.append(f"Personnalisation miroir : {e}")
             return
 
+    dois_collection_vus: set[str] = set()
     for prep, fichiers in items_et_fichiers:
         try:
             formulaire_item = _construire_formulaire_item(
@@ -791,6 +792,52 @@ def _executer_reel(
             continue
         rapport.items_crees += 1
         _ecrire_fichiers(item, fichiers, session, rapport)
+        if item.doi_collection_nakala:
+            dois_collection_vus.add(item.doi_collection_nakala)
+
+    _propager_doi_collection_sur_miroir(
+        session, miroir, dois_collection_vus, rapport
+    )
+
+
+def _propager_doi_collection_sur_miroir(
+    session: Session,
+    miroir: Collection,
+    dois_collection_vus: set[str],
+    rapport: RapportImport,
+) -> None:
+    """Si tous les items créés partagent un seul `doi_collection_nakala`
+    (cas typique : tous les items d'un fonds Nakala pointent sur la
+    même collection Nakala), propage cette valeur sur
+    `Collection.miroir.doi_nakala`. Sinon (valeurs multiples ou
+    aucune), pas de propagation.
+
+    Ne touche pas si la miroir a déjà un DOI (posé via le profil
+    `collection_miroir.doi_nakala` ou existant) — le choix utilisateur
+    prime.
+
+    `Collection.doi_nakala` est UNIQUE en SQL : si la valeur est déjà
+    prise par une autre collection, on swallow l'IntegrityError et on
+    émet juste un warning (l'item garde sa valeur, juste pas
+    propagée sur la collection).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    if miroir.doi_nakala:
+        return
+    if len(dois_collection_vus) != 1:
+        return
+    doi = dois_collection_vus.pop()
+    miroir.doi_nakala = doi
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        rapport.warnings.append(
+            f"DOI collection {doi!r} déjà utilisé par une autre collection "
+            "— pas propagé sur la miroir (les items le gardent en "
+            "`doi_collection_nakala`)."
+        )
 
 
 def importer(

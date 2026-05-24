@@ -784,6 +784,87 @@ def test_promotion_url_promeut_iiif_info_json_si_nakala(session: Session) -> Non
     assert "/full/" not in f0.iiif_url_nakala  # plus le suffixe image
 
 
+def test_propagation_doi_collection_sur_miroir(session: Session) -> None:
+    """#3 V0.9.2-import : si tous les items partagent le même
+    `doi_collection_nakala`, on propage cette valeur sur
+    `Collection.miroir.doi_nakala`. Cas typique : tous les items
+    d'un fonds Nakala pointent sur la même collection Nakala."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # Pose un DOI collection commun à tous les items via valeurs_par_defaut.
+    profil.valeurs_par_defaut = {"doi_collection_nakala": "10.34847/nkl.commun"}
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    miroir = next(
+        c for c in fonds.collections
+        if c.type_collection == TypeCollection.MIROIR.value
+    )
+    # Propagation sur la miroir.
+    assert miroir.doi_nakala == "10.34847/nkl.commun"
+    # Mais aussi conservé sur chaque item (autonomie).
+    for item in fonds.items:
+        assert item.doi_collection_nakala == "10.34847/nkl.commun"
+
+
+def test_propagation_doi_collection_aucune_si_valeurs_multiples(
+    session: Session,
+) -> None:
+    """#3 V0.9.2-import : si les items ont des valeurs différentes de
+    `doi_collection_nakala`, on ne propage pas sur la miroir (ambigu —
+    quel DOI choisir ?)."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # PFC-1 reçoit doi A, PFC-2 reçoit doi B via une colonne du
+    # tableur. La fixture a une colonne `hash` distincte par fichier
+    # → on bricole en pose direct dans le mapping.
+    profil.mapping.champs["doi_collection_nakala"] = MappingSimple(
+        source="hash"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    miroir = next(
+        c for c in fonds.collections
+        if c.type_collection == TypeCollection.MIROIR.value
+    )
+    # Pas de propagation — chaque item a sa propre valeur.
+    assert miroir.doi_nakala is None
+
+
+def test_propagation_doi_collection_respecte_choix_utilisateur(
+    session: Session,
+) -> None:
+    """#3 V0.9.2-import : si la miroir a déjà un `doi_nakala` (posé
+    via `collection_miroir.doi_nakala` du profil ou autre), on ne
+    l'écrase pas — le choix utilisateur prime sur la propagation auto."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    profil.valeurs_par_defaut = {"doi_collection_nakala": "10.34847/nkl.auto"}
+    # Pose un DOI miroir explicite via le profil — devrait primer.
+    from archives_tool.profils.schema import CollectionMiroirProfil
+
+    profil.collection_miroir = CollectionMiroirProfil(
+        doi_nakala="10.34847/nkl.explicite"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    miroir = next(
+        c for c in fonds.collections
+        if c.type_collection == TypeCollection.MIROIR.value
+    )
+    # Le DOI explicite du profil prime sur la propagation auto.
+    assert miroir.doi_nakala == "10.34847/nkl.explicite"
+
+
 def test_type_coar_auto_normalise_libelle_textuel(session: Session) -> None:
     """Trou #2 V0.9.2-import : la colonne `Type` détectée par
     heuristique va en `type_coar` (Item dédié), et la valeur textuelle

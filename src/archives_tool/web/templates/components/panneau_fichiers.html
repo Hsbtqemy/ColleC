@@ -32,6 +32,39 @@
    reload).
 #}
 
+{# Macro placeholder de vignette pour les non-images : carré coloré
+   par catégorie (Lot 2 V0.9.x). Sans cette différenciation, tous
+   les non-images apparaissaient avec le même placeholder gris peu
+   lisible (« pdf » / « json » / « zip » identiques). Pastels pour
+   ne pas concurrencer les vraies vignettes images. #}
+{% macro vignette_placeholder(extension) -%}
+  {%- set ext = (extension or '')|lower -%}
+  {%- set bg = '#f3f4f6' -%}
+  {%- set fg = '#9ca3af' -%}
+  {%- set label = ext|upper if ext else '?' -%}
+  {%- if ext == 'pdf' -%}
+    {%- set bg = '#fee2e2' -%}{%- set fg = '#991b1b' -%}{%- set label = 'PDF' -%}
+  {%- elif ext in ['json', 'xml', 'yaml', 'yml', 'toml'] -%}
+    {%- set bg = '#dbeafe' -%}{%- set fg = '#1e3a8a' -%}
+  {%- elif ext in ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] -%}
+    {%- set bg = '#ffedd5' -%}{%- set fg = '#9a3412' -%}
+  {%- elif ext in ['mp4', 'mov', 'webm', 'avi', 'mkv'] -%}
+    {%- set bg = '#ede9fe' -%}{%- set fg = '#5b21b6' -%}
+  {%- elif ext in ['zip', 'tar', 'gz', 'rar', '7z'] -%}
+    {%- set bg = '#e5e7eb' -%}{%- set fg = '#374151' -%}
+  {%- elif ext in ['txt', 'md', 'csv', 'xlsx', 'xls', 'doc', 'docx'] -%}
+    {%- set bg = '#dcfce7' -%}{%- set fg = '#166534' -%}
+  {%- endif -%}
+  <div style="width:36px;height:48px;background:{{ bg }};
+              border:1px solid rgba(0,0,0,0.08);border-radius:2px;
+              flex-shrink:0;display:flex;align-items:center;
+              justify-content:center;font-size:9px;font-weight:600;
+              color:{{ fg }};letter-spacing:0.02em;">
+    {{ label }}
+  </div>
+{%- endmacro %}
+
+
 {% macro liste_vignettes(fichiers, position_courante, cote, fonds_cote, mode_consultation=False) -%}
 {%- if not fichiers %}
   <p class="text-xs text-gray-400 italic" style="padding:4px 14px;">
@@ -75,12 +108,7 @@
                         border:1px solid rgba(0,0,0,0.08);background:#f3f4f6;
                         flex-shrink:0;">
           {%- else %}
-            <div style="width:36px;height:48px;background:#f3f4f6;
-                        border:1px solid rgba(0,0,0,0.08);flex-shrink:0;
-                        display:flex;align-items:center;justify-content:center;
-                        font-size:10px;color:#9ca3af;">
-              {{ f.extension or '?' }}
-            </div>
+            {{ vignette_placeholder(f.extension) }}
           {%- endif %}
           <div class="min-w-0 flex-1">
             <div style="font-size:12px;color:{% if est_courant %}#1f1f1f{% else %}#374151{% endif %};

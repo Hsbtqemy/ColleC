@@ -247,6 +247,43 @@ def test_liseuse_panneau_vignettes_utilise_hx_get(
     assert 'hx-target="#zone-visionneuse"' in response.text
 
 
+def test_liseuse_vignette_placeholder_couleur_pdf(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Le placeholder de vignette du PDF est colore par categorie
+    (rouge pastel pour PDF). Avant Lot 2 polish, tous les non-images
+    avaient le meme placeholder gris peu lisible."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_pdf = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="thumb-test.pdf",
+            ordre=95,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/jklm",
+        )
+        db.add(f_pdf)
+        db.commit()
+        fid = f_pdf.id
+
+    try:
+        response = client_demo.get("/lire/HK/HK-001?fichier=95")
+        assert response.status_code == 200
+        # Couleur de fond rouge pastel pour PDF dans le panneau vignettes
+        assert "#fee2e2" in response.text
+        # Label PDF en majuscules
+        assert ">PDF</div>" in response.text or "PDF\n" in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
 def test_liseuse_pdf_inclut_wasm_url_et_text_layer(
     client_demo: TestClient, db_demo_factory
 ) -> None:

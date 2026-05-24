@@ -24,7 +24,81 @@
      actif et ne pas recharger la page si on reclique sur lui.
    - cote : cote de l'item (pour les liens `?fichier_courant=N`).
    - fonds_cote : pour le query string.
+
+   La macro `liste_vignettes` (publique) rend juste le `<ul>` des
+   vignettes — réutilisable hors du panneau collapse. Le param
+   `mode_consultation` (Lot 1 liseuse V0.9.x) remplace les hrefs
+   reload par des `hx-get` vers le partial visionneuse (swap sans
+   reload).
 #}
+
+{% macro liste_vignettes(fichiers, position_courante, cote, fonds_cote, mode_consultation=False) -%}
+{%- if not fichiers %}
+  <p class="text-xs text-gray-400 italic" style="padding:4px 14px;">
+    Aucun fichier rattaché.
+  </p>
+{%- else %}
+  <ul>
+    {% for f in fichiers %}
+      {% if loop.previtem and (f.ordre - loop.previtem.ordre) > 1 %}
+        <li class="text-xs text-gray-400 italic"
+            style="padding:4px 14px;border-top:1px dashed rgba(0,0,0,0.10);
+                   border-bottom:1px dashed rgba(0,0,0,0.10);">
+          ⋯ manque entre {{ loop.previtem.ordre }} et {{ f.ordre }}
+        </li>
+      {% endif %}
+      {% set est_courant = (loop.index == position_courante) %}
+      <li>
+        {%- if mode_consultation %}
+        {# HTMX swap : on remplace UNIQUEMENT la zone visionneuse sans
+           recharger toute la page. `hx-push-url` met à jour `?fichier=N`
+           pour bookmark. L'attribut href fallback est conservé pour les
+           navigateurs sans JS / clic milieu / nouveaux onglets. #}
+        <a hx-get="/lire/{{ fonds_cote }}/{{ cote }}/visionneuse/{{ f.id }}"
+           hx-target="#zone-visionneuse"
+           hx-swap="innerHTML"
+           hx-push-url="/lire/{{ fonds_cote }}/{{ cote }}?fichier={{ loop.index }}"
+           href="/lire/{{ fonds_cote }}/{{ cote }}?fichier={{ loop.index }}"
+           class="flex items-center gap-2 hover:bg-gray-50 cursor-pointer"
+           style="padding:6px 14px;
+                  {% if est_courant %}background:#f3f6fb;{% endif %}">
+        {%- else %}
+        <a href="/item/{{ cote }}?fonds={{ fonds_cote }}&fichier_courant={{ loop.index }}"
+           class="flex items-center gap-2 hover:bg-gray-50"
+           style="padding:6px 14px;
+                  {% if est_courant %}background:#f3f6fb;{% endif %}">
+        {%- endif %}
+          {%- if f.vignette_url %}
+            <img src="{{ f.vignette_url }}"
+                 alt="" loading="lazy"
+                 style="width:36px;height:48px;object-fit:cover;
+                        border:1px solid rgba(0,0,0,0.08);background:#f3f4f6;
+                        flex-shrink:0;">
+          {%- else %}
+            <div style="width:36px;height:48px;background:#f3f4f6;
+                        border:1px solid rgba(0,0,0,0.08);flex-shrink:0;
+                        display:flex;align-items:center;justify-content:center;
+                        font-size:10px;color:#9ca3af;">
+              {{ f.extension or '?' }}
+            </div>
+          {%- endif %}
+          <div class="min-w-0 flex-1">
+            <div style="font-size:12px;color:{% if est_courant %}#1f1f1f{% else %}#374151{% endif %};
+                        font-weight:{% if est_courant %}500{% else %}400{% endif %};
+                        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {{ f.nom_fichier }}
+            </div>
+            <div style="font-size:11px;color:#9ca3af;">
+              {{ f.type_page }} · #{{ f.ordre }}
+            </div>
+          </div>
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+{%- endif %}
+{%- endmacro %}
+
 
 {% macro panneau_fichiers(fichiers, position_courante, cote, fonds_cote) -%}
 <style>
@@ -124,55 +198,7 @@
       </h3>
     </div>
 
-    {%- if not fichiers %}
-      <p class="text-xs text-gray-400 italic" style="padding:4px 14px;">
-        Aucun fichier rattaché.
-      </p>
-    {%- else %}
-      <ul>
-        {% for f in fichiers %}
-          {% if loop.previtem and (f.ordre - loop.previtem.ordre) > 1 %}
-            <li class="text-xs text-gray-400 italic"
-                style="padding:4px 14px;border-top:1px dashed rgba(0,0,0,0.10);
-                       border-bottom:1px dashed rgba(0,0,0,0.10);">
-              ⋯ manque entre {{ loop.previtem.ordre }} et {{ f.ordre }}
-            </li>
-          {% endif %}
-          {% set est_courant = (loop.index == position_courante) %}
-          <li>
-            <a href="/item/{{ cote }}?fonds={{ fonds_cote }}&fichier_courant={{ loop.index }}"
-               class="flex items-center gap-2 hover:bg-gray-50"
-               style="padding:6px 14px;
-                      {% if est_courant %}background:#f3f6fb;{% endif %}">
-              {%- if f.vignette_url %}
-                <img src="{{ f.vignette_url }}"
-                     alt="" loading="lazy"
-                     style="width:36px;height:48px;object-fit:cover;
-                            border:1px solid rgba(0,0,0,0.08);background:#f3f4f6;
-                            flex-shrink:0;">
-              {%- else %}
-                <div style="width:36px;height:48px;background:#f3f4f6;
-                            border:1px solid rgba(0,0,0,0.08);flex-shrink:0;
-                            display:flex;align-items:center;justify-content:center;
-                            font-size:10px;color:#9ca3af;">
-                  {{ f.extension or '?' }}
-                </div>
-              {%- endif %}
-              <div class="min-w-0 flex-1">
-                <div style="font-size:12px;color:{% if est_courant %}#1f1f1f{% else %}#374151{% endif %};
-                            font-weight:{% if est_courant %}500{% else %}400{% endif %};
-                            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  {{ f.nom_fichier }}
-                </div>
-                <div style="font-size:11px;color:#9ca3af;">
-                  {{ f.type_page }} · #{{ f.ordre }}
-                </div>
-              </div>
-            </a>
-          </li>
-        {% endfor %}
-      </ul>
-    {%- endif %}
+    {{ liste_vignettes(fichiers, position_courante, cote, fonds_cote) }}
 
     <div style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);margin-top:8px;">
       <span aria-disabled="true"

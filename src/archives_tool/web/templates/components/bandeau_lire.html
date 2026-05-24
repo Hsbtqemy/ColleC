@@ -1,0 +1,140 @@
+{# bandeau_lire.html — bandeau de la liseuse consultation (Lot 1).
+
+   Différencié visuellement de `bandeau_item.html` (édition) :
+   - chip « Consultation » à côté de la cote (couleur distinctive)
+   - bouton « Cataloguer cet item » à droite pour retour vers l'édition
+   - Pas de bouton Modifier (consultation pure)
+   - Boutons « ← Page / Page → » et « ← Item / Item → » bien séparés
+     pour résoudre la friction principale identifiée par l'utilisateur
+
+   Variables (passées via la macro) :
+   - item : modèle ORM Item
+   - fonds : Fonds parent
+   - fichier_courant_position : int 1-indexé, position du fichier
+     dans l'item (= position_courante)
+   - nb_fichiers : int
+   - navigation : NavigationItem (precedent, suivant)
+   - fichier_precedent_id / fichier_suivant_id : id Fichier ou None
+     pour les boutons Page précédente/suivante. Calculés côté service.
+#}
+
+{% from 'components/badge_etat.html' import badge_etat %}
+
+{% macro bandeau_lire(item, fonds, fichier_courant_position, nb_fichiers, navigation, fichier_precedent_id=None, fichier_suivant_id=None) -%}
+<header id="bandeau-liseuse" class="bandeau-lire mb-5">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/fonds/{{ fonds.cote }}"
+       class="hover:underline font-mono">{{ fonds.cote }}</a> ›
+    <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+       class="hover:underline font-mono">{{ item.cote }}</a> ›
+    <span style="color:#1e40af;">Consultation</span>
+  </p>
+
+  <div class="flex items-start justify-between mt-2 gap-4">
+    <div class="min-w-0">
+      <div class="flex items-baseline gap-3" style="margin-bottom:2px;">
+        <span class="font-mono text-sm text-gray-500">{{ item.cote }}</span>
+        {# Chip distinctif consultation — bleu profond, contraste avec
+           les badges d'état (verts/oranges/etc.) de l'édition. #}
+        <span style="padding:2px 8px;font-size:11px;font-weight:500;
+                     color:#1e40af;background:#dbeafe;border-radius:9999px;
+                     letter-spacing:.02em;">
+          Consultation
+        </span>
+      </div>
+      <h1 class="text-2xl font-medium" style="line-height:1.25;">
+        {{ item.titre or '(sans titre)' }}
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">
+        Page <span class="font-tabular text-gray-700">{{ fichier_courant_position }}</span>
+        / <span class="font-tabular">{{ nb_fichiers }}</span>
+        ·
+        <span>Dans <a href="/fonds/{{ fonds.cote }}"
+                       class="hover:underline">{{ fonds.titre }}</a></span>
+      </p>
+    </div>
+
+    <nav class="flex items-center gap-4 shrink-0" aria-label="Navigation liseuse">
+      {# Bloc Page : navigation entre fichiers de l'item courant #}
+      <div class="flex items-center gap-1" aria-label="Navigation pages">
+        <span class="text-xs text-gray-400 mr-1">Page</span>
+        {% if fichier_precedent_id %}
+          <a hx-get="/lire/{{ fonds.cote }}/{{ item.cote }}/visionneuse/{{ fichier_precedent_id }}"
+             hx-target="#zone-visionneuse"
+             hx-swap="innerHTML"
+             hx-push-url="/lire/{{ fonds.cote }}/{{ item.cote }}?fichier={{ fichier_courant_position - 1 }}"
+             href="/lire/{{ fonds.cote }}/{{ item.cote }}?fichier={{ fichier_courant_position - 1 }}"
+             class="inline-flex items-center rounded hover:bg-gray-50 cursor-pointer"
+             style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+             title="Page précédente">
+            ‹
+          </a>
+        {% else %}
+          <span class="inline-flex items-center rounded cursor-not-allowed"
+                style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+            ‹
+          </span>
+        {% endif %}
+        {% if fichier_suivant_id %}
+          <a hx-get="/lire/{{ fonds.cote }}/{{ item.cote }}/visionneuse/{{ fichier_suivant_id }}"
+             hx-target="#zone-visionneuse"
+             hx-swap="innerHTML"
+             hx-push-url="/lire/{{ fonds.cote }}/{{ item.cote }}?fichier={{ fichier_courant_position + 1 }}"
+             href="/lire/{{ fonds.cote }}/{{ item.cote }}?fichier={{ fichier_courant_position + 1 }}"
+             class="inline-flex items-center rounded hover:bg-gray-50 cursor-pointer"
+             style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+             title="Page suivante">
+            ›
+          </a>
+        {% else %}
+          <span class="inline-flex items-center rounded cursor-not-allowed"
+                style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+            ›
+          </span>
+        {% endif %}
+      </div>
+
+      {# Bloc Item : navigation entre items du fonds, déclenche un
+         reload complet (page item différente) #}
+      <div class="flex items-center gap-1" aria-label="Navigation items">
+        <span class="text-xs text-gray-400 mr-1">Item</span>
+        {% if navigation.precedent %}
+          <a href="/lire/{{ navigation.precedent.fonds_cote }}/{{ navigation.precedent.cote }}"
+             class="inline-flex items-center rounded hover:bg-gray-50"
+             style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+             title="{{ navigation.precedent.titre or navigation.precedent.cote }}">
+            ‹
+          </a>
+        {% else %}
+          <span class="inline-flex items-center rounded cursor-not-allowed"
+                style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+            ‹
+          </span>
+        {% endif %}
+        {% if navigation.suivant %}
+          <a href="/lire/{{ navigation.suivant.fonds_cote }}/{{ navigation.suivant.cote }}"
+             class="inline-flex items-center rounded hover:bg-gray-50"
+             style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+             title="{{ navigation.suivant.titre or navigation.suivant.cote }}">
+            ›
+          </a>
+        {% else %}
+          <span class="inline-flex items-center rounded cursor-not-allowed"
+                style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">
+            ›
+          </span>
+        {% endif %}
+      </div>
+
+      {# Retour vers l'édition #}
+      <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+         class="inline-flex items-center rounded hover:bg-gray-50"
+         style="padding:5px 10px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+         title="Quitter la consultation (Esc)">
+        Cataloguer
+      </a>
+    </nav>
+  </div>
+</header>
+{%- endmacro %}

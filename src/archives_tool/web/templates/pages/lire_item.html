@@ -1,0 +1,82 @@
+{# Liseuse consultation d'un item (Lot 1 V0.9.x).
+
+   Layout 3 colonnes :
+   - Gauche (280px) : cartouche métadonnées (read-only)
+   - Centre (flex-1) : visionneuse OSD ou fallback HTML
+   - Droite (200px) : vignettes des fichiers, cliquables HTMX swap
+
+   Variables :
+   - detail (ItemDetail) : item + fonds + fichiers + collections +
+     metadonnees_par_section + navigation + position_courante
+   - fonds_cote : pour les query strings
+   - fichier_precedent_id / fichier_suivant_id : pour le bandeau
+
+   Les boutons ← Page / Page → / ← Item / Item → sont dans le bandeau.
+   Pas de barre d'édition inline (consultation pure).
+#}
+{% extends "base.html" %}
+{% from 'components/bandeau_lire.html' import bandeau_lire %}
+{% from 'components/cartouche_metadonnees.html' import cartouche_metadonnees %}
+{% from 'components/panneau_fichiers.html' import liste_vignettes %}
+{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+
+{% set item = detail.item %}
+{% set fonds = detail.fonds %}
+{% set f_courant = detail.fichier_courant %}
+
+{% block title %}Consultation — {{ item.titre or item.cote }} — archives-tool{% endblock %}
+
+{% block content %}
+{{ bandeau_lire(item, fonds, detail.position_courante, detail.nb_fichiers,
+                detail.navigation, fichier_precedent_id, fichier_suivant_id) }}
+
+<div class="layout-liseuse flex gap-4"
+     style="height:calc(100vh - 220px);min-height:520px;">
+
+  {# Gauche : cartouche métadonnées. La macro pose `data-editable="0"`
+     sur les lignes sans `editable` — `cartouche_metadonnees` est déjà
+     correctement read-only pour les champs `editable=False`. Pas besoin
+     de variante consultation. #}
+  <div class="zone-meta-liseuse"
+       style="flex:0 0 280px;height:100%;overflow-y:auto;">
+    {{ cartouche_metadonnees(detail.metadonnees_par_section, item.cote) }}
+  </div>
+
+  {# Centre : visionneuse. id="zone-visionneuse" est la cible HTMX
+     pour les swaps depuis le panneau vignettes et les boutons Page. #}
+  <div id="zone-visionneuse"
+       style="flex:1;min-width:0;height:100%;">
+    {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+  </div>
+
+  {# Droite : vignettes en colonne fixe. Variante simple (pas le
+     panneau collapsible/pinned de la page édition) — toujours visible
+     en consultation, c'est l'élément principal de navigation. La
+     macro `liste_vignettes` (partagée avec le panneau édition) rend
+     juste le <ul> ; on encadre nous-mêmes avec un header compact. #}
+  <aside class="zone-vignettes-liseuse"
+         style="flex:0 0 200px;height:100%;background:#fff;
+                border:1px solid rgba(0,0,0,0.08);border-radius:6px;
+                overflow-y:auto;">
+    <div style="padding:12px 14px 6px;">
+      <h3 style="font-size:11px;font-weight:500;color:#9ca3af;
+                 letter-spacing:.04em;text-transform:uppercase;">
+        Fichiers <span class="font-tabular text-gray-700">{{ detail.fichiers|length }}</span>
+      </h3>
+    </div>
+    {# id="liste-vignettes-liseuse" : cible OOB du partial visionneuse
+       pour mettre à jour le highlight `est_courant` quand on swap. #}
+    <div id="liste-vignettes-liseuse">
+      {{ liste_vignettes(detail.fichiers, detail.position_courante,
+                         item.cote, fonds.cote,
+                         mode_consultation=True) }}
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
+  <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
+  {# Pas de inline_edit.js : consultation pure. #}
+{% endblock %}

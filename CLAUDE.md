@@ -442,6 +442,52 @@ si `echantillons` est rempli, filtre aussi `colonnes` pour éviter
 divergence en cas de désynchronisation `colonnes_detectees` vs
 `colonnes_echantillon`.
 
+**Liseuse consultation Lot 1 (2026-05-24)** — page de consultation
+distincte de l'édition, complète (pas refonte). Route
+`/lire/<fonds_cote>/<cote>?fichier=N` rend
+`pages/lire_item.html` avec layout 3 colonnes :
+- gauche (280px) : cartouche métadonnées (read-only)
+- centre (flex-1) : visionneuse OSD (réutilisée) ou fallback HTML
+- droite (200px) : panneau vignettes toujours visible
+
+Bandeau spécifique `bandeau_lire.html` : chip « Consultation » bleu
+distinctif, navigation **Page** (← →) séparée de **Item** (← →) —
+résout la friction principale identifiée par l'utilisateur (avant,
+« Suivant » changeait d'item, pas de fichier). Bouton « Cataloguer »
+pour retour `/item/<cote>?fonds=<f>`.
+
+Navigation HTMX : clic sur vignette ou boutons Page → swap simultané
+de 3 fragments via `hx-swap-oob` :
+- cible principale `#zone-visionneuse` (nouvelle visionneuse)
+- OOB `#bandeau-liseuse` (boutons Page rafraîchis pour le nouveau
+  fichier courant — sans ce 2e swap, les boutons restaient figés
+  après le 1er clic et la navigation cassait)
+- OOB `#liste-vignettes-liseuse` (highlight `est_courant` déplacé)
+
+OSD est ré-instancié manuellement après chaque swap (le partial
+inclut un script qui appelle `OpenSeadragon()` sur les `.visionneuse-osd`
+nouveaux). URL `?fichier=N` mise à jour côté client via `hx-push-url`
+pour permettre le bookmark.
+
+Entry points : bouton « Mode consultation » dans le header global
+(`components/header.html`) actif sur toutes les pages qui passent
+`consultation_url` au contexte — actuellement item, fonds (1er item
+alphabétique), collection (1er item de la 1ère page courante).
+Sur la liseuse elle-même, le bouton header se transforme en chip
+distinctif « Mode consultation actif ».
+
+`liste_vignettes` extraite de `panneau_fichiers.html` comme macro
+publique réutilisable, avec param `mode_consultation=True` qui
+remplace les hrefs reload par `hx-get` vers le partial.
+
+Limites MVP (Lot 1) :
+- PDF / xlsx / autres non-images tombent en fallback « Aucun aperçu
+  disponible » avec bouton Télécharger Nakala (Lot 2 = PDF.js + parser xlsx).
+- Pas de raccourci clavier ← → ni Esc (Lot 3).
+- Pas de loading state pendant le swap OSD (Lot 3).
+- Pas de bascule auto vers l'item suivant en fin de séquence
+  (choix utilisateur : boutons explicites séparés préférés).
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

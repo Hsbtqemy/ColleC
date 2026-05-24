@@ -4,4 +4,23 @@
     <span aria-hidden="true">·</span>
     <span>{{ utilisateur }}</span>
   </div>
+  {# Bouton contextuel « Mode consultation » — actif uniquement si la
+     route a passé `consultation_url`. Sur la liseuse elle-même, la
+     route passe `mode_consultation_actif=True` qui affiche un état
+     visuel distinct (« Mode consultation actif »). #}
+  {% if mode_consultation_actif %}
+    <a href="/"
+       class="inline-flex items-center gap-1.5 rounded"
+       style="padding:4px 12px;font-size:12px;color:#1e40af;background:#dbeafe;
+              border:1px solid #93c5fd;">
+      <span aria-hidden="true">●</span> Mode consultation actif
+    </a>
+  {% elif consultation_url %}
+    <a href="{{ consultation_url }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:4px 12px;font-size:12px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);">
+      Mode consultation
+    </a>
+  {% endif %}
 </header>

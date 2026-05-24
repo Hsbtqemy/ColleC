@@ -1,0 +1,80 @@
+{# Partial HTMX — visionneuse + bandeau + vignettes pour la liseuse.
+
+   Sert à la liseuse consultation : le clic sur une vignette ou les
+   boutons ← Page / Page → swap simultanément :
+   - cible principale : #zone-visionneuse (nouvelle visionneuse)
+   - out-of-band      : #bandeau-liseuse (boutons Page / Item à jour
+     pour pointer sur le nouveau fichier courant)
+   - out-of-band      : #liste-vignettes-liseuse (highlight de la
+     vignette active déplacé sur le nouveau fichier)
+
+   Sans les 2 OOB, les boutons resteraient figés sur leurs cibles
+   initiales et le clic suivant ne ferait rien.
+
+   Variables :
+   - detail (ItemDetail) avec position_courante et fichiers à jour
+   - cote / fonds_cote : pour les hrefs
+   - fichier_precedent_id / fichier_suivant_id : pour les boutons Page
+#}
+{% from 'components/bandeau_lire.html' import bandeau_lire %}
+{% from 'components/panneau_fichiers.html' import liste_vignettes %}
+{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+
+{% set item = detail.item %}
+{% set fonds = detail.fonds %}
+{% set f_courant = detail.fichier_courant %}
+
+{# Bandeau OOB — remplace #bandeau-liseuse pour rafraîchir les
+   boutons Page et le compteur "Page X / N". #}
+<div hx-swap-oob="outerHTML:#bandeau-liseuse">
+  {{ bandeau_lire(item, fonds, detail.position_courante, detail.nb_fichiers,
+                  detail.navigation, fichier_precedent_id, fichier_suivant_id) }}
+</div>
+
+{# Vignettes OOB — remplace #liste-vignettes-liseuse pour déplacer
+   le highlight `est_courant` (background bleu) sur le nouveau fichier. #}
+<div id="liste-vignettes-liseuse" hx-swap-oob="true">
+  {{ liste_vignettes(detail.fichiers, detail.position_courante,
+                     item.cote, fonds.cote,
+                     mode_consultation=True) }}
+</div>
+
+{# Contenu principal : swap dans #zone-visionneuse. #}
+{{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+
+{# Ré-instancier OSD côté JS après swap HTMX. visionneuse_osd.js
+   écoute DOMContentLoaded — qui ne se redéclenche pas sur un swap. #}
+<script>
+  (function () {
+    if (typeof OpenSeadragon === "undefined") return;
+    document.querySelectorAll(".visionneuse-osd[data-source]").forEach(function (viz) {
+      if (viz.dataset.osdReady === "1") return;
+      viz.dataset.osdReady = "1";
+      var data;
+      try { data = JSON.parse(viz.dataset.source); } catch (e) { return; }
+      var primary = data.primary;
+      if (!primary) return;
+      var tileSources = primary.type === "image"
+        ? { type: "image", url: primary.url }
+        : primary.url;
+      var osd = OpenSeadragon({
+        element: viz,
+        tileSources: tileSources,
+        prefixUrl: "/static/js/vendor/openseadragon/images/",
+        showNavigationControl: true,
+        showRotationControl: true,
+        showFullPageControl: true,
+        gestureSettingsMouse: { clickToZoom: false },
+      });
+      osd.addHandler("open-failed", function () {
+        var fb = data.fallback;
+        if (fb) {
+          var fbSrc = fb.type === "image" ? { type: "image", url: fb.url } : fb.url;
+          try { osd.open(fbSrc); return; } catch (e) {}
+        }
+        osd.destroy();
+        viz.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;color:#fff;background:#1a1a1a;border-radius:6px;text-align:center;"><p style="font-size:14px;margin-bottom:14px;max-width:360px;">Impossible d\'afficher l\'aperçu de <strong style="font-family:monospace;">' + data.nom + '</strong>.</p><a href="' + data.telecharger + '" style="padding:6px 14px;font-size:13px;background:#fff;color:#1a1a1a;border-radius:4px;text-decoration:none;">Télécharger</a></div>';
+      });
+    });
+  })();
+</script>

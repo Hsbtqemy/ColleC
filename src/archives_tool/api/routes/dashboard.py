@@ -168,6 +168,21 @@ def page_fonds(
         raise HTTPException(
             status_code=404, detail=f"Fonds {cote!r} introuvable."
         ) from e
+    # Premier item du fonds (cote ASC) pour le bouton « Mode consultation »
+    # du header — entrée naturelle pour parcourir le fonds en mode liseuse.
+    from archives_tool.models import Item
+
+    premier_item_cote = db.scalar(
+        select(Item.cote)
+        .where(Item.fonds_id == detail.fonds.id)
+        .order_by(Item.cote)
+        .limit(1)
+    )
+    consultation_url = (
+        f"/lire/{detail.fonds.cote}/{premier_item_cote}"
+        if premier_item_cote
+        else None
+    )
     return templates.TemplateResponse(
         request,
         "pages/fonds_lecture.html",
@@ -177,6 +192,7 @@ def page_fonds(
             detail=detail,
             roles_options=ROLES_OPTIONS,
             libelles_roles=LIBELLES_ROLE,
+            consultation_url=consultation_url,
         ),
     )
 
@@ -405,6 +421,20 @@ def page_collection(
                 filtres=filtres,
             ),
         )
+    # Premier item de la collection (cote ASC) pour le bouton « Mode
+     # consultation » du header. Transversale : pas de fonds parent
+     # → liseuse pas applicable (la liseuse exige un fonds dans l'URL).
+    consultation_url: str | None = None
+    if collection.fonds_id is not None and listage.items:
+        # On a déjà la 1ère page d'items via `listage` — autant la
+        # réutiliser plutôt qu'une requête de plus.
+        premier = min(listage.items, key=lambda i: i.cote)
+        fonds_obj = db.scalar(
+            select(Fonds.cote).where(Fonds.id == collection.fonds_id)
+        )
+        if fonds_obj:
+            consultation_url = f"/lire/{fonds_obj}/{premier.cote}"
+
     return templates.TemplateResponse(
         request,
         "pages/collection_lecture.html",
@@ -417,6 +447,7 @@ def page_collection(
             fonds_query=fonds,
             filtres=filtres,
             etats_disponibles=list(EtatCatalogage),
+            consultation_url=consultation_url,
         ),
     )
 
@@ -668,6 +699,124 @@ def page_item(
             utilisateur,
             detail=detail,
             fonds_cote=fonds_obj.cote,
+            consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
+        ),
+    )
+
+
+@router.get("/lire/{fonds_cote}/{cote}", response_class=HTMLResponse)
+def page_lire_item(
+    fonds_cote: str,
+    cote: str,
+    request: Request,
+    fichier: int = Query(1, ge=1, description="Position 1-indexée du fichier courant"),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Liseuse consultation d'un item (Lot 1 V0.9.x).
+
+    Layout 3 colonnes : métadonnées (gauche) | visionneuse (centre) |
+    vignettes (droite). Navigation HTMX swap pour changer de fichier
+    sans reload. Navigation reload classique pour changer d'item.
+    """
+    fonds_obj = _charger_fonds_ou_404(db, fonds_cote)
+    try:
+        detail = composer_page_item(
+            db, cote, fonds_obj, fichier_courant_pos=fichier
+        )
+    except ItemIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Item {cote!r} introuvable."
+        ) from e
+
+    # IDs Fichier pour les boutons Page précédente/suivante du bandeau.
+    # Reposent sur la même séquence que le panneau vignettes (ordre
+    # `fichier.ordre` ASC). `position_courante` est 1-indexé.
+    fichiers = detail.fichiers
+    pos = detail.position_courante
+    fichier_precedent_id = fichiers[pos - 2].id if pos > 1 else None
+    fichier_suivant_id = (
+        fichiers[pos].id if pos < len(fichiers) else None
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "pages/lire_item.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            detail=detail,
+            fonds_cote=fonds_obj.cote,
+            fichier_precedent_id=fichier_precedent_id,
+            fichier_suivant_id=fichier_suivant_id,
+            mode_consultation_actif=True,
+        ),
+    )
+
+
+@router.get(
+    "/lire/{fonds_cote}/{cote}/visionneuse/{fichier_id}",
+    response_class=HTMLResponse,
+)
+def page_lire_item_visionneuse_partial(
+    fonds_cote: str,
+    cote: str,
+    fichier_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Partial HTMX : retourne plusieurs fragments à swap simultané :
+    - cible principale : `#zone-visionneuse` (nouvelle visionneuse)
+    - out-of-band `#bandeau-liseuse` (boutons Page ← →, compteur)
+    - out-of-band `#zone-vignettes-liseuse` (highlight de la vignette
+      active)
+
+    Sans ces 3 swaps, les boutons Page restent figés sur leurs cibles
+    initiales et le clic suivant ne fait rien (cas signalé à l'usage).
+
+    Sécurité : vérifie l'appartenance fichier → item → fonds avant
+    rendu (anti-confused-deputy).
+    """
+    fonds_obj = _charger_fonds_ou_404(db, fonds_cote)
+    try:
+        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        raise HTTPException(status_code=404, detail="Item introuvable.") from e
+    fichier = db.get(Fichier, fichier_id)
+    if fichier is None or fichier.item_id != item.id:
+        raise HTTPException(
+            status_code=404,
+            detail="Fichier introuvable dans cet item.",
+        )
+
+    # Position 1-indexée du fichier dans l'ordre courant. Recompose
+    # le detail item pour avoir bandeau + vignettes à jour.
+    fichiers_tries = sorted(item.fichiers, key=lambda f: f.ordre)
+    position = next(
+        (i + 1 for i, f in enumerate(fichiers_tries) if f.id == fichier_id),
+        1,
+    )
+    detail = composer_page_item(db, cote, fonds_obj, fichier_courant_pos=position)
+    fichier_precedent_id = (
+        detail.fichiers[position - 2].id if position > 1 else None
+    )
+    fichier_suivant_id = (
+        detail.fichiers[position].id if position < len(detail.fichiers) else None
+    )
+    return templates.TemplateResponse(
+        request,
+        "partials/_visionneuse_partial.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            detail=detail,
+            cote=cote,
+            fonds_cote=fonds_obj.cote,
+            fichier_precedent_id=fichier_precedent_id,
+            fichier_suivant_id=fichier_suivant_id,
         ),
     )
 

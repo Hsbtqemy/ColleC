@@ -58,10 +58,12 @@
                 formulaire.description) }}
     {{ textarea('description_publique', 'Description publique',
                 formulaire.description_publique,
-                help_text='Destinée aux exports Dublin Core / Nakala.') }}
+                help_text='Destinée aux exports Dublin Core / Nakala.',
+                lignes=10) }}
     {{ textarea('description_interne', 'Description interne',
                 formulaire.description_interne,
-                help_text='Pour l’équipe — non exportée.') }}
+                help_text='Pour l’équipe — non exportée.',
+                lignes=6) }}
   </section>
 
   <section style="margin-bottom:28px;">

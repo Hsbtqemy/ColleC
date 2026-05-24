@@ -134,9 +134,11 @@ def test_analyser_tableur_cas_hierarchie_cote(tmp_path: Path) -> None:
     yml = analyser_tableur(FIXTURES / "cas_hierarchie_cote" / "tableur.csv")
     assert 'cote: "Cote"  # détecté' in yml
     assert 'titre: "Titre"  # détecté' in yml
-    # Colonne "Type" non détectée comme structurante (heuristique
-    # conservatrice, car type_coar attend une URI), reste en metadonnees.
-    assert "metadonnees.type:" in yml
+    # Colonne "Type" détectée comme type_coar (Trou #2 V0.9.2-import).
+    # La valeur textuelle (`journal`, `périodique`, …) sera convertie
+    # en URI COAR canonique au moment de l'import par
+    # `vocabulaires.normaliser_type_coar`.
+    assert 'type_coar: "Type"  # détecté' in yml
     assert "metadonnees.serie_visible:" in yml
 
 

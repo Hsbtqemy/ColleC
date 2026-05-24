@@ -864,6 +864,52 @@ def test_page_item_lecture_layout_trois_zones(client_demo: TestClient) -> None:
     assert "visionneuse_osd.js" in response.text
 
 
+def test_page_item_visionneuse_telecharger_url_nakala_pour_fichier_nakala_only(
+    db_demo_factory, client_demo: TestClient
+) -> None:
+    """Trou #1 V0.9.2-import (post-Nakala IIIF) : pour un Fichier
+    Nakala-only (sans `chemin_relatif`), le bouton « Télécharger »
+    du fallback OSD doit pointer sur l'URL Nakala `data` directe,
+    pas sur la route locale `/item/.../fichiers/<id>` (qui retournerait
+    404 puisque pas de fichier sur disque)."""
+    from sqlalchemy import select
+
+    from archives_tool.models import Fichier, Item
+
+    # Ajoute un Fichier Nakala-only sur un item démo, position 99.
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="numero_special.pdf",
+            ordre=99,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/abc",
+        )
+        db.add(f)
+        db.commit()
+        fid = f.id
+
+    try:
+        response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=99")
+        assert response.status_code == 200
+        # Le href dans le data-source (JSON sérialisé) ou dans le
+        # fallback message contient l'URL Nakala directe.
+        assert "https://api.nakala.fr/data/10.1/x/abc" in response.text
+        # Anti-régression : le href ne pointe PAS sur la route locale
+        # pour ce fichier (qui retournerait 404 — pas de fichier disque).
+        assert f'"/item/HK-001/fichiers/{fid}?fonds=HK"' not in response.text
+    finally:
+        # Cleanup pour ne pas polluer les autres tests qui partagent
+        # la base demo.
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
 def test_page_item_lecture_cartouche_sections(client_demo: TestClient) -> None:
     """Les 4 sections du cartouche sont présentes (`<details>` repliable)."""
     response = client_demo.get("/item/HK-001?fonds=HK")

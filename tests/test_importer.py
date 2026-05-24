@@ -784,6 +784,49 @@ def test_promotion_url_promeut_iiif_info_json_si_nakala(session: Session) -> Non
     assert "/full/" not in f0.iiif_url_nakala  # plus le suffixe image
 
 
+def test_type_coar_auto_normalise_libelle_textuel(session: Session) -> None:
+    """Trou #2 V0.9.2-import : la colonne `Type` détectée par
+    heuristique va en `type_coar` (Item dédié), et la valeur textuelle
+    (`journal`, `périodique`, …) est convertie en URI COAR canonique
+    via `vocabulaires.normaliser_type_coar`. Sans cette normalisation,
+    `item.type_coar = "journal"` brut — non-exportable proprement et
+    non reconnu par le sélecteur d'édition inline."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    # Ajoute un mapping `type_coar` ← une colonne du tableur. Comme la
+    # fixture n'a pas de colonne « Type » directement, on détourne
+    # `titre` (qui contient "Numero 1" / "Numero 2") — pas une valeur
+    # COAR reconnue → l'assertion testera le cas « non reconnu, garde
+    # la valeur brute ». Puis on bascule sur valeurs reconnues via
+    # `valeurs_par_defaut`.
+    profil.valeurs_par_defaut = {"type_coar": "journal"}
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    items = sorted(fonds.items, key=lambda i: i.cote)
+    # `journal` → URI COAR Périodique (c_3e5a).
+    for item in items:
+        assert item.type_coar == "http://purl.org/coar/resource_type/c_3e5a"
+
+
+def test_type_coar_libelle_inconnu_garde_brut(session: Session) -> None:
+    """Si la valeur du tableur n'est pas un alias COAR reconnu, on
+    garde le texte brut sur `item.type_coar` — l'utilisateur peut
+    éditer via inline sans perdre l'information d'origine."""
+    profil, chemin = _profil("cas_fichier_colonnes")
+    profil.valeurs_par_defaut = {"type_coar": "publication exotique"}
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    item0 = sorted(fonds.items, key=lambda i: i.cote)[0]
+    assert item0.type_coar == "publication exotique"
+
+
 def test_promotion_url_dedup_deterministe(session: Session) -> None:
     """Trou #8 V0.9.2-import : la promotion d'URL est déterministe (ordre
     figé dans `_SLUGS_URL_PROMUS_SOURCE`). Conséquence : deux passes

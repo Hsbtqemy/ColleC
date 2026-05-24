@@ -62,6 +62,104 @@ OPTIONS_PAR_CHAMP: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+#: Mapping libellé/alias textuel → URI COAR. Utilisé à l'import pour
+#: convertir automatiquement les valeurs textuelles (`journal`,
+#: `périodique`, `revue`…) en URI canonique. Sans cette table, un
+#: tableur avec une colonne `Type=journal` mappée à `type_coar`
+#: stockerait `"journal"` brut — pas exportable proprement en
+#: `dc:type` URI, et invisible au sélecteur d'édition inline (qui
+#: pré-remplit selon la valeur stockée vs URI).
+#:
+#: Les clés sont normalisées (lower + strip + sans accents) avant
+#: lookup dans `_normaliser_type_coar`.
+_C = "http://purl.org/coar/resource_type"
+_ALIAS_VERS_COAR: dict[str, str] = {
+    # Périodique (c_3e5a) et numéro de périodique (c_0640) — alias
+    # fr / en / variants. `journal` est ambigu (français : quotidien
+    # OU livre de bord ; anglais : revue scientifique) mais la
+    # dénomination la plus fréquente sur Nakala = périodique.
+    "journal": f"{_C}/c_3e5a",
+    "periodique": f"{_C}/c_3e5a",
+    "revue": f"{_C}/c_3e5a",
+    "magazine": f"{_C}/c_3e5a",
+    "periodical": f"{_C}/c_3e5a",
+    "newspaper": f"{_C}/c_3e5a",
+    "quotidien": f"{_C}/c_3e5a",
+    "numero": f"{_C}/c_0640",
+    "numero de periodique": f"{_C}/c_0640",
+    "issue": f"{_C}/c_0640",
+    "journal issue": f"{_C}/c_0640",
+    # Article (c_6501)
+    "article": f"{_C}/c_6501",
+    "article de revue": f"{_C}/c_6501",
+    "journal article": f"{_C}/c_6501",
+    # Livre (c_2f33) / chapitre (c_3248)
+    "livre": f"{_C}/c_2f33",
+    "book": f"{_C}/c_2f33",
+    "ouvrage": f"{_C}/c_2f33",
+    "monographie": f"{_C}/c_2f33",
+    "chapitre": f"{_C}/c_3248",
+    "chapter": f"{_C}/c_3248",
+    "chapitre de livre": f"{_C}/c_3248",
+    "book chapter": f"{_C}/c_3248",
+    # Texte générique (c_18cf)
+    "texte": f"{_C}/c_18cf",
+    "text": f"{_C}/c_18cf",
+    # Manuscrit / archives / photo / carte
+    "manuscrit": f"{_C}/c_8a7e",
+    "manuscript": f"{_C}/c_8a7e",
+    "archives": f"{_C}/c_18co",
+    "document d'archives": f"{_C}/c_18co",
+    "archival material": f"{_C}/c_18co",
+    "image": f"{_C}/c_c513",
+    "photographie": f"{_C}/c_18cd",
+    "photo": f"{_C}/c_18cd",
+    "photograph": f"{_C}/c_18cd",
+    "carte": f"{_C}/c_ecc8",
+    "map": f"{_C}/c_ecc8",
+    # Multimedia
+    "video": f"{_C}/c_12cd",
+    "son": f"{_C}/c_18cc",
+    "audio": f"{_C}/c_18cc",
+    "enregistrement sonore": f"{_C}/c_18cc",
+    "sound recording": f"{_C}/c_18cc",
+    "partition": f"{_C}/c_18cw",
+    "partition musicale": f"{_C}/c_18cw",
+    "musical score": f"{_C}/c_18cw",
+}
+
+
+def _normaliser_texte(s: str) -> str:
+    """Lowercase + strip + sans accents combinés (NFD → drop diacritiques
+    → NFC). Identique à la slugification mais sans collapse des espaces
+    — on garde « numero de periodique » comme une seule clé reconnue."""
+    import unicodedata
+
+    nfd = unicodedata.normalize("NFD", s.lower().strip())
+    return "".join(c for c in nfd if not unicodedata.combining(c))
+
+
+def normaliser_type_coar(valeur: object) -> str | None:
+    """Convertit un libellé textuel (`journal`, `périodique`, `numéro`,
+    …) en URI COAR canonique via :data:`_ALIAS_VERS_COAR`.
+
+    Retourne `None` si :
+    - la valeur est vide ou non-str ;
+    - la valeur est déjà une URI COAR (déjà canonique, pas besoin
+      de re-mapper) ;
+    - le libellé n'est pas dans la table d'alias (l'import garde
+      alors la valeur brute, l'utilisateur peut éditer via inline).
+    """
+    if not isinstance(valeur, str):
+        return None
+    brut = valeur.strip()
+    if not brut:
+        return None
+    if brut.startswith("http://purl.org/coar/"):
+        return None  # déjà canonique
+    return _ALIAS_VERS_COAR.get(_normaliser_texte(brut))
+
+
 def libelle_pour_valeur(
     valeur: object,
     options: tuple[tuple[str, str], ...] | None,

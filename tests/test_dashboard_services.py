@@ -967,6 +967,126 @@ def test_metadonnees_par_section_clef_libre_ne_shadow_pas_identification(
     assert cles_libres == {"vrai_libre"}
 
 
+def test_url_telechargement_externe_fichier_local_est_none() -> None:
+    """Un Fichier avec chemin local : pas d'URL externe — le caller
+    (template visionneuse) utilise la route locale qui sert le binaire
+    depuis la racine configurée."""
+    from archives_tool.api.services.dashboard import _url_telechargement_externe
+    from archives_tool.models import Fichier
+
+    f = Fichier(
+        item_id=1,
+        racine="scans",
+        chemin_relatif="hk/n001.jpg",
+        nom_fichier="n001.jpg",
+        ordre=1,
+        iiif_url_nakala=None,
+    )
+    assert _url_telechargement_externe(f) is None
+
+
+def test_url_telechargement_externe_reconstruit_data_depuis_iiif_nakala() -> None:
+    """Un Fichier Nakala-only avec `iiif_url_nakala` Nakala : on
+    reconstruit `/data/<doi>/<sha>` pour le bouton Télécharger
+    (l'info.json contient le manifest IIIF, pas le binaire)."""
+    from archives_tool.api.services.dashboard import _url_telechargement_externe
+    from archives_tool.models import Fichier
+
+    f = Fichier(
+        item_id=1,
+        racine=None,
+        chemin_relatif=None,
+        nom_fichier="scan.jpg",
+        ordre=1,
+        iiif_url_nakala="https://api.nakala.fr/iiif/10.1/x/abc/info.json",
+    )
+    assert _url_telechargement_externe(f) == "https://api.nakala.fr/data/10.1/x/abc"
+
+
+def test_url_telechargement_externe_non_image_garde_data_url() -> None:
+    """Un Fichier Nakala-only non-image : `iiif_url_nakala` contient
+    déjà `/data/<doi>/<sha>` brut (la garde extension a évité la
+    normalisation à l'import). On le retourne tel quel."""
+    from archives_tool.api.services.dashboard import _url_telechargement_externe
+    from archives_tool.models import Fichier
+
+    f = Fichier(
+        item_id=1,
+        racine=None,
+        chemin_relatif=None,
+        nom_fichier="numero.pdf",
+        ordre=1,
+        iiif_url_nakala="https://api.nakala.fr/data/10.1/x/abc",
+    )
+    assert _url_telechargement_externe(f) == "https://api.nakala.fr/data/10.1/x/abc"
+
+
+def test_url_telechargement_externe_fallback_metadonnees_data_url() -> None:
+    """Si pas d'iiif_url_nakala mais `metadonnees.data_url` existe
+    (cas exotique : un Fichier qui aurait perdu son URL primaire
+    mais conservé la trace dans le JSON libre), on fallback dessus."""
+    from archives_tool.api.services.dashboard import _url_telechargement_externe
+    from archives_tool.models import Fichier
+
+    # On contourne le CHECK SQL en passant par un objet ORM non
+    # persisté — le test vérifie juste la logique de résolution.
+    f = Fichier(
+        item_id=1,
+        racine=None,
+        chemin_relatif=None,
+        nom_fichier="x.pdf",
+        ordre=1,
+        iiif_url_nakala=None,
+        metadonnees={"data_url": "https://api.nakala.fr/data/10.1/x/abc"},
+    )
+    assert _url_telechargement_externe(f) == "https://api.nakala.fr/data/10.1/x/abc"
+
+
+def test_url_telechargement_externe_propagee_dans_fichier_resume(
+    session_demo: Session,
+) -> None:
+    """Bout en bout : un Fichier Nakala-only persisté en base produit
+    un `FichierResume.url_telechargement_externe` correctement rempli
+    via `_resume_fichier`. Le template Jinja peut alors poser le bon
+    href de téléchargement dans le fallback OSD."""
+    from archives_tool.api.services.dashboard import _resume_fichier
+    from archives_tool.models import Fichier
+
+    # Pas besoin de persister — _resume_fichier travaille sur l'objet
+    # ORM en mémoire.
+    f = Fichier(
+        id=999,
+        item_id=1,
+        racine=None,
+        chemin_relatif=None,
+        nom_fichier="numero_2.pdf",
+        ordre=1,
+        iiif_url_nakala="https://api.nakala.fr/data/10.34847/nkl.x/abc",
+    )
+    resume = _resume_fichier(f)
+    assert resume.url_telechargement_externe == (
+        "https://api.nakala.fr/data/10.34847/nkl.x/abc"
+    )
+
+
+def test_url_telechargement_externe_url_non_nakala_gardee_telle_quelle() -> None:
+    """Si `iiif_url_nakala` pointe ailleurs que Nakala (cas rare :
+    URL externe arbitraire utilisée comme source IIIF), on la garde
+    telle quelle — au moins l'utilisateur a un lien fonctionnel."""
+    from archives_tool.api.services.dashboard import _url_telechargement_externe
+    from archives_tool.models import Fichier
+
+    f = Fichier(
+        item_id=1,
+        racine=None,
+        chemin_relatif=None,
+        nom_fichier="x.jpg",
+        ordre=1,
+        iiif_url_nakala="https://example.com/iiif/abc/info.json",
+    )
+    assert _url_telechargement_externe(f) == "https://example.com/iiif/abc/info.json"
+
+
 def test_libelle_depuis_cle_acronymes_majuscules(session_demo: Session) -> None:
     """Trou #3 V0.9.2-import : `doi`, `iiif`, `url`, etc. restent en
     MAJUSCULES dans les libellés synthétisés. `doi_collection` →

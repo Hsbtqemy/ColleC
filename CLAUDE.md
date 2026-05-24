@@ -347,6 +347,47 @@ proprement le fallback HTML « Télécharger »). Sans cette garde, un
 PDF se serait vu attribuer un `iiif_url_nakala` pointant sur un
 `/iiif/.../info.json` qui retourne 404.
 
+Les helpers Nakala sont centralisés dans
+[`files/nakala.py`](src/archives_tool/files/nakala.py) :
+`vers_iiif_info_json` (utilisé à l'import) et `vers_data` (utilisé
+à l'affichage pour reconstruire l'URL de téléchargement direct
+depuis une URL IIIF info.json — cf. ci-dessous).
+
+**Téléchargement direct Nakala depuis la visionneuse (2026-05-24)** —
+`api/services/dashboard.py::_url_telechargement_externe` calcule
+l'URL de téléchargement à présenter dans le fallback HTML d'OSD
+(« Télécharger ... ») pour les Fichier Nakala-only. Sans ce calcul,
+le bouton pointait sur la route locale `/item/.../fichiers/<id>`
+qui retournait 404 (pas de fichier sur disque). Maintenant : pour
+un Fichier Nakala-only dont `iiif_url_nakala` pointe sur Nakala,
+reconstruit `/data/<doi>/<sha>` (téléchargement binaire). Pour les
+Fichier avec chemin local, retourne `None` — le caller utilise la
+route locale. Exposé via `FichierResume.url_telechargement_externe`
+consommé par `components/visionneuse_osd.html`.
+
+**Type COAR auto (2026-05-24)** — `api/services/vocabulaires.py`
+expose `normaliser_type_coar` qui convertit les libellés textuels
+(`journal`, `périodique`, `numéro`, `book`, `chapter`, `photo`,
+`map`, `audio`, …) en URI COAR canonique (`http://purl.org/coar/
+resource_type/c_XXXX`). Couvre fr + en + variantes communes. Sans
+accents (NFD + drop diacritiques) avant lookup.
+
+Heuristique nominative ajoutée dans `profils.generateur._HEURISTIQUES` :
+`^type$|^type_coar$|^type_document$|^doctype$` → `type_coar`. La
+colonne `Type` d'un export DC/Nakala est désormais reconnue
+automatiquement (Trou #2 V0.9.2-import). Ambiguité `Type` →
+`type_coar` (Item) vs `type_page` (Fichier) résolue en faveur du
+premier (cas dominant sur exports DC). L'utilisateur peut remapper
+en mode avancé si le tableur décrit en vrai des types de page.
+
+Application au moment de l'écriture dans
+`importers/ecrivain.py::_construire_formulaire_item` : la valeur
+brute est convertie via `normaliser_type_coar` ; si pas dans la
+table d'alias, la valeur originale est conservée (l'utilisateur
+édite via inline). Sur PF : `Type=journal` → `type_coar =
+http://purl.org/coar/resource_type/c_3e5a` (Périodique) sur les
+173 items.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

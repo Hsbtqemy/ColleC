@@ -70,6 +70,18 @@ _HEURISTIQUES: list[tuple[re.Pattern[str], str]] = [
         ),
         "description",
     ),
+    # `^type$` est ambigu : peut désigner `type_coar` (catégorie
+    # documentaire, niveau item) OU `type_page` (couverture/planche,
+    # niveau fichier). On défaut sur `type_coar` car c'est le cas
+    # dominant dans les exports DC/Nakala. Si le tableur décrit en
+    # vrai des types de page, l'utilisateur remappe en mode avancé.
+    (
+        re.compile(
+            r"^type$|^type_coar$|^type_document$|^doctype$",
+            re.IGNORECASE,
+        ),
+        "type_coar",
+    ),
     # Identifiant DOI sur l'item. Le cas spécial "doi" + "nakala" dans
     # `_detecter_champ_structurant` reste pour les composés (`doi nakala
     # item`, ...). Ici on capture les noms courts usuels.

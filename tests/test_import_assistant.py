@@ -1142,10 +1142,9 @@ def test_construire_mapping_simple_heuristiques_promeut_dc_dedies() -> None:
     assert mapping["doi_nakala"] == "doi"
     assert mapping["doi_collection_nakala"] == "doi_collection"
     assert mapping["langue"] == "langue"
-    # « type » ne matche aucune heuristique → fallback metadonnees.type.
-    # (le mapping vers `type_coar` n'est exposé que via _detecter_champ_structurant
-    # pour le cas COAR explicite. Pas de regex sur `^type$`.)
-    assert mapping["metadonnees.type"] == "type"
+    # « type » est promue en `type_coar` via la nouvelle heuristique
+    # (Trou #2 V0.9.2-import) — `^type$|^type_coar$|^type_document$|^doctype$`.
+    assert mapping["type_coar"] == "type"
     # DC canoniques.
     assert mapping["metadonnees.auteur"] == "auteur"
     assert mapping["metadonnees.editeur"] == "editeur"
@@ -1300,6 +1299,31 @@ def test_apercu_repartition_simple_sans_suggestions_complet() -> None:
     assert apercu.promues_dediees == []
     assert apercu.libres_item == ["a"]
     assert apercu.libres_fichier == ["b"]
+
+
+def test_construire_mapping_simple_promeut_type_coar() -> None:
+    """Trou #2 V0.9.2-import : une colonne `Type` est désormais promue
+    en `type_coar` (Item dédié) via la nouvelle heuristique. Avant ce
+    fix, `Type=journal` tombait silencieusement en `metadonnees.type`
+    sans conversion vers URI COAR canonique."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        colonnes_detectees=["Cote", "Type", "doctype"],
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "Type": {"classif": "par-item"},
+            "doctype": {"classif": "par-item"},
+        },
+    )
+    mapping = construire_mapping_depuis_simple(session, colonne_cote="Cote")
+    assert mapping["type_coar"] == "Type"
+    # La deuxième colonne avec slug type_coar-compatible tombe en slug
+    # (un seul champ dédié possible — celle-ci passe en libre).
+    assert "metadonnees.doctype" in mapping
 
 
 def test_construire_mapping_simple_heuristique_dedup_inter_colonne() -> None:

@@ -1092,6 +1092,12 @@ class FichierResume:
     hauteur_px: int | None
     format: str | None
     source_image: SourceImage
+    #: URL externe de téléchargement si le Fichier n'a pas de chemin
+    #: local (cas typique : Fichier Nakala-only). `None` si on doit
+    #: passer par la route locale `/item/<cote>/fichiers/<id>` — c.-à-d.
+    #: dès qu'on a un fichier disque (la route locale sert le binaire
+    #: depuis la racine configurée).
+    url_telechargement_externe: str | None = None
 
     @property
     def dimensions(self) -> str | None:
@@ -1205,7 +1211,45 @@ def _resume_fichier(f: Fichier) -> FichierResume:
         hauteur_px=f.hauteur_px,
         format=f.format,
         source_image=resoudre_source_image(f),
+        url_telechargement_externe=_url_telechargement_externe(f),
     )
+
+
+def _url_telechargement_externe(fichier: Fichier) -> str | None:
+    """URL de téléchargement externe pour un Fichier Nakala-only.
+
+    Si le Fichier a un chemin local (`chemin_relatif`), on retourne
+    `None` — le caller utilisera la route locale qui sert le binaire
+    depuis la racine configurée.
+
+    Sinon (Fichier Nakala-only), on cherche une URL de téléchargement
+    direct :
+    - `iiif_url_nakala` qui pointe sur Nakala : on reconstruit l'URL
+      `/data/<doi>/<sha>` (qui sert le binaire — l'`info.json` ne
+      sert qu'à OSD et ne contient pas la donnée).
+    - `iiif_url_nakala` qui pointe ailleurs : on l'utilise telle quelle.
+    - `metadonnees.data_url` (cas non-image où le data brut a été
+      conservé tel quel) : fallback de dernière chance.
+    - Sinon `None` — le viewer affichera la route locale qui retournera
+      404 (cas dégradé, signalé à l'utilisateur).
+    """
+    from archives_tool.files.nakala import vers_data
+
+    if fichier.chemin_relatif:
+        return None
+    iiif = fichier.iiif_url_nakala
+    if iiif:
+        data = vers_data(iiif)
+        if data is not None:
+            return data
+        # URL externe non-Nakala — on garde tel quel (au moins
+        # l'utilisateur a un lien fonctionnel).
+        return iiif
+    meta = fichier.metadonnees or {}
+    raw = meta.get("data_url")
+    if isinstance(raw, str) and raw.strip().startswith(("http://", "https://")):
+        return raw.strip()
+    return None
 
 
 _LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (

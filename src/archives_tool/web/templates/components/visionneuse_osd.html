@@ -20,8 +20,10 @@
   </div>
 {%- elif not fichier.source_image.primary %}
   {# Aucune source utilisable (chemin local + Nakala absents) — fallback
-     vers le binaire direct, qui peut servir un PNG/JPG natif. #}
-  {% set src_brut = '/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote %}
+     vers le binaire direct, qui peut servir un PNG/JPG natif.
+     `url_telechargement_externe` prend la priorité pour les Fichier
+     Nakala-only (sinon la route locale retourne 404). #}
+  {% set src_brut = fichier.url_telechargement_externe or ('/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote) %}
   <div class="flex flex-col items-center justify-center h-full bg-gray-50 rounded-lg"
        style="border:1px solid rgba(0,0,0,0.08);padding:24px;">
     <p class="text-sm text-gray-600 text-center" style="max-width:360px;">
@@ -40,7 +42,7 @@
     </a>
   </div>
 {%- else %}
-  {% set src_brut = '/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote %}
+  {% set src_brut = fichier.url_telechargement_externe or ('/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote) %}
   <div id="visionneuse-{{ fichier.id }}"
        class="visionneuse-osd"
        style="width:100%;height:100%;background:#1a1a1a;border-radius:6px;"

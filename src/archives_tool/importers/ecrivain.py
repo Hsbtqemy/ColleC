@@ -514,9 +514,72 @@ _SLUGS_URL_PROMUS_SOURCE: tuple[str, ...] = (
 )
 
 
+#: URL Nakala reconnue (data, embed ou IIIF image) — capture le
+#: hostname (préservé pour `api-test.nakala.fr` etc.), le DOI
+#: (2 segments) et le SHA pour reconstruire l'URL IIIF info.json.
+#: Nakala expose un IIIF Image API niveau 2 v3 sur `/iiif/<doi>/<sha>/`
+#: avec CORS — donc OpenSeadragon peut afficher les scans en streaming
+#: progressif (zoom natif, pas de download local du JPEG complet).
+#:
+#: Garde stricte sur le hostname : exige `<sub>.nakala.fr` (sous-domaine
+#: alphanumérique simple) — empêche un faux positif sur
+#: `evil-nakala.fr` qui serait promu vers `api.nakala.fr/iiif/...`
+#: (mauvais service + perte de l'origine de la donnée).
+_PATTERN_URL_NAKALA = re.compile(
+    r"^(?P<scheme>https?)://(?P<host>[a-z0-9][a-z0-9-]*\.nakala\.fr)"
+    r"/(?:data|embed|iiif)/(?P<doi>[^/]+/[^/]+)/(?P<sha>[a-f0-9]+)",
+    re.IGNORECASE,
+)
+
+
+#: Extensions de fichier dont Nakala expose une dérivée IIIF Image API.
+#: Hors de cette liste, la normalisation `data` → `iiif/info.json`
+#: produirait une URL en 404 (PDF binaire, vidéo, archive…). Mieux
+#: vaut alors garder l'URL data brute — le viewer OSD échouera en
+#: fallback HTML « Télécharger » et l'utilisateur voit l'origine
+#: exacte de la donnée plutôt qu'une URL IIIF trompeuse.
+_EXTENSIONS_IMAGE_IIIF: frozenset[str] = frozenset(
+    {"jpg", "jpeg", "png", "tif", "tiff", "gif", "webp", "bmp", "jp2"}
+)
+
+
+def _est_extension_image_iiif(nom_fichier: str | None) -> bool:
+    """True si le nom de fichier a une extension d'image que Nakala
+    sert via IIIF Image API. Bénéfice du doute (True) si pas de nom
+    ou pas d'extension — laisse la normalisation tenter sa chance."""
+    if not nom_fichier or "." not in nom_fichier:
+        return True
+    ext = nom_fichier.rsplit(".", 1)[-1].lower()
+    return ext in _EXTENSIONS_IMAGE_IIIF
+
+
+def _normaliser_url_nakala_vers_iiif(url: str) -> str:
+    """Transforme une URL Nakala data/embed/iiif-image en URL IIIF
+    info.json. Retourne `url` inchangée si pas un pattern Nakala
+    reconnu.
+
+    `https://api.nakala.fr/data/<doi>/<sha>` →
+        `https://api.nakala.fr/iiif/<doi>/<sha>/info.json`
+    `https://api.nakala.fr/iiif/<doi>/<sha>/full/!200,200/0/default.jpg`
+    (thumb) → idem (on extrait juste la base `(doi, sha)`).
+
+    Préserve le hostname d'origine : `api-test.nakala.fr/data/...` →
+    `api-test.nakala.fr/iiif/.../info.json`. Indispensable pour les
+    environnements de test ou les miroirs Nakala.
+
+    Sans cette normalisation, Bug A promouvait une URL de download
+    binaire en `iiif_url_nakala`, ce que la visionneuse OSD tentait
+    d'ouvrir comme info.json → 404 → fallback HTML systématique.
+    """
+    m = _PATTERN_URL_NAKALA.match(url)
+    if m is None:
+        return url
+    return f"{m['scheme']}://{m['host']}/iiif/{m['doi']}/{m['sha']}/info.json"
+
+
 def _promouvoir_url_source(meta: dict[str, Any]) -> tuple[str, str] | None:
     """Cherche une URL plausible dans `meta` pour servir de source
-    primaire au Fichier. Retourne `(url, slug_source)` du premier
+    primaire au Fichier. Retourne `(url_brute, slug_source)` du premier
     candidat selon l'ordre de :data:`_SLUGS_URL_PROMUS_SOURCE`, ou
     `None` si rien.
 
@@ -526,6 +589,11 @@ def _promouvoir_url_source(meta: dict[str, Any]) -> tuple[str, str] | None:
     libre) promouvrait silencieusement un commentaire en
     `iiif_url_nakala` — l'utilisateur verrait un Fichier avec une
     source absurde, sans signal d'alerte.
+
+    L'URL retournée est BRUTE — la normalisation Nakala vers IIIF
+    info.json est appliquée par le caller selon l'extension du fichier
+    (cf. `_fichier_depuis_colonnes`). Sinon un PDF Nakala se
+    verrait transformé en URL `info.json` qui retournerait 404.
 
     Le slug retourné sert au warning informatif agrégé dans
     `_warnings_promotion_url` (Trou #1 V0.9.2-import).
@@ -575,7 +643,16 @@ def _fichier_depuis_colonnes(
     if iiif_url is None and meta:
         promotion = _promouvoir_url_source(meta)
         if promotion is not None:
-            iiif_url, url_promue_depuis = promotion
+            url_brute, url_promue_depuis = promotion
+            # Normalisation Nakala → IIIF info.json uniquement si
+            # l'extension du nom de fichier est une image (Nakala
+            # n'expose IIIF que pour les images). Pour PDF/vidéo/etc.
+            # on garde l'URL data brute — l'utilisateur voit l'origine
+            # exacte et le viewer OSD fait fallback HTML.
+            if _est_extension_image_iiif(str(nom)):
+                iiif_url = _normaliser_url_nakala_vers_iiif(url_brute)
+            else:
+                iiif_url = url_brute
     return FichierPrepare(
         nom_fichier=str(nom),
         ordre=ordre,

@@ -321,6 +321,32 @@ Validation manuelle : `scripts/reimport_pf.py` (re-import via service
 direct sans UI) — 173 items, 7454 Fichier, 11 champs promus DC, ~11
 clés libres en metadonnees affichées sur la page item.
 
+**Normalisation IIIF Nakala (suivi Bug A, 2026-05-24)** —
+`importers/ecrivain.py::_normaliser_url_nakala_vers_iiif` détecte
+les URLs Nakala (`data_url`, `embed_url`, ou URL IIIF image type
+`/iiif/<doi>/<sha>/full/.../default.jpg`) et les transforme en URL
+IIIF info.json (`/iiif/<doi>/<sha>/info.json`). Sans ce normaliseur,
+Bug A promouvait l'URL de download binaire en `iiif_url_nakala`, ce
+que OpenSeadragon tentait d'ouvrir comme info.json → 404 systématique
+→ fallback HTML pour chaque scan. Maintenant le viewer charge depuis
+Nakala en streaming progressif (IIIF Image API v3 niveau 2 avec CORS),
+zoom natif, aucun download local au-delà des tuiles visibles.
+
+Garde stricte sur le hostname : `<sub>.nakala.fr` (alphanumérique +
+`-`), préserve le hostname d'origine dans la cible (`api-test.nakala.fr`
+reste `api-test.nakala.fr`, pas redirigé vers `api.nakala.fr`).
+Empêche un faux positif sur `evil-nakala.fr` qui aurait été promu
+vers la mauvaise origine.
+
+Garde sur l'extension du fichier : Nakala ne sert IIIF Image API que
+pour les images (`jpg`/`png`/`tif`/`webp`/`jp2`/etc.). Pour les PDF,
+vidéos, archives ou autres non-images, `_est_extension_image_iiif`
+filtre — on garde l'URL `data` brute (qui ne donne pas de viewer
+fonctionnel, mais reflète l'origine exacte de la donnée et déclenche
+proprement le fallback HTML « Télécharger »). Sans cette garde, un
+PDF se serait vu attribuer un `iiif_url_nakala` pointant sur un
+`/iiif/.../info.json` qui retourne 404.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

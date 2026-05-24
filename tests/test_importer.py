@@ -412,11 +412,15 @@ def test_promotion_url_metadonnees_si_iiif_absent(session: Session) -> None:
     fichiers_tries = sorted(pfc1.fichiers, key=lambda f: f.nom_fichier)
     f0 = fichiers_tries[0]
     # L'URL embed_url a été promue en iiif_url_nakala (la fichier est
-    # visible dans la viewer + CHECK satisfait).
+    # visible dans la viewer + CHECK satisfait). La normalisation
+    # Nakala-aware transforme l'URL `full/full/0/default.jpg` en
+    # URL IIIF info.json (le viewer OSD pourra l'ouvrir en streaming
+    # progressif).
     assert f0.iiif_url_nakala is not None
-    assert f0.iiif_url_nakala.endswith("abc111/full/full/0/default.jpg")
-    # Et elle reste dans metadonnees (l'utilisateur peut basculer en
-    # mode avancé pour la remapper proprement sans perte de donnée).
+    assert f0.iiif_url_nakala.endswith("abc111/info.json")
+    # Et l'URL originale (avant normalisation) reste dans metadonnees
+    # (l'utilisateur peut basculer en mode avancé pour la remapper
+    # proprement sans perte de donnée).
     assert f0.metadonnees == {
         "embed_url": (
             "https://api.nakala.fr/iiif/10.34847/nkl.x/"
@@ -484,7 +488,12 @@ def test_promotion_url_choisit_iiif_avant_data_url(session: Session) -> None:
     # `iiif` est en tête de _SLUGS_URL_PROMUS_SOURCE → choisi en
     # priorité quel que soit l'ordre d'apparition dans le mapping.
     assert "iiif" in f0.metadonnees
-    assert f0.metadonnees["iiif"] == f0.iiif_url_nakala
+    # L'URL Nakala est normalisée vers info.json — l'URL originale
+    # reste intacte dans metadonnees, mais iiif_url_nakala est la
+    # version IIIF Image API que le viewer OSD comprend.
+    assert f0.iiif_url_nakala.endswith("/info.json")
+    assert "abc111" in f0.iiif_url_nakala
+    assert "abc111" in f0.metadonnees["iiif"]
 
 
 def test_pas_de_promotion_si_aucune_url_plausible(session: Session) -> None:
@@ -588,6 +597,191 @@ def test_promotion_url_pas_de_warning_si_mapping_explicite(
     )
     assert rapport.erreurs == []
     assert not any("URL promue depuis" in w for w in rapport.warnings)
+
+
+def test_normaliser_url_nakala_data_vers_iiif_info_json() -> None:
+    """Une URL Nakala `data` (binaire download) est transformée en URL
+    IIIF info.json — sinon la visionneuse OSD échoue systématiquement
+    en chargeant le JPEG comme s'il était info.json."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    src = "https://api.nakala.fr/data/10.34847/nkl.76a43qkk/93b499b2cfa3c71e3492a520e5e532f735fdcccf"
+    cible = _normaliser_url_nakala_vers_iiif(src)
+    assert cible == (
+        "https://api.nakala.fr/iiif/10.34847/nkl.76a43qkk/"
+        "93b499b2cfa3c71e3492a520e5e532f735fdcccf/info.json"
+    )
+
+
+def test_normaliser_url_nakala_embed_vers_iiif() -> None:
+    """`embed_url` Nakala (iframe HTML) idem : on extrait la base
+    (doi, sha hex SHA-1) et on construit l'URL IIIF info.json."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    sha = "abcdef0123456789abcdef0123456789abcdef01"
+    src = f"https://api.nakala.fr/embed/10.34847/nkl.abc/{sha}"
+    cible = _normaliser_url_nakala_vers_iiif(src)
+    assert cible == f"https://api.nakala.fr/iiif/10.34847/nkl.abc/{sha}/info.json"
+
+
+def test_normaliser_url_nakala_thumb_vers_info_json() -> None:
+    """`thumb` Nakala contient déjà la base IIIF — on extrait
+    (doi, sha) et reconstruit info.json (sans le suffixe full/...)."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    src = (
+        "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/"
+        "full/!200,200/0/default.jpg"
+    )
+    cible = _normaliser_url_nakala_vers_iiif(src)
+    assert cible == "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/info.json"
+
+
+def test_normaliser_url_non_nakala_inchangee() -> None:
+    """URL hors Nakala : retournée telle quelle. Le viewer OSD
+    fera son propre fallback open-failed si ce n'est pas IIIF."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    for url in (
+        "https://example.com/image.jpg",
+        "https://api.huma-num.fr/data/abc/def",  # similaire mais pas nakala.fr
+        "https://api.nakala.fr/collections/abc",  # endpoint nakala mais pas data/embed/iiif
+    ):
+        assert _normaliser_url_nakala_vers_iiif(url) == url
+
+
+def test_normaliser_url_faux_positif_domaine_pirate() -> None:
+    """Garde sur le hostname : `evil-nakala.fr` ou `nakala.fr.attacker.com`
+    ne doivent PAS être transformés en URL `api.nakala.fr/iiif/...`.
+    Sans ce test, le regex `\\bnakala\\.fr` matchait `evil-nakala.fr/`
+    (le `-` est word boundary) et redirigeait les données vers le
+    mauvais service. Exige maintenant `<sub>.nakala.fr` strict."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    sha = "abcdef0123456789abcdef0123456789abcdef01"
+    for url in (
+        f"https://evil-nakala.fr/data/10.1/x/{sha}",  # pas un sous-domaine
+        f"https://nakala.fr.attacker.com/data/10.1/x/{sha}",
+        f"https://fake.nakala-mirror.fr/data/10.1/x/{sha}",
+    ):
+        assert _normaliser_url_nakala_vers_iiif(url) == url
+
+
+def test_est_extension_image_iiif() -> None:
+    """`_est_extension_image_iiif` filtre les noms de fichier dont
+    l'extension n'est pas une image servie en IIIF par Nakala. PDF,
+    vidéo, archive → False (la normalisation ne servirait à rien).
+    Images → True. Pas d'extension → True (bénéfice du doute)."""
+    from archives_tool.importers.ecrivain import _est_extension_image_iiif
+
+    # Images IIIF-servies
+    for nom in ("scan.jpg", "page.PNG", "fichier.tiff", "image.jp2"):
+        assert _est_extension_image_iiif(nom) is True
+    # Non-images : pas d'utilité de normaliser
+    for nom in ("document.pdf", "video.mp4", "archive.zip", "metadata.json"):
+        assert _est_extension_image_iiif(nom) is False
+    # Bénéfice du doute
+    assert _est_extension_image_iiif(None) is True
+    assert _est_extension_image_iiif("") is True
+    assert _est_extension_image_iiif("sans_extension") is True
+
+
+def test_promotion_url_pas_de_normalisation_iiif_si_pdf(session: Session) -> None:
+    """Trou « non-image » V0.9.2-import : si le nom de fichier
+    indique un PDF, la normalisation IIIF n'est PAS appliquée — on
+    garde l'URL data brute. Sinon `iiif_url_nakala` pointerait sur
+    `/iiif/.../info.json` qui retournerait 404 (IIIF Nakala n'est
+    disponible que pour les images)."""
+    from archives_tool.importers.ecrivain import _fichier_depuis_colonnes
+    from archives_tool.importers.transformateur import ItemPrepare
+
+    prep_pdf = ItemPrepare(
+        cote="X-001",
+        champs_fichier={"nom_fichier": "document.pdf"},
+        champs_fichier_metadonnees={
+            "data_url": "https://api.nakala.fr/data/10.1/x/abcdef0123",
+        },
+    )
+    f = _fichier_depuis_colonnes(prep_pdf, ordre=1)
+    # Pas de normalisation IIIF — on garde data_url brut.
+    assert f.iiif_url_nakala == "https://api.nakala.fr/data/10.1/x/abcdef0123"
+    assert "/iiif/" not in f.iiif_url_nakala
+    assert "/info.json" not in f.iiif_url_nakala
+    # Mais la promotion a quand même eu lieu (signalée pour le warning).
+    assert f.url_promue_depuis == "data_url"
+
+
+def test_promotion_url_normalisation_iiif_si_image(session: Session) -> None:
+    """Pendant du précédent : si le nom de fichier est un .jpg, la
+    normalisation IIIF s'applique — viewer OSD peut afficher en
+    streaming progressif."""
+    from archives_tool.importers.ecrivain import _fichier_depuis_colonnes
+    from archives_tool.importers.transformateur import ItemPrepare
+
+    prep_img = ItemPrepare(
+        cote="X-001",
+        champs_fichier={"nom_fichier": "scan_page_01.jpg"},
+        champs_fichier_metadonnees={
+            "data_url": "https://api.nakala.fr/data/10.1/x/abcdef0123",
+        },
+    )
+    f = _fichier_depuis_colonnes(prep_img, ordre=1)
+    assert f.iiif_url_nakala == "https://api.nakala.fr/iiif/10.1/x/abcdef0123/info.json"
+
+
+def test_normaliser_url_nakala_preserve_hostname() -> None:
+    """`api-test.nakala.fr` (env de test) ou autre sous-domaine garde
+    son hostname dans la cible IIIF — la transformation ne hardcode
+    pas `api.nakala.fr`. Indispensable pour ne pas casser un import
+    depuis un environnement de test."""
+    from archives_tool.importers.ecrivain import (
+        _normaliser_url_nakala_vers_iiif,
+    )
+
+    sha = "abcdef0123456789abcdef0123456789abcdef01"
+    src = f"https://api-test.nakala.fr/data/10.1/x/{sha}"
+    cible = _normaliser_url_nakala_vers_iiif(src)
+    assert cible == f"https://api-test.nakala.fr/iiif/10.1/x/{sha}/info.json"
+
+
+def test_promotion_url_promeut_iiif_info_json_si_nakala(session: Session) -> None:
+    """Intégration : sur un tableur Nakala dont les URLs sont des
+    download binaires (`data_url`), la promotion finale stockée
+    dans `Fichier.iiif_url_nakala` est l'URL IIIF info.json — pas
+    le binaire. Le viewer OSD peut charger en streaming progressif."""
+    from archives_tool.profils.schema import MappingSimple
+
+    profil, chemin = _profil("cas_fichier_colonnes")
+    del profil.mapping.champs["fichier.iiif_url_nakala"]
+    # La fixture cas_fichier_colonnes a une colonne `iiif` qui pointe
+    # déjà sur une URL `api.nakala.fr/iiif/.../full/.../default.jpg`.
+    # On la mappe en `fichier.metadonnees.data_url` pour simuler le
+    # cas PF (export Nakala où la colonne s'appelle data_url et
+    # contient une URL data binaire).
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
+        source="iiif"
+    )
+    rapport = importer(
+        profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
+    )
+    assert rapport.erreurs == []
+    fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
+    par_cote = {it.cote: it for it in fonds.items}
+    f0 = sorted(par_cote["PFC-1"].fichiers, key=lambda f: f.nom_fichier)[0]
+    # L'URL Nakala est normalisée en info.json IIIF v3.
+    assert f0.iiif_url_nakala.endswith("/info.json")
+    assert "/iiif/" in f0.iiif_url_nakala
+    assert "/full/" not in f0.iiif_url_nakala  # plus le suffixe image
 
 
 def test_promotion_url_dedup_deterministe(session: Session) -> None:

@@ -369,7 +369,17 @@ def analyser_colonnes_tableur(
             "total": total,
             "classif": classif,
         }
-    return stats
+    # Filtre les colonnes 100 % vides (typiquement `Unnamed: 15`,
+    # `description_page`… — artefacts pandas de cellules fusionnées
+    # ou colonnes header sans données). Sans ce filtre, mode simple
+    # les promeut en `metadonnees.<slug>` libres et la page item
+    # affiche `Unnamed 15: non renseigne` — bruit visuel pour 0 valeur
+    # utile. La colonne cote, même 100 % vide théoriquement (cas
+    # absurde), serait quand même filtrée — l'utilisateur verra
+    # "colonne cote inconnue" à la soumission mode simple.
+    return {
+        col: s for col, s in stats.items() if s["remplies"] > 0
+    }
 
 
 def _normaliser_cellule(valeur: Any, valeurs_nulles: set[str]) -> Any:

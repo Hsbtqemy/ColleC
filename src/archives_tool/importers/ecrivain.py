@@ -53,7 +53,10 @@ from archives_tool.api.services.items import (
     creer_item,
 )
 from archives_tool.config import ConfigLocale
-from archives_tool.files.nakala import vers_iiif_info_json
+from archives_tool.files.nakala import (
+    est_extension_image_iiif as _est_extension_image_iiif,
+    vers_iiif_info_json,
+)
 from archives_tool.importers.lecteur_tableur import lire_tableur
 from archives_tool.importers.resolveur_fichiers import (
     FichierPrepare,
@@ -523,30 +526,9 @@ _SLUGS_URL_PROMUS_SOURCE: tuple[str, ...] = (
 )
 
 
-#: Extensions de fichier dont Nakala expose une dérivée IIIF Image API.
-#: Hors de cette liste, la normalisation `data` → `iiif/info.json`
-#: produirait une URL en 404 (PDF binaire, vidéo, archive…). Mieux
-#: vaut alors garder l'URL data brute — le viewer OSD échouera en
-#: fallback HTML « Télécharger » et l'utilisateur voit l'origine
-#: exacte de la donnée plutôt qu'une URL IIIF trompeuse.
-_EXTENSIONS_IMAGE_IIIF: frozenset[str] = frozenset(
-    {"jpg", "jpeg", "png", "tif", "tiff", "gif", "webp", "bmp", "jp2"}
-)
-
-
-def _est_extension_image_iiif(nom_fichier: str | None) -> bool:
-    """True si le nom de fichier a une extension d'image que Nakala
-    sert via IIIF Image API. Bénéfice du doute (True) si pas de nom
-    ou pas d'extension — laisse la normalisation tenter sa chance."""
-    if not nom_fichier or "." not in nom_fichier:
-        return True
-    ext = nom_fichier.rsplit(".", 1)[-1].lower()
-    return ext in _EXTENSIONS_IMAGE_IIIF
-
-
 #: Alias pour les tests existants. La fonction vit maintenant dans
 #: `files/nakala.py` pour pouvoir aussi servir côté affichage
-#: (cf. `services/sources_image.py::url_telechargement_externe`).
+#: (cf. `services/sources_image.py`).
 _normaliser_url_nakala_vers_iiif = vers_iiif_info_json
 
 

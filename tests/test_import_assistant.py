@@ -1301,6 +1301,41 @@ def test_apercu_repartition_simple_sans_suggestions_complet() -> None:
     assert apercu.libres_fichier == ["b"]
 
 
+def test_construire_mapping_simple_filtre_colonnes_absentes_d_echantillons() -> None:
+    """Safe-guard #2 V0.9.2-import : si `colonnes_detectees` contient
+    une colonne absente de `colonnes_echantillon` (filtré comme vide
+    par l'analyse), elle est skip du mapping. Sans ce safe-guard,
+    elle serait promue en `metadonnees.<slug>` libre alors qu'elle
+    n'a aucune valeur."""
+    from archives_tool.api.services.import_web import (
+        construire_mapping_depuis_simple,
+    )
+
+    session = SessionImport(
+        utilisateur="test",
+        # colonnes_detectees garde 5 colonnes...
+        colonnes_detectees=["Cote", "title", "Date", "Une", "Vide"],
+        # ...mais echantillons en a filtré une (la 100 % vide)
+        colonnes_echantillon={
+            "Cote": {"classif": "cote"},
+            "title": {"classif": "par-item"},
+            "Date": {"classif": "par-item"},
+            "Une": {"classif": "par-item"},
+            # "Vide" absente — filtrée par analyser_colonnes_tableur
+        },
+    )
+    mapping = construire_mapping_depuis_simple(
+        session, colonne_cote="Cote", colonne_titre="title",
+        colonne_date="Date",
+    )
+    # « Vide » est exclue — n'apparaît ni en champ dédié ni en
+    # metadonnees.<slug>.
+    assert "Vide" not in mapping.values()
+    assert "metadonnees.vide" not in mapping
+    # « Une » est promue normalement.
+    assert mapping["metadonnees.une"] == "Une"
+
+
 def test_construire_mapping_simple_promeut_type_coar() -> None:
     """Trou #2 V0.9.2-import : une colonne `Type` est désormais promue
     en `type_coar` (Item dédié) via la nouvelle heuristique. Avant ce

@@ -20,6 +20,26 @@ from __future__ import annotations
 
 import re
 
+#: Extensions de fichier dont Nakala expose une dérivée IIIF Image API.
+#: Hors de cette liste, ni la normalisation `data` → `iiif/info.json`
+#: ni la génération de thumb n'ont de sens (404). Centralisé ici (en
+#: plus de l'usage import) parce que le service affichage en a aussi
+#: besoin (cf. `services/sources_image.py` qui skip les thumbs PDF).
+EXTENSIONS_IMAGE_IIIF: frozenset[str] = frozenset(
+    {"jpg", "jpeg", "png", "tif", "tiff", "gif", "webp", "bmp", "jp2"}
+)
+
+
+def est_extension_image_iiif(nom_fichier: str | None) -> bool:
+    """True si le nom de fichier a une extension d'image que Nakala
+    sert via IIIF Image API. Bénéfice du doute (True) si pas de nom
+    ou pas d'extension — laisse les fonctions amont tenter leur chance.
+    """
+    if not nom_fichier or "." not in nom_fichier:
+        return True
+    ext = nom_fichier.rsplit(".", 1)[-1].lower()
+    return ext in EXTENSIONS_IMAGE_IIIF
+
 #: URL Nakala reconnue (data, embed ou IIIF image) — capture le
 #: hostname, le DOI (2 segments) et le SHA pour reconstruire toute
 #: variante. Le suffixe après `<sha>` (ex. `/full/!200,200/0/default.jpg`
@@ -44,6 +64,29 @@ def vers_iiif_info_json(url: str) -> str:
     if m is None:
         return url
     return f"{m['scheme']}://{m['host']}/iiif/{m['doi']}/{m['sha']}/info.json"
+
+
+def vers_thumb(url: str, taille_max: int = 200) -> str | None:
+    """Transforme une URL Nakala en URL de vignette IIIF carrée.
+
+    `https://api.nakala.fr/data/<doi>/<sha>` →
+        `https://api.nakala.fr/iiif/<doi>/<sha>/full/!200,200/0/default.jpg`
+
+    `taille_max` borne la dimension la plus grande (preservation
+    ratio via le `!` IIIF Image API). Retourne `None` si pas Nakala.
+
+    Sert au panneau fichiers de la page item pour afficher une
+    miniature des Fichier Nakala-only — sinon l'utilisateur voit
+    juste des numéros de page sans aperçu (UX critique sur les
+    items à 39+ scans).
+    """
+    m = PATTERN_URL_NAKALA.match(url)
+    if m is None:
+        return None
+    return (
+        f"{m['scheme']}://{m['host']}/iiif/{m['doi']}/{m['sha']}/"
+        f"full/!{taille_max},{taille_max}/0/default.jpg"
+    )
 
 
 def vers_data(url: str) -> str | None:

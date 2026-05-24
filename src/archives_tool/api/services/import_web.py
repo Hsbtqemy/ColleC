@@ -590,6 +590,14 @@ def construire_mapping_depuis_simple(
 
     colonnes = list(session.colonnes_detectees or [])
     echantillons = session.colonnes_echantillon or {}
+    # Safe-guard #2 V0.9.2-import : si echantillons a déjà filtré les
+    # colonnes 100 % vides, on les retire aussi de `colonnes` pour
+    # qu'elles ne soient pas mappées en `metadonnees.<slug>` libres
+    # inutiles (cas d'un session import où colonnes_detectees et
+    # colonnes_echantillon ont divergé). Pas appliqué si echantillons
+    # est vide (session sans analyse — bénéfice du doute).
+    if echantillons:
+        colonnes = [c for c in colonnes if c in echantillons]
     colonnes_set = set(colonnes)
 
     if colonne_cote not in colonnes_set:

@@ -232,16 +232,23 @@ def test_analyse_colonnes_exemples_distincts_premiers(tmp_path: Path) -> None:
     assert stats["Type"]["exemples"] == ["article", "dessin", "photo"]
 
 
-def test_analyse_colonnes_colonne_vide(tmp_path: Path) -> None:
+def test_analyse_colonnes_colonne_vide_filtree(tmp_path: Path) -> None:
+    """#2 V0.9.2-import : une colonne 100 % vide (0 cellules remplies)
+    est filtrée du résultat. Sans ce filtre, mode simple la promouvait
+    en `metadonnees.<slug>` libre et la page item affichait
+    « Unnamed 15: non renseigné » — bruit visuel pour 0 valeur utile.
+
+    La colonne `Cote` reste, et seules les colonnes ayant au moins
+    une valeur non-nulle apparaissent."""
     csv = tmp_path / "t.csv"
     csv.write_text(
-        "Cote;Vide\nHK-1;\nHK-2;\n", encoding="utf-8"
+        "Cote;Vide;Une\nHK-1;;X\nHK-2;;\n", encoding="utf-8"
     )
     stats = analyser_colonnes_tableur(csv)
-    assert stats["Vide"]["exemples"] == []
-    assert stats["Vide"]["remplies"] == 0
-    assert stats["Vide"]["uniques"] == 0
-    assert stats["Vide"]["valeur_frequente"] is None
+    assert "Vide" not in stats
+    assert "Cote" in stats
+    assert "Une" in stats
+    assert stats["Une"]["remplies"] == 1
 
 
 def test_analyse_colonnes_normalisation_nfc(tmp_path: Path) -> None:
@@ -337,15 +344,16 @@ def test_classif_indetermine_si_pas_de_cote(tmp_path: Path) -> None:
 
 
 def test_classif_indetermine_si_colonne_vide(tmp_path: Path) -> None:
-    """Une colonne entièrement vide ne peut pas être classée — pas
-    assez de groupes peuplés pour conclure."""
+    """Une colonne entièrement vide est filtrée du résultat
+    (#2 V0.9.2-import) — pas besoin de la classifier. La colonne
+    Cote reste."""
     csv = tmp_path / "t.csv"
     csv.write_text(
         "Cote;Vide\nHK-1;\nHK-2;\nHK-3;\n", encoding="utf-8"
     )
     stats = analyser_colonnes_tableur(csv)
     assert stats["Cote"]["classif"] == "cote"
-    assert stats["Vide"]["classif"] == "indetermine"
+    assert "Vide" not in stats
 
 
 def test_classif_melange_si_partage(tmp_path: Path) -> None:

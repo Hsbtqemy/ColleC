@@ -388,6 +388,30 @@ table d'alias, la valeur originale est conservée (l'utilisateur
 http://purl.org/coar/resource_type/c_3e5a` (Périodique) sur les
 173 items.
 
+**Miniatures Nakala et filtrage colonnes vides (2026-05-24)** —
+deux fixes UX en lot après le test PF.
+
+`files/nakala.py::vers_thumb` reconstruit une URL IIIF Image thumb
+carrée (`full/!200,200/0/default.jpg` par défaut) depuis n'importe
+quelle URL Nakala. `services/sources_image.py::resoudre_source_image`
+l'utilise en fallback quand un Fichier Nakala-only n'a pas de
+vignette locale dérivée (`vignette_chemin`) — sinon le panneau
+fichiers de la page item affichait juste des numéros de page sans
+aperçu, critique sur les items à 39+ scans (cas PF). La vignette
+locale prime quand elle existe (offline, plus rapide).
+
+`importers/lecteur_tableur.py::analyser_colonnes_tableur` filtre les
+colonnes avec `remplies == 0` du dict retourné. `attacher_tableur`
+dérive `colonnes_detectees` depuis `echantillons.keys()` — alignés
+automatiquement. Sans ce filtre, mode simple promouvait les
+colonnes vides en `metadonnees.<slug>` libres (cas PF : `Unnamed: 15`,
+`Unnamed: 15.1`, `description_page`, `collaborateur_journaliste`)
+et la page item affichait `Unnamed 15: non renseigné` × 4 par item
+— bruit pur. Safe-guard dans `construire_mapping_depuis_simple` :
+si `echantillons` est rempli, filtre aussi `colonnes` pour éviter
+divergence en cas de désynchronisation `colonnes_detectees` vs
+`colonnes_echantillon`.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

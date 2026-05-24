@@ -60,6 +60,20 @@ def main() -> None:
         s2.fonds_id = None
         s2.collection_miroir_data = None
         s2.configuration_fichiers = None
+        # Re-analyse le tableur avec la version courante du code
+        # (filtre colonnes 100 % vides #2 V0.9.2-import, classifs à
+        # jour). Sans ça, on resterait sur les stats calculées à
+        # l'upload — qui peuvent dater d'avant les fixes.
+        from archives_tool.importers.lecteur_tableur import (
+            analyser_colonnes_tableur,
+        )
+        from archives_tool.api.services.import_web import RACINE_IMPORT_TMP
+
+        chemin_tableur = RACINE_IMPORT_TMP / s2.chemin_tableur
+        if chemin_tableur.is_file():
+            echantillons = analyser_colonnes_tableur(chemin_tableur, s2.feuille)
+            s2.colonnes_echantillon = echantillons
+            s2.colonnes_detectees = list(echantillons.keys())
         db.commit()
         print("  OK")
 

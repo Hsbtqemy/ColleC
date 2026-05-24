@@ -77,3 +77,59 @@ def test_vers_data_non_nakala_retourne_none() -> None:
         "",
     ):
         assert vers_data(url) is None
+
+
+# vers_thumb
+
+
+def test_vers_thumb_depuis_data() -> None:
+    """L'URL data est convertie en thumb IIIF carrée (200x200 par
+    défaut, conserve le ratio via `!`)."""
+    from archives_tool.files.nakala import vers_thumb
+
+    src = f"https://api.nakala.fr/data/{DOI}/{SHA}"
+    assert vers_thumb(src) == (
+        f"https://api.nakala.fr/iiif/{DOI}/{SHA}/full/!200,200/0/default.jpg"
+    )
+
+
+def test_vers_thumb_depuis_iiif_info_json() -> None:
+    """Une URL IIIF info.json (cas typique : ce qu'on stocke dans
+    `Fichier.iiif_url_nakala` après la normalisation V0.9.2-import)
+    est aussi convertible en thumb — on extrait `(doi, sha)` et on
+    reconstruit le pattern `full/!W,H/0/default.jpg`."""
+    from archives_tool.files.nakala import vers_thumb
+
+    src = f"https://api.nakala.fr/iiif/{DOI}/{SHA}/info.json"
+    assert vers_thumb(src) == (
+        f"https://api.nakala.fr/iiif/{DOI}/{SHA}/full/!200,200/0/default.jpg"
+    )
+
+
+def test_vers_thumb_taille_custom() -> None:
+    from archives_tool.files.nakala import vers_thumb
+
+    src = f"https://api.nakala.fr/data/{DOI}/{SHA}"
+    assert vers_thumb(src, taille_max=100) == (
+        f"https://api.nakala.fr/iiif/{DOI}/{SHA}/full/!100,100/0/default.jpg"
+    )
+
+
+def test_vers_thumb_hostname_preserve() -> None:
+    from archives_tool.files.nakala import vers_thumb
+
+    src = f"https://api-test.nakala.fr/data/{DOI}/{SHA}"
+    assert vers_thumb(src) == (
+        f"https://api-test.nakala.fr/iiif/{DOI}/{SHA}/full/!200,200/0/default.jpg"
+    )
+
+
+def test_vers_thumb_non_nakala_retourne_none() -> None:
+    from archives_tool.files.nakala import vers_thumb
+
+    for url in (
+        "https://example.com/image.jpg",
+        f"https://evil-nakala.fr/data/{DOI}/{SHA}",
+        "",
+    ):
+        assert vers_thumb(url) is None

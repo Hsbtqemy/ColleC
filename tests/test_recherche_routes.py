@@ -13,6 +13,7 @@ from archives_tool.db import (
     assurer_tables_fts,
     creer_engine,
     creer_session_factory,
+    reindexer_fts,
 )
 from archives_tool.demo import peupler_base
 from archives_tool.models import Fonds, Item
@@ -21,50 +22,18 @@ from archives_tool.models.base import Base
 
 @pytest.fixture
 def base_demo_path(tmp_path: Path) -> Path:
+    """Base demo avec FTS5 créées + peuplées depuis l'existant.
+    Le seeder demo ne crée pas les FTS (pas dans le modèle ORM),
+    donc on les ajoute via `assurer_tables_fts` puis on les peuple
+    via `reindexer_fts` (factorisation propre, même SQL que la
+    migration)."""
     chemin = tmp_path / "demo.db"
     peupler_base(chemin)
-    # Le seeder demo ne crée pas les FTS — on les ajoute + on
-    # peuple manuellement (sinon les triggers ne se déclenchent qu'à
-    # partir de cet instant et l'existant n'est pas indexé).
     engine = creer_engine(chemin)
     assurer_tables_fts(engine)
-    _peupler_fts(engine)
+    reindexer_fts(engine)
     engine.dispose()
     return chemin
-
-
-def _peupler_fts(engine) -> None:
-    """Indexe le contenu existant après création des tables FTS.
-    Mime ce que fait la migration `m1q2r3s4t5u6_fts5_recherche`."""
-    from sqlalchemy import text
-
-    with engine.begin() as conn:
-        # Tronque + ré-indexe (idempotent — utile si on relance la fixture)
-        conn.execute(text("DELETE FROM item_fts"))
-        conn.execute(text("DELETE FROM fonds_fts"))
-        conn.execute(text("DELETE FROM collection_fts"))
-        conn.execute(text("""
-            INSERT INTO item_fts(rowid, cote, titre, description, notes_internes, metadonnees_text)
-            SELECT id, COALESCE(cote, ''), COALESCE(titre, ''),
-                   COALESCE(description, ''), COALESCE(notes_internes, ''),
-                   COALESCE((SELECT GROUP_CONCAT(value, ' ') FROM json_each(item.metadonnees)), '')
-            FROM item
-        """))
-        conn.execute(text("""
-            INSERT INTO fonds_fts(rowid, cote, titre, description, description_publique, description_interne)
-            SELECT id, COALESCE(cote, ''), COALESCE(titre, ''),
-                   COALESCE(description, ''),
-                   COALESCE(description_publique, ''),
-                   COALESCE(description_interne, '')
-            FROM fonds
-        """))
-        conn.execute(text("""
-            INSERT INTO collection_fts(rowid, cote, titre, description, description_publique)
-            SELECT id, COALESCE(cote, ''), COALESCE(titre, ''),
-                   COALESCE(description, ''),
-                   COALESCE(description_publique, '')
-            FROM collection
-        """))
 
 
 @pytest.fixture
@@ -129,11 +98,16 @@ def test_route_recherche_scope_fonds(
 
 def test_route_recherche_snippet_html_safe(client_demo: TestClient) -> None:
     """Le snippet FTS5 inclut des balises <mark> qui doivent être
-    rendues telles quelles (pas échappées) pour surligner les matchs."""
-    response = client_demo.get("/recherche?q=HK")
+    rendues telles quelles (pas échappées) pour surligner les matchs.
+    `satirique` est dans la description du fonds HK du seeder demo —
+    match riche garanti."""
+    response = client_demo.get("/recherche?q=satirique")
     assert response.status_code == 200
-    # Les <mark> du snippet apparaissent dans le HTML
+    # Les <mark> du snippet apparaissent dans le HTML (le mot dans
+    # le snippet de description du fonds HK).
     assert "<mark>" in response.text
+    # Et le mot recherché est rendu.
+    assert "satirique" in response.text.lower()
 
 
 def test_route_recherche_aucun_resultat(client_demo: TestClient) -> None:
@@ -141,6 +115,66 @@ def test_route_recherche_aucun_resultat(client_demo: TestClient) -> None:
     response = client_demo.get("/recherche?q=zzzznonexistantzzzz")
     assert response.status_code == 200
     assert "Aucun résultat" in response.text
+
+
+def test_recherche_snippet_html_echappe_protege_xss(
+    client_demo: TestClient, base_demo_path: Path,
+) -> None:
+    """Passe de revue : un Item dont la description contient du HTML
+    malveillant (cas réel : metadonnees libre venant d'un tableur
+    avec contenu utilisateur arbitraire) ne doit PAS être injecté
+    tel quel dans la page de recherche. Le filtre `snippet_fts_safe`
+    échappe le HTML utilisateur ET préserve les balises `<mark>` du
+    snippet FTS5."""
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.items import (
+        FormulaireItem, creer_item,
+    )
+
+    engine = creer_engine(base_demo_path)
+    SessionLocal = creer_session_factory(engine)
+    with SessionLocal() as db:
+        fonds_hk = lire_fonds_par_cote(db, "HK")
+        creer_item(
+            db,
+            FormulaireItem(
+                cote="HK-XSS",
+                titre="Item piégé pour XSS test",
+                description="<script>alert('xss')</script>",
+                fonds_id=fonds_hk.id,
+            ),
+        )
+    engine.dispose()
+
+    response = client_demo.get("/recherche?q=HK-XSS")
+    assert response.status_code == 200
+    # Le <script> brut doit être échappé (apparaît en &lt;script&gt;
+    # ou similaire), pas exécutable.
+    assert "<script>alert" not in response.text
+    # Mais la balise <mark> du snippet doit être présente (non échappée).
+    assert "<mark>" in response.text
+
+
+def test_combo_scope_et_types(
+    client_demo: TestClient, base_demo_path: Path,
+) -> None:
+    """Passe de revue : scope (limite géographique) + types (filtre
+    entité) fonctionnent en combo. Un fonds_id avec types=item ne
+    doit pas remonter le fonds lui-même même s'il matcherait."""
+    engine = creer_engine(base_demo_path)
+    SessionLocal = creer_session_factory(engine)
+    with SessionLocal() as db:
+        fonds_hk = db.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        fonds_id = fonds_hk.id
+    engine.dispose()
+
+    response = client_demo.get(
+        f"/recherche?q=HK&fonds_id={fonds_id}&types=item"
+    )
+    assert response.status_code == 200
+    assert "Limité au fonds" in response.text
+    # Pas de badge Fonds (types=item l'exclut)
+    assert ">Fonds</span>" not in response.text
 
 
 def test_barre_recherche_globale_dans_header(

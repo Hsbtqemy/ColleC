@@ -23,7 +23,7 @@ from __future__ import annotations
 from alembic import op
 from sqlalchemy import inspect, text
 
-from archives_tool.db import _SQL_TRIGGERS_FTS
+from archives_tool.db import _SQL_PEUPLEMENT_FTS, _SQL_TRIGGERS_FTS
 
 revision: str = "m1q2r3s4t5u6"
 down_revision: str | None = "k1p2q3r4s5t6"
@@ -41,6 +41,7 @@ def upgrade() -> None:
     # les matchs. Indispensable parce qu'on indexe une colonne dérivée
     # (`metadonnees_text` = flatten JSON) qui n'existe pas dans la
     # source — l'external content planterait avec « no such column ».
+    cree_quelque_chose = False
     if "item_fts" not in tables:
         bind.execute(
             text(
@@ -52,26 +53,7 @@ def upgrade() -> None:
                 """
             )
         )
-        # Peuplement initial des items existants.
-        bind.execute(
-            text(
-                """
-                INSERT INTO item_fts(rowid, cote, titre, description, notes_internes, metadonnees_text)
-                SELECT
-                    id,
-                    COALESCE(cote, ''),
-                    COALESCE(titre, ''),
-                    COALESCE(description, ''),
-                    COALESCE(notes_internes, ''),
-                    COALESCE(
-                        (SELECT GROUP_CONCAT(value, ' ') FROM json_each(item.metadonnees)),
-                        ''
-                    )
-                FROM item
-                """
-            )
-        )
-
+        cree_quelque_chose = True
     if "fonds_fts" not in tables:
         bind.execute(
             text(
@@ -83,22 +65,7 @@ def upgrade() -> None:
                 """
             )
         )
-        bind.execute(
-            text(
-                """
-                INSERT INTO fonds_fts(rowid, cote, titre, description, description_publique, description_interne)
-                SELECT
-                    id,
-                    COALESCE(cote, ''),
-                    COALESCE(titre, ''),
-                    COALESCE(description, ''),
-                    COALESCE(description_publique, ''),
-                    COALESCE(description_interne, '')
-                FROM fonds
-                """
-            )
-        )
-
+        cree_quelque_chose = True
     if "collection_fts" not in tables:
         bind.execute(
             text(
@@ -110,20 +77,13 @@ def upgrade() -> None:
                 """
             )
         )
-        bind.execute(
-            text(
-                """
-                INSERT INTO collection_fts(rowid, cote, titre, description, description_publique)
-                SELECT
-                    id,
-                    COALESCE(cote, ''),
-                    COALESCE(titre, ''),
-                    COALESCE(description, ''),
-                    COALESCE(description_publique, '')
-                FROM collection
-                """
-            )
-        )
+        cree_quelque_chose = True
+
+    if cree_quelque_chose:
+        # Peuplement initial des items/fonds/collections existants.
+        # SQL centralisé dans `archives_tool.db._SQL_PEUPLEMENT_FTS`.
+        for sql in _SQL_PEUPLEMENT_FTS:
+            bind.execute(text(sql))
 
     # Triggers de synchronisation. SQL centralisé dans
     # `archives_tool.db._SQL_TRIGGERS_FTS` (réutilisable par les

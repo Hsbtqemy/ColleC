@@ -142,12 +142,14 @@
               </span>
             {% endif %}
           </div>
-          {# Snippet : contient des <mark> du FTS5, déjà sécurisé
-             (snippet ne sort que les tokens indexés, pas d'injection
-             possible). On utilise |safe pour rendre les <mark>. #}
+          {# Snippet : `snippet_fts_safe` échappe le HTML du contenu
+             utilisateur (anti-XSS si metadonnees contient `<script>`)
+             tout en préservant les balises `<mark>` insérées par
+             FTS5 pour surligner les matchs. Pas de `| safe` direct
+             (qui injecterait le HTML utilisateur tel quel). #}
           {% if r.snippet %}
             <p class="text-sm" style="color:#4b5563;line-height:1.45;">
-              {{ r.snippet | safe }}
+              {{ r.snippet | snippet_fts_safe }}
             </p>
           {% endif %}
         </li>

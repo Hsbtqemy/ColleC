@@ -109,6 +109,31 @@ def _libelle_role(role: RoleCollaborateur | str | None) -> str:
     return LIBELLES_ROLE.get(code, code)
 
 
+def _snippet_fts_safe(snippet: str | None) -> str:
+    """Échappe le HTML d'un snippet FTS5 sauf les balises `<mark>` /
+    `</mark>` qu'on a explicitement injectées via `snippet(...)`.
+
+    Sans cet échappement, un `Item.metadonnees = {"x": "<script>..."}`
+    se retrouverait rendu tel quel dans la page de recherche via
+    `{{ r.snippet | safe }}` — XSS via contenu utilisateur. On
+    échappe tout, puis on **dé-échappe** les `<mark>` connues (sûres
+    car insérées par FTS5 avec ces littéraux exacts).
+
+    Implémentation : convertir le résultat de `escape()` en `str`
+    avant le `.replace()` — sinon `Markup.replace()` réescape le
+    replacement (`<mark>` deviendrait `&lt;mark&gt;`).
+    """
+    from markupsafe import Markup, escape
+
+    if not snippet:
+        return ""
+    safe = str(escape(snippet))  # str pour .replace() sans réescape
+    safe = safe.replace("&lt;mark&gt;", "<mark>").replace(
+        "&lt;/mark&gt;", "</mark>"
+    )
+    return Markup(safe)
+
+
 templates = Jinja2Templates(directory=RACINE_TEMPLATES)
 templates.env.filters["libelle_phase"] = lambda p: (
     p.libelle if isinstance(p, PhaseChantier) else "—"
@@ -119,6 +144,7 @@ templates.env.filters["temps_relatif"] = temps_relatif
 templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri
 templates.env.filters["url_page"] = _url_page
+templates.env.filters["snippet_fts_safe"] = _snippet_fts_safe
 templates.env.globals["pages_visibles"] = _pages_visibles
 templates.env.globals["est_lecture_seule"] = est_lecture_seule
 templates.env.globals["static_url"] = _static_url

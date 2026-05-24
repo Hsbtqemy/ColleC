@@ -166,6 +166,40 @@ _SQL_TRIGGERS_FTS: list[str] = [
 ]
 
 
+#: SQL de peuplement initial des tables FTS depuis les tables source.
+#: Source unique réutilisée par `reindexer_fts()` (réindex manuel
+#: d'une base existante) et par la migration `m1q2r3s4t5u6_fts5_recherche`
+#: (peuplement à l'upgrade). Cohérent avec les triggers
+#: `_SQL_TRIGGERS_FTS` qui font la même chose en INSERT/UPDATE.
+_SQL_PEUPLEMENT_FTS: list[str] = [
+    """
+    INSERT INTO item_fts(rowid, cote, titre, description, notes_internes, metadonnees_text)
+    SELECT id,
+           COALESCE(cote, ''), COALESCE(titre, ''),
+           COALESCE(description, ''), COALESCE(notes_internes, ''),
+           COALESCE((SELECT GROUP_CONCAT(value, ' ') FROM json_each(item.metadonnees)), '')
+    FROM item
+    """,
+    """
+    INSERT INTO fonds_fts(rowid, cote, titre, description, description_publique, description_interne)
+    SELECT id,
+           COALESCE(cote, ''), COALESCE(titre, ''),
+           COALESCE(description, ''),
+           COALESCE(description_publique, ''),
+           COALESCE(description_interne, '')
+    FROM fonds
+    """,
+    """
+    INSERT INTO collection_fts(rowid, cote, titre, description, description_publique)
+    SELECT id,
+           COALESCE(cote, ''), COALESCE(titre, ''),
+           COALESCE(description, ''),
+           COALESCE(description_publique, '')
+    FROM collection
+    """,
+]
+
+
 def assurer_tables_fts(engine: Engine) -> None:
     """Crée les tables virtuelles FTS5 + leurs triggers de synchro si
     pas déjà présentes. Idempotent (CREATE TABLE IF NOT EXISTS,
@@ -178,7 +212,7 @@ def assurer_tables_fts(engine: Engine) -> None:
     Ne peuple pas les tables FTS avec les données existantes — utile
     seulement quand on crée la base de toutes pièces (où les tables
     source sont vides). Pour une réindexation manuelle d'une base
-    avec données, voir `archives-tool reindex` (TODO).
+    avec données, utiliser `reindexer_fts(engine)`.
     """
     with engine.begin() as conn:
         for sql in _SQL_TABLES_FTS:
@@ -191,3 +225,39 @@ def assurer_tables_fts(engine: Engine) -> None:
             conn.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
         for sql in _SQL_TRIGGERS_FTS:
             conn.execute(text(sql))
+
+
+def reindexer_fts(engine: Engine) -> dict[str, int]:
+    """Vide puis repeuple les 3 tables FTS depuis les tables source.
+
+    À appeler :
+    - après un upgrade qui ajoute le FTS sur une base existante
+      pré-FTS (la migration le fait, mais si quelqu'un a créé la
+      base via `create_all` puis ajouté du contenu avant d'appliquer
+      la migration FTS, il faut réindexer)
+    - en CLI `archives-tool reindex` (TODO V0.9.x)
+    - en cas de corruption suspectée de l'index
+
+    Idempotent et atomique (1 transaction). Les triggers ne se
+    déclenchent pas pendant INSERT INTO ... SELECT (ils sont AFTER
+    INSERT sur la table SOURCE — ici on insère directement dans FTS).
+
+    Retourne le nombre d'entrées indexées par table.
+    """
+    counts: dict[str, int] = {}
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM item_fts"))
+        conn.execute(text("DELETE FROM fonds_fts"))
+        conn.execute(text("DELETE FROM collection_fts"))
+        for sql in _SQL_PEUPLEMENT_FTS:
+            conn.execute(text(sql))
+        counts["item"] = conn.execute(
+            text("SELECT COUNT(*) FROM item_fts")
+        ).scalar_one()
+        counts["fonds"] = conn.execute(
+            text("SELECT COUNT(*) FROM fonds_fts")
+        ).scalar_one()
+        counts["collection"] = conn.execute(
+            text("SELECT COUNT(*) FROM collection_fts")
+        ).scalar_one()
+    return counts

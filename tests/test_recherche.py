@@ -277,3 +277,26 @@ def test_recherche_requete_vide_retourne_vide(
     """Recherche vide → liste vide (pas de match « tout »)."""
     assert rechercher(session_avec_corpus, "") == []
     assert rechercher(session_avec_corpus, "   ") == []
+
+
+def test_reindexer_fts_idempotent_et_compte_correct(
+    session_avec_corpus: Session,
+) -> None:
+    """Passe de revue Lot A : `reindexer_fts` vide puis repeuple les
+    3 tables FTS. Utile pour réindexer une base existante (cas
+    upgrade ColleC sur une base pré-FTS sans relancer la migration).
+    Idempotent — peut être appelé plusieurs fois sans dupliquer."""
+    from archives_tool.db import reindexer_fts
+
+    engine = session_avec_corpus.get_bind()
+    counts1 = reindexer_fts(engine)
+    counts2 = reindexer_fts(engine)
+    # Même résultat à chaque appel (pas de duplication)
+    assert counts1 == counts2
+    # 5 items (HK-001..003 + PF-001..002), 2 fonds, 2 collections (miroirs auto)
+    assert counts1["item"] == 5
+    assert counts1["fonds"] == 2
+    assert counts1["collection"] == 2
+    # Et la recherche fonctionne toujours après reindex
+    resultats = rechercher(session_avec_corpus, "caricatures")
+    assert any(r.cote == "HK-002" for r in resultats)

@@ -16,8 +16,25 @@
 
 {% block title %}Recherche{% if q %} : « {{ q }} »{% endif %} — archives-tool{% endblock %}
 
+{# Override du cap base.html : la page de recherche profite de la
+   pleine largeur pour les snippets et la grille de filtres avancés.
+   Les autres pages gardent le `max-w-7xl` par défaut (cartouche
+   item, formulaires, etc. mal à l'aise sur écran 4K). #}
+{% block container_class %}max-w-full{% endblock %}
+
+{% block scripts %}
+  {# Raccourcis clavier ← → pour paginer, Esc pour défocus la barre.
+     Skip si focus dans un input pour ne pas casser la saisie de q2
+     ou des champs année. Cf. `recherche_raccourcis.js`. #}
+  <script src="{{ static_url('js/recherche_raccourcis.js') }}"></script>
+{% endblock %}
+
 {% block content %}
-<div style="max-width:900px;margin:0 auto;">
+{# Pas de wrapper max-width custom : le `max-w-7xl` (~1280px) du
+   container du base.html donne assez de respiration pour les snippets
+   tout en gardant des lignes lisibles. Un wrapper interne supplémentaire
+   creait des marges visibles inutiles sur écran large. #}
+<div>
 
   {# Macro unique pour forger les URLs /recherche?... — source de
      vérité partagée par : pastilles (retrait d'un filtre précis),
@@ -393,19 +410,21 @@
                 Collection
               </span>
             {% endif %}
-            {# Lien principal vers l'entité #}
+            {# Lien principal vers l'entité — propage `?q=` pour que
+               la page cible surligne les termes cherchés. #}
+            {% set _q_suffix = "&q=" ~ (q | urlencode) if q else "" %}
             {% if r.type_entite == 'item' %}
-              <a href="/item/{{ r.cote }}?fonds={{ r.extras.fonds_cote }}"
+              <a href="/item/{{ r.cote }}?fonds={{ r.extras.fonds_cote }}{{ _q_suffix }}"
                  class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
                 {{ r.cote }}
               </a>
             {% elif r.type_entite == 'fonds' %}
-              <a href="/fonds/{{ r.cote }}"
+              <a href="/fonds/{{ r.cote }}{% if q %}?q={{ q | urlencode }}{% endif %}"
                  class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
                 {{ r.cote }}
               </a>
             {% else %}
-              <a href="/collection/{{ r.cote }}{% if r.extras.fonds_cote %}?fonds={{ r.extras.fonds_cote }}{% endif %}"
+              <a href="/collection/{{ r.cote }}{% if r.extras.fonds_cote %}?fonds={{ r.extras.fonds_cote }}{{ _q_suffix }}{% elif q %}?q={{ q | urlencode }}{% endif %}"
                  class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
                 {{ r.cote }}
               </a>

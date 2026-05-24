@@ -62,8 +62,10 @@ def test_route_recherche_avec_query_renvoie_resultats(
     response = client_demo.get("/recherche?q=HK-001")
     assert response.status_code == 200
     assert "HK-001" in response.text
-    # Lien direct vers l'item
-    assert 'href="/item/HK-001?fonds=HK"' in response.text
+    # Lien direct vers l'item — `?q=...` propagé pour le surlignage
+    # côté page item (le matching exact du href complet pourrait
+    # casser si on ajoute des params plus tard, on vérifie le préfixe).
+    assert 'href="/item/HK-001?fonds=HK' in response.text
 
 
 def test_route_recherche_filtre_types(client_demo: TestClient) -> None:
@@ -602,6 +604,53 @@ def test_clamper_annee_helper_partage() -> None:
     # Hors bornes
     assert clamper_annee(1800, 1900, 2000) is None
     assert clamper_annee(2100, 1900, 2000) is None
+
+
+def test_route_item_surligne_q_dans_titre(
+    client_demo: TestClient,
+) -> None:
+    """Quand on arrive sur la page item depuis la recherche, `?q=` est
+    propagé via le lien et la page surligne les mots cherchés dans le
+    titre + descriptions (filtre Jinja `surligner_q`). Sans `q`, pas
+    de surlignage. Le test demo a HK-001 titré « Numéro 1 de Hara-Kiri »."""
+    sans = client_demo.get("/item/HK-001?fonds=HK").text
+    avec = client_demo.get("/item/HK-001?fonds=HK&q=Hara").text
+    assert "<mark>Hara</mark>" not in sans
+    assert "<mark>Hara</mark>" in avec
+
+
+def test_route_recherche_charge_script_raccourcis(
+    client_demo: TestClient,
+) -> None:
+    """Le JS de raccourcis clavier est chargé sur la page /recherche
+    (← / → pour paginer, Esc pour défocus la barre)."""
+    response = client_demo.get("/recherche")
+    assert response.status_code == 200
+    assert "js/recherche_raccourcis.js" in response.text
+
+
+def test_surligner_q_helper_unitaire() -> None:
+    """Test unitaire du filtre `surligner_q` :
+    - vide / None → texte échappé sans <mark>
+    - 1 mot → surligne (insensible casse)
+    - plusieurs mots → surligne chacun
+    - HTML dans le texte → échappé (anti-XSS)
+    """
+    from archives_tool.api.templating import _surligner_q
+
+    assert str(_surligner_q("Hello", "")) == "Hello"
+    assert str(_surligner_q("Hello", None)) == "Hello"
+    assert str(_surligner_q(None, "x")) == ""
+    assert str(_surligner_q("Hello world", "hello")) == "<mark>Hello</mark> world"
+    # Multi-tokens : matche n'importe lequel
+    out = str(_surligner_q("Hello world", "world hello"))
+    assert "<mark>Hello</mark>" in out
+    assert "<mark>world</mark>" in out
+    # Sécurité XSS : balises dans le texte échappées avant injection
+    out = str(_surligner_q("<script>alert(1)</script>", "alert"))
+    assert "<script>" not in out  # bien échappé en &lt;script&gt;
+    assert "&lt;script&gt;" in out
+    assert "<mark>alert</mark>" in out
 
 
 def test_filtres_recherche_nb_filtres_actifs() -> None:

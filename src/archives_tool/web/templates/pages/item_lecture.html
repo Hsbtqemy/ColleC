@@ -28,14 +28,14 @@
       data-version="{{ item.version }}"
       data-edit-url-template="/item/{cote}/champ/{field}?fonds={fonds}">
 
-{{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections) }}
+{{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections, q_surligne=q_surligne) }}
 
 <div class="layout-trois-zones flex gap-4"
      style="height:calc(100vh - 240px);min-height:520px;">
   {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote) }}
 
   <div style="flex:0 0 460px;height:100%;">
-    {{ cartouche_metadonnees(detail.metadonnees_par_section, item.cote) }}
+    {{ cartouche_metadonnees(detail.metadonnees_par_section, item.cote, q_surligne=q_surligne) }}
   </div>
 
   <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;">

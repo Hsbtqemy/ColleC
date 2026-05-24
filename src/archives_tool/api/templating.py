@@ -6,10 +6,12 @@ besoin de `templates.TemplateResponse`.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from archives_tool.affichage.formatters import (
     LIBELLES_ETAT,
@@ -128,8 +130,6 @@ def _snippet_fts_safe(snippet: str | None) -> str:
     avant le `.replace()` — sinon `Markup.replace()` réescape le
     replacement (`<mark>` deviendrait `&lt;mark&gt;`).
     """
-    from markupsafe import Markup, escape
-
     if not snippet:
         return ""
     safe = str(escape(snippet))  # str pour .replace() sans réescape
@@ -137,6 +137,43 @@ def _snippet_fts_safe(snippet: str | None) -> str:
         "&lt;/mark&gt;", "</mark>"
     )
     return Markup(safe)
+
+
+def _surligner_q(text: object, q: str | None) -> str:
+    """Surligne les mots de `q` dans `text` via des balises `<mark>`.
+
+    Utilisé par les pages d'entité (item/fonds/collection) quand on
+    y arrive depuis la page de recherche avec `?q=...` propagé. Le
+    surlignage aide l'utilisateur à voir tout de suite *où* le mot
+    cherché apparaît dans la notice.
+
+    Limitation V0.9.x : insensible à la casse mais PAS aux accents.
+    Le serveur FTS5 indexe avec `remove_diacritics 2` (`numero`
+    matche `Numéro` en search), mais le surlignage côté UI fait
+    juste la casse — sans cela il faudrait normaliser le texte et
+    tracker les offsets, complexe pour un gain marginal sur des
+    corpus francophones (la grande majorité des matchs reste
+    visible par la casse). Si le besoin remonte, refactor possible
+    via une lib de normalisation (`unidecode`) + matching par
+    offset preserves.
+
+    Sécurité : échappe le HTML d'entrée avant d'injecter les marks
+    (anti-XSS si `text` vient de `metadonnees` libre).
+    """
+    if text is None:
+        return Markup("")
+    text_str = str(text)
+    if not q or not q.strip():
+        return Markup(escape(text_str))
+    tokens = [re.escape(t) for t in q.strip().split() if t]
+    if not tokens:
+        return Markup(escape(text_str))
+    # Échappe d'abord (sécurité XSS) puis surligne sur le texte
+    # échappé — les `<` deviennent `&lt;` donc le `<mark>` injecté
+    # est la seule balise réelle dans la sortie.
+    escaped = str(escape(text_str))
+    pattern = re.compile("(" + "|".join(tokens) + ")", re.IGNORECASE)
+    return Markup(pattern.sub(r"<mark>\1</mark>", escaped))
 
 
 templates = Jinja2Templates(directory=RACINE_TEMPLATES)
@@ -161,6 +198,7 @@ templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri
 templates.env.filters["url_page"] = _url_page
 templates.env.filters["snippet_fts_safe"] = _snippet_fts_safe
+templates.env.filters["surligner_q"] = _surligner_q
 templates.env.globals["pages_visibles"] = _pages_visibles
 templates.env.globals["est_lecture_seule"] = est_lecture_seule
 templates.env.globals["static_url"] = _static_url

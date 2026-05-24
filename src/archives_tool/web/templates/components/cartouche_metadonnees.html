@@ -144,7 +144,7 @@
    `dict[str, list[ChampMetadonnee]]` (cf. `composer_metadonnees_par_section`).
    Compose les macros ci-dessus et pose donc les hooks `data-edit-field`
    / `data-value`. #}
-{%- macro cartouche_metadonnees(sections, cote) -%}
+{%- macro cartouche_metadonnees(sections, cote, q_surligne="") -%}
 {% call cartouche_wrapper() %}
   {% for nom_section, champs in sections.items() %}
     {% call section(nom_section) %}
@@ -173,7 +173,11 @@
             {%- elif champ.type_donnee == 'mono' -%}
               {{ valeur_mono(champ.valeur) }}
             {%- else -%}
-              {{ champ.valeur }}
+              {# Texte libre : on applique le surlignage `?q=` propagé
+                 depuis la page de recherche (filtre `surligner_q` qui
+                 échappe + injecte <mark>). Sur les valeurs vides ou
+                 sans q, le filtre est neutre. #}
+              {{ champ.valeur | surligner_q(q_surligne) }}
             {%- endif -%}
           {% endcall %}
         {% endfor %}

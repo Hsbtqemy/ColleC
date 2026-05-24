@@ -22,10 +22,10 @@
   </p>
   <div class="flex items-start justify-between mt-2 gap-4">
     <div>
-      <h1 class="text-2xl font-medium">{{ detail.fonds.titre }}</h1>
+      <h1 class="text-2xl font-medium">{{ detail.fonds.titre | surligner_q(q_surligne) }}</h1>
       <p class="text-sm text-gray-500 font-mono">{{ detail.fonds.cote }}</p>
       {% if detail.fonds.description %}
-        <p class="text-sm text-gray-700 mt-1">{{ detail.fonds.description }}</p>
+        <p class="text-sm text-gray-700 mt-1">{{ detail.fonds.description | surligner_q(q_surligne) }}</p>
       {% endif %}
     </div>
     {% if not est_lecture_seule() %}

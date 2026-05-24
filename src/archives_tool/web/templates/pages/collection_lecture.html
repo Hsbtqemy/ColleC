@@ -34,7 +34,7 @@
 
   <div class="flex items-start justify-between mt-2 gap-4">
     <div>
-      <h1 class="text-2xl font-medium">{{ col.titre }}</h1>
+      <h1 class="text-2xl font-medium">{{ col.titre | surligner_q(q_surligne) }}</h1>
       <p class="text-sm text-gray-500 mt-1">
         <span class="font-mono">{{ col.cote }}</span>
         <span aria-hidden="true">·</span>
@@ -59,7 +59,7 @@
         {% endif %}
       </p>
       {% if col.description %}
-        <p class="text-sm text-gray-700 mt-1">{{ col.description }}</p>
+        <p class="text-sm text-gray-700 mt-1">{{ col.description | surligner_q(q_surligne) }}</p>
       {% endif %}
     </div>
     <div class="flex items-start gap-2">

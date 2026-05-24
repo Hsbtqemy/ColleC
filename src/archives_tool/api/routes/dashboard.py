@@ -276,6 +276,13 @@ def liste_fonds(
 def page_fonds(
     cote: str,
     request: Request,
+    q: str = Query(
+        "",
+        description=(
+            "Termes à surligner — propagé depuis la page de recherche "
+            "via le filtre `surligner_q`."
+        ),
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -312,6 +319,7 @@ def page_fonds(
             roles_options=ROLES_OPTIONS,
             libelles_roles=LIBELLES_ROLE,
             consultation_url=consultation_url,
+            q_surligne=q,
         ),
     )
 
@@ -486,6 +494,13 @@ def page_collection(
     # qui ignore les filtres hors options).
     annee_de: str | None = Query(None),
     annee_a: str | None = Query(None),
+    q: str = Query(
+        "",
+        description=(
+            "Termes à surligner — propagé depuis la page de recherche "
+            "via le filtre `surligner_q`."
+        ),
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -567,6 +582,7 @@ def page_collection(
             filtres=filtres,
             etats_disponibles=list(EtatCatalogage),
             consultation_url=consultation_url,
+            q_surligne=q,
         ),
     )
 
@@ -795,6 +811,13 @@ def page_item(
         ),
     ),
     fichier_courant: int = Query(1, ge=1),
+    q: str = Query(
+        "",
+        description=(
+            "Termes à surligner dans la page — propagé depuis la page "
+            "de résultats de recherche pour aider à localiser les matches."
+        ),
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -819,6 +842,7 @@ def page_item(
             detail=detail,
             fonds_cote=fonds_obj.cote,
             consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
+            q_surligne=q,
         ),
     )
 

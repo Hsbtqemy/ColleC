@@ -15,7 +15,7 @@
 {% from 'components/badge_etat.html' import badge_etat %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
 
-{% macro bandeau_item(item, fonds, nb_fichiers, navigation, collections=()) -%}
+{% macro bandeau_item(item, fonds, nb_fichiers, navigation, collections=(), q_surligne="") -%}
 <header class="bandeau-item mb-5">
   <p class="text-sm text-gray-500">
     <a href="/" class="hover:underline">Tableau de bord</a> ›
@@ -31,7 +31,7 @@
         {{ badge_etat(item.etat_catalogage) }}
       </div>
       <h1 class="text-2xl font-medium" style="line-height:1.25;">
-        {{ item.titre or '(sans titre)' }}
+        {{ (item.titre or '(sans titre)') | surligner_q(q_surligne) }}
       </h1>
       <p class="text-sm text-gray-500 mt-1 flex items-center flex-wrap gap-x-2 gap-y-1">
         <span>{{ nb_fichiers }} fichier{{ "s" if nb_fichiers != 1 else "" }}</span>

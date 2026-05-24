@@ -21,6 +21,20 @@ La validation par `Entrée` ouvre la page de résultats `/recherche`
 sur une URL bookmarkable :
 `/recherche?q=mon-terme&fonds_id=12&etat=brouillon`.
 
+## Raccourcis clavier sur la page de résultats
+
+Quand vous êtes sur `/recherche` (et pas en train de saisir dans
+un champ) :
+
+- **`←` / `→`** : page précédente / suivante de la pagination.
+- **`Esc`** : défocus la barre de recherche si elle a le focus
+  (ne clear pas la valeur — utile pour passer à la navigation
+  clavier sans perdre la requête).
+
+Dans un champ (barre principale, filtre `q2`, années), `←`/`→`
+restent disponibles pour déplacer le curseur — la navigation
+pagination ne se déclenche que hors saisie.
+
 ## Syntaxe de la requête
 
 La recherche utilise SQLite FTS5 avec quelques aménagements
@@ -217,10 +231,17 @@ réindexer manuellement.
   `/recherche` (page complète), il n'y a pas de dropdown
   interactif au fil de la frappe. Acceptable pour un usage
   archivistique où la requête se réfléchit avant d'être lancée.
-- **Surlignage dans la page de l'entité cliquée** : si vous
-  cliquez sur un résultat, vous arrivez sur la page de l'item sans
-  les termes recherchés mis en évidence. À itérer V2 via `?q=`
-  propagé.
+- **Surlignage dans la page de l'entité cliquée** : actif sur item,
+  fonds et collection — depuis la page de résultats, le lien vers
+  une entité préserve `?q=...` et la page cible surligne les
+  termes recherchés dans le titre et les descriptions (filtre
+  Jinja `surligner_q`, balises `<mark>` insensibles à la casse).
+  Limitation : insensible à la casse uniquement, **pas aux
+  accents** (côté UI). Le serveur FTS indexe avec
+  `remove_diacritics 2`, donc `numero` matche `Numéro` dans la
+  recherche, mais le `<mark>` côté page ne s'applique que sur
+  `numero`. Refactor V2+ possible (lib `unidecode` + matching par
+  offsets) si le besoin remonte.
 
 ## Réindexer manuellement
 

@@ -121,6 +121,87 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.3 (en cours)
+
+Trois gros chantiers livrés au fil de l'eau après V0.9.2 stable,
+pilotés par un premier test d'usage sur un export Nakala réel
+(corpus Por Favor : 173 items, 7454 scans). 937 tests verts à
+ce jour.
+
+### Recherche full-text (FTS5)
+
+- Backend SQLite FTS5 sur les champs textuels des items, fonds et
+  collections (cote, titre, description, notes internes,
+  métadonnées libres flattenées). Tokeniseur `unicode61` insensible
+  aux accents (`numero` matche `Numéro`). Triggers SQL maintiennent
+  l'index en temps réel.
+- Page `/recherche` : barre + scope (fonds/collection) + filtre par
+  type d'entité, snippets surlignés `<mark>` (HTML-safe anti-XSS).
+- Barre de recherche globale dans le bandeau, disponible sur toutes
+  les pages. Raccourcis `/` ou `Cmd+K` pour focus.
+- Filtres avancés : état de catalogage, langue, type COAR, période
+  d'années, raffinement « rechercher dans les résultats ». Options
+  scope-aware (un fonds en français n'affiche pas « polonais »).
+  Pastilles cliquables × pour retirer un filtre, bouton « Tout
+  réinitialiser » dès 2 filtres actifs.
+- Pagination réelle (50/page par défaut, cap 200), cap dur 5000
+  résultats par type avec note discrète si dépassé.
+- Libellés humains pour Type COAR (« Périodique » au lieu de
+  `c_3e5a`) et Langue (« Français » au lieu de `fra`) — réutilise
+  les tables `TYPES_COAR_OPTIONS` / `LANGUES_OPTIONS` partagées avec
+  l'édition inline.
+- Surlignage propagé : `?q=` transmis aux pages détail item pour
+  retrouver les matches sur la fiche cliquée (filtre Jinja
+  `surligner_q`).
+- Raccourcis clavier sur la page résultats : ← / → pour paginer,
+  Esc pour défocus la barre.
+- Documentation [guide/recherche.md](../guide/recherche.md) dédiée.
+
+### Liseuse consultation
+
+- Mode lecture distinct du mode édition : route
+  `/lire/<fonds>/<cote>` avec layout 3 colonnes (cartouche meta
+  gauche, visionneuse centre, panneau vignettes droite). Bandeau
+  spécifique avec navigation séparée Page ← → / Item ← →.
+- HTMX swap multi-fragments (visionneuse + bandeau + vignettes) à
+  chaque clic vignette ou bouton Page — pas de reload.
+- **Lot 2** : viewer PDF embedded via PDF.js 5 (build legacy + WASM
+  OpenJPEG pour JP2 Nakala), couche texte OCR sélectionnable.
+- **Lot 3** : raccourcis clavier ← / → (navigation pages dans la
+  liseuse), Esc retour catalogage. Indicateur loading pendant
+  HTMX swap.
+- **Lot 4** : viewer PDF en scroll continu (toutes les pages
+  affichées, IntersectionObserver pour lazy render des canvas,
+  économie mémoire sur PDF longs comme les fac-similés Nakala
+  à 40+ pages).
+
+### Assistant d'import (V0.9.2-import)
+
+- Refonte en 2 modes : simple (4 questions cote/granularité/titre/
+  date, auto-classification des autres colonnes) et avancé (grille
+  de 28 sélecteurs avec aperçu inline + heuristiques nominatives +
+  détection d'anomalies).
+- Classif par-item / par-fichier automatique (≥ 90 % stables =
+  item, > 50 % variables = fichier), promotion auto des colonnes
+  par-fichier vers `fichier.metadonnees.<slug>`.
+- Section « Anomalies détectées » avec correction client-side sans
+  POST intermédiaire.
+- 4 frictions résolues sur le test PF (F1-F4) + 3 bugs critiques
+  (promotion URL Nakala silencieuse, mode simple qui écrasait les
+  champs DC dédiés, champs personnalisés invisibles sur la page
+  item) + trou #9 (singulier/pluriel auteur/sujet à l'export DC).
+- Normalisation IIIF Nakala (URL data → info.json) + téléchargement
+  direct dans le fallback visionneuse + type COAR auto (alias
+  textuel → URI canonique) + propagation DOI collection Nakala sur
+  la miroir + miniatures Nakala via thumb IIIF.
+
+### Autres polish
+
+- Édition inline : textarea Description agrandi à 10 lignes (était
+  3), padding aéré pour confort de rédaction.
+- Pages modifier (item/collection/fonds) : Description publique
+  passe à 10 lignes, Description interne / Notes à 5-6 lignes.
+
 ## V0.9.2 (stable, 2026-05-10)
 
 Cible atteinte : interface web complète sur les 4 pages

@@ -92,8 +92,14 @@
       input.style.cssText =
         "width:100%;font-size:13px;padding:2px 4px;border:1px solid #d1d5db;border-radius:3px;background:white;";
       if (tag === "textarea") {
-        input.rows = 3;
-        input.style.cssText += "resize:vertical;line-height:1.45;";
+        // Description riche : 10 lignes visibles + padding plus
+        // genereux + line-height aere pour rendre confortable la
+        // redaction longue. Coherent avec les textareas du mode
+        // modifier (`pages/item_modifier.html`). Le `resize:vertical`
+        // permet a l'utilisateur d'agrandir encore au besoin.
+        input.rows = 10;
+        input.style.cssText =
+          "width:100%;font-size:13px;padding:8px 10px;border:1px solid #d1d5db;border-radius:3px;background:white;resize:vertical;line-height:1.5;";
       }
     }
 

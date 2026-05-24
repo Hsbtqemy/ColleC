@@ -18,7 +18,12 @@
     dans <code style="font-family:monospace;">config_local.yaml</code>).
   </div>
   {% endif %}
-  <div class="max-w-7xl mx-auto px-6 py-8">
+  {# Container avec cap par défaut à `max-w-7xl` (1280px). Les pages
+     dont les résultats profitent d'une plus grande largeur (recherche
+     notamment) peuvent l'overrider via le block `container_class`
+     pour basculer en `max-w-full`, sans casser les pages aux layouts
+     plus contraints (formulaires, cartouche fixed-width…). #}
+  <div class="{% block container_class %}max-w-7xl{% endblock %} mx-auto px-6 py-8">
     {% include "components/header.html" %}
     {% block breadcrumb %}{% endblock %}
     <main>

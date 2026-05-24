@@ -307,6 +307,44 @@ def cmd_importer(
 
 
 # ---------------------------------------------------------------------------
+# Commande `reindexer` : rebuild des tables FTS5 de recherche
+# ---------------------------------------------------------------------------
+
+
+@app.command("reindexer")
+def cmd_reindexer(
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Reconstruit les tables FTS5 (`item_fts`, `fonds_fts`, `collection_fts`).
+
+    Utile principalement pour :
+    - Une base ancienne (pré-V0.9.3) qui n'avait pas encore l'index FTS.
+    - Une base restaurée depuis une sauvegarde sans les tables FTS.
+    - Diagnostic d'un index potentiellement désynchronisé.
+
+    Idempotent : peut être relancé sans risque (vide puis repeuple).
+    Le coût est ~1 seconde pour ~10 000 items. L'index est ensuite
+    maintenu automatiquement par les triggers SQL — pas besoin de
+    relancer après chaque modification.
+    """
+    from archives_tool.db import assurer_tables_fts, reindexer_fts
+
+    if not db_path.is_file():
+        typer.echo(f"Erreur : base introuvable ({db_path}).", err=True)
+        raise typer.Exit(2)
+    engine = creer_engine(db_path)
+    assurer_tables_fts(engine)  # crée si absentes
+    counts = reindexer_fts(engine)
+    engine.dispose()
+    typer.echo(
+        f"Réindexation terminée : "
+        f"{counts.get('item', 0)} items, "
+        f"{counts.get('fonds', 0)} fonds, "
+        f"{counts.get('collection', 0)} collections."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Commande `exporter`
 # ---------------------------------------------------------------------------
 

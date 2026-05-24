@@ -93,6 +93,8 @@ nav:
     - Concepts: guide/concepts.md
     - Interface web: guide/interface-web.md
     - Recherche: guide/recherche.md
+    - Liseuse de consultation: guide/liseuse.md
+    - Assistant d'import (web): guide/import-assistant.md
     - CLI:
       - Vue d'ensemble: guide/cli/index.md
       - importer: guide/cli/importer.md

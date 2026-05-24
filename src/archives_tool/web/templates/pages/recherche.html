@@ -287,10 +287,13 @@
     <div class="flex flex-wrap gap-2 mb-3">
       {% if filtres.q_dans_resultats %}
         {# Tronque visuellement à 40 chars pour éviter qu'une pastille
-           q2 longue déborde la zone — full text au survol via title. #}
+           q2 longue déborde la zone — full text au survol via title.
+           `aria-label` répète l'intention en clair pour les lecteurs
+           d'écran (qui sinon liraient « lien : dans : Eduardo multiplication »). #}
         {% set q2_court = filtres.q_dans_resultats[:40] ~ '…' if filtres.q_dans_resultats|length > 40 else filtres.q_dans_resultats %}
         <a href="{{ _query_string(omit_q2=True) }}"
            title="Retirer le raffinement : {{ filtres.q_dans_resultats }}"
+           aria-label="Retirer le filtre raffinement : {{ filtres.q_dans_resultats }}"
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;
                   border-radius:9999px;padding:3px 10px;font-size:12px;
@@ -298,47 +301,54 @@
           dans :
           <strong style="overflow:hidden;text-overflow:ellipsis;
                          white-space:nowrap;">{{ q2_court }}</strong>
-          ×
+          <span aria-hidden="true">×</span>
         </a>
       {% endif %}
       {% for e in filtres.etats %}
         <a href="{{ _query_string(omit_etat=e) }}"
+           aria-label="Retirer le filtre État : {{ e | libelle_etat }}"
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
                   color:#374151;border-radius:9999px;padding:3px 10px;
                   font-size:12px;text-decoration:none;">
-          État : <strong>{{ e | libelle_etat }}</strong> ×
+          État : <strong>{{ e | libelle_etat }}</strong>
+          <span aria-hidden="true">×</span>
         </a>
       {% endfor %}
       {% for lang in filtres.langues %}
         <a href="{{ _query_string(omit_langue=lang) }}"
+           aria-label="Retirer le filtre Langue : {{ lang | libelle_langue }}"
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
                   color:#374151;border-radius:9999px;padding:3px 10px;
                   font-size:12px;text-decoration:none;"
            title="ISO 639-3 : {{ lang }}">
-          Langue : <strong>{{ lang | libelle_langue }}</strong> ×
+          Langue : <strong>{{ lang | libelle_langue }}</strong>
+          <span aria-hidden="true">×</span>
         </a>
       {% endfor %}
       {% for t in filtres.types_coar %}
         <a href="{{ _query_string(omit_type_coar=t) }}"
+           aria-label="Retirer le filtre Type COAR : {{ t | libelle_coar }}"
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
                   color:#374151;border-radius:9999px;padding:3px 10px;
                   font-size:12px;text-decoration:none;"
            title="{{ t }}">
-          Type : <strong>{{ t | libelle_coar }}</strong> ×
+          Type : <strong>{{ t | libelle_coar }}</strong>
+          <span aria-hidden="true">×</span>
         </a>
       {% endfor %}
       {% if filtres.annee_min is not none or filtres.annee_max is not none %}
         <a href="{{ _query_string(omit_periode=True) }}"
+           aria-label="Retirer le filtre Période"
            style="display:inline-flex;align-items:center;gap:6px;
                   background:#f3f4f6;border:1px solid rgba(0,0,0,0.08);
                   color:#374151;border-radius:9999px;padding:3px 10px;
                   font-size:12px;text-decoration:none;">
           Période :
           <strong>{{ filtres.annee_min if filtres.annee_min is not none else '…' }}–{{ filtres.annee_max if filtres.annee_max is not none else '…' }}</strong>
-          ×
+          <span aria-hidden="true">×</span>
         </a>
       {% endif %}
       {# Bouton « Tout réinitialiser » : visible dès qu'au moins 2

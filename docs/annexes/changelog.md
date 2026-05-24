@@ -121,12 +121,11 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
-## V0.9.3 (en cours)
+## V0.9.3 (stable, 2026-05-25)
 
 Trois gros chantiers livrés au fil de l'eau après V0.9.2 stable,
 pilotés par un premier test d'usage sur un export Nakala réel
-(corpus Por Favor : 173 items, 7454 scans). 937 tests verts à
-ce jour.
+(corpus Por Favor : 173 items, 7454 scans). 944 tests verts.
 
 ### Recherche full-text (FTS5)
 
@@ -201,6 +200,27 @@ ce jour.
   3), padding aéré pour confort de rédaction.
 - Pages modifier (item/collection/fonds) : Description publique
   passe à 10 lignes, Description interne / Notes à 5-6 lignes.
+- Layout responsive : nouveau block Jinja `container_class` dans
+  `base.html`, défaut `max-w-7xl` (1280px). La page recherche
+  l'override en `max-w-full` pour profiter de la pleine largeur
+  sur grand écran (snippets et filtres avancés respirent mieux).
+  Les autres pages gardent le cap (cartouche item, formulaires
+  fixed-width n'aiment pas s'étirer sur 4K).
+- A11y des pastilles de filtres : `aria-label` explicite sur les
+  liens × pour les lecteurs d'écran (« Retirer le filtre État :
+  Brouillon » au lieu de « lien : État deux points Brouillon
+  multiplication »).
+- CLI `archives-tool reindexer` : commande utilitaire pour
+  reconstruire les tables FTS5 d'une base ancienne (pré-V0.9.3)
+  ou restaurée depuis une sauvegarde sans index. Idempotent.
+- Check FTS au démarrage de l'app : hook lifespan FastAPI qui
+  appelle `assurer_tables_fts` sur la base courante. Sécurise
+  l'upgrade : pas besoin d'appeler `reindexer` à la main quand
+  on ouvre une base pré-V0.9.3 dans l'interface web.
+- Documentation : nouvelles pages [guide/liseuse.md](../guide/liseuse.md)
+  et [guide/import-assistant.md](../guide/import-assistant.md)
+  qui comblent un trou (les deux chantiers étaient livrés sans
+  page MkDocs dédiée).
 
 ## V0.9.2 (stable, 2026-05-10)
 

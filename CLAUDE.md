@@ -568,6 +568,49 @@ Limites Lot 3 :
 - Pas de raccourci `F` (fullscreen) ni `M` (toggle meta) initialement
   prévus — pas dans ce lot, reportable si besoin.
 
+**Liseuse Lot 4 : viewer PDF en scroll continu (2026-05-24)** —
+refonte du composant `visionneuse_pdf.html`. Le mode initial
+« 1 page à la fois » du Lot 2 est remplacé par un scroll vertical
+continu, plus naturel pour feuilleter un fac-similé (cas PF : 40
+pages par numéro).
+
+Architecture : au load, calcul du scale cible (largeur du conteneur
+/ largeur native de la page 1). Création de N wrappers `<div>` avec
+hauteur estimée (basée sur la page 1, format constant en
+fac-similé). Deux `IntersectionObserver` :
+- **render lazy** : rootMargin `800px 0px` → render la page quand
+  elle est dans ~2 pages d'avance dans le scroll. Évite de monter
+  40 canvas au load (PF aurait ~600 Mo en mémoire sinon).
+- **compteur visible** : rootMargin `-30% 0px -60% 0px` → la page
+  centrée dans le viewport gagne, met à jour le compteur `N / M`
+  du bandeau de contrôles.
+
+Boutons :
+- `‹/›` → scroll smooth vers la page précédente/suivante (utilisent
+  `scrollIntoView({behavior: "smooth"})`)
+- `⤢` → recalcule le scale (utile si l'utilisateur a redimensionné
+  hors du resize auto) + préserve la page visible avant/après.
+
+Resize fenêtre auto : listener `window.resize` avec debounce 300ms
+qui appelle `ajusterLargeur()`. Skip si le viewer n'est plus dans
+le DOM (HTMX swap fichier suivant).
+
+Hauteur estimée : sans cette estimation initiale (`min-height` du
+wrapper = hauteur réelle prévue × scale), les pages se rendant
+progressivement faisaient sauter la position scroll des suivantes.
+Critique sur PF qui a 40 pages.
+
+Limites :
+- Si l'utilisateur scroll très vite, l'IntersectionObserver
+  déclenche le render de toutes les pages traversées qui se
+  queueent — mémoire peut grimper. Pas d'unrender automatique des
+  pages éloignées (potentielle optim future).
+- `Ctrl+F` natif ne cherche que dans les pages déjà rendues
+  (limite du DOM ; PDF.js inclut un finder dédié dans son default
+  viewer, non-utilisé ici car custom UI).
+- Pages au format hétérogène (rares en fac-similé) ne sont pas
+  pré-estimées correctement.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

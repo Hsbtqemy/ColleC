@@ -284,6 +284,54 @@ def test_liseuse_vignette_placeholder_couleur_pdf(
                 db.commit()
 
 
+def test_liseuse_pdf_mode_scroll_continu(
+    client_demo: TestClient, db_demo_factory
+) -> None:
+    """Lot 4 V0.9.x : le viewer PDF est en mode scroll continu —
+    toutes les pages rendues en succession verticale via lazy
+    IntersectionObserver. Pas de mode « 1 page à la fois » (qui
+    était le Lot 2 initial).
+
+    Marqueurs structurels du mode scroll : `visionneuse-pdf-scroll`
+    (conteneur scrollable), `visionneuse-pdf-pages-container`
+    (parent des wrappers), `IntersectionObserver` (lazy render +
+    compteur actif), `recreerPages` (création N wrappers au load)."""
+    from archives_tool.models import Fichier, Item
+
+    with db_demo_factory() as db:
+        item = db.scalar(select(Item).where(Item.cote == "HK-001").limit(1))
+        f_pdf = Fichier(
+            item_id=item.id,
+            racine=None,
+            chemin_relatif=None,
+            nom_fichier="scroll-test.pdf",
+            ordre=94,
+            iiif_url_nakala="https://api.nakala.fr/data/10.1/x/scroll",
+        )
+        db.add(f_pdf)
+        db.commit()
+        fid = f_pdf.id
+
+    try:
+        response = client_demo.get("/lire/HK/HK-001?fichier=94")
+        assert response.status_code == 200
+        # Conteneur scrollable + parent des wrappers
+        assert "visionneuse-pdf-scroll" in response.text
+        assert "visionneuse-pdf-pages-container" in response.text
+        # IntersectionObserver pour lazy render + compteur visible
+        assert "IntersectionObserver" in response.text
+        # Resize listener avec debounce 300ms (auto-réajustement largeur)
+        assert 'addEventListener("resize"' in response.text
+        # Hauteur estimée des wrappers pour éviter le scroll qui saute
+        assert "hauteurEstimee" in response.text
+    finally:
+        with db_demo_factory() as db:
+            obj = db.get(Fichier, fid)
+            if obj is not None:
+                db.delete(obj)
+                db.commit()
+
+
 def test_liseuse_pdf_inclut_wasm_url_et_text_layer(
     client_demo: TestClient, db_demo_factory
 ) -> None:

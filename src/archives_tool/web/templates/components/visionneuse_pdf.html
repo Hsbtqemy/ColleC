@@ -1,23 +1,25 @@
-{# visionneuse_pdf.html — viewer PDF minimal pour la liseuse Lot 2.
+{# visionneuse_pdf.html — viewer PDF en mode scroll continu (Lot 4
+   liseuse). Toutes les pages sont rendues en succession verticale,
+   navigation par scroll naturel. Lazy render via IntersectionObserver
+   pour éviter de charger 40 canvas à l'init (PF a typiquement 40
+   pages par numéro fac-similé).
 
-   Rend un canvas + barre de contrôles (page précédente / suivante /
-   compteur / zoom + - reset). Le script ESM en bas instancie PDF.js
-   depuis la vendor folder.
+   Rend un wrapper scrollable avec une `<div>` par page créée par
+   JS au load. Chaque page = canvas + text layer (sélection + Ctrl+F
+   natif). L'IntersectionObserver render chaque page quand elle
+   s'approche du viewport (rootMargin 800px = ~2 pages d'avance).
 
-   Compatible HTMX swap : le script est ré-exécuté après chaque swap,
-   et utilise un flag `data-pdf-ready` pour éviter la double-initialisation.
+   Compatible HTMX swap (re-init côté JS via flag `data-pdf-ready`).
 
    Variables :
-   - url : URL du PDF (route locale `/item/.../fichiers/<id>` ou
-     URL Nakala data directe)
+   - url : URL du PDF
    - nom : nom du fichier (pour fallback message)
-   - id : id du Fichier (utilisé comme suffixe DOM unique)
+   - id : id du Fichier (suffixe DOM unique)
 #}
 
 {% macro visionneuse_pdf(url, nom, id) -%}
 <style>
-  /* Text layer PDF.js — spans transparents positionnés en absolu
-     au-dessus du canvas. Sélection visible en bleu. */
+  /* Text layer PDF.js — spans transparents au-dessus du canvas. */
   .visionneuse-pdf-textlayer span,
   .visionneuse-pdf-textlayer br {
     color: transparent;
@@ -26,13 +28,41 @@
     cursor: text;
     transform-origin: 0% 0%;
   }
-  .visionneuse-pdf-textlayer ::selection {
-    background: rgba(0, 100, 255, 0.35);
+  .visionneuse-pdf-textlayer ::selection { background: rgba(0, 100, 255, 0.35); }
+  .visionneuse-pdf-textlayer ::-moz-selection { background: rgba(0, 100, 255, 0.35); }
+
+  /* Wrapper de page : placeholder gris avec hauteur estimée
+     (réajustée au render). Centré horizontalement. */
+  .visionneuse-pdf-page {
+    position: relative;
+    margin: 0 auto 16px auto;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    /* Placeholder gris en attente de render */
+    min-height: 400px;
+    width: 100%;
+    max-width: 100%;
   }
-  .visionneuse-pdf-textlayer ::-moz-selection {
-    background: rgba(0, 100, 255, 0.35);
+  .visionneuse-pdf-page[data-rendered="0"] {
+    background: #e5e7eb;
+  }
+  .visionneuse-pdf-page[data-rendered="0"]::before {
+    content: attr(data-page-num);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #9ca3af;
+    font-size: 14px;
+    font-family: monospace;
+  }
+  .visionneuse-pdf-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
   }
 </style>
+
 <div class="visionneuse-pdf"
      id="visionneuse-pdf-{{ id }}"
      data-pdf-url="{{ url }}"
@@ -40,7 +70,10 @@
      style="width:100%;height:100%;display:flex;flex-direction:column;
             background:#525659;border-radius:6px;overflow:hidden;">
 
-  {# Barre de contrôles compacte en haut #}
+  {# Barre de contrôles : compteur, navigation pages PDF, télécharger.
+     Le compteur "Page N / M" est mis à jour pendant le scroll via
+     un IntersectionObserver sur les wrappers. Boutons ‹/› scroll
+     vers la page précédente/suivante (smooth). #}
   <div class="visionneuse-pdf-controls"
        style="flex:0 0 auto;display:flex;align-items:center;gap:8px;
               padding:6px 12px;background:#3a3d40;color:#e5e7eb;
@@ -48,7 +81,7 @@
     <button type="button" data-action="prev" disabled
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Page précédente du PDF">
+            title="Page précédente du PDF (scroll)">
       ‹
     </button>
     <span data-page-info style="min-width:80px;text-align:center;
@@ -58,30 +91,14 @@
     <button type="button" data-action="next" disabled
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Page suivante du PDF">
+            title="Page suivante du PDF (scroll)">
       ›
     </button>
     <span style="flex:1;"></span>
-    <button type="button" data-action="zoom-out"
-            style="padding:3px 8px;background:#525659;color:#e5e7eb;
-                   border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Réduire">
-      −
-    </button>
-    <span data-zoom-info style="min-width:42px;text-align:center;
-                                font-variant-numeric:tabular-nums;">
-      100%
-    </span>
-    <button type="button" data-action="zoom-in"
-            style="padding:3px 8px;background:#525659;color:#e5e7eb;
-                   border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Agrandir">
-      +
-    </button>
     <button type="button" data-action="zoom-fit"
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Ajuster à la largeur">
+            title="Réajuster la largeur (re-render toutes les pages)">
       ⤢
     </button>
     <a href="{{ url }}" target="_blank" rel="noopener"
@@ -92,31 +109,14 @@
     </a>
   </div>
 
-  {# Zone de rendu : canvas + text layer dans un conteneur positionné
-     pour que la couche texte se superpose pixel-perfect au-dessus du
-     canvas (sélection texte, Ctrl+F navigateur). #}
-  <div class="visionneuse-pdf-page-wrapper"
-       style="flex:1;overflow:auto;display:flex;align-items:flex-start;
-              justify-content:center;padding:16px;">
-    <div class="visionneuse-pdf-page-container"
-         style="position:relative;background:#fff;
-                box-shadow:0 2px 8px rgba(0,0,0,0.3);">
-      <canvas class="visionneuse-pdf-canvas"
-              style="display:block;max-width:100%;height:auto;">
-      </canvas>
-      {# Couche texte transparente — PDF.js y pose des <span>
-         positionnés en absolu via TextLayer API. Texte sélectionnable
-         + Ctrl+F navigateur natif. Le CSS standard PDF.js (color
-         transparent, ::selection bleu) est appliqué via balise <style>
-         scoped au composant. #}
-      <div class="visionneuse-pdf-textlayer"
-           style="position:absolute;inset:0;overflow:hidden;
-                  line-height:1.0;
-                  pointer-events:auto;user-select:text;"></div>
+  {# Zone scrollable : les wrappers de page seront ajoutés par JS. #}
+  <div class="visionneuse-pdf-scroll"
+       style="flex:1;overflow:auto;padding:16px;">
+    <div class="visionneuse-pdf-pages-container"
+         style="max-width:100%;margin:0 auto;">
     </div>
   </div>
 
-  {# Zone messages d'erreur (chargement, render, etc.) #}
   <div class="visionneuse-pdf-erreur" hidden
        style="flex:0 0 auto;padding:12px;background:#7f1d1d;color:#fff;
               font-size:12px;text-align:center;">
@@ -124,11 +124,6 @@
 </div>
 
 <script>
-  // PDF.js est ESM (pdfjs-dist v5+) — on utilise l'import dynamique
-  // pour fonctionner aussi bien au load initial qu'après un swap HTMX
-  // (les <script type="module"> injectés par HTMX ne s'exécutent
-  // pas toujours selon les navigateurs/versions, l'import dynamique
-  // dans un <script> classique est plus fiable).
   import("/static/js/vendor/pdfjs/pdf.min.mjs").then(function (pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/js/vendor/pdfjs/pdf.worker.min.mjs";
     initVisionneusePdf{{ id }}(pdfjsLib);
@@ -151,70 +146,87 @@
 
     const url = wrapper.dataset.pdfUrl;
     const nom = wrapper.dataset.pdfNom;
-    const canvas = wrapper.querySelector(".visionneuse-pdf-canvas");
-    const ctx = canvas.getContext("2d");
-    const container = wrapper.querySelector(".visionneuse-pdf-page-container");
-    const textLayerDiv = wrapper.querySelector(".visionneuse-pdf-textlayer");
+    const scrollEl = wrapper.querySelector(".visionneuse-pdf-scroll");
+    const pagesContainer = wrapper.querySelector(".visionneuse-pdf-pages-container");
     const pageInfo = wrapper.querySelector("[data-page-info]");
-    const zoomInfo = wrapper.querySelector("[data-zoom-info]");
     const erreur = wrapper.querySelector(".visionneuse-pdf-erreur");
     const btnPrev = wrapper.querySelector("[data-action='prev']");
     const btnNext = wrapper.querySelector("[data-action='next']");
-    const btnZoomIn = wrapper.querySelector("[data-action='zoom-in']");
-    const btnZoomOut = wrapper.querySelector("[data-action='zoom-out']");
     const btnZoomFit = wrapper.querySelector("[data-action='zoom-fit']");
 
     let pdf = null;
-    let pageCourante = 1;
     let nbPages = 0;
-    let zoom = 1.0;  // 1.0 = scale natif * devicePixelRatio
-    let renderTask = null;
+    let pageVisible = 1;        // Page actuellement centrée dans le viewport
+    let scaleCible = 1.0;       // Scale pour fit la largeur
+    let renderObserver = null;  // IntersectionObserver lazy render
+    let visibilityObserver = null;  // IntersectionObserver compteur actif
 
     function afficherErreur(msg) {
       erreur.textContent = msg;
       erreur.hidden = false;
     }
 
-    function masquerErreur() {
-      erreur.hidden = true;
+    function maj_compteur() {
+      pageInfo.textContent = `${pageVisible} / ${nbPages}`;
+      btnPrev.disabled = pageVisible <= 1;
+      btnNext.disabled = pageVisible >= nbPages;
     }
 
-    function maj_controles() {
-      btnPrev.disabled = pageCourante <= 1;
-      btnNext.disabled = pageCourante >= nbPages;
-      pageInfo.textContent = `${pageCourante} / ${nbPages}`;
-      zoomInfo.textContent = `${Math.round(zoom * 100)}%`;
+    let hauteurEstimee = 600;  // mise à jour par calculerScaleCible
+
+    async function calculerScaleCible() {
+      // Largeur dispo dans le scroll (moins padding)
+      const largeurDispo = scrollEl.clientWidth - 32;
+      // Utilise la 1ère page comme référence (les fac-similés ont
+      // généralement des pages de même format).
+      const page1 = await pdf.getPage(1);
+      const viewportNatif = page1.getViewport({ scale: 1 });
+      scaleCible = Math.max(0.25, Math.min(3, largeurDispo / viewportNatif.width));
+      // Estimation de hauteur pour les wrappers pas encore rendus :
+      // évite le scroll qui saute quand les pages se rendent
+      // progressivement (la vraie hauteur remplace l'estimation au
+      // render réel). Approxime avec le format de la 1ère page —
+      // suffisant pour les fac-similés (toutes les pages du même
+      // format).
+      hauteurEstimee = Math.round(viewportNatif.height * scaleCible);
     }
 
-    async function rendre(n) {
-      if (!pdf) return;
-      masquerErreur();
-      // Annule un rendu en cours (eviter race si on clique vite).
-      if (renderTask) {
-        try { renderTask.cancel(); } catch (e) {}
-        renderTask = null;
-      }
+    async function rendrePage(pageWrapper) {
+      if (pageWrapper.dataset.rendered === "1") return;
+      pageWrapper.dataset.rendered = "1";
+      const n = parseInt(pageWrapper.dataset.pageNum, 10);
       try {
         const page = await pdf.getPage(n);
-        const viewport = page.getViewport({ scale: zoom });
+        const viewport = page.getViewport({ scale: scaleCible });
         const dpr = window.devicePixelRatio || 1;
-        // Sync canvas + container + textLayer aux mêmes dimensions
-        // CSS pour que le text layer s'aligne pixel-perfect.
+
+        // Création canvas + text layer dans le wrapper
+        const canvas = document.createElement("canvas");
+        canvas.className = "visionneuse-pdf-canvas";
         canvas.width = Math.round(viewport.width * dpr);
         canvas.height = Math.round(viewport.height * dpr);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
-        container.style.width = `${viewport.width}px`;
-        container.style.height = `${viewport.height}px`;
-        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
-        renderTask = page.render({ canvasContext: ctx, viewport, transform });
-        await renderTask.promise;
-        renderTask = null;
+        pageWrapper.style.width = `${viewport.width}px`;
+        pageWrapper.style.height = `${viewport.height}px`;
+        pageWrapper.style.minHeight = "auto";
 
-        // Rendu de la couche texte OCR (sélection + Ctrl+F natif).
-        // On vide les spans existants puis on invoke TextLayer.
-        textLayerDiv.innerHTML = "";
+        const textLayerDiv = document.createElement("div");
+        textLayerDiv.className = "visionneuse-pdf-textlayer";
+        textLayerDiv.style.cssText =
+          "position:absolute;inset:0;overflow:hidden;line-height:1.0;" +
+          "pointer-events:auto;user-select:text;";
         textLayerDiv.style.setProperty("--scale-factor", viewport.scale);
+
+        // Insère canvas + text layer (ordre : canvas dessous, text dessus)
+        pageWrapper.appendChild(canvas);
+        pageWrapper.appendChild(textLayerDiv);
+
+        const ctx = canvas.getContext("2d");
+        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
+        await page.render({ canvasContext: ctx, viewport, transform }).promise;
+
+        // Text layer OCR (non-bloquant)
         try {
           const textLayer = new pdfjsLib.TextLayer({
             textContentSource: page.streamTextContent(),
@@ -223,66 +235,135 @@
           });
           await textLayer.render();
         } catch (errText) {
-          // Échec text layer non-bloquant : on garde au moins le
-          // canvas. PDF scannés sans OCR ou sans texte ont juste
-          // une couche vide.
-          console.warn("PDF text layer render failed (non-blocking):", errText);
+          console.warn(`PDF text layer page ${n}:`, errText);
         }
-
-        pageCourante = n;
-        maj_controles();
       } catch (err) {
-        if (err && err.name === "RenderingCancelledException") return;
-        console.error("PDF render error:", err);
-        afficherErreur(`Erreur de rendu de la page ${n} : ${err.message || err}`);
+        console.error(`PDF render page ${n}:`, err);
+        pageWrapper.dataset.rendered = "0";  // permet retry
       }
     }
 
-    function ajusterZoomLargeur() {
-      // Calcule un zoom qui fait tenir la page dans la largeur du
-      // wrapper (moins le padding). Garde proportion via getViewport.
-      if (!pdf) return;
-      pdf.getPage(pageCourante).then(function (page) {
-        const viewport = page.getViewport({ scale: 1 });
-        const wrapperEl = wrapper.querySelector(".visionneuse-pdf-page-wrapper");
-        const dispo = wrapperEl.clientWidth - 32;  // padding 16 × 2
-        zoom = Math.max(0.25, Math.min(5, dispo / viewport.width));
-        rendre(pageCourante);
-      });
+    function scrollVersPage(n) {
+      const target = pagesContainer.querySelector(
+        `[data-page-num="${n}"]`
+      );
+      if (!target) return;
+      // scrollIntoView avec smooth comportement natif.
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
+    function recreerPages() {
+      pagesContainer.innerHTML = "";
+      for (let i = 1; i <= nbPages; i++) {
+        const pageWrapper = document.createElement("div");
+        pageWrapper.className = "visionneuse-pdf-page";
+        pageWrapper.dataset.pageNum = i;
+        pageWrapper.dataset.rendered = "0";
+        pageWrapper.style.position = "relative";
+        // Hauteur estimée pour que le scroll total soit ~correct
+        // avant render — évite que les pages se rendant fassent
+        // sauter la position scroll des suivantes.
+        pageWrapper.style.minHeight = `${hauteurEstimee}px`;
+        pagesContainer.appendChild(pageWrapper);
+      }
+    }
+
+    function observerPages() {
+      // Render lazy : déclenche le render des pages dans 800px du
+      // viewport (≈ 2 pages d'avance pour scroll fluide).
+      if (renderObserver) renderObserver.disconnect();
+      renderObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) rendrePage(entry.target);
+        });
+      }, { root: scrollEl, rootMargin: "800px 0px" });
+
+      // Compteur "Page N / M" : la page la plus haute dans le viewport
+      // gagne. rootMargin négatif pour ne déclencher qu'à mi-écran.
+      if (visibilityObserver) visibilityObserver.disconnect();
+      visibilityObserver = new IntersectionObserver(function (entries) {
+        // Trouve l'entrée intersectée la plus haute (top du viewport).
+        let best = null;
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          if (!best || entry.boundingClientRect.top < best.boundingClientRect.top) {
+            best = entry;
+          }
+        });
+        if (best) {
+          const n = parseInt(best.target.dataset.pageNum, 10);
+          if (n !== pageVisible) {
+            pageVisible = n;
+            maj_compteur();
+          }
+        }
+      }, { root: scrollEl, rootMargin: "-30% 0px -60% 0px" });
+
+      pagesContainer.querySelectorAll(".visionneuse-pdf-page").forEach(
+        function (w) {
+          renderObserver.observe(w);
+          visibilityObserver.observe(w);
+        }
+      );
+    }
+
+    async function ajusterLargeur() {
+      // Recalcule scale + force re-render de toutes les pages
+      // (utile au resize ou clic ⤢). Préserve la page actuellement
+      // visible : on note avant, on scroll après.
+      const pageAvant = pageVisible;
+      await calculerScaleCible();
+      pagesContainer.querySelectorAll(".visionneuse-pdf-page").forEach(
+        function (pageWrapper) {
+          pageWrapper.innerHTML = "";  // retire canvas + text layer
+          pageWrapper.dataset.rendered = "0";
+          pageWrapper.style.minHeight = `${hauteurEstimee}px`;
+          pageWrapper.style.width = "";
+          pageWrapper.style.height = "";
+        }
+      );
+      // Re-observe pour lancer le render des pages visibles.
+      observerPages();
+      // Retour à la page qu'on regardait (sinon le clic ⤢ ramène au top).
+      setTimeout(function () {
+        scrollVersPage(pageAvant);
+      }, 50);
+    }
+
+    // Auto-réajustement à la largeur quand la fenêtre est redimensionnée
+    // (debounce 300ms pour éviter de re-render à chaque event resize).
+    let resizeTimer = null;
+    window.addEventListener("resize", function () {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        // Skip si le viewer n'est plus dans le DOM (HTMX swap)
+        if (!document.body.contains(wrapper)) return;
+        ajusterLargeur();
+      }, 300);
+    });
+
     btnPrev.addEventListener("click", function () {
-      if (pageCourante > 1) rendre(pageCourante - 1);
+      if (pageVisible > 1) scrollVersPage(pageVisible - 1);
     });
     btnNext.addEventListener("click", function () {
-      if (pageCourante < nbPages) rendre(pageCourante + 1);
+      if (pageVisible < nbPages) scrollVersPage(pageVisible + 1);
     });
-    btnZoomIn.addEventListener("click", function () {
-      zoom = Math.min(5, zoom * 1.25);
-      rendre(pageCourante);
-    });
-    btnZoomOut.addEventListener("click", function () {
-      zoom = Math.max(0.25, zoom / 1.25);
-      rendre(pageCourante);
-    });
-    btnZoomFit.addEventListener("click", ajusterZoomLargeur);
+    btnZoomFit.addEventListener("click", ajusterLargeur);
 
-    // Lancement. `wasmUrl` doit pointer sur le dossier vendor avec
-    // trailing slash — PDF.js y cherche openjpeg.wasm (JPEG 2000),
-    // jbig2.wasm, qcms_bg.wasm. Sans, les fac-similés Nakala (qui
-    // utilisent JP2) chargent mais ne montrent que le texte OCR.
     pdfjsLib.getDocument({
       url: url,
       wasmUrl: "/static/js/vendor/pdfjs/wasm/",
-    }).promise.then(function (loaded) {
+    }).promise.then(async function (loaded) {
       pdf = loaded;
       nbPages = pdf.numPages;
-      maj_controles();
-      ajusterZoomLargeur();
+      await calculerScaleCible();
+      recreerPages();
+      maj_compteur();
+      observerPages();
     }).catch(function (err) {
       console.error("PDF load error:", err);
       afficherErreur(`Impossible de charger ${nom} : ${err.message || err}`);
     });
-  }  // fin initVisionneusePdf{{ id }}
+  }
 </script>
 {%- endmacro %}

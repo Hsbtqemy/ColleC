@@ -611,6 +611,69 @@ Limites :
 - Pages au format hétérogène (rares en fac-similé) ne sont pas
   pré-estimées correctement.
 
+### Recherche full-text FTS5 (V0.9.x)
+
+Index full-text via SQLite FTS5, créé par la migration
+`m1q2r3s4t5u6_fts5_recherche` :
+- `item_fts` : cote, titre, description, notes_internes,
+  metadonnees_text (flatten JSON top-level via GROUP_CONCAT json_each)
+- `fonds_fts` : cote, titre, description, description_publique,
+  description_interne
+- `collection_fts` : cote, titre, description, description_publique
+
+Tokeniseur `unicode61 remove_diacritics 2` : `numero` matche `Numéro`
+(insensible aux accents), indispensable en archives multilingues.
+
+Mode FTS5 « standard » (pas d'external content) : FTS5 stocke
+l'index ET le texte. Permet `snippet()` qui surligne les matchs.
+Indispensable parce qu'on indexe une colonne dérivée
+(`metadonnees_text` = flatten JSON) qui n'existe pas dans la source
+— le mode external content planterait avec « no such column ».
+Le mode contentless évite ce plantage mais perd `snippet()`.
+
+Triggers de synchro (insert/update/delete sur item/fonds/collection)
+maintiennent l'index automatiquement. SQL centralisé dans
+`db._SQL_TRIGGERS_FTS` (source de vérité unique réutilisée par la
+migration et par `assurer_tables_fts()` qui couvre les tests / le
+startup app).
+
+Helpers `alembic.helpers.drop_fts_triggers()` /
+`create_fts_triggers()` : à appeler en début/fin de toute migration
+qui ALTER `item`/`fonds`/`collection` via `batch_alter_table`
+(sinon les triggers sont perdus à la reconstruction de la table —
+piège SQLite).
+
+Service `api/services/recherche.py::rechercher(db, q, scope, types)` :
+- `scope` (`Scope`) : `fonds_id` / `collection_id` pour limiter
+  géographiquement (None, None = tout l'outil)
+- `types` : set d'entités à inclure (`item`, `fonds`, `collection`)
+- Échappement automatique des caractères réservés FTS5 via
+  `_preparer_requete_fts` (anti-injection)
+- Préfix matching (`*`) sur chaque token pour recherche partielle
+  ergonomique sur les cotes (`PF-0` matche `PF-001`, `PF-002`…)
+- Ranking via `bm25()` natif FTS5
+
+Route `/recherche?q=...&fonds_id=...&collection_id=...&types=...` rend
+`pages/recherche.html` : barre de saisie + filtres scope/types +
+liste de résultats avec snippets surlignés (`<mark>` HTML-safe).
+
+Barre de recherche globale dans `header.html` (toutes les pages),
+raccourci `/` ou `Cmd+K` (focus + select via `recherche_globale.js`).
+
+Sur PF (test réel) : 173 items + 1 fonds + 1 collection indexés.
+`Por Favor` → 52 résultats. `Eduardo` (auteur indexé via
+`metadonnees.author`) → 50 résultats items. `PF-014` (cote
+partielle) → 1 résultat exact.
+
+Limites :
+- OCR documents non indexé (roadmap V3 — ajoutera soit `fichier_fts`
+  dédié, soit colonne `ocr_text` sur `item_fts`).
+- Pas de live-search dropdown (submit GET classique → page résultats).
+  Acceptable MVP, à itérer si demandé.
+- Pas de surlignage dans la page de l'item lui-même (résultat
+  cliqué = navigation classique, sans préserver les termes
+  cherchés). À itérer V2 via `?q=` propagé.
+
 ### CLI Collections
 
 `archives-tool collections {creer-libre, lister, supprimer}` est le

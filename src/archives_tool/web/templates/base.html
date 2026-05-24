@@ -26,6 +26,9 @@
     </main>
   </div>
   <script src="{{ url_for('static', path='js/vendor/htmx/htmx.min.js') }}"></script>
+  {# Recherche globale (Lot C V0.9.x) : raccourci `/` ou Cmd+K
+     focus la barre du header. Présent sur toutes les pages. #}
+  <script src="{{ url_for('static', path='js/recherche_globale.js') }}"></script>
   {% if est_lecture_seule() %}
     {# Filet de sécurité : si un utilisateur appuie sur Entrée dans un
        input texte d'un form POST (les boutons submit sont masqués

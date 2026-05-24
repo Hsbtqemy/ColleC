@@ -45,9 +45,14 @@ collect_ignore = [
 
 @pytest.fixture
 def engine(tmp_path: Path) -> Engine:
-    """Engine SQLite sur fichier temporaire, schéma créé via metadata."""
+    """Engine SQLite sur fichier temporaire, schéma créé via metadata.
+    Inclut les tables FTS5 (item_fts/fonds_fts/collection_fts) — non
+    déclarées en SQLAlchemy ORM (tables virtuelles)."""
+    from archives_tool.db import assurer_tables_fts
+
     engine = creer_engine(tmp_path / "test.db")
     Base.metadata.create_all(engine)
+    assurer_tables_fts(engine)
     return engine
 
 

@@ -1,26 +1,44 @@
-<header class="flex items-center justify-between mb-8 pb-4 border-b border-border-tertiary">
-  <div class="flex items-center gap-3 text-sm text-gray-500">
+<header class="flex items-center justify-between mb-8 pb-4 border-b border-border-tertiary gap-4">
+  <div class="flex items-center gap-3 text-sm text-gray-500 shrink-0">
     <span class="font-mono text-gray-700">{{ nom_base }}</span>
     <span aria-hidden="true">·</span>
     <span>{{ utilisateur }}</span>
   </div>
+
+  {# Barre de recherche globale (Lot C V0.9.x). Submit GET → /recherche
+     pour bookmark URL friendly. Raccourci `/` ou `Cmd+K` focus le
+     champ — handler dans recherche_globale.js. #}
+  <form method="get" action="/recherche"
+        class="flex-1 max-w-md mx-4"
+        role="search">
+    <input type="search" name="q"
+           id="recherche-globale-input"
+           placeholder="Rechercher  (/  pour focus)"
+           autocomplete="off"
+           style="width:100%;padding:5px 10px;font-size:12px;
+                  border:1px solid rgba(0,0,0,0.12);border-radius:4px;
+                  background:white;color:#1f1f1f;">
+  </form>
+
   {# Bouton contextuel « Mode consultation » — actif uniquement si la
      route a passé `consultation_url`. Sur la liseuse elle-même, la
      route passe `mode_consultation_actif=True` qui affiche un état
      visuel distinct (« Mode consultation actif »). #}
-  {% if mode_consultation_actif %}
-    <a href="/"
-       class="inline-flex items-center gap-1.5 rounded"
-       style="padding:4px 12px;font-size:12px;color:#1e40af;background:#dbeafe;
-              border:1px solid #93c5fd;">
-      <span aria-hidden="true">●</span> Mode consultation actif
-    </a>
-  {% elif consultation_url %}
-    <a href="{{ consultation_url }}"
-       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
-       style="padding:4px 12px;font-size:12px;color:#374151;
-              border:1px solid rgba(0,0,0,0.10);">
-      Mode consultation
-    </a>
-  {% endif %}
+  <div class="shrink-0">
+    {% if mode_consultation_actif %}
+      <a href="/"
+         class="inline-flex items-center gap-1.5 rounded"
+         style="padding:4px 12px;font-size:12px;color:#1e40af;background:#dbeafe;
+                border:1px solid #93c5fd;">
+        <span aria-hidden="true">●</span> Mode consultation actif
+      </a>
+    {% elif consultation_url %}
+      <a href="{{ consultation_url }}"
+         class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+         style="padding:4px 12px;font-size:12px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);">
+        Mode consultation
+      </a>
+    {% endif %}
+  </div>
 </header>

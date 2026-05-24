@@ -132,6 +132,72 @@ def dashboard(
     )
 
 
+@router.get("/recherche", response_class=HTMLResponse)
+def page_recherche(
+    request: Request,
+    q: str = Query("", description="Requête full-text"),
+    fonds_id: int | None = Query(None, description="Limite au fonds (ID)"),
+    collection_id: int | None = Query(None, description="Limite à la collection (ID)"),
+    types: list[str] | None = Query(
+        None, description="Types entité (item/fonds/collection). Tous si vide.",
+    ),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Page de résultats de recherche full-text (Lot B V0.9.x).
+
+    - `q` : requête utilisateur libre. Vide → page sans résultats
+      (affiche juste la barre + filtres).
+    - `fonds_id` / `collection_id` : scope géographique (mutuellement
+      exclusifs, le `collection_id` prime si les 2 sont posés).
+    - `types` : filtre les entités à inclure. Valeurs reconnues :
+      `item`, `fonds`, `collection`. Casse silencieusement les
+      invalides.
+    """
+    from archives_tool.api.services.recherche import (
+        Scope, TypeEntite, rechercher,
+    )
+    from archives_tool.models import Collection, Fonds
+
+    types_valides: set[TypeEntite] = {"item", "fonds", "collection"}
+    types_filtres: set[TypeEntite] | None = None
+    if types is not None:
+        types_filtres = {t for t in types if t in types_valides} or None
+
+    scope = Scope(
+        fonds_id=fonds_id if collection_id is None else None,
+        collection_id=collection_id,
+    )
+
+    resultats = rechercher(db, q, scope=scope, types=types_filtres)
+
+    # Métadonnées du scope pour l'affichage (libellé filtre actif).
+    fonds_scope = None
+    collection_scope = None
+    if fonds_id is not None:
+        fonds_scope = db.get(Fonds, fonds_id)
+    if collection_id is not None:
+        collection_scope = db.get(Collection, collection_id)
+
+    return templates.TemplateResponse(
+        request,
+        "pages/recherche.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            q=q,
+            resultats=resultats,
+            fonds_scope=fonds_scope,
+            collection_scope=collection_scope,
+            types_filtres=types_filtres or set(),
+            # On expose tous les types possibles pour le rendu des
+            # cases à cocher.
+            tous_types=list(types_valides),
+        ),
+    )
+
+
 @router.get("/fonds", response_class=HTMLResponse)
 def liste_fonds(
     request: Request,

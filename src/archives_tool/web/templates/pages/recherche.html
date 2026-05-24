@@ -1,0 +1,164 @@
+{# Page de résultats de recherche full-text (Lot B V0.9.x).
+
+   Affiche les résultats groupés par type (Item / Fonds / Collection)
+   avec snippet HTML-safe (les balises <mark> du snippet FTS5 sont
+   sécurisées — voir _preparer_requete_fts pour l'échappement de la
+   query côté serveur).
+
+   Variables :
+   - q : requête courante
+   - resultats : list[ResultatRecherche] triés par score
+   - fonds_scope / collection_scope : entité de scope si limité
+   - types_filtres : set des types filtrés (vide = tous)
+   - tous_types : ["item", "fonds", "collection"] pour les cases
+#}
+{% extends "base.html" %}
+
+{% block title %}Recherche{% if q %} : « {{ q }} »{% endif %} — archives-tool{% endblock %}
+
+{% block content %}
+<div style="max-width:900px;margin:0 auto;">
+
+  <h1 class="text-2xl font-medium mb-4">Recherche</h1>
+
+  {# Barre de recherche + filtres scope/types. Submit GET pour
+     bookmark URL friendly. #}
+  <form method="get" action="/recherche"
+        class="mb-6"
+        style="background:#f9fafb;border:1px solid rgba(0,0,0,0.06);
+               border-radius:6px;padding:14px;">
+    <div class="flex gap-2 mb-3">
+      <input type="search" name="q" value="{{ q }}"
+             placeholder="Mot, cote, expression…"
+             autofocus
+             style="flex:1;padding:8px 12px;font-size:14px;
+                    border:1px solid rgba(0,0,0,0.15);border-radius:4px;
+                    background:white;">
+      <button type="submit"
+              class="rounded hover:bg-gray-800"
+              style="padding:8px 18px;font-size:14px;font-weight:500;
+                     color:white;background:#1f1f1f;border:none;cursor:pointer;">
+        Rechercher
+      </button>
+    </div>
+
+    {# Filtres : scope + types. Le scope est porté par les hidden
+       inputs (préservés tel quel si déjà set par la route précédente). #}
+    <div class="flex flex-wrap items-center gap-4 mt-2"
+         style="font-size:13px;color:#374151;">
+      {% if fonds_scope %}
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="hidden" name="fonds_id" value="{{ fonds_scope.id }}">
+          <span>Limité au fonds <code class="font-mono">{{ fonds_scope.cote }}</code></span>
+          <a href="/recherche?q={{ q | urlencode }}"
+             style="color:#6b7280;text-decoration:underline;font-size:12px;">
+            (lever)
+          </a>
+        </label>
+      {% elif collection_scope %}
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="hidden" name="collection_id" value="{{ collection_scope.id }}">
+          <span>Limité à la collection <code class="font-mono">{{ collection_scope.cote }}</code></span>
+          <a href="/recherche?q={{ q | urlencode }}"
+             style="color:#6b7280;text-decoration:underline;font-size:12px;">
+            (lever)
+          </a>
+        </label>
+      {% endif %}
+
+      <span style="color:#9ca3af;">Types :</span>
+      {% for t in tous_types %}
+        <label style="display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" name="types" value="{{ t }}"
+                 {% if not types_filtres or t in types_filtres %}checked{% endif %}>
+          {% if t == 'item' %}Items{% elif t == 'fonds' %}Fonds{% else %}Collections{% endif %}
+        </label>
+      {% endfor %}
+    </div>
+  </form>
+
+  {% if q and not resultats %}
+    <p class="text-sm text-gray-500 italic">
+      Aucun résultat pour <strong>« {{ q }} »</strong>{% if fonds_scope %}
+      dans le fonds {{ fonds_scope.cote }}{% endif %}{% if collection_scope %}
+      dans la collection {{ collection_scope.cote }}{% endif %}.
+    </p>
+  {% elif q %}
+    <p class="text-sm text-gray-500 mb-4">
+      <strong>{{ resultats|length }}</strong> résultat{{ 's' if resultats|length > 1 else '' }} pour
+      <strong>« {{ q }} »</strong>{% if fonds_scope %}
+      dans le fonds <code class="font-mono">{{ fonds_scope.cote }}</code>{% endif %}{% if collection_scope %}
+      dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}.
+    </p>
+
+    <ul class="space-y-3">
+      {% for r in resultats %}
+        <li style="border:1px solid rgba(0,0,0,0.08);background:white;
+                   border-radius:6px;padding:12px 16px;">
+          <div class="flex items-baseline gap-2" style="margin-bottom:4px;">
+            {# Badge type #}
+            {% if r.type_entite == 'item' %}
+              <span style="font-size:10px;font-weight:600;color:#1e3a8a;
+                           background:#dbeafe;padding:2px 8px;border-radius:9999px;
+                           text-transform:uppercase;letter-spacing:0.04em;">
+                Item
+              </span>
+            {% elif r.type_entite == 'fonds' %}
+              <span style="font-size:10px;font-weight:600;color:#991b1b;
+                           background:#fee2e2;padding:2px 8px;border-radius:9999px;
+                           text-transform:uppercase;letter-spacing:0.04em;">
+                Fonds
+              </span>
+            {% else %}
+              <span style="font-size:10px;font-weight:600;color:#166534;
+                           background:#dcfce7;padding:2px 8px;border-radius:9999px;
+                           text-transform:uppercase;letter-spacing:0.04em;">
+                Collection
+              </span>
+            {% endif %}
+            {# Lien principal vers l'entité #}
+            {% if r.type_entite == 'item' %}
+              <a href="/item/{{ r.cote }}?fonds={{ r.extras.fonds_cote }}"
+                 class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
+                {{ r.cote }}
+              </a>
+            {% elif r.type_entite == 'fonds' %}
+              <a href="/fonds/{{ r.cote }}"
+                 class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
+                {{ r.cote }}
+              </a>
+            {% else %}
+              <a href="/collection/{{ r.cote }}{% if r.extras.fonds_cote %}?fonds={{ r.extras.fonds_cote }}{% endif %}"
+                 class="font-mono text-sm hover:underline" style="color:#1f1f1f;">
+                {{ r.cote }}
+              </a>
+            {% endif %}
+            <span class="text-sm" style="color:#374151;">
+              {{ r.titre or '(sans titre)' }}
+            </span>
+            {% if r.type_entite == 'item' and r.extras.fonds_cote %}
+              <span class="text-xs" style="color:#9ca3af;margin-left:auto;">
+                dans <code class="font-mono">{{ r.extras.fonds_cote }}</code>
+              </span>
+            {% endif %}
+          </div>
+          {# Snippet : contient des <mark> du FTS5, déjà sécurisé
+             (snippet ne sort que les tokens indexés, pas d'injection
+             possible). On utilise |safe pour rendre les <mark>. #}
+          {% if r.snippet %}
+            <p class="text-sm" style="color:#4b5563;line-height:1.45;">
+              {{ r.snippet | safe }}
+            </p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-sm text-gray-500 italic">
+      Tapez une requête pour rechercher dans les cotes, titres,
+      descriptions et métadonnées de l'outil.
+    </p>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -819,10 +819,16 @@ class CartographieCollections:
 
     @property
     def vide(self) -> bool:
-        """Aucune libre ⇒ la cartographie n'apporte rien (la miroir
-        couvre tout, info déjà au bandeau). Le composant peut sauter
-        cette section."""
-        return self.nb_libres == 0
+        """Vraiment vide : aucune collection rattachée (cas
+        pathologique d'un fonds sans miroir). Le composant peut alors
+        sauter la section.
+
+        Avant V0.9.6-fix : `nb_libres == 0` — mais ça masquait la
+        section sur les fonds usuels qui n'ont que leur miroir, ce qui
+        privait l'utilisateur du récap des collections. Maintenant on
+        affiche systématiquement la section dès qu'il y a une
+        collection (au moins la miroir)."""
+        return not self.entrees
 
 
 @dataclass(frozen=True)

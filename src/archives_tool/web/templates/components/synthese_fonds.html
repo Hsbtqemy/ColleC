@@ -36,17 +36,24 @@
     <div style="padding:0 14px 14px;">
 
       {# -----------------------------------------------------------
-         Cartographie cross-collection — auto-masquée si pas de libre.
-         Sur PF (1 miroir, 0 libre) cette section ne s'affiche pas.
-         Sur FA (4 libres), elle montre la répartition + chevauchements.
+         Collections : recap toujours affiche tant qu'il y a au moins
+         une collection rattachee (= la miroir, garantie par l'invariant 1
+         sur les fonds creees via le service). Avant V0.9.6-fix on
+         masquait quand nb_libres==0, ce qui privait du recap sur les
+         fonds usuels (PF, HK, MAR…).
          ----------------------------------------------------------- #}
       {% if not synthese.cartographie.vide %}
       {% set carto = synthese.cartographie %}
       <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.05);">
         <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
-          Cartographie ·
+          Collections ·
           <span style="text-transform:none;letter-spacing:0;color:#6b7280;font-weight:400;">
-            {% if carto.nb_items_uniquement_miroir > 0 -%}
+            {% if carto.nb_libres == 0 -%}
+              {# Fonds avec uniquement la miroir : pas de classement
+                 thematique encore — l'invitation implicite est
+                 « creer une libre si vous voulez segmenter ». #}
+              uniquement la miroir
+            {%- elif carto.nb_items_uniquement_miroir > 0 -%}
               {{ carto.nb_items_uniquement_miroir }} item{{ "s" if carto.nb_items_uniquement_miroir != 1 else "" }} uniquement dans la miroir
             {%- else -%}
               tous les items sont classés dans au moins une libre

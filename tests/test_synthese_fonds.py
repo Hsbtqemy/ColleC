@@ -42,16 +42,21 @@ def base_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_cartographie_fonds_sans_libre_est_vide(base_demo: Path) -> None:
+def test_cartographie_fonds_sans_libre_montre_la_miroir(
+    base_demo: Path,
+) -> None:
     """Un fonds avec uniquement sa miroir (cas usuel : PF, HK, MAR) :
-    `cartographie.vide` est True — le composant masque la section, on
-    n'a rien à raconter de cross-collection."""
+    cartographie pas vide (la miroir reste un récap utile). Seul un
+    fonds totalement sans collection (cas pathologique) est `vide`.
+    """
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
         fonds = lire_fonds_par_cote(s, "HK")
         carto = _composer_cartographie_collections(s, fonds)
-        assert carto.vide
+        # Pas vide : la miroir est un récap utile pour l'utilisateur
+        # (« cette collection unique contient tous les items »)
+        assert not carto.vide
         assert carto.nb_libres == 0
         # Une seule entrée : la miroir
         assert len(carto.entrees) == 1
@@ -167,7 +172,8 @@ def test_cartographie_fonds_sans_collection_renvoie_vide(
 def test_synthese_fonds_structure_globale(base_demo: Path) -> None:
     """Sur la demo, `HK` contient ≥ 1 item. La synthèse renvoie une
     structure non vide avec items_recents, vignettes éventuelles,
-    cartographie (qui sera vide ici car pas de libre)."""
+    cartographie qui contient la miroir (V0.9.6-fix : on garde la
+    miroir comme récap utile, plus de masquage agressif)."""
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -176,8 +182,11 @@ def test_synthese_fonds_structure_globale(base_demo: Path) -> None:
         assert isinstance(synthese, SyntheseFonds)
         assert synthese.nb_items_total > 0
         assert len(synthese.items_recents) <= 5
-        # Pas de libre sur HK demo : cartographie vide
-        assert synthese.cartographie.vide
+        # Cartographie pas vide : la miroir constitue un récap utile
+        assert not synthese.cartographie.vide
+        assert synthese.cartographie.nb_libres == 0
+        assert len(synthese.cartographie.entrees) == 1
+        assert synthese.cartographie.entrees[0].est_miroir
     engine.dispose()
 
 
@@ -274,19 +283,37 @@ def test_synthese_fonds_rendu_html_page(base_demo: Path) -> None:
     assert "<details open" in resp.text
 
 
-def test_synthese_fonds_cartographie_affichee_si_libres(
+def test_synthese_fonds_section_collections_affichee_meme_sans_libre(
+    base_demo: Path,
+) -> None:
+    """Garde-fou : pour un fonds sans libre (HK demo), la section
+    « Collections » doit s'afficher avec uniquement la miroir + le
+    libellé « uniquement la miroir »."""
+    from fastapi.testclient import TestClient
+    from archives_tool.api.main import app
+
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    # La section Collections est présente même sans libre
+    assert "Collections ·" in resp.text
+    # Le libellé explicatif est rendu
+    assert "uniquement la miroir" in resp.text
+
+
+def test_synthese_fonds_section_collections_avec_libres(
     base_demo: Path,
 ) -> None:
     """Garde-fou intégration : pour le fonds FA (4 libres demo), la
-    section Cartographie apparait avec ses libres listées."""
+    section Collections apparait avec ses libres listées."""
     from fastapi.testclient import TestClient
     from archives_tool.api.main import app
 
     client = TestClient(app)
     resp = client.get("/fonds/FA")
     assert resp.status_code == 200
-    assert "Cartographie" in resp.text
-    # Au moins une libre demo doit apparaitre dans le tableau cross-coll
+    assert "Collections ·" in resp.text
+    # Au moins une libre demo doit apparaitre dans le tableau
     # (le seeder crée FA-CORRESP / FA-DOCU / FA-PHOTOS / FA-OEUVRES)
     libres_attendues = ["FA-CORRESP", "FA-DOCU", "FA-PHOTOS", "FA-OEUVRES"]
     assert any(lib in resp.text for lib in libres_attendues)

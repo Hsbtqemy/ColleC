@@ -14,8 +14,10 @@ from archives_tool.api.services.dashboard import (
     BarreTemporelle,
     DistributionTemporelle,
     _agreger_item_metadonnees_quali,
+    _annee_depuis_date_edtf,
     _calculer_distribution_temporelle,
     _ids_echantillonnes,
+    _resoudre_libelle_langue,
     composer_synthese_collection,
 )
 from archives_tool.demo import peupler_base
@@ -153,6 +155,68 @@ def test_agreger_meta_robuste_a_meta_non_dict() -> None:
     silencieusement (pas de crash sur données legacy)."""
     par_cle = _agreger_item_metadonnees_quali([None, "garbage", 42, {}])
     assert par_cle == {}
+
+
+def test_agreger_meta_filtre_cles_techniques_synthese() -> None:
+    """Les clés Nakala calculées (`num_files`, `hash`, `categories`,
+    `data_url`...) ne polluent pas les agrégats — sinon on aurait par
+    item un agrégat « 173 hashes uniques » qui dit rien."""
+    metas = [
+        {"auteur": "Topor", "num_files": "39", "hash": "abc123",
+         "categories": "image; pdf", "data_url": "https://nakala/X"},
+        {"auteur": "Reiser", "num_files": "55", "hash": "def456",
+         "categories": "image; pdf"},
+    ]
+    par_cle = _agreger_item_metadonnees_quali(metas)
+    assert set(par_cle.keys()) == {"auteur"}
+    assert par_cle["auteur"]["Topor"] == 1
+    assert par_cle["auteur"]["Reiser"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Fallback année depuis date EDTF + résolution langue
+# ---------------------------------------------------------------------------
+
+
+def test_annee_depuis_date_extrait_4_chiffres() -> None:
+    """Couvre les formats EDTF courants : `1974`, `1974-03`, ISO 8601."""
+    assert _annee_depuis_date_edtf("1974") == 1974
+    assert _annee_depuis_date_edtf("1974-03") == 1974
+    assert _annee_depuis_date_edtf("1974-03-11") == 1974
+    assert _annee_depuis_date_edtf("  1974-03-11  ") == 1974  # strip
+
+
+def test_annee_depuis_date_renvoie_none_si_format_invalide() -> None:
+    """Pas de crash sur les valeurs aberrantes — fallback gracieux."""
+    assert _annee_depuis_date_edtf(None) is None
+    assert _annee_depuis_date_edtf("") is None
+    assert _annee_depuis_date_edtf("vers 1974") is None
+    assert _annee_depuis_date_edtf("19XX") is None
+    assert _annee_depuis_date_edtf("s.d.") is None
+
+
+def test_resoudre_libelle_langue_iso3() -> None:
+    """ISO 639-3 (3 lettres) — chemin normal via `LANGUES_OPTIONS`."""
+    assert _resoudre_libelle_langue("fra") == "Français"
+    assert _resoudre_libelle_langue("spa") == "Espagnol"
+
+
+def test_resoudre_libelle_langue_iso1_fallback() -> None:
+    """ISO 639-1 (2 lettres) — chemin pivot via `_LANGUES_ISO1_VERS_ISO3`.
+
+    Critique pour l'affichage des imports Nakala (qui arrivent souvent
+    en ISO-1) : sans fallback, `es` resterait brut dans les agrégats.
+    """
+    assert _resoudre_libelle_langue("es") == "Espagnol"
+    assert _resoudre_libelle_langue("fr") == "Français"
+    assert _resoudre_libelle_langue("en") == "Anglais"
+
+
+def test_resoudre_libelle_langue_inconnu_renvoie_brut() -> None:
+    """Code inconnu — on retourne tel quel pour que l'utilisateur le
+    voie et puisse corriger (jamais de masquage silencieux)."""
+    assert _resoudre_libelle_langue("xyz") == "xyz"
+    assert _resoudre_libelle_langue("") == ""
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +427,170 @@ def test_synthese_rendu_html_collection_page(base_demo: Path) -> None:
         or "Activité récente" in resp.text
         or "Période" in resp.text
     )
+
+
+def test_synthese_annee_derivee_depuis_date_si_annee_null(
+    base_demo: Path,
+) -> None:
+    """Garde-fou PF : l'import Nakala remplit `Item.date` (EDTF) mais
+    laisse `Item.annee` à NULL. La timeline doit quand même se
+    construire — sinon la section « Période » est vide alors que
+    `1974-03-11` est sans ambiguïté.
+    """
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Force quelques items à la situation « date sans annee » pour
+        # vérifier le fallback (sans toucher aux autres : le test
+        # vérifie surtout la non-régression — on n'attend pas que la
+        # timeline disparaisse pour cause d'`annee` null).
+        items = list(s.scalars(select(Item).limit(3)).all())
+        for it in items:
+            it.date = "1974-03-11"
+            it.annee = None
+        s.commit()
+
+        synthese = composer_synthese_collection(s, col, fonds_query="HK")
+        # La distribution n'est plus vide (au moins 1 année extraite).
+        # Si la fixture demo avait déjà annee=2020 sur d'autres items,
+        # on a plage 1974-2020 → décennies, sinon pas annuel.
+        assert synthese.distribution_temporelle.annee_min is not None
+        assert synthese.distribution_temporelle.annee_min <= 1974
+        assert not synthese.distribution_temporelle.vide
+    engine.dispose()
+
+
+def test_synthese_langue_iso1_resolue_en_libelle_humain(
+    base_demo: Path,
+) -> None:
+    """Garde-fou PF : `Item.langue = "es"` (ISO 639-1) doit s'afficher
+    comme « Espagnol » dans l'agrégat synthèse — pas comme code brut."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        items = list(s.scalars(select(Item).limit(5)).all())
+        for it in items:
+            it.langue = "es"  # ISO 639-1
+        s.commit()
+
+        synthese = composer_synthese_collection(s, col, fonds_query="HK")
+        ag_langue = next(
+            (a for a in synthese.agregats if a.cle == "langue"), None
+        )
+        assert ag_langue is not None
+        valeurs = {tv.valeur for tv in ag_langue.top}
+        assert "es" not in valeurs  # code brut absent
+        assert "Espagnol" in valeurs
+    engine.dispose()
+
+
+def test_synthese_agregat_est_uniforme_quand_une_seule_valeur(
+    base_demo: Path,
+) -> None:
+    """Quand tous les items partagent la même valeur sur un champ, le
+    template bascule en rendu compact via la propriété `est_uniforme`.
+    """
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Force la même langue sur tous les items pour produire un
+        # agrégat « uniforme ».
+        items = list(s.scalars(select(Item)).all())
+        for it in items:
+            it.langue = "fra"
+        s.commit()
+
+        synthese = composer_synthese_collection(s, col, fonds_query="HK")
+        ag_langue = next(
+            (a for a in synthese.agregats if a.cle == "langue"), None
+        )
+        assert ag_langue is not None
+        assert ag_langue.est_uniforme
+        # Libellé bascule au singulier dans ce cas
+        assert ag_langue.libelle == "Langue"
+    engine.dispose()
+
+
+def test_synthese_agregats_identifiants_filtres(base_demo: Path) -> None:
+    """Heuristique anti-identifiant : un champ avec ≥5 valeurs
+    distinctes toutes uniques (signature d'identifiant : `ancienne_cote`,
+    `doi`, etc.) est écarté des agrégats — sinon il sature la colonne
+    sans rien synthétiser."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Injecte un champ "ancienne_cote" unique par item (= identifiant)
+        # plus un champ "dessinateur" avec doublons (= vrai agrégat).
+        items = list(s.scalars(select(Item).limit(10)).all())
+        for i, it in enumerate(items):
+            it.metadonnees = {
+                "ancienne_cote": f"OLD-{i:03d}",  # 10 valeurs uniques
+                "dessinateur": "Topor" if i < 6 else "Reiser",
+            }
+            flag_modified(it, "metadonnees")
+        s.commit()
+
+        synthese = composer_synthese_collection(s, col, fonds_query="HK")
+        cles = {a.cle for a in synthese.agregats}
+        assert "ancienne_cote" not in cles  # identifiant filtré
+        assert "dessinateur" in cles  # vrai agrégat conservé
+
+
+def test_synthese_meta_techniques_pas_dans_agregats(base_demo: Path) -> None:
+    """`num_files`, `hash`, `categories` (fingerprints Nakala) ne
+    doivent pas remonter dans les agrégats synthèse — ils saturent la
+    colonne sans apporter de sens."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        items = list(s.scalars(select(Item).limit(5)).all())
+        for i, it in enumerate(items):
+            it.metadonnees = {
+                "auteur": "Test",
+                "num_files": f"{i + 30}",
+                "hash": f"abc{i}",
+                "categories": "image; pdf",
+            }
+            flag_modified(it, "metadonnees")
+        s.commit()
+
+        synthese = composer_synthese_collection(s, col, fonds_query="HK")
+        cles = {a.cle for a in synthese.agregats}
+        assert "num_files" not in cles
+        assert "hash" not in cles
+        assert "categories" not in cles
+        assert "auteur" in cles  # vraie donnée documentaire conservée
+    engine.dispose()
 
 
 def test_synthese_pas_dans_swap_htmx(base_demo: Path) -> None:

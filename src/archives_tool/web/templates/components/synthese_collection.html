@@ -72,19 +72,31 @@
         <div>
           {% if synthese.agregats %}
             {% for ag in synthese.agregats %}
-              <div style="margin-bottom:10px;font-size:13px;">
-                <div style="color:#374151;font-weight:500;margin-bottom:3px;">
-                  {{ ag.libelle }}
-                  <span style="color:#9ca3af;font-weight:400;font-size:12px;">
-                    ({{ ag.nb_distinct }}{% if ag.nb_distinct > ag.top|length %} dont top {{ ag.top|length }}{% endif %})
+              {% if ag.est_uniforme %}
+                {# Une seule valeur distincte : rendu compact sur une
+                   ligne pour ne pas gâcher 2 lignes par champ uniforme
+                   (cas PF : langue=es, type=Périodique). #}
+                <div style="margin-bottom:6px;font-size:13px;line-height:1.5;">
+                  <span style="color:#374151;font-weight:500;">{{ ag.libelle }} :</span>
+                  <span style="color:#6b7280;margin-left:4px;">{{ ag.top[0].valeur }}
+                    <span style="color:#9ca3af;">({{ ag.top[0].count }})</span>
                   </span>
                 </div>
-                <div style="color:#6b7280;font-size:12px;line-height:1.6;">
-                  {% for tv in ag.top -%}
-                    {{ tv.valeur }} <span style="color:#9ca3af;">({{ tv.count }})</span>{% if not loop.last %} · {% endif %}
-                  {%- endfor %}
+              {% else %}
+                <div style="margin-bottom:10px;font-size:13px;">
+                  <div style="color:#374151;font-weight:500;margin-bottom:3px;">
+                    {{ ag.libelle }}
+                    <span style="color:#9ca3af;font-weight:400;font-size:12px;">
+                      ({{ ag.nb_distinct }}{% if ag.nb_distinct > ag.top|length %} dont top {{ ag.top|length }}{% endif %})
+                    </span>
+                  </div>
+                  <div style="color:#6b7280;font-size:12px;line-height:1.6;">
+                    {% for tv in ag.top -%}
+                      {{ tv.valeur }} <span style="color:#9ca3af;">({{ tv.count }})</span>{% if not loop.last %} · {% endif %}
+                    {%- endfor %}
+                  </div>
                 </div>
-              </div>
+              {% endif %}
             {% endfor %}
           {% else %}
             <p style="font-size:12px;color:#9ca3af;font-style:italic;">

@@ -16,6 +16,7 @@ Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import Counter
@@ -1055,6 +1056,34 @@ _META_ITEM_STRUCTURELLES: frozenset[str] = frozenset(
     {"hierarchie", "typologie"}
 )
 
+#: Clés de `Item.metadonnees` qui sont **techniques/calculées** (compteurs
+#: Nakala, hashes, fingerprints). Exclues des agrégats synthèse parce
+#: qu'elles n'apportent rien au « quoi est dedans » — un compte de
+#: fichiers par item n'est pas une caractéristique catalographique. Ne
+#: touche pas le cartouche (l'utilisateur peut toujours voir et éditer
+#: ces clés sur la fiche item).
+_META_ITEM_TECHNIQUES_SYNTHESE: frozenset[str] = frozenset(
+    {
+        "num_files",       # compteur Nakala — bruit
+        "hash", "sha", "sha256", "checksum",
+        "data_url", "embed_url", "preview_url", "thumb", "thumbnail",
+        "iiif", "iiif_url", "iiif_url_nakala", "info_json",
+        "categories",      # Nakala-side type aggregation, peu utile
+    }
+)
+
+#: Mapping ISO 639-1 (2 lettres) → ISO 639-3 (3 lettres) pour les
+#: langues les plus courantes. :data:`LANGUES_OPTIONS` indexe en ISO
+#: 639-3 (`fra`, `spa`…), mais les imports Nakala / DC arrivent souvent
+#: en ISO 639-1 (`fr`, `es`…). Ce mapping rattrape l'affichage sans
+#: imposer une migration de données.
+_LANGUES_ISO1_VERS_ISO3: dict[str, str] = {
+    "fr": "fra", "en": "eng", "es": "spa", "it": "ita",
+    "de": "deu", "pt": "por", "nl": "nld", "ar": "ara",
+    "ru": "rus", "el": "ell", "la": "lat", "oc": "oci",
+    "br": "bre", "ca": "cat",
+}
+
 #: Nombre maximum de valeurs distinctes affichées par agrégat. Au-delà,
 #: l'utilisateur ouvre le panneau Filtrer ou la page modifier pour le
 #: détail. Cap conservateur — ne pas grossir sans repenser le layout.
@@ -1063,6 +1092,49 @@ _TOP_AGREGAT: int = 5
 #: Nombre de vignettes échantillonnées dans la synthèse. 12 tient sur
 #: 3 colonnes × 4 lignes ou 6 × 2 selon la largeur disponible.
 _NB_VIGNETTES_SYNTHESE: int = 12
+
+
+def _resoudre_libelle_langue(code: str) -> str:
+    """Résout un code langue (ISO 639-3 ou 639-1) vers son libellé
+    humain. Fallback ISO 639-1 → ISO 639-3 puis lookup dans
+    :data:`LANGUES_OPTIONS`. Si rien ne matche, retourne le code brut
+    inchangé (l'utilisateur le voit et peut corriger).
+    """
+    if not code:
+        return code
+    lib = libelle_pour_valeur(code, LANGUES_OPTIONS)
+    if lib and lib != code:
+        return lib
+    # Le code n'a pas matché : tente la conversion ISO-1 → ISO-3 puis
+    # relookup. Couvre `es` → `spa` → `Espagnol`.
+    iso3 = _LANGUES_ISO1_VERS_ISO3.get(code.lower())
+    if iso3:
+        lib2 = libelle_pour_valeur(iso3, LANGUES_OPTIONS)
+        if lib2:
+            return lib2
+    return code
+
+
+_REGEX_ANNEE_EDTF = re.compile(r"^-?(\d{4})")
+
+
+def _annee_depuis_date_edtf(date: str | None) -> int | None:
+    """Extrait l'année (entier) d'une chaîne de date EDTF tolérante.
+
+    Couvre `1974`, `1974-03`, `1974-03-11`, `vers 1974` (échoue), `19XX`
+    (échoue), `-0044` (BCE, retourne -44). Sert de fallback quand
+    `Item.annee` n'a pas été peuplé à l'import — la timeline doit
+    quand même fonctionner.
+    """
+    if not date:
+        return None
+    m = _REGEX_ANNEE_EDTF.match(date.strip())
+    if not m:
+        return None
+    try:
+        return int(date.strip().split("-")[0] if date.strip().startswith("-") else m.group(1))
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -1087,7 +1159,15 @@ class AgregatItemQuali:
     libelle: str
     top: tuple[TopValeur, ...]
     nb_distinct: int
-    nb_renseignes: int  # nb items qui ont au moins une valeur sur cette cle
+
+    @property
+    def est_uniforme(self) -> bool:
+        """True si une seule valeur distincte couvre toute l'agrégat.
+
+        Le template peut alors basculer en rendu compact (une ligne
+        « Langue : Espagnol (172) ») plutôt que header + énumération.
+        """
+        return self.nb_distinct == 1
 
 
 @dataclass(frozen=True)
@@ -1240,9 +1320,10 @@ def _agreger_item_metadonnees_quali(
 ) -> dict[str, Counter[str]]:
     """Agrège les valeurs documentaires de ``Item.metadonnees`` pour
     les items d'une collection. Skip les clés structurelles
-    (``hierarchie``, ``typologie``) et les valeurs vides. Les listes
-    (vocabs multi-valeurs) sont dépiles : chaque valeur incrémente
-    son propre compteur.
+    (``hierarchie``, ``typologie``), les clés techniques/fingerprints
+    (cf. :data:`_META_ITEM_TECHNIQUES_SYNTHESE`), et les valeurs vides.
+    Les listes (vocabs multi-valeurs) sont dépiles : chaque valeur
+    incrémente son propre compteur.
     """
     par_cle: dict[str, Counter[str]] = {}
     for meta in items_meta:
@@ -1250,6 +1331,8 @@ def _agreger_item_metadonnees_quali(
             continue
         for cle, val in meta.items():
             if cle in _META_ITEM_STRUCTURELLES:
+                continue
+            if cle in _META_ITEM_TECHNIQUES_SYNTHESE:
                 continue
             if isinstance(val, dict):
                 # Décomposition structurée — skip ici (montré ailleurs).
@@ -1270,7 +1353,6 @@ def _agregat_depuis_counter(
     cle: str,
     libelle: str,
     counter: Counter[str],
-    nb_renseignes: int,
 ) -> AgregatItemQuali:
     """Convertit un Counter en AgregatItemQuali (top N + tri stable)."""
     top_items = counter.most_common(_TOP_AGREGAT)
@@ -1280,7 +1362,6 @@ def _agregat_depuis_counter(
         libelle=libelle,
         top=top,
         nb_distinct=len(counter),
-        nb_renseignes=nb_renseignes,
     )
 
 
@@ -1324,6 +1405,9 @@ def composer_synthese_collection(
     """
     # ---- 1. Pass principale : tous les items, attributs nécessaires
     #    aux agrégats + au calcul des trous (sauf "sans fichier"). ----
+    #    `Item.date` sert de fallback à `Item.annee` quand l'import a
+    #    rempli la chaîne EDTF mais pas l'entier dérivé (cas PF —
+    #    l'importer Nakala laisse `annee` à NULL).
     lignes_items = db.execute(
         select(
             Item.id,
@@ -1332,6 +1416,7 @@ def composer_synthese_collection(
             Item.langue,
             Item.type_coar,
             Item.annee,
+            Item.date,
             Item.etat_catalogage,
             Item.metadonnees,
         )
@@ -1341,20 +1426,19 @@ def composer_synthese_collection(
     ).all()
     nb_items_total = len(lignes_items)
 
-    # ---- 1a. Distribution temporelle ----
-    annees_renseignees = [an for *_, an, _e, _m in lignes_items if an is not None]
-    distribution = _calculer_distribution_temporelle(annees_renseignees)
-
-    # ---- 1b. Agrégats qualitatifs ----
-    #    - langue / type_coar : valeurs des colonnes dédiées
-    #    - autres clés : extraites de `metadonnees`
+    # ---- 1a. Agrégats + résolution année effective ----
+    #    On dérive l'année effective = `Item.annee` si présent, sinon
+    #    extrait des 4 premiers chiffres de `Item.date` (EDTF).
     counter_langue: Counter[str] = Counter()
     counter_type: Counter[str] = Counter()
     metas_brutes: list[dict[str, Any] | None] = []
+    annees_effectives: list[int] = []
     nb_a_corriger = 0
     nb_sans_titre = 0
     nb_sans_annee = 0
-    for _id, _cote, titre, langue, type_coar, annee, etat, meta in lignes_items:
+    for (
+        _id, _cote, titre, langue, type_coar, annee, date, etat, meta
+    ) in lignes_items:
         if langue:
             counter_langue[langue] += 1
         if type_coar:
@@ -1364,47 +1448,62 @@ def composer_synthese_collection(
             nb_a_corriger += 1
         if not (titre or "").strip():
             nb_sans_titre += 1
-        if annee is None:
+        annee_effective = annee if annee is not None else _annee_depuis_date_edtf(date)
+        if annee_effective is None:
             nb_sans_annee += 1
+        else:
+            annees_effectives.append(annee_effective)
 
+    distribution = _calculer_distribution_temporelle(annees_effectives)
     par_cle_meta = _agreger_item_metadonnees_quali(metas_brutes)
 
     agregats: list[AgregatItemQuali] = []
     # Langue + type_coar en tête (les plus structurants), avec libellés
-    # humains résolus via les vocabulaires hardcoded.
+    # humains résolus via les vocabulaires hardcoded + fallback ISO 639-1.
     if counter_langue:
-        nb_renseignes_langue = sum(counter_langue.values())
         counter_langue_humain: Counter[str] = Counter()
         for code, n in counter_langue.items():
-            lib = libelle_pour_valeur(code, LANGUES_OPTIONS) or code
-            counter_langue_humain[lib] += n
+            counter_langue_humain[_resoudre_libelle_langue(code)] += n
         agregats.append(
             _agregat_depuis_counter(
-                "langue", "Langues", counter_langue_humain, nb_renseignes_langue
+                "langue",
+                "Langue" if len(counter_langue_humain) == 1 else "Langues",
+                counter_langue_humain,
             )
         )
     if counter_type:
-        nb_renseignes_type = sum(counter_type.values())
         counter_type_humain: Counter[str] = Counter()
         for uri, n in counter_type.items():
             lib = libelle_pour_valeur(uri, TYPES_COAR_OPTIONS) or uri
             counter_type_humain[lib] += n
         agregats.append(
             _agregat_depuis_counter(
-                "type_coar", "Types", counter_type_humain, nb_renseignes_type
+                "type_coar",
+                "Type" if len(counter_type_humain) == 1 else "Types",
+                counter_type_humain,
             )
         )
-    # Puis les agrégats meta — triés par nb_renseignes décroissant (plus
-    # informatif d'abord). Cap à ~6 pour rester compact ; au-delà ça
-    # devient un mur, l'utilisateur ouvre les pages individuelles.
+    # Puis les agrégats meta — filtrés contre les champs identifiant-like
+    # (toutes les valeurs distinctes apparaissent une seule fois → pas
+    # d'agrégation possible, juste du bruit) puis triés par nb total
+    # d'occurrences décroissant. Cap à ~6 pour rester compact ; au-delà
+    # ça devient un mur, l'utilisateur ouvre les pages individuelles.
+    agregats_meta_candidats: list[AgregatItemQuali] = []
+    for cle, counter in par_cle_meta.items():
+        # Heuristique anti-identifiant : si la valeur la plus fréquente
+        # n'apparaît qu'une seule fois ET on a au moins 5 valeurs
+        # distinctes, c'est presque sûrement un identifiant (cas PF :
+        # `ancienne_cote = "Por Favor_1974_ano-1_num-N"`). On l'écarte
+        # pour ne pas saturer la colonne.
+        valeur_dominante_count = counter.most_common(1)[0][1] if counter else 0
+        if valeur_dominante_count <= 1 and len(counter) >= 5:
+            continue
+        agregats_meta_candidats.append(
+            _agregat_depuis_counter(cle, _libelle_depuis_cle(cle), counter)
+        )
     agregats_meta = sorted(
-        (
-            _agregat_depuis_counter(
-                cle, _libelle_depuis_cle(cle), counter, sum(counter.values())
-            )
-            for cle, counter in par_cle_meta.items()
-        ),
-        key=lambda a: (-a.nb_renseignes, a.cle),
+        agregats_meta_candidats,
+        key=lambda a: (-sum(tv.count for tv in a.top), a.cle),
     )
     agregats.extend(agregats_meta[:6])
 

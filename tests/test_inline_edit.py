@@ -354,6 +354,100 @@ def test_collection_bandeau_hooks_inline_present(base_demo: Path) -> None:
     assert idx_synthese > -1 and idx_doi > idx_synthese
 
 
+# ---------------------------------------------------------------------------
+# Inline edit fonds (V0.9.6) — bandeau titre/description + Identifiants
+# ---------------------------------------------------------------------------
+
+
+def _version_fonds(db_path: Path, cote: str) -> int:
+    """Version courante d'un fonds pour l'optimistic locking."""
+    from archives_tool.models import Fonds
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == cote))
+        v = fonds.version
+    engine.dispose()
+    return v
+
+
+def test_inline_edit_fonds_titre_succes(base_demo: Path) -> None:
+    """POST sur titre du fonds : 200 + fragment, valeur persistée."""
+    from archives_tool.models import Fonds
+    client = TestClient(app)
+    v = _version_fonds(base_demo, "HK")
+    resp = client.post(
+        "/fonds/HK/champ/titre",
+        data={"version": str(v), "valeur": "Hara-Kiri (édité inline)"},
+    )
+    assert resp.status_code == 200
+    assert "Hara-Kiri (édité inline)" in resp.text
+    assert f'data-edit-new-version="{v + 1}"' in resp.text
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        assert fonds.titre == "Hara-Kiri (édité inline)"
+    engine.dispose()
+
+
+def test_inline_edit_fonds_issn_succes(base_demo: Path) -> None:
+    """POST sur ISSN : champ revue inline depuis la synthèse."""
+    from archives_tool.models import Fonds
+    client = TestClient(app)
+    v = _version_fonds(base_demo, "HK")
+    resp = client.post(
+        "/fonds/HK/champ/issn",
+        data={"version": str(v), "valeur": "0998-1234"},
+    )
+    assert resp.status_code == 200
+    assert "0998-1234" in resp.text
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        assert fonds.issn == "0998-1234"
+    engine.dispose()
+
+
+def test_inline_edit_fonds_champ_hors_whitelist_refus(base_demo: Path) -> None:
+    """`cote` n'est pas dans la whitelist fonds — refus 403."""
+    client = TestClient(app)
+    v = _version_fonds(base_demo, "HK")
+    resp = client.post(
+        "/fonds/HK/champ/cote",
+        data={"version": str(v), "valeur": "PIRATE"},
+    )
+    assert resp.status_code == 403
+
+
+def test_meta_entity_context_dans_page_fonds(base_demo: Path) -> None:
+    """La page fonds expose `<meta name="entity-context">` avec
+    cote/version et l'URL-template pointant sur la route fonds."""
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    assert 'name="entity-context"' in resp.text
+    assert 'data-cote="HK"' in resp.text
+    assert "/fonds/{cote}/champ/{field}" in resp.text
+    assert "inline_edit.js" in resp.text
+
+
+def test_fonds_bandeau_hooks_inline_present(base_demo: Path) -> None:
+    """Hooks data-edit-field sur titre + description dans le bandeau
+    fonds, et sur les champs revue (issn, editeur, etc.) dans la
+    synthèse."""
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    # Bandeau
+    assert 'data-edit-field="titre"' in resp.text
+    assert 'data-edit-field="description"' in resp.text
+    # Synthèse (Identifiants revue)
+    for cle in ("editeur", "issn", "periodicite", "date_debut", "date_fin"):
+        assert f'data-edit-field="{cle}"' in resp.text, f"hook manquant : {cle}"
+
+
 def test_inline_edit_collection_doi_nakala_succes(base_demo: Path) -> None:
     """POST sur doi_nakala : 200 + fragment, valeur persistée."""
     from archives_tool.models import Collection, TypeCollection

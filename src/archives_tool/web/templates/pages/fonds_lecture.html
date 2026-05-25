@@ -15,6 +15,31 @@
 {% block title %}{{ detail.fonds.titre }} — archives-tool{% endblock %}
 
 {% block content %}
+{# Contexte fonds expose au JS d'edition inline (cf. inline_edit.js).
+   `data-fonds=""` car la route fonds n'utilise pas de query string
+   pour desambiguiser (Fonds.cote est unique globalement). #}
+{% if not est_lecture_seule() %}
+<meta name="entity-context"
+      data-cote="{{ detail.fonds.cote }}"
+      data-fonds=""
+      data-version="{{ detail.fonds.version }}"
+      data-edit-url-template="/fonds/{cote}/champ/{field}">
+{% endif %}
+
+{# Macro locale pour les lignes inline-editables du bandeau fonds.
+   Memes attributs que la macro `_zone_inline` de collection_lecture
+   (duplique a dessein : peu de code, evite un macros file partage). #}
+{% macro _zone_inline_fonds(field, type_donnee="texte", titre=None, classes="", styles="") -%}
+  {%- set _editable = not est_lecture_seule() -%}
+  <span data-edit-field="{{ field }}"
+        data-edit-type="{{ type_donnee }}"
+        data-editable="{{ '1' if _editable else '0' }}"
+        {% if _editable %}title="{{ titre or 'Double-cliquer pour modifier' }}" style="cursor:text;{{ styles }}"{% else %}style="{{ styles }}"{% endif %}
+        class="{{ classes }}">
+    <span data-value>{{ caller() }}</span>
+  </span>
+{%- endmacro %}
+
 <header class="mb-6">
   <p class="text-sm text-gray-500">
     <a href="/" class="hover:underline">Tableau de bord</a> ›
@@ -22,11 +47,19 @@
   </p>
   <div class="flex items-start justify-between mt-2 gap-4">
     <div>
-      <h1 class="text-2xl font-medium">{{ detail.fonds.titre | surligner_q(q_surligne) }}</h1>
+      <h1 class="text-2xl font-medium">
+        {% call _zone_inline_fonds("titre") %}{{ detail.fonds.titre | surligner_q(q_surligne) }}{% endcall %}
+      </h1>
       <p class="text-sm text-gray-500 font-mono">{{ detail.fonds.cote }}</p>
-      {% if detail.fonds.description %}
-        <p class="text-sm text-gray-700 mt-1">{{ detail.fonds.description | surligner_q(q_surligne) }}</p>
-      {% endif %}
+      <p class="text-sm text-gray-700 mt-1">
+        {% call _zone_inline_fonds("description", type_donnee="multiligne") -%}
+          {% if detail.fonds.description -%}
+            {{ detail.fonds.description | surligner_q(q_surligne) }}
+          {%- else -%}
+            <span class="text-gray-400 italic" style="font-size:12px;">description non renseignée</span>
+          {%- endif %}
+        {%- endcall %}
+      </p>
     </div>
     {% if not est_lecture_seule() %}
       <a href="/fonds/{{ detail.fonds.cote }}/modifier"
@@ -36,37 +69,9 @@
     {% endif %}
   </div>
 
-  {# Bandeau métadonnées : seuls les champs renseignés s'affichent. #}
-  <dl class="grid grid-cols-2 gap-x-6 gap-y-1 mt-4 text-sm">
-    {% if detail.fonds.responsable_archives %}
-      <dt class="text-gray-500">Responsable Archives</dt>
-      <dd>{{ detail.fonds.responsable_archives }}</dd>
-    {% endif %}
-    {% if detail.fonds.personnalite_associee %}
-      <dt class="text-gray-500">Personnalité associée</dt>
-      <dd>{{ detail.fonds.personnalite_associee }}</dd>
-    {% endif %}
-    {% if detail.fonds.editeur %}
-      <dt class="text-gray-500">Éditeur</dt>
-      <dd>{{ detail.fonds.editeur }}</dd>
-    {% endif %}
-    {% if detail.fonds.lieu_edition %}
-      <dt class="text-gray-500">Lieu d'édition</dt>
-      <dd>{{ detail.fonds.lieu_edition }}</dd>
-    {% endif %}
-    {% if detail.fonds.periodicite %}
-      <dt class="text-gray-500">Périodicité</dt>
-      <dd>{{ detail.fonds.periodicite }}</dd>
-    {% endif %}
-    {% if detail.fonds.issn %}
-      <dt class="text-gray-500">ISSN</dt>
-      <dd class="font-mono">{{ detail.fonds.issn }}</dd>
-    {% endif %}
-    {% if detail.fonds.date_debut or detail.fonds.date_fin %}
-      <dt class="text-gray-500">Période</dt>
-      <dd>{{ detail.fonds.date_debut or "?" }} – {{ detail.fonds.date_fin or "?" }}</dd>
-    {% endif %}
-  </dl>
+  {# Metadonnees revue (responsable, editeur, ISSN, periodicite, dates)
+     deplacees dans la boite Synthese — sous-section Identifiants. Le
+     bandeau ne garde que titre + description (inline). #}
 
   {# Avancement + traçabilité du fonds, juste sous les métadonnées. #}
   <div class="grid grid-cols-[1fr_auto] gap-6 mt-5 items-end">
@@ -252,4 +257,13 @@
     {% endif %}
   </section>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+  {# Edition inline du bandeau fonds (titre, description) + bloc
+     Identifiants dans la synthese. Inactif en lecture seule — le
+     meta entity-context n'est pas rendu, les hooks restent dormants. #}
+  {% if not est_lecture_seule() %}
+    <script src="{{ static_url('js/inline_edit.js') }}"></script>
+  {% endif %}
 {% endblock %}

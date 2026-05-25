@@ -36,6 +36,57 @@
     <div style="padding:0 14px 14px;">
 
       {# -----------------------------------------------------------
+         Identifiants revue (V0.9.6) — editeur / lieu / periodicite /
+         ISSN / dates / responsable + personnalite. Inline-editables
+         (hooks lus par inline_edit.js, meta entity-context rendu par
+         fonds_lecture.html). Toujours rendu en mode edition ; en
+         lecture seule on n'affiche que les champs renseignes pour
+         eviter une grille pleine de tirets.
+         ----------------------------------------------------------- #}
+      {% set _editable = not est_lecture_seule() %}
+      {# Liste declarative pour eviter la repetition. Un tuple par
+         champ : (cle, libelle, type_donnee, classes_supplementaires). #}
+      {% set _champs_identifiants = [
+        ('editeur', 'Éditeur', 'texte', ''),
+        ('lieu_edition', 'Lieu', 'texte', ''),
+        ('periodicite', 'Périodicité', 'texte', ''),
+        ('issn', 'ISSN', 'texte', 'font-mono'),
+        ('date_debut', 'Début', 'texte', ''),
+        ('date_fin', 'Fin', 'texte', ''),
+        ('responsable_archives', 'Responsable', 'texte', ''),
+        ('personnalite_associee', 'Personnalité', 'texte', ''),
+      ] %}
+      {% set _ns = namespace(au_moins_une_valeur=False) %}
+      {% for _cle, _libelle, _type, _classes in _champs_identifiants %}
+        {% if synthese[_cle] %}{% set _ns.au_moins_une_valeur = true %}{% endif %}
+      {% endfor %}
+      {% if _editable or _ns.au_moins_une_valeur %}
+      <div style="padding-top:8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;font-size:12px;">
+        {% for _cle, _libelle, _type, _classes in _champs_identifiants %}
+          {% set _val = synthese[_cle] %}
+          {# En lecture seule on saute les champs vides. En mode
+             edition on affiche un placeholder pour permettre l'ajout. #}
+          {% if _editable or _val %}
+          <span style="display:inline-flex;align-items:baseline;gap:4px;">
+            <span style="color:#9ca3af;">{{ _libelle }}</span>
+            <span data-edit-field="{{ _cle }}"
+                  data-edit-type="{{ _type }}"
+                  data-editable="{{ '1' if _editable else '0' }}"
+                  {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;color:#374151;"{% else %}style="color:#374151;"{% endif %}
+                  class="{{ _classes }}">
+              <span data-value>{% if _val -%}
+                {{ _val }}
+              {%- else -%}
+                <span class="text-gray-400 italic">non renseigné</span>
+              {%- endif %}</span>
+            </span>
+          </span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# -----------------------------------------------------------
          Collections : recap toujours affiche tant qu'il y a au moins
          une collection rattachee (= la miroir, garantie par l'invariant 1
          sur les fonds creees via le service). Avant V0.9.6-fix on

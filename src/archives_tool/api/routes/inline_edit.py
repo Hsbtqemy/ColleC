@@ -37,11 +37,15 @@ from archives_tool.api.services.collections import (
 )
 from archives_tool.api.services.fonds import (
     FondsIntrouvable,
+    FondsInvalide,
+    formulaire_depuis_fonds,
     lire_fonds_par_cote,
+    modifier_fonds,
 )
 from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services.dashboard import (
     CHAMPS_COLLECTION_EDITABLES_INLINE,
+    CHAMPS_FONDS_EDITABLES_INLINE,
     CHAMPS_ITEM_EDITABLES_INLINE,
 )
 from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
@@ -245,6 +249,74 @@ def soumettre_edition_inline_collection(
         "partials/inline_edit_valeur.html",
         {
             "entity": collection_modifiee,
+            "field": field,
+            "valeur_brute": valeur_brute,
+            "valeur_affichee": valeur_affichee,
+            "vocabulaire": options is not None,
+        },
+    )
+
+
+@router.post(
+    "/fonds/{cote}/champ/{field}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_edition_inline_fonds(
+    cote: str,
+    field: str,
+    request: Request,
+    version: Annotated[int, Form(...)],
+    valeur: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Modifie un seul champ d'un Fonds. Symétrique de la route
+    collection ci-dessus (sans `?fonds=` désambiguïsation puisque
+    `Fonds.cote` est unique globalement).
+
+    Refuse les champs hors :data:`CHAMPS_FONDS_EDITABLES_INLINE`
+    (cote / version passent par la page Modifier).
+    """
+    if field not in CHAMPS_FONDS_EDITABLES_INLINE:
+        raise HTTPException(
+            status_code=403, detail=f"Champ {field!r} non éditable inline."
+        )
+
+    try:
+        fonds = lire_fonds_par_cote(db, cote)
+    except FondsIntrouvable:
+        raise HTTPException(status_code=404, detail=f"Fonds {cote!r} introuvable")
+
+    formulaire = formulaire_depuis_fonds(fonds)
+    formulaire.version = version
+    setattr(formulaire, field, valeur)
+
+    try:
+        fonds_modifie = modifier_fonds(db, fonds.id, formulaire, modifie_par=utilisateur)
+    except ConflitVersion as e:
+        return templates.TemplateResponse(
+            request,
+            "partials/inline_edit_conflit.html",
+            {"field": field, "exc": e, "valeur": valeur},
+            status_code=409,
+        )
+    except FondsInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "partials/inline_edit_erreur.html",
+            {"field": field, "erreurs": e.erreurs, "valeur": valeur},
+            status_code=400,
+        )
+
+    valeur_brute = getattr(fonds_modifie, field, None)
+    options, valeur_affichee = resoudre_vocabulaire(field, valeur_brute)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/inline_edit_valeur.html",
+        {
+            "entity": fonds_modifie,
             "field": field,
             "valeur_brute": valeur_brute,
             "valeur_affichee": valeur_affichee,

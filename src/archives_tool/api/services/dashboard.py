@@ -853,6 +853,17 @@ class SyntheseFonds:
     items_recents: tuple[ItemRecemmentModifie, ...]
     cartographie: CartographieCollections
     nb_items_total: int
+    # Identifiants revue (V0.9.6) — exposés dans la synthèse pour
+    # édition inline directe. None si non renseigné. Le bandeau ne
+    # garde que titre + description ; le reste a sa place ici.
+    editeur: str | None = None
+    lieu_edition: str | None = None
+    periodicite: str | None = None
+    issn: str | None = None
+    date_debut: str | None = None
+    date_fin: str | None = None
+    personnalite_associee: str | None = None
+    responsable_archives: str | None = None
 
     @property
     def vide(self) -> bool:
@@ -1198,6 +1209,14 @@ def composer_synthese_fonds(db: Session, fonds: Fonds) -> SyntheseFonds:
         items_recents=items_recents,
         cartographie=cartographie,
         nb_items_total=nb_items_total,
+        editeur=fonds.editeur,
+        lieu_edition=fonds.lieu_edition,
+        periodicite=fonds.periodicite,
+        issn=fonds.issn,
+        date_debut=fonds.date_debut,
+        date_fin=fonds.date_fin,
+        personnalite_associee=fonds.personnalite_associee,
+        responsable_archives=fonds.responsable_archives,
     )
 
 
@@ -2422,6 +2441,29 @@ CHAMPS_COLLECTION_EDITABLES_INLINE: frozenset[str] = frozenset(
         "doi_nakala",
         "doi_collection_nakala_parent",
         "notes_internes",
+    }
+)
+
+
+#: Whitelist des champs Fonds éditables inline depuis la page lecture
+#: (bandeau + synthèse). Symétrique de :data:`CHAMPS_COLLECTION_EDITABLES_INLINE`,
+#: restent hors whitelist et passent par `/fonds/{cote}/modifier` :
+#: - `cote` : touche aux URLs et aux exports
+#: - `version` : verrou optimiste, technique
+CHAMPS_FONDS_EDITABLES_INLINE: frozenset[str] = frozenset(
+    {
+        "titre",
+        "description",
+        "description_publique",
+        "description_interne",
+        "personnalite_associee",
+        "responsable_archives",
+        "editeur",
+        "lieu_edition",
+        "periodicite",
+        "issn",
+        "date_debut",
+        "date_fin",
     }
 )
 

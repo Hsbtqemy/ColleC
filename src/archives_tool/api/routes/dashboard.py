@@ -1084,12 +1084,20 @@ async def soumettre_modification_item(
     # `meta_<cle>`) et les fusionne dans `formulaire.metadonnees`.
     # Pydantic Form() n'expose pas les noms dynamiques, on relit donc
     # request.form() (cache Starlette → pas de double lecture du body).
+    # V0.9.6 : `liste_multiple` → getlist (checkboxes envoient N fois
+    # le meme name) ; les autres types restent une seule valeur.
     form_data = await request.form()
     champs_perso = lister_champs_actifs_pour_item(db, item.id)
     nouvelles_metas = dict(formulaire.metadonnees or {})
     for c in champs_perso:
         cle_form = f"meta_{c.cle}"
-        if cle_form in form_data:
+        if c.type == "liste_multiple":
+            valeurs = [v.strip() for v in form_data.getlist(cle_form) if v.strip()]
+            if valeurs:
+                nouvelles_metas[c.cle] = valeurs
+            else:
+                nouvelles_metas.pop(c.cle, None)
+        elif cle_form in form_data:
             val = (form_data[cle_form] or "").strip()
             if val:
                 nouvelles_metas[c.cle] = val

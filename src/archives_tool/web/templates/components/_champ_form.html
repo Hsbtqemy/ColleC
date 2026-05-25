@@ -18,6 +18,7 @@
            value="{{ valeur }}"
            {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
            {% if lecture_seule %}disabled{% endif %}
+           {% if obligatoire %}required{% endif %}
            class="w-full {% if mono %}font-mono{% endif %}"
            style="padding:6px 10px;font-size:13px;
                   border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
@@ -42,6 +43,7 @@
     </label>
     <textarea id="champ-{{ nom }}" name="{{ nom }}" rows="{{ lignes }}"
               {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+              {% if obligatoire %}required{% endif %}
               class="w-full"
               style="padding:6px 10px;font-size:13px;
                      border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
@@ -77,6 +79,7 @@
       {{ label }}{% if obligatoire %} <span style="color:#E24B4A;">*</span>{% endif %}
     </label>
     <select id="champ-{{ nom }}" name="{{ nom }}"
+            {% if obligatoire %}required{% endif %}
             class="w-full"
             style="padding:6px 10px;font-size:13px;
                    border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};

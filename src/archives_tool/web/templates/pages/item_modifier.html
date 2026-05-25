@@ -5,7 +5,7 @@
    - `erreurs` (dict champ→message, vide si aucune)
    - `etats` (list[EtatCatalogage]) #}
 {% extends "base.html" %}
-{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur, cases_a_cocher with context %}
 
 {% block title %}Modifier {{ item.titre or item.cote }} — archives-tool{% endblock %}
 
@@ -142,7 +142,27 @@
     {% set _meta = formulaire.metadonnees or {} %}
     {% for c in champs_personnalises %}
       {% set _val = _meta.get(c.cle, '') %}
-      {% if c.cle in options_par_champ_perso %}
+      {% if c.type == 'liste_multiple' and c.cle in options_par_champ_perso %}
+        {# V0.9.6 : checkboxes pour liste_multiple. valeurs_actives doit
+           etre une list[str] — si _val est une liste, on l'utilise
+           telle quelle ; si c'est une chaine (legacy CSV non encore
+           normalisee), on la split sur la virgule. #}
+        {% set _libs = {} %}
+        {% for code, lib in options_par_champ_perso[c.cle] %}
+          {% set _ = _libs.update({code: lib}) %}
+        {% endfor %}
+        {% if _val is string %}
+          {% set _valeurs_actives = (_val.split(',') | map('trim') | reject('equalto', '') | list) if _val else [] %}
+        {% else %}
+          {% set _valeurs_actives = _val or [] %}
+        {% endif %}
+        {{ cases_a_cocher('meta_' ~ c.cle, c.libelle,
+                           _valeurs_actives,
+                           options_par_champ_perso[c.cle] | map(attribute=0) | list,
+                           libelles=_libs,
+                           help_text=c.aide or None,
+                           obligatoire=c.obligatoire) }}
+      {% elif c.cle in options_par_champ_perso %}
         {% set _libs = {} %}
         {% for code, lib in options_par_champ_perso[c.cle] %}
           {% set _ = _libs.update({code: lib}) %}

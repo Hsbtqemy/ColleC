@@ -837,6 +837,117 @@ def test_route_item_modifier_persiste_meta(base_demo: Path) -> None:
     engine.dispose()
 
 
+def test_route_item_modifier_liste_multiple_persiste_list(base_demo: Path) -> None:
+    """Un champ type `liste_multiple` rend des checkboxes. POST avec
+    plusieurs valeurs du même name → list[str] dans
+    item.metadonnees[cle]."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireValeur,
+        FormulaireVocabulaire,
+        ajouter_valeur,
+        creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Vocab avec 3 valeurs.
+        v = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tags", libelle="Tags")
+        )
+        ajouter_valeur(s, v.id, FormulaireValeur(code="a", libelle="A"))
+        ajouter_valeur(s, v.id, FormulaireValeur(code="b", libelle="B"))
+        ajouter_valeur(s, v.id, FormulaireValeur(code="c", libelle="C"))
+        # Champ multi-select sur ce vocab.
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="tags", libelle="Tags", type="liste_multiple",
+                valeurs_controlees_id=v.id,
+            ),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    # 2 checkboxes cochées : "a" et "c". httpx + TestClient envoie
+    # une list[str] pour la même clé en multipart form-urlencoded.
+    resp = client.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001",
+            "titre": "Titre HK-001",
+            "fonds_id": 1,
+            "version": version,
+            "etat_catalogage": "brouillon",
+            "meta_tags": ["a", "c"],
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        # Liste preservee dans metadonnees.
+        tags = (item.metadonnees or {}).get("tags")
+        assert isinstance(tags, list)
+        assert set(tags) == {"a", "c"}
+    engine.dispose()
+
+
+def test_route_item_modifier_liste_multiple_zero_coche_efface(
+    base_demo: Path,
+) -> None:
+    """Zéro checkbox coché → clé supprimée de metadonnees (cohérent
+    avec la sémantique « vide = absent » des single-value)."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireVocabulaire, creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tags", libelle="T"))
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="tags", libelle="Tags", type="liste_multiple",
+                valeurs_controlees_id=v.id,
+            ),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["tags"] = ["a", "b"]
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    # Aucune meta_tags soumise = 0 checkbox.
+    resp = client.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001", "titre": "T", "fonds_id": 1,
+            "version": version, "etat_catalogage": "brouillon",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert "tags" not in (item.metadonnees or {})
+    engine.dispose()
+
+
 def test_route_item_modifier_meta_vide_supprime_cle(base_demo: Path) -> None:
     """Soumettre meta_<cle>="" efface la clé de Item.metadonnees."""
     cid = _miroir_id(base_demo)

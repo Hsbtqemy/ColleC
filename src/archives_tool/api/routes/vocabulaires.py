@@ -1,0 +1,374 @@
+"""Gestion des vocabulaires personnalisés (V0.9.4 lot 3a).
+
+Routes web pour CRUD ``Vocabulaire`` + ``ValeurControlee`` depuis l'UI.
+Indépendantes des collections : un vocabulaire est partagé par toutes
+les collections (un même tag « personnage » peut être référencé par
+plusieurs ``ChampPersonnalise`` de fonds différents).
+
+Wire avec ``ChampPersonnalise.valeurs_controlees_id`` : lot 3b.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
+
+from archives_tool.api.deps import (
+    get_db,
+    get_nom_base,
+    get_utilisateur_courant,
+)
+from archives_tool.api.routes._helpers import contexte_base as _contexte_base
+from archives_tool.api.services.vocabulaires_db import (
+    FormulaireValeur,
+    FormulaireVocabulaire,
+    ValeurInvalide,
+    VocabulaireInvalide,
+    VocabulaireReference,
+    ajouter_valeur,
+    creer_vocabulaire,
+    deprecier_valeur,
+    lister_vocabulaires,
+    modifier_valeur,
+    modifier_vocabulaire,
+    reactiver_valeur,
+    supprimer_valeur,
+    supprimer_vocabulaire,
+    valeur_par_id,
+    vocabulaire_par_id,
+)
+from archives_tool.api.templating import templates
+from archives_tool.models import ValeurControlee
+
+router = APIRouter()
+
+
+def _valider_appartenance_valeur(
+    valeur: ValeurControlee, vocab_id: int
+) -> None:
+    """Garde anti-confused-deputy : POST sur
+    ``/vocabulaires/A/valeurs/<id>/...`` où ``id`` est en réalité dans
+    le vocab B doit être rejeté en 404."""
+    if valeur.vocabulaire_id != vocab_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Valeur {valeur.id} introuvable dans ce vocabulaire.",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Liste + création vocabulaire
+# ---------------------------------------------------------------------------
+
+
+@router.get("/vocabulaires", response_class=HTMLResponse, response_model=None)
+def page_vocabulaires(
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Page d'accueil : liste des vocabulaires + formulaire création."""
+    vocabs = lister_vocabulaires(db)
+    return templates.TemplateResponse(
+        request,
+        "pages/vocabulaires.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            vocabulaires=vocabs,
+            formulaire=FormulaireVocabulaire(),
+            erreurs={},
+        ),
+    )
+
+
+@router.post(
+    "/vocabulaires/creer",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_creer_vocabulaire(
+    request: Request,
+    formulaire: Annotated[FormulaireVocabulaire, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    try:
+        vocab = creer_vocabulaire(db, formulaire)
+    except VocabulaireInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/vocabulaires.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                vocabulaires=lister_vocabulaires(db),
+                formulaire=formulaire,
+                erreurs=e.erreurs,
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/vocabulaires/{vocab.id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Détail / modifier / supprimer un vocabulaire
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/vocabulaires/{vocab_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def page_vocabulaire(
+    vocab_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Page détail : métadonnées du vocabulaire + tableau des valeurs
+    + formulaire d'ajout d'une nouvelle valeur."""
+    vocab = vocabulaire_par_id(db, vocab_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/vocabulaire_detail.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            vocabulaire=vocab,
+            formulaire_vocab=FormulaireVocabulaire(
+                code=vocab.code,
+                libelle=vocab.libelle,
+                description=vocab.description or "",
+                description_interne=vocab.description_interne or "",
+                uri_base=vocab.uri_base or "",
+            ),
+            formulaire_valeur=FormulaireValeur(),
+            erreurs_vocab={},
+            erreurs_valeur={},
+        ),
+    )
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/modifier",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_modifier_vocabulaire(
+    vocab_id: int,
+    request: Request,
+    formulaire: Annotated[FormulaireVocabulaire, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    try:
+        modifier_vocabulaire(db, vocab_id, formulaire)
+    except VocabulaireInvalide as e:
+        vocab = vocabulaire_par_id(db, vocab_id)
+        return templates.TemplateResponse(
+            request,
+            "pages/vocabulaire_detail.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                vocabulaire=vocab,
+                formulaire_vocab=formulaire,
+                formulaire_valeur=FormulaireValeur(),
+                erreurs_vocab=e.erreurs,
+                erreurs_valeur={},
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/supprimer",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_supprimer_vocabulaire(
+    vocab_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    try:
+        supprimer_vocabulaire(db, vocab_id)
+    except VocabulaireReference as e:
+        vocab = vocabulaire_par_id(db, vocab_id)
+        return templates.TemplateResponse(
+            request,
+            "pages/vocabulaire_detail.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                vocabulaire=vocab,
+                formulaire_vocab=FormulaireVocabulaire(
+                    code=vocab.code,
+                    libelle=vocab.libelle,
+                    description=vocab.description or "",
+                    description_interne=vocab.description_interne or "",
+                    uri_base=vocab.uri_base or "",
+                ),
+                formulaire_valeur=FormulaireValeur(),
+                erreurs_vocab={
+                    "_global": (
+                        f"Impossible : vocabulaire référencé par "
+                        f"{len(e.champs_referents)} champ(s) "
+                        f"personnalisé(s) ({', '.join(e.champs_referents)}). "
+                        "Détacher le vocabulaire de ces champs avant de supprimer."
+                    )
+                },
+                erreurs_valeur={},
+            ),
+            status_code=409,
+        )
+    return RedirectResponse("/vocabulaires", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Valeurs contrôlées (ajout / modif / déprécier / réactiver / supprimer)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/valeurs/ajouter",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_ajouter_valeur(
+    vocab_id: int,
+    request: Request,
+    formulaire: Annotated[FormulaireValeur, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    try:
+        ajouter_valeur(db, vocab_id, formulaire)
+    except ValeurInvalide as e:
+        vocab = vocabulaire_par_id(db, vocab_id)
+        return templates.TemplateResponse(
+            request,
+            "pages/vocabulaire_detail.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                vocabulaire=vocab,
+                formulaire_vocab=FormulaireVocabulaire(
+                    code=vocab.code,
+                    libelle=vocab.libelle,
+                    description=vocab.description or "",
+                    description_interne=vocab.description_interne or "",
+                    uri_base=vocab.uri_base or "",
+                ),
+                formulaire_valeur=formulaire,
+                erreurs_vocab={},
+                erreurs_valeur=e.erreurs,
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/valeurs/{valeur_id}/modifier",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_modifier_valeur(
+    vocab_id: int,
+    valeur_id: int,
+    request: Request,
+    formulaire: Annotated[FormulaireValeur, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    valeur = valeur_par_id(db, valeur_id)
+    _valider_appartenance_valeur(valeur, vocab_id)
+    try:
+        modifier_valeur(db, valeur_id, formulaire)
+    except ValeurInvalide as e:
+        vocab = vocabulaire_par_id(db, vocab_id)
+        return templates.TemplateResponse(
+            request,
+            "pages/vocabulaire_detail.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                vocabulaire=vocab,
+                formulaire_vocab=FormulaireVocabulaire(
+                    code=vocab.code,
+                    libelle=vocab.libelle,
+                    description=vocab.description or "",
+                    description_interne=vocab.description_interne or "",
+                    uri_base=vocab.uri_base or "",
+                ),
+                formulaire_valeur=formulaire,
+                erreurs_vocab={},
+                erreurs_valeur=e.erreurs,
+                valeur_en_modification=valeur_id,
+            ),
+            status_code=400,
+        )
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/valeurs/{valeur_id}/deprecier",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_deprecier_valeur(
+    vocab_id: int,
+    valeur_id: int,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    valeur = valeur_par_id(db, valeur_id)
+    _valider_appartenance_valeur(valeur, vocab_id)
+    deprecier_valeur(db, valeur_id)
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/valeurs/{valeur_id}/reactiver",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_reactiver_valeur(
+    vocab_id: int,
+    valeur_id: int,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    valeur = valeur_par_id(db, valeur_id)
+    _valider_appartenance_valeur(valeur, vocab_id)
+    reactiver_valeur(db, valeur_id)
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/valeurs/{valeur_id}/supprimer",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_supprimer_valeur(
+    vocab_id: int,
+    valeur_id: int,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    valeur = valeur_par_id(db, valeur_id)
+    _valider_appartenance_valeur(valeur, vocab_id)
+    supprimer_valeur(db, valeur_id)
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)

@@ -1,0 +1,217 @@
+{# Détail d'un vocabulaire : métadonnées + table des valeurs + form ajout.
+   Variables :
+   - `vocabulaire` : Vocabulaire (eager valeurs)
+   - `formulaire_vocab` : FormulaireVocabulaire pré-rempli
+   - `formulaire_valeur` : FormulaireValeur (vide / repris erreur ajout)
+   - `erreurs_vocab` : dict champ→message (modification du vocab)
+   - `erreurs_valeur` : dict champ→message (ajout / modif valeur)
+   - `valeur_en_modification` (optionnel) : id de la valeur en cours
+     d'édition (réaffiche son inline form avec les erreurs)
+#}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ, textarea with context %}
+
+{% block title %}{{ vocabulaire.libelle }} — Vocabulaires{% endblock %}
+
+{% block content %}
+
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/vocabulaires" class="hover:underline">Vocabulaires</a> ›
+    <span class="font-mono">{{ vocabulaire.code }}</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    {{ vocabulaire.libelle }}
+    <span class="font-mono text-gray-500 ml-2" style="font-size:14px;">{{ vocabulaire.code }}</span>
+  </h1>
+  {% if vocabulaire.description %}
+    <p class="text-sm text-gray-700 mt-1">{{ vocabulaire.description }}</p>
+  {% endif %}
+</header>
+
+{# Bandeau d'erreur globale (suppression refusée par ex.) #}
+{% if erreurs_vocab and '_global' in erreurs_vocab %}
+  <p class="text-sm text-red-700"
+     style="padding:12px 16px;background:#fee;border:1px solid #fcc;border-radius:4px;margin-bottom:24px;">
+    {{ erreurs_vocab['_global'] }}
+  </p>
+{% endif %}
+
+{# ---- Bloc 1 : Modification du vocabulaire ---- #}
+<section style="margin-bottom:36px;max-width:680px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Métadonnées du vocabulaire
+  </h2>
+
+  <form method="post" action="/vocabulaires/{{ vocabulaire.id }}/modifier">
+    {% set erreurs = erreurs_vocab %}
+    {{ champ('code', 'Code', formulaire_vocab.code, mono=true, obligatoire=true) }}
+    {{ champ('libelle', 'Libellé', formulaire_vocab.libelle, obligatoire=true) }}
+    {{ textarea('description', 'Description publique',
+                 formulaire_vocab.description, lignes=2) }}
+    {{ textarea('description_interne', 'Description interne',
+                 formulaire_vocab.description_interne, lignes=2) }}
+    {{ champ('uri_base', 'URI de base', formulaire_vocab.uri_base, mono=true) }}
+
+    <div class="flex items-center justify-end gap-2"
+         style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+      {% if est_lecture_seule() %}
+        <span style="padding:6px 14px;font-size:13px;color:#92400e;font-style:italic;">
+          Enregistrement désactivé (mode lecture seule)
+        </span>
+      {% else %}
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 rounded"
+                style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+          Enregistrer les métadonnées
+        </button>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+{# ---- Bloc 2 : Valeurs ---- #}
+<section style="margin-bottom:36px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Valeurs contrôlées ({{ vocabulaire.valeurs | length }})
+  </h2>
+
+  {% if not vocabulaire.valeurs %}
+    <p class="text-sm text-gray-500 italic"
+       style="padding:24px;border:1px dashed rgba(0,0,0,0.10);border-radius:4px;text-align:center;">
+      Aucune valeur. Ajoutez-en une via le formulaire ci-dessous.
+    </p>
+  {% else %}
+    <table class="w-full" style="font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.10);text-align:left;color:#6b7280;font-weight:500;">
+          <th style="padding:8px 10px;">Code</th>
+          <th style="padding:8px 10px;">Libellé</th>
+          <th style="padding:8px 10px;">URI</th>
+          <th style="padding:8px 10px;text-align:right;">Ordre</th>
+          <th style="padding:8px 10px;">État</th>
+          {% if not est_lecture_seule() %}
+            <th style="padding:8px 10px;text-align:right;">Actions</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vocabulaire.valeurs | sort(attribute='ordre') %}
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.06);
+                   {% if not v.actif %}opacity:0.55;{% endif %}">
+          <td style="padding:8px 10px;" class="font-mono">{{ v.code }}</td>
+          <td style="padding:8px 10px;">{{ v.libelle }}</td>
+          <td style="padding:8px 10px;color:#6b7280;font-family:monospace;font-size:12px;">
+            {{ v.uri or '—' }}
+          </td>
+          <td style="padding:8px 10px;text-align:right;color:#6b7280;">{{ v.ordre or 0 }}</td>
+          <td style="padding:8px 10px;">
+            {% if v.actif %}
+              <span style="color:#639922;">actif</span>
+            {% else %}
+              <span style="color:#9ca3af;font-style:italic;">déprécié</span>
+            {% endif %}
+          </td>
+          {% if not est_lecture_seule() %}
+          <td style="padding:8px 10px;text-align:right;">
+            <div class="inline-flex items-center gap-1">
+              {% if v.actif %}
+                <form method="post"
+                      action="/vocabulaires/{{ vocabulaire.id }}/valeurs/{{ v.id }}/deprecier"
+                      style="display:inline;">
+                  <button type="submit"
+                          class="rounded hover:bg-gray-50"
+                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#92400e;">
+                    Déprécier
+                  </button>
+                </form>
+              {% else %}
+                <form method="post"
+                      action="/vocabulaires/{{ vocabulaire.id }}/valeurs/{{ v.id }}/reactiver"
+                      style="display:inline;">
+                  <button type="submit"
+                          class="rounded hover:bg-gray-50"
+                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#378ADD;">
+                    Réactiver
+                  </button>
+                </form>
+              {% endif %}
+              <form method="post"
+                    action="/vocabulaires/{{ vocabulaire.id }}/valeurs/{{ v.id }}/supprimer"
+                    style="display:inline;"
+                    onsubmit="return confirm('Supprimer cette valeur ? Les items qui la portent en metadonnées conserveront leur valeur brute.');">
+                <button type="submit"
+                        class="rounded hover:bg-red-50"
+                        style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+                  Supprimer
+                </button>
+              </form>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+{# ---- Bloc 3 : Ajouter une valeur ---- #}
+{% if not est_lecture_seule() %}
+<section style="margin-bottom:36px;max-width:680px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Ajouter une valeur
+  </h2>
+
+  <form method="post" action="/vocabulaires/{{ vocabulaire.id }}/valeurs/ajouter">
+    {% set erreurs = erreurs_valeur %}
+    {{ champ('code', 'Code', formulaire_valeur.code,
+              placeholder='fra',
+              help_text='Alphanumérique, underscores, tirets ou points (stocké dans Item.metadonnees).',
+              mono=true, obligatoire=true) }}
+    {{ champ('libelle', 'Libellé', formulaire_valeur.libelle,
+              placeholder='Français',
+              help_text='Affiché dans les sélecteurs.',
+              obligatoire=true) }}
+    {{ champ('uri', 'URI canonique', formulaire_valeur.uri,
+              placeholder='http://id.loc.gov/vocabulary/iso639-2/fra',
+              help_text='Optionnel — URI canonique pour les exports DC.',
+              mono=true) }}
+    {{ textarea('description_interne', 'Description interne',
+                 formulaire_valeur.description_interne, lignes=2) }}
+    {{ champ('ordre', 'Ordre', formulaire_valeur.ordre,
+              type='number',
+              help_text='Position dans le dropdown. Laisser 0 pour ajouter en fin.') }}
+
+    <div class="flex items-center justify-end"
+         style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;margin-top:8px;">
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Ajouter la valeur
+      </button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{# ---- Bloc 4 : Suppression du vocabulaire ---- #}
+{% if not est_lecture_seule() %}
+<section style="margin-bottom:36px;border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Suppression du vocabulaire
+  </h2>
+  <form method="post"
+        action="/vocabulaires/{{ vocabulaire.id }}/supprimer"
+        onsubmit="return confirm('Supprimer définitivement le vocabulaire « {{ vocabulaire.libelle }} » et toutes ses valeurs ? Refusé si encore référencé par un champ personnalisé.');">
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded hover:bg-red-50"
+            style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+      Supprimer le vocabulaire
+    </button>
+  </form>
+</section>
+{% endif %}
+
+{% endblock %}

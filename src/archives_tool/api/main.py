@@ -38,6 +38,7 @@ from archives_tool.api.routes import (
     import_assistant,
     inline_edit,
     preferences,
+    vocabulaires,
 )
 from archives_tool.db import assurer_tables_fts, creer_engine
 
@@ -92,6 +93,7 @@ def favicon() -> Response:
 
 app.include_router(dashboard.router)
 app.include_router(champs.router)
+app.include_router(vocabulaires.router)
 app.include_router(preferences.router)
 app.include_router(inline_edit.router)
 app.include_router(derives.router, prefix="/derives")

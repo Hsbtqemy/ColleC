@@ -1,0 +1,197 @@
+{# Modification d'un champ personnalisé.
+   Variables :
+   - `collection` : modèle ORM
+   - `champ` : ChampPersonnalise à modifier
+   - `formulaire` : FormulaireChamp pré-rempli
+   - `erreurs` : dict champ→message
+   - `tentative_renommage` : nouvelle clé soumise (en cas d'erreur de renommage)
+   - `fonds_query` : cote du fonds parent ou None
+   - `types_champ` : list[TypeChamp] (enum) #}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ as champ_form, textarea, selecteur with context %}
+
+{% block title %}Modifier {{ champ.libelle }} — {{ collection.titre }}{% endblock %}
+
+{% block content %}
+{% set fonds_q = "?fonds=" ~ fonds_query if fonds_query else "" %}
+
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if fonds_query %}
+      <a href="/fonds/{{ fonds_query }}"
+         class="hover:underline font-mono">{{ fonds_query }}</a> ›
+    {% endif %}
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+       class="hover:underline font-mono">{{ collection.cote }}</a> ›
+    <a href="/collection/{{ collection.cote }}/champs{{ fonds_q }}"
+       class="hover:underline">Champs personnalisés</a> ›
+    <span class="font-mono">{{ champ.cle }}</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Modifier <span class="font-mono text-gray-700 ml-1">{{ champ.cle }}</span>
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">{{ champ.libelle }}</p>
+</header>
+
+{# Bloc 1 : modification des attributs (libellé, type, etc.). La clé
+   reste figée — passer par le bloc renommage en dessous pour la
+   changer (avec propagation aux items). #}
+<form method="post"
+      action="/collection/{{ collection.cote }}/champs/{{ champ.id }}/modifier{{ fonds_q }}"
+      style="max-width:680px;margin-bottom:36px;">
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Attributs
+    </h2>
+
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Clé
+      </label>
+      <input type="text" value="{{ champ.cle }}" disabled
+             class="w-full font-mono"
+             style="padding:6px 10px;font-size:13px;
+                    border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                    background:#f9fafb;color:#6b7280;">
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        Pour renommer la clé (avec propagation aux items), utiliser
+        le bloc « Renommer » plus bas.
+      </p>
+    </div>
+
+    {{ champ_form('libelle', 'Libellé', formulaire.libelle, obligatoire=true) }}
+
+    {% set libelles_types = {
+      'texte': 'Texte court',
+      'texte_long': 'Texte long (multi-ligne)',
+      'date_edtf': 'Date EDTF',
+      'liste': 'Liste de valeurs',
+      'liste_multiple': 'Liste de valeurs (multi-sélection)',
+      'reference': 'Référence (URI / DOI / lien)',
+      'nombre': 'Nombre',
+    } %}
+    {{ selecteur('type', 'Type', formulaire.type,
+                 types_champ | map(attribute='value') | list,
+                 libelles=libelles_types) }}
+
+    {{ champ_form('ordre', 'Ordre', formulaire.ordre, type='number') }}
+
+    {{ textarea('aide', 'Aide à la saisie', formulaire.aide, lignes=2) }}
+
+    {{ textarea('description_interne', 'Description interne',
+                 formulaire.description_interne, lignes=3) }}
+  </section>
+
+  <div class="flex items-center justify-end gap-2"
+       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+    <a href="/collection/{{ collection.cote }}/champs{{ fonds_q }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      {% if est_lecture_seule() %}Retour{% else %}Annuler{% endif %}
+    </a>
+    {% if est_lecture_seule() %}
+      <span style="padding:6px 14px;font-size:13px;color:#92400e;font-style:italic;">
+        Enregistrement désactivé (mode lecture seule)
+      </span>
+    {% else %}
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Enregistrer les attributs
+      </button>
+    {% endif %}
+  </div>
+</form>
+
+{# Bloc 2 : renommage de la clé. Opération séparée parce que la
+   propagation aux Item.metadonnees est un effet de bord lourd qu'il
+   faut signaler explicitement à l'utilisateur (et tester côté
+   service). #}
+{% if not est_lecture_seule() %}
+<form method="post"
+      action="/collection/{{ collection.cote }}/champs/{{ champ.id }}/renommer{{ fonds_q }}"
+      style="max-width:680px;margin-bottom:36px;
+             border:1px solid rgba(0,0,0,0.08);
+             border-radius:4px;padding:20px;background:#fafafa;">
+
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;">
+    Renommer la clé
+  </h2>
+  <p style="font-size:12px;color:#6b7280;margin-bottom:14px;">
+    Change la clé structurelle ET déplace les valeurs existantes
+    dans <code>Item.metadonnees</code> sur tous les items de la
+    collection. Opération transactionnelle, sans perte de données.
+  </p>
+
+  {% set en_erreur = 'cle' in erreurs %}
+  <div style="margin-bottom:14px;">
+    <label for="champ-nouvelle_cle"
+           style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+      Nouvelle clé
+    </label>
+    <input id="champ-nouvelle_cle" type="text" name="nouvelle_cle"
+           value="{{ tentative_renommage or '' }}"
+           placeholder="{{ champ.cle }}"
+           class="w-full font-mono"
+           style="padding:6px 10px;font-size:13px;
+                  border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
+                  border-radius:4px;background:#fff;">
+    {% if en_erreur %}
+      <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs['cle'] }}</p>
+    {% else %}
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        Minuscules, chiffres et underscores uniquement. Doit être
+        unique sur cette collection.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="flex items-center justify-end">
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 rounded"
+            style="padding:6px 14px;font-size:13px;background:#92400e;color:white;border:1px solid #92400e;">
+      Renommer et propager aux items
+    </button>
+  </div>
+</form>
+{% endif %}
+
+{# Bloc 3 : opérations spéciales (déprécier, supprimer). #}
+{% if not est_lecture_seule() %}
+<section style="max-width:680px;border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Cycle de vie
+  </h2>
+  <div class="flex items-center gap-2">
+    {% if champ.actif %}
+      <form method="post"
+            action="/collection/{{ collection.cote }}/champs/{{ champ.id }}/deprecier{{ fonds_q }}"
+            style="display:inline;">
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 rounded hover:bg-amber-50"
+                style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#92400e;">
+          Déprécier ce champ
+        </button>
+      </form>
+      <p style="font-size:12px;color:#6b7280;">
+        Le retire du cartouche formel ; les valeurs en
+        <code>metadonnees</code> sont préservées.
+      </p>
+    {% else %}
+      <form method="post"
+            action="/collection/{{ collection.cote }}/champs/{{ champ.id }}/reactiver{{ fonds_q }}"
+            style="display:inline;">
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 rounded hover:bg-blue-50"
+                style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#378ADD;">
+          Réactiver ce champ
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

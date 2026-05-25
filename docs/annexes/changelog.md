@@ -121,6 +121,56 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.4 (en cours, 2026-05-25)
+
+Itération courte après V0.9.3 stable, démarrée pendant la poursuite
+du test d'usage Por Favor. Cible : combler le gap V0.7 backlog
+identifié sur Por Favor — l'import dumpe les colonnes hors socle DC
+en clés libres dans `Item.metadonnees` sans qu'on puisse les
+formaliser depuis l'UI. Aboutit à une UI complète de gestion
+structurelle des champs personnalisés d'une collection.
+
+### Champs personnalisés (Lot 1)
+
+- Nouvelle colonne `ChampPersonnalise.actif` (migration
+  `n2r3s4t5u6v7`) : permet de déprécier un champ sans détruire les
+  valeurs des items, qui retombent en clé libre dans le composer
+  cartouche.
+- Service `champs_personnalises.py` : `creer_champ` (validation slug
+  minuscule + underscore, libellé obligatoire), `modifier_champ`
+  (libellé / type / ordre / aide / description interne — la `cle`
+  reste figée), `renommer_champ` (change la `cle` ET propage la
+  valeur dans `Item.metadonnees` de tous les items de la collection,
+  avec bump de `version` pour invalider les éditeurs inline
+  concurrents), `deprecier_champ` / `reactiver_champ` (idempotent
+  via toggle `actif`), `supprimer_champ` (hard delete réservé aux
+  cas qui ne récidiveront pas).
+- Page de gestion `/collection/<cote>/champs?fonds=<f>` : liste
+  triée par (ordre, clé) avec actif/déprécié en colonne, formulaire
+  de création en bas de page (7 champs : clé, libellé, type, ordre,
+  aide, description interne). Boutons Modifier / Déprécier /
+  Réactiver par ligne.
+- Page de modification d'un champ : 3 blocs distincts —
+  attributs (libellé / type / ordre / aide / desc interne, sans la
+  clé), renommage de la clé (avec mention explicite de la propagation
+  transactionnelle), cycle de vie (déprécier / réactiver). Garde
+  anti-confused-deputy : un POST sur `/collection/HK/champs/<id>` où
+  l'`<id>` appartient en réalité à une autre collection retourne 404.
+- Lien « Champs personnalisés » dans le bandeau de la page Collection
+  lecture (à côté de « Modifier » / « Voir le fonds »).
+- `composer_metadonnees_par_section` filtre `actif=True` : les champs
+  dépréciés n'apparaissent plus dans la section formelle du cartouche
+  item, mais leurs valeurs restent affichables via le fallback Bug C
+  V0.9.2-import (clé libre, libellé synthétisé).
+- Tests : 19 nouveaux (service + routes), suite stable.
+
+### Fix latent (migration FTS5)
+
+- `m1q2r3s4t5u6_fts5_recherche.upgrade` n'était pas idempotent face
+  à des triggers déjà créés par `assurer_tables_fts` au startup de
+  l'app (cas d'une base où l'app avait démarré avant d'appliquer la
+  migration). DROP TRIGGER IF EXISTS ajouté avant la recréation.
+
 ## V0.9.3 (stable, 2026-05-25)
 
 Trois gros chantiers livrés au fil de l'eau après V0.9.2 stable,

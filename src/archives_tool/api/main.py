@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from archives_tool.api.deps import chemin_base_courant
 from archives_tool.api.middleware import middleware_lecture_seule
 from archives_tool.api.routes import (
+    champs,
     dashboard,
     derives,
     import_assistant,
@@ -90,6 +91,7 @@ def favicon() -> Response:
 
 
 app.include_router(dashboard.router)
+app.include_router(champs.router)
 app.include_router(preferences.router)
 app.include_router(inline_edit.router)
 app.include_router(derives.router, prefix="/derives")

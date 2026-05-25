@@ -90,6 +90,11 @@ class ChampPersonnalise(Base):
     ordre: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     aide: Mapped[str | None] = mapped_column(Text)
     description_interne: Mapped[str | None] = mapped_column(Text)
+    # V0.9.4 : déprécier un champ le retire de la section formelle du
+    # cartouche item sans détruire les valeurs (qui retombent dans le
+    # fallback « clé libre » de composer_metadonnees_par_section). La
+    # restauration est instantanée — un simple toggle.
+    actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     collection: Mapped[Collection | None] = relationship(
         back_populates="champs_personnalises"

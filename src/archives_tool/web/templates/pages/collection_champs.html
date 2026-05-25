@@ -1,0 +1,185 @@
+{# Gestion structurelle des champs personnalisés d'une collection.
+   Variables :
+   - `collection` : modèle ORM
+   - `champs` : list[ChampPersonnalise] triés par (ordre, cle)
+   - `formulaire` : FormulaireChamp (vide à l'ouverture, repris en cas d'erreur)
+   - `erreurs` : dict champ→message (création)
+   - `fonds_query` : cote du fonds parent ou None
+   - `types_champ` : list[TypeChamp] (enum) #}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
+
+{% block title %}Champs personnalisés — {{ collection.titre }}{% endblock %}
+
+{% block content %}
+{% set fonds_q = "?fonds=" ~ fonds_query if fonds_query else "" %}
+
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if fonds_query %}
+      <a href="/fonds/{{ fonds_query }}"
+         class="hover:underline font-mono">{{ fonds_query }}</a> ›
+    {% endif %}
+    <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+       class="hover:underline font-mono">{{ collection.cote }}</a> ›
+    <span>Champs personnalisés</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">Champs personnalisés</h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Définitions structurelles pour cette collection. Les champs créés
+    ici apparaissent dans la section « Champs personnalisés » du
+    cartouche item, avec leur libellé et leur type. Les clés libres
+    de <code>Item.metadonnees</code> sans définition tombent dans
+    le fallback affichage (libellé synthétisé depuis la clé).
+  </p>
+</header>
+
+<section style="margin-bottom:36px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Champs définis ({{ champs | length }})
+  </h2>
+
+  {% if not champs %}
+    <p class="text-sm text-gray-500 italic"
+       style="padding:24px;border:1px dashed rgba(0,0,0,0.10);border-radius:4px;text-align:center;">
+      Aucun champ personnalisé défini pour cette collection. Les clés
+      libres de <code>metadonnees</code> restent affichées en clés
+      libres dans le cartouche. Créez un champ structuré ci-dessous
+      pour leur donner un libellé et un type.
+    </p>
+  {% else %}
+    <table class="w-full" style="font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.10);text-align:left;color:#6b7280;font-weight:500;">
+          <th style="padding:8px 10px;">Clé</th>
+          <th style="padding:8px 10px;">Libellé</th>
+          <th style="padding:8px 10px;">Type</th>
+          <th style="padding:8px 10px;text-align:right;">Ordre</th>
+          <th style="padding:8px 10px;">État</th>
+          <th style="padding:8px 10px;text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in champs %}
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.06);
+                   {% if not c.actif %}opacity:0.55;{% endif %}">
+          <td style="padding:8px 10px;" class="font-mono">{{ c.cle }}</td>
+          <td style="padding:8px 10px;">{{ c.libelle }}</td>
+          <td style="padding:8px 10px;color:#6b7280;">{{ c.type }}</td>
+          <td style="padding:8px 10px;text-align:right;color:#6b7280;">{{ c.ordre }}</td>
+          <td style="padding:8px 10px;">
+            {% if c.actif %}
+              <span style="color:#639922;">actif</span>
+            {% else %}
+              <span style="color:#9ca3af;font-style:italic;">déprécié</span>
+            {% endif %}
+          </td>
+          <td style="padding:8px 10px;text-align:right;">
+            <div class="inline-flex items-center gap-1">
+              <a href="/collection/{{ collection.cote }}/champs/{{ c.id }}/modifier{{ fonds_q }}"
+                 class="rounded hover:bg-gray-50"
+                 style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#374151;">
+                Modifier
+              </a>
+              {% if not est_lecture_seule() %}
+                {% if c.actif %}
+                  <form method="post"
+                        action="/collection/{{ collection.cote }}/champs/{{ c.id }}/deprecier{{ fonds_q }}"
+                        style="display:inline;">
+                    <button type="submit"
+                            class="rounded hover:bg-gray-50"
+                            style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#92400e;">
+                      Déprécier
+                    </button>
+                  </form>
+                {% else %}
+                  <form method="post"
+                        action="/collection/{{ collection.cote }}/champs/{{ c.id }}/reactiver{{ fonds_q }}"
+                        style="display:inline;">
+                    <button type="submit"
+                            class="rounded hover:bg-gray-50"
+                            style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#378ADD;">
+                      Réactiver
+                    </button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+{% if not est_lecture_seule() %}
+<section style="border-top:1px solid rgba(0,0,0,0.08);padding-top:24px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Créer un nouveau champ
+  </h2>
+
+  <form method="post"
+        action="/collection/{{ collection.cote }}/champs/creer{{ fonds_q }}"
+        style="max-width:680px;">
+
+    {{ champ('cle', 'Clé', formulaire.cle,
+              placeholder='auteur_principal',
+              help_text='Commence par une lettre minuscule, puis minuscules / chiffres / underscores. C\'est la clé stockée dans Item.metadonnees.',
+              mono=true, obligatoire=true) }}
+
+    {{ champ('libelle', 'Libellé', formulaire.libelle,
+              placeholder='Auteur principal',
+              help_text='Affiché dans le cartouche item.',
+              obligatoire=true) }}
+
+    {% set libelles_types = {
+      'texte': 'Texte court',
+      'texte_long': 'Texte long (multi-ligne)',
+      'date_edtf': 'Date EDTF',
+      'liste': 'Liste de valeurs',
+      'liste_multiple': 'Liste de valeurs (multi-sélection)',
+      'reference': 'Référence (URI / DOI / lien)',
+      'nombre': 'Nombre',
+    } %}
+    {{ selecteur('type', 'Type', formulaire.type,
+                 types_champ | map(attribute='value') | list,
+                 libelles=libelles_types) }}
+
+    {{ champ('ordre', 'Ordre', formulaire.ordre,
+              type='number',
+              help_text='Position dans la section « Champs personnalisés » du cartouche. Les ordres égaux sont triés par clé.') }}
+
+    {{ textarea('aide', 'Aide à la saisie', formulaire.aide,
+                help_text='Affichée sous le champ dans le formulaire de modification de l\'item.',
+                lignes=2) }}
+
+    {{ textarea('description_interne', 'Description interne',
+                 formulaire.description_interne,
+                 help_text='Pour l\'équipe — documente pourquoi ce champ existe et comment le remplir.',
+                 lignes=3) }}
+
+    <div class="flex items-center justify-end gap-2"
+         style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;margin-top:8px;">
+      <a href="/collection/{{ collection.cote }}{{ fonds_q }}"
+         class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+         style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+        Retour à la collection
+      </a>
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Créer le champ
+      </button>
+    </div>
+  </form>
+</section>
+{% else %}
+<p class="text-sm text-amber-700 italic"
+   style="padding:12px 16px;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;">
+  Création désactivée (mode lecture seule).
+</p>
+{% endif %}
+
+{% endblock %}

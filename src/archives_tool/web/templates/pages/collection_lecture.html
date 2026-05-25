@@ -75,6 +75,11 @@
           Modifier
         </a>
       {% endif %}
+      <a href="/collection/{{ col.cote }}/champs{% if detail.fonds_parent %}?fonds={{ detail.fonds_parent.cote }}{% endif %}"
+         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+         title="Gérer les champs personnalisés de cette collection">
+        Champs personnalisés
+      </a>
     </div>
   </div>
 

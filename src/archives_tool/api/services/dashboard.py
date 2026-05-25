@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -1568,6 +1568,9 @@ def composer_page_item(
 
     # Champs personnalisés mutualisés sur l'ensemble des collections
     # d'appartenance (déduplication par `cle` côté composer).
+    # V0.9.4 : on filtre les champs dépréciés (actif=False) — leurs
+    # valeurs en metadonnees tombent automatiquement dans le fallback
+    # « clé libre » du composer, sans perte de donnée affichable.
     champs = list(
         db.scalars(
             select(ChampPersonnalise)
@@ -1576,6 +1579,7 @@ def composer_page_item(
                 ItemCollection.collection_id == ChampPersonnalise.collection_id,
             )
             .where(ItemCollection.item_id == item.id)
+            .where(ChampPersonnalise.actif.is_(True))
         ).all()
     )
 

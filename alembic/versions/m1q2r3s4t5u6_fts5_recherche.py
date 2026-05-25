@@ -87,7 +87,16 @@ def upgrade() -> None:
 
     # Triggers de synchronisation. SQL centralisé dans
     # `archives_tool.db._SQL_TRIGGERS_FTS` (réutilisable par les
-    # migrations futures qui ALTER les tables indexées).
+    # migrations futures qui ALTER les tables indexées). Idempotent :
+    # on droppe d'abord les triggers existants — `assurer_tables_fts`
+    # peut les avoir créés au startup de l'app avant que cette
+    # migration ne soit appliquée sur une base pré-FTS.
+    for trigger in (
+        "item_fts_insert", "item_fts_delete", "item_fts_update",
+        "fonds_fts_insert", "fonds_fts_delete", "fonds_fts_update",
+        "collection_fts_insert", "collection_fts_delete", "collection_fts_update",
+    ):
+        bind.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
     for sql in _SQL_TRIGGERS_FTS:
         bind.execute(text(sql))
 

@@ -131,6 +131,42 @@
                  help_text='URI canonique stockée en base ; libellé humain affiché ici.') }}
   </section>
 
+  {# V0.9.5 : section champs personnalises edites depuis le formulaire.
+     Soumis avec prefixe `meta_` -> route POST relit request.form() et
+     fusionne dans formulaire.metadonnees. #}
+  {% if champs_personnalises %}
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Champs personnalisés
+    </h2>
+    {% set _meta = formulaire.metadonnees or {} %}
+    {% for c in champs_personnalises %}
+      {% set _val = _meta.get(c.cle, '') %}
+      {% if c.cle in options_par_champ_perso %}
+        {% set _libs = {} %}
+        {% for code, lib in options_par_champ_perso[c.cle] %}
+          {% set _ = _libs.update({code: lib}) %}
+        {% endfor %}
+        {{ selecteur('meta_' ~ c.cle, c.libelle, _val,
+                     options_par_champ_perso[c.cle] | map(attribute=0) | list,
+                     libelles=_libs,
+                     libelle_vide='— non renseigné —',
+                     help_text=c.aide or None,
+                     obligatoire=c.obligatoire) }}
+      {% elif c.type == 'texte_long' %}
+        {{ textarea('meta_' ~ c.cle, c.libelle, _val,
+                    help_text=c.aide or None,
+                    lignes=5,
+                    obligatoire=c.obligatoire) }}
+      {% else %}
+        {{ champ('meta_' ~ c.cle, c.libelle, _val,
+                 help_text=c.aide or None,
+                 obligatoire=c.obligatoire) }}
+      {% endif %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
   <section style="margin-bottom:28px;">
     <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
       Identifiants externes

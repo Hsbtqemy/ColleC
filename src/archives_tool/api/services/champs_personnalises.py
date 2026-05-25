@@ -149,6 +149,39 @@ def lister_champs(
     return list(db.scalars(stmt).all())
 
 
+def lister_champs_actifs_pour_item(
+    db: Session, item_id: int
+) -> list[ChampPersonnalise]:
+    """Champs personnalisés actifs visibles pour un item, mutualisés
+    sur toutes les collections d'appartenance.
+
+    Identique à la requête utilisée par :func:`composer_page_item` :
+    filtre ``actif=True``, eager-load du vocabulaire + valeurs. Trié
+    par (ordre, cle). Utilisé aussi par la page item modifier
+    (V0.9.5) pour exposer un champ de saisie par ChampPersonnalise.
+    """
+    from sqlalchemy.orm import selectinload
+    from archives_tool.models import ItemCollection, Vocabulaire
+
+    return list(
+        db.scalars(
+            select(ChampPersonnalise)
+            .options(
+                selectinload(ChampPersonnalise.vocabulaire).selectinload(
+                    Vocabulaire.valeurs
+                )
+            )
+            .join(
+                ItemCollection,
+                ItemCollection.collection_id == ChampPersonnalise.collection_id,
+            )
+            .where(ItemCollection.item_id == item_id)
+            .where(ChampPersonnalise.actif.is_(True))
+            .order_by(ChampPersonnalise.ordre, ChampPersonnalise.cle)
+        ).all()
+    )
+
+
 def champ_par_id(db: Session, champ_id: int) -> ChampPersonnalise:
     """Charge un champ par id ou lève :class:`ChampIntrouvable`."""
     champ = db.get(ChampPersonnalise, champ_id)

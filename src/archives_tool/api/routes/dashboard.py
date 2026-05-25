@@ -76,10 +76,16 @@ from archives_tool.api.services.items import (
     lister_items_collection,
     modifier_item,
 )
+from archives_tool.api.services.champs_personnalises import (
+    lister_champs_actifs_pour_item,
+)
 from archives_tool.api.services.preferences import charger_colonnes_actives
 from archives_tool.api.services.vocabulaires import (
     LANGUES_OPTIONS,
     TYPES_COAR_OPTIONS,
+)
+from archives_tool.api.services.vocabulaires_db import (
+    options_depuis_vocabulaire,
 )
 from archives_tool.api.templating import templates
 from archives_tool.models import (
@@ -1013,6 +1019,20 @@ def servir_fichier_item(
     return FileResponse(chemin_local)
 
 
+def _options_par_champ_perso(
+    champs_perso: list,
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Pour chaque ChampPersonnalise lié à un vocabulaire DB, expose
+    ses (code, libellé) sous la forme attendue par la macro selecteur.
+    Les champs sans vocabulaire sont absents du dict — le template
+    rend alors un input libre."""
+    options: dict[str, tuple[tuple[str, str], ...]] = {}
+    for c in champs_perso:
+        if c.vocabulaire is not None:
+            options[c.cle] = options_depuis_vocabulaire(c.vocabulaire)
+    return options
+
+
 @router.get("/item/{cote}/modifier", response_class=HTMLResponse)
 def formulaire_modifier_item(
     cote: str,
@@ -1024,6 +1044,8 @@ def formulaire_modifier_item(
 ) -> HTMLResponse:
     item, fonds_obj = _resoudre_item_ou_404(db, cote, fonds)
     formulaire = formulaire_depuis_item(item)
+    champs_perso = lister_champs_actifs_pour_item(db, item.id)
+    options_par_champ_perso = _options_par_champ_perso(champs_perso)
     return templates.TemplateResponse(
         request,
         "pages/item_modifier.html",
@@ -1035,6 +1057,8 @@ def formulaire_modifier_item(
             formulaire=formulaire,
             erreurs={},
             etats=list(EtatCatalogage),
+            champs_personnalises=champs_perso,
+            options_par_champ_perso=options_par_champ_perso,
             langues_options=LANGUES_OPTIONS,
             types_coar_options=TYPES_COAR_OPTIONS,
         ),
@@ -1042,7 +1066,7 @@ def formulaire_modifier_item(
 
 
 @router.post("/item/{cote}/modifier", response_class=HTMLResponse, response_model=None)
-def soumettre_modification_item(
+async def soumettre_modification_item(
     cote: str,
     request: Request,
     formulaire: Annotated[FormulaireItem, Form()],
@@ -1056,6 +1080,24 @@ def soumettre_modification_item(
     # chemin / item courant. Tout override venu du POST est silencieux.
     formulaire.cote = item.cote
     formulaire.fonds_id = item.fonds_id
+    # V0.9.5 : extrait les valeurs des champs personnalisés (préfixe
+    # `meta_<cle>`) et les fusionne dans `formulaire.metadonnees`.
+    # Pydantic Form() n'expose pas les noms dynamiques, on relit donc
+    # request.form() (cache Starlette → pas de double lecture du body).
+    form_data = await request.form()
+    champs_perso = lister_champs_actifs_pour_item(db, item.id)
+    nouvelles_metas = dict(formulaire.metadonnees or {})
+    for c in champs_perso:
+        cle_form = f"meta_{c.cle}"
+        if cle_form in form_data:
+            val = (form_data[cle_form] or "").strip()
+            if val:
+                nouvelles_metas[c.cle] = val
+            else:
+                # Saisie vide = effacer la clé (cohérent avec le rendu
+                # « non renseigné » et la sémantique import).
+                nouvelles_metas.pop(c.cle, None)
+    formulaire.metadonnees = nouvelles_metas
     try:
         modifier_item(db, item.id, formulaire, modifie_par=utilisateur)
     except ConflitVersion as e:
@@ -1094,6 +1136,8 @@ def soumettre_modification_item(
                     )
                 },
                 etats=list(EtatCatalogage),
+                champs_personnalises=champs_perso,
+                options_par_champ_perso=_options_par_champ_perso(champs_perso),
                 langues_options=LANGUES_OPTIONS,
                 types_coar_options=TYPES_COAR_OPTIONS,
             ),
@@ -1111,6 +1155,8 @@ def soumettre_modification_item(
                 formulaire=formulaire,
                 erreurs=e.erreurs,
                 etats=list(EtatCatalogage),
+                champs_personnalises=champs_perso,
+                options_par_champ_perso=_options_par_champ_perso(champs_perso),
                 langues_options=LANGUES_OPTIONS,
                 types_coar_options=TYPES_COAR_OPTIONS,
             ),

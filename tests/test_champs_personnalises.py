@@ -772,6 +772,111 @@ def test_modifier_champ_change_vocabulaire(base_demo: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lot V0.9.5 : item modifier expose les champs personnalisés
+# ---------------------------------------------------------------------------
+
+
+def test_route_item_modifier_affiche_champs_personnalises(base_demo: Path) -> None:
+    """La page de modification d'un item rend une section pour chaque
+    ChampPersonnalise actif des collections de l'item."""
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_champ(
+            s, cid,
+            FormulaireChamp(cle="ancienne_cote", libelle="Ancienne cote"),
+        )
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/modifier?fonds=HK")
+    assert resp.status_code == 200
+    assert "Champs personnalisés" in resp.text
+    assert 'name="meta_ancienne_cote"' in resp.text
+    assert "Ancienne cote" in resp.text
+
+
+def test_route_item_modifier_persiste_meta(base_demo: Path) -> None:
+    """POST avec `meta_<cle>=valeur` fusionne dans item.metadonnees.
+    Saisie vide = clé supprimée (sémantique cohérente avec l'import
+    et l'affichage « non renseigné »)."""
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_champ(
+            s, cid,
+            FormulaireChamp(cle="ancienne_cote", libelle="Ancienne cote"),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001",
+            "titre": "Titre",
+            "fonds_id": 1,
+            "version": version,
+            "etat_catalogage": "brouillon",
+            "meta_ancienne_cote": "HK/1960/01",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    # Vérifie côté DB.
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert (item.metadonnees or {}).get("ancienne_cote") == "HK/1960/01"
+    engine.dispose()
+
+
+def test_route_item_modifier_meta_vide_supprime_cle(base_demo: Path) -> None:
+    """Soumettre meta_<cle>="" efface la clé de Item.metadonnees."""
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_champ(
+            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur")
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        # Pose une valeur initiale.
+        meta = dict(item.metadonnees or {})
+        meta["auteur"] = "Topor"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001", "titre": "Titre", "fonds_id": 1,
+            "version": version, "etat_catalogage": "brouillon",
+            "meta_auteur": "",  # vide → efface
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert "auteur" not in (item.metadonnees or {})
+    engine.dispose()
+
+
+# ---------------------------------------------------------------------------
 # Lot 3c : composer cartouche utilise vocab DB pour libellé humain
 # ---------------------------------------------------------------------------
 

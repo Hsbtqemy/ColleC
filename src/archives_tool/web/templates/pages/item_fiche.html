@@ -12,6 +12,7 @@
 {% extends "base.html" %}
 {% from 'components/bandeau_item.html' import bandeau_item %}
 {% from 'components/cartouche_metadonnees.html' import cartouche_metadonnees %}
+{% from 'components/panneau_fichiers.html' import vignette_placeholder %}
 
 {% set item = fiche.item %}
 {% set fonds = fiche.fonds %}
@@ -183,9 +184,10 @@
                 <img src="{{ f.source_image.vignette_url }}" loading="lazy" alt="page {{ f.ordre }}"
                      style="width:100%;height:100%;object-fit:cover;">
               {% else %}
-                <div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#9ca3af;font-size:11px;">
-                  {{ '%02d' | format(f.ordre) }}
-                </div>
+                {# Pas de vignette image : placeholder coloré par extension
+                   (PDF rouge, audio orange, vidéo violet, etc.) — cohérent
+                   avec le panneau_fichiers de la visionneuse. #}
+                {{ vignette_placeholder(f.extension, taille='carre') }}
               {% endif %}
               {% if _has_meta %}
                 <span style="position:absolute;top:3px;right:3px;background:#378ADD;color:white;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;"

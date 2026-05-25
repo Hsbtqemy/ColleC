@@ -36,8 +36,12 @@
    par catégorie (Lot 2 V0.9.x). Sans cette différenciation, tous
    les non-images apparaissaient avec le même placeholder gris peu
    lisible (« pdf » / « json » / « zip » identiques). Pastels pour
-   ne pas concurrencer les vraies vignettes images. #}
-{% macro vignette_placeholder(extension) -%}
+   ne pas concurrencer les vraies vignettes images.
+
+   `taille` : `"rect"` (défaut, 36×48 utilisé par le panneau fichiers
+   à gauche) ou `"carre"` (pleine cellule, utilisé par la grille de
+   vignettes de la fiche item — V0.9.5). #}
+{% macro vignette_placeholder(extension, taille='rect') -%}
   {%- set ext = (extension or '')|lower -%}
   {%- set bg = '#f3f4f6' -%}
   {%- set fg = '#9ca3af' -%}
@@ -55,10 +59,17 @@
   {%- elif ext in ['txt', 'md', 'csv', 'xlsx', 'xls', 'doc', 'docx'] -%}
     {%- set bg = '#dcfce7' -%}{%- set fg = '#166534' -%}
   {%- endif -%}
-  <div style="width:36px;height:48px;background:{{ bg }};
+  {%- if taille == 'carre' -%}
+    {%- set dim_style = 'width:100%;height:100%;' -%}
+    {%- set font_px = 14 -%}
+  {%- else -%}
+    {%- set dim_style = 'width:36px;height:48px;flex-shrink:0;' -%}
+    {%- set font_px = 9 -%}
+  {%- endif -%}
+  <div style="{{ dim_style }}background:{{ bg }};
               border:1px solid rgba(0,0,0,0.08);border-radius:2px;
-              flex-shrink:0;display:flex;align-items:center;
-              justify-content:center;font-size:9px;font-weight:600;
+              display:flex;align-items:center;
+              justify-content:center;font-size:{{ font_px }}px;font-weight:600;
               color:{{ fg }};letter-spacing:0.02em;">
     {{ label }}
   </div>

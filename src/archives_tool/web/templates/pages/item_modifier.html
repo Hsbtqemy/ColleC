@@ -158,7 +158,15 @@
                     help_text=c.aide or None,
                     lignes=5,
                     obligatoire=c.obligatoire) }}
+      {% elif c.type == 'nombre' %}
+        {{ champ('meta_' ~ c.cle, c.libelle, _val,
+                 type='number',
+                 help_text=c.aide or None,
+                 obligatoire=c.obligatoire) }}
       {% else %}
+        {# `date_edtf`, `reference`, `liste_multiple` (TODO V0.9.6),
+           `texte` -> input texte simple. EDTF est text-format, pas
+           d'avantage a un type=date HTML qui refuse « vers 1960 ». #}
         {{ champ('meta_' ~ c.cle, c.libelle, _val,
                  help_text=c.aide or None,
                  obligatoire=c.obligatoire) }}

@@ -49,7 +49,6 @@ from archives_tool.models import (
     ItemCollection,
     RoleCollaborateur,
     TypeCollection,
-    Vocabulaire,
 )
 
 # Clés de répartition des états de catalogage utilisées par le composant
@@ -1607,28 +1606,13 @@ def composer_page_item(
     )
 
     # Champs personnalisés mutualisés sur l'ensemble des collections
-    # d'appartenance (déduplication par `cle` côté composer).
-    # V0.9.4 : on filtre les champs dépréciés (actif=False) — leurs
-    # valeurs en metadonnees tombent automatiquement dans le fallback
-    # « clé libre » du composer, sans perte de donnée affichable.
-    # Lot 3c : eager-load `Vocabulaire.valeurs` pour éviter N+1 quand
-    # le composer résout les libellés humains via options_depuis_vocabulaire.
-    champs = list(
-        db.scalars(
-            select(ChampPersonnalise)
-            .options(
-                selectinload(ChampPersonnalise.vocabulaire).selectinload(
-                    Vocabulaire.valeurs
-                )
-            )
-            .join(
-                ItemCollection,
-                ItemCollection.collection_id == ChampPersonnalise.collection_id,
-            )
-            .where(ItemCollection.item_id == item.id)
-            .where(ChampPersonnalise.actif.is_(True))
-        ).all()
+    # d'appartenance (déduplication par `cle` côté composer). Le
+    # service helper filtre actif=True, eager-load vocab+valeurs.
+    # V0.9.5 : appel via le helper partagé avec /item/<cote>/modifier.
+    from archives_tool.api.services.champs_personnalises import (
+        lister_champs_actifs_pour_item,
     )
+    champs = lister_champs_actifs_pour_item(db, item.id)
 
     return ItemDetail(
         item=item,

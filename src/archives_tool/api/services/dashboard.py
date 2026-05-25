@@ -1127,6 +1127,15 @@ class ChampMetadonnee:
     editable: bool = True
     options: tuple[tuple[str, str], ...] | None = None
     valeur_affichee: str | None = None
+    # V0.9.4 lot 2 : True pour les lignes de la section « Champs
+    # personnalisés » issues du fallback Bug C (clés libres dans
+    # `Item.metadonnees` sans `ChampPersonnalise` formel). La
+    # cartouche affiche alors un mini-bouton « Formaliser » qui crée
+    # un `ChampPersonnalise` sur la miroir du fonds avec le libellé
+    # synthétisé. La promouvabilité exige que la `cle` soit un slug
+    # valide (PATTERN_CLE) — autrement le bouton n'est pas rendu et
+    # l'utilisateur devra nettoyer la clé en amont.
+    est_libre_promouvable: bool = False
 
 
 @dataclass(frozen=True)
@@ -1411,6 +1420,12 @@ def composer_metadonnees_par_section(
             and valeur_brute.strip().startswith(("http://", "https://"))
         ):
             type_donnee = "uri"
+        # V0.9.4 lot 2 : marquer promouvable les clés libres dont le
+        # slug est valide (PATTERN_CLE de champs_personnalises). Un
+        # slug non valide (Unnamed: 15, mots-clés) reste libre — la
+        # promotion exige un nettoyage manuel en amont.
+        from archives_tool.api.services.champs_personnalises import PATTERN_CLE
+        est_promouvable = bool(PATTERN_CLE.match(cle))
         perso.append(
             ChampMetadonnee(
                 cle=cle,
@@ -1418,6 +1433,7 @@ def composer_metadonnees_par_section(
                 valeur=valeur_str,
                 type_donnee=type_donnee,
                 editable=False,
+                est_libre_promouvable=est_promouvable,
             )
         )
 

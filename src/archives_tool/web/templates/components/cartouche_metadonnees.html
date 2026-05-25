@@ -143,8 +143,14 @@
 {# Adaptateur data-driven : rend la cartouche complète depuis un
    `dict[str, list[ChampMetadonnee]]` (cf. `composer_metadonnees_par_section`).
    Compose les macros ci-dessus et pose donc les hooks `data-edit-field`
-   / `data-value`. #}
-{%- macro cartouche_metadonnees(sections, cote, q_surligne="") -%}
+   / `data-value`.
+
+   `promouvoir_url` (optionnel) : URL POST où soumettre la promotion
+   d'une clé libre en `ChampPersonnalise` formel. Quand fourni ET
+   que le champ a `est_libre_promouvable=True`, on rend un mini
+   bouton « Formaliser » à droite de la valeur. Sans cette URL, ou
+   en mode lecture seule, le bouton n'est pas rendu. #}
+{%- macro cartouche_metadonnees(sections, cote, q_surligne="", promouvoir_url=None) -%}
 {% call cartouche_wrapper() %}
   {% for nom_section, champs in sections.items() %}
     {% call section(nom_section) %}
@@ -156,29 +162,46 @@
               type_donnee=champ.type_donnee,
               editable=champ.editable,
               options=champ.options) %}
-            {%- if not champ.valeur -%}
-              {{ valeur_non_renseigne() }}
-            {%- elif champ.options -%}
-              {# Vocabulaire : on affiche le libellé humain associé.
-                 La valeur brute (URI / code) reste en data-edit-raw
-                 pour que l'édition inline pré-remplisse le <select>
-                 avec la valeur stockée, pas son libellé.
-                 NB : cette branche précède `uri` exprès — si un jour
-                 un champ uri reçoit aussi un vocabulaire (URI COAR
-                 cliquable + sélection), il faudra recomposer ici
-                 plutôt que choisir l'une ou l'autre. #}
-              <span data-edit-raw="{{ champ.valeur }}">{{ champ.valeur_affichee }}</span>
-            {%- elif champ.type_donnee == 'uri' -%}
-              {{ lien_doi(champ.valeur) }}
-            {%- elif champ.type_donnee == 'mono' -%}
-              {{ valeur_mono(champ.valeur) }}
-            {%- else -%}
-              {# Texte libre : on applique le surlignage `?q=` propagé
-                 depuis la page de recherche (filtre `surligner_q` qui
-                 échappe + injecte <mark>). Sur les valeurs vides ou
-                 sans q, le filtre est neutre. #}
-              {{ champ.valeur | surligner_q(q_surligne) }}
-            {%- endif -%}
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0 break-words">
+                {%- if not champ.valeur -%}
+                  {{ valeur_non_renseigne() }}
+                {%- elif champ.options -%}
+                  {# Vocabulaire : on affiche le libellé humain associé.
+                     La valeur brute (URI / code) reste en data-edit-raw
+                     pour que l'édition inline pré-remplisse le <select>
+                     avec la valeur stockée, pas son libellé. #}
+                  <span data-edit-raw="{{ champ.valeur }}">{{ champ.valeur_affichee }}</span>
+                {%- elif champ.type_donnee == 'uri' -%}
+                  {{ lien_doi(champ.valeur) }}
+                {%- elif champ.type_donnee == 'mono' -%}
+                  {{ valeur_mono(champ.valeur) }}
+                {%- else -%}
+                  {# Texte libre : on applique le surlignage `?q=` propagé
+                     depuis la page de recherche (filtre `surligner_q` qui
+                     échappe + injecte <mark>). Sur les valeurs vides ou
+                     sans q, le filtre est neutre. #}
+                  {{ champ.valeur | surligner_q(q_surligne) }}
+                {%- endif -%}
+              </div>
+              {%- if champ.est_libre_promouvable and promouvoir_url and not est_lecture_seule() -%}
+                {# V0.9.4 lot 2 : promotion d'une clé libre en
+                   ChampPersonnalise formel sur la miroir du fonds.
+                   Idempotent : un re-clic ne casse rien. #}
+                <form method="post" action="{{ promouvoir_url }}"
+                      style="flex-shrink:0;margin:0;">
+                  <input type="hidden" name="cle" value="{{ champ.cle }}">
+                  <button type="submit"
+                          title="Formaliser cette clé en champ personnalisé sur la miroir du fonds"
+                          class="rounded hover:bg-blue-50"
+                          style="padding:1px 8px;font-size:11px;color:#378ADD;
+                                 border:1px solid rgba(55,138,221,0.30);background:white;
+                                 white-space:nowrap;">
+                    Formaliser
+                  </button>
+                </form>
+              {%- endif -%}
+            </div>
           {% endcall %}
         {% endfor %}
       {%- else %}

@@ -26,9 +26,11 @@ from archives_tool.api.deps import (
 from archives_tool.api.routes._helpers import (
     contexte_base as _contexte_base,
     resoudre_collection_ou_404,
+    resoudre_item_ou_404,
 )
 from archives_tool.api.services.champs_personnalises import (
     ChampInvalide,
+    CleNonPromouvable,
     FormulaireChamp,
     champ_par_id,
     creer_champ,
@@ -36,6 +38,7 @@ from archives_tool.api.services.champs_personnalises import (
     formulaire_depuis_champ,
     lister_champs,
     modifier_champ,
+    promouvoir_cle_libre_en_champ,
     reactiver_champ,
     renommer_champ,
     supprimer_champ,
@@ -286,6 +289,44 @@ def soumettre_reactiver_champ(
     _valider_appartenance(champ, collection.id)
     reactiver_champ(db, champ_id)
     return RedirectResponse(_url_champs(cote, fonds), status_code=303)
+
+
+@router.post(
+    "/item/{cote}/promouvoir-cle",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_promouvoir_cle(
+    cote: str,
+    cle: Annotated[str, Form()],
+    fonds: Annotated[str, Query(...)],
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """V0.9.4 lot 2 : formalise une clé libre de ``item.metadonnees``
+    en ``ChampPersonnalise`` sur la miroir du fonds de l'item.
+
+    En cas de succès, redirige vers la page item — l'utilisateur voit
+    immédiatement le champ passer en section formelle (libellé
+    synthétisé). Pour raffiner (libellé, type, ordre), naviguer vers
+    la page de gestion des champs via la collection miroir.
+
+    En cas d'erreur (clé non promouvable), redirige aussi vers la
+    page item — l'erreur n'a pas de page dédiée et le bouton est
+    masqué sur le cartouche pour les clés invalides, donc cet
+    embranchement ne devrait être atteint que par bricolage URL.
+    """
+    item, _fonds_obj = resoudre_item_ou_404(db, cote, fonds)
+    try:
+        promouvoir_cle_libre_en_champ(db, item, cle)
+    except CleNonPromouvable:
+        # Pas de message d'erreur affiché — la page item n'a pas de
+        # flash et le bouton est filtré côté cartouche pour ne
+        # s'afficher que sur les clés promouvables. Si on arrive
+        # ici, c'est un bricolage URL — silent fallback.
+        pass
+    return RedirectResponse(
+        f"/item/{cote}?fonds={fonds}", status_code=303
+    )
 
 
 @router.post(

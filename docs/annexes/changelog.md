@@ -164,6 +164,27 @@ structurelle des champs personnalisés d'une collection.
   V0.9.2-import (clé libre, libellé synthétisé).
 - Tests : 19 nouveaux (service + routes), suite stable.
 
+### Champs personnalisés (Lot 2 — promotion clé libre)
+
+- `ChampMetadonnee.est_libre_promouvable` : nouveau flag posé par
+  `composer_metadonnees_par_section` sur les lignes de la section
+  « Champs personnalisés » issues du fallback Bug C (clés libres
+  sans `ChampPersonnalise` formel). True uniquement pour les clés
+  dont le slug est valide (PATTERN_CLE) — l'utilisateur doit
+  nettoyer en amont les clés malformées (Mots-Clés, Unnamed: 15,
+  etc.) avant promotion.
+- Service `promouvoir_cle_libre_en_champ(db, item, cle)` : trouve
+  la miroir du fonds de l'item, crée un `ChampPersonnalise` avec
+  libellé synthétisé via `_libelle_depuis_cle`. Idempotent (si un
+  champ avec cette clé existe déjà, retourne le champ existant sans
+  réactiver un éventuel déprécié — l'utilisateur conserve le contrôle).
+- Route `POST /item/<cote>/promouvoir-cle?fonds=<f>` : redirige vers
+  la page item (le champ apparaît immédiatement en section formelle).
+- Cartouche : mini bouton « Formaliser » à droite de chaque ligne
+  libre promouvable, masqué en lecture seule. Discret (bleu pâle,
+  border 1px) ; tooltip explicatif.
+- 8 nouveaux tests (service + composer + routes).
+
 ### Fix latent (migration FTS5)
 
 - `m1q2r3s4t5u6_fts5_recherche.upgrade` n'était pas idempotent face

@@ -14,11 +14,13 @@ from sqlalchemy.orm.attributes import flag_modified
 from archives_tool.api.main import app
 from archives_tool.api.services.champs_personnalises import (
     ChampInvalide,
+    CleNonPromouvable,
     FormulaireChamp,
     creer_champ,
     deprecier_champ,
     lister_champs,
     modifier_champ,
+    promouvoir_cle_libre_en_champ,
     reactiver_champ,
     renommer_champ,
     supprimer_champ,
@@ -454,6 +456,210 @@ def test_route_champ_modifier_garde_anti_confused_deputy(base_demo: Path) -> Non
     # Tente de modifier le champ FA via l'URL HK.
     resp = client.get(f"/collection/HK/champs/{champ_fa_id}/modifier?fonds=HK")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Promotion clé libre (Lot 2)
+# ---------------------------------------------------------------------------
+
+
+def test_promouvoir_cle_libre_cree_champ_sur_miroir(base_demo: Path) -> None:
+    """`promouvoir_cle_libre_en_champ` crée un ChampPersonnalise sur la
+    miroir du fonds de l'item, avec libellé synthétisé via
+    `_libelle_depuis_cle`."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(
+            select(Item).where(Item.cote == "HK-001")
+        )
+        # Pose une clé libre.
+        meta = dict(item.metadonnees or {})
+        meta["ancienne_cote"] = "HK/1960/01"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        champ, miroir = promouvoir_cle_libre_en_champ(s, item, "ancienne_cote")
+        assert champ.cle == "ancienne_cote"
+        assert champ.libelle == "Ancienne cote"  # synthétisé
+        assert champ.actif is True
+        # Miroir du fonds HK.
+        assert miroir.cote == "HK"
+    engine.dispose()
+
+
+def test_promouvoir_idempotent(base_demo: Path) -> None:
+    """Re-clicker « Formaliser » ne casse pas — retourne le champ existant."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["ancienne_cote"] = "X"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        c1, _ = promouvoir_cle_libre_en_champ(s, item, "ancienne_cote")
+        c2, _ = promouvoir_cle_libre_en_champ(s, item, "ancienne_cote")
+        assert c1.id == c2.id  # même champ
+    engine.dispose()
+
+
+def test_promouvoir_idempotent_meme_si_deprecie(base_demo: Path) -> None:
+    """Si un champ déprécié existe déjà sur la miroir, on retourne
+    le champ déprécié sans réactiver — l'utilisateur conserve le
+    contrôle (peut vouloir maintenir le champ caché)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        from archives_tool.models import Collection, Fonds, TypeCollection
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.fonds_id == fonds.id,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Crée + déprécie un champ.
+        c = creer_champ(s, miroir.id, FormulaireChamp(cle="auteur", libelle="A"))
+        deprecier_champ(s, c.id)
+
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["auteur"] = "X"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        retourne, _ = promouvoir_cle_libre_en_champ(s, item, "auteur")
+        assert retourne.id == c.id
+        assert retourne.actif is False  # PAS réactivé
+    engine.dispose()
+
+
+def test_promouvoir_refuse_cle_invalide(base_demo: Path) -> None:
+    """Slug invalide : pas de promotion automatique. L'utilisateur
+    doit nettoyer la clé en amont."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["Mots-Clés"] = "X"  # majuscules + tiret + accent
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        with pytest.raises(CleNonPromouvable):
+            promouvoir_cle_libre_en_champ(s, item, "Mots-Clés")
+    engine.dispose()
+
+
+def test_promouvoir_refuse_cle_absente(base_demo: Path) -> None:
+    """Si la clé n'existe pas dans item.metadonnees, on refuse (la
+    page item ne devrait jamais soumettre une cle absente, mais la
+    garde est utile contre le bricolage URL)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        with pytest.raises(CleNonPromouvable):
+            promouvoir_cle_libre_en_champ(s, item, "inexistante")
+    engine.dispose()
+
+
+def test_composer_marque_libre_promouvable_pour_slugs_valides(base_demo: Path) -> None:
+    """Vérifie que `est_libre_promouvable=True` pour les clés libres
+    avec slug valide, False pour les clés invalides."""
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["ancienne_cote"] = "X"  # valide
+        meta["Mots-Clés"] = "Y"  # invalide
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        detail = composer_page_item(s, "HK-001", fonds)
+        champs_perso = detail.metadonnees_par_section["Champs personnalisés"]
+        par_cle = {c.cle: c for c in champs_perso}
+        assert par_cle["ancienne_cote"].est_libre_promouvable is True
+        assert par_cle["Mots-Clés"].est_libre_promouvable is False
+    engine.dispose()
+
+
+def test_route_promouvoir_cle_redirige_vers_item(base_demo: Path) -> None:
+    """POST `/item/<cote>/promouvoir-cle?fonds=X` crée le champ et
+    redirige vers la page item."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["ancienne_cote"] = "X"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/promouvoir-cle?fonds=HK",
+        data={"cle": "ancienne_cote"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert "/item/HK-001" in resp.headers["location"]
+
+    # Vérifie côté DB : champ créé sur la miroir HK.
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        from archives_tool.models import Collection, Fonds, TypeCollection
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.fonds_id == fonds.id,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        champ = s.scalar(
+            select(ChampPersonnalise).where(
+                ChampPersonnalise.collection_id == miroir.id,
+                ChampPersonnalise.cle == "ancienne_cote",
+            )
+        )
+        assert champ is not None
+        assert champ.libelle == "Ancienne cote"
+    engine.dispose()
+
+
+def test_route_promouvoir_silencieux_sur_erreur(base_demo: Path) -> None:
+    """Une promotion invalide (slug malformé, clé absente) ne plante
+    pas la page — redirect silencieux vers l'item. Le bouton n'est
+    pas censé être rendu pour ces cas, c'est une protection contre
+    le bricolage URL."""
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/promouvoir-cle?fonds=HK",
+        data={"cle": "inexistante"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert "/item/HK-001" in resp.headers["location"]
+
+
+# ---------------------------------------------------------------------------
+# Routes (suite Lot 1)
+# ---------------------------------------------------------------------------
 
 
 def test_route_champ_renommer_propage(base_demo: Path) -> None:

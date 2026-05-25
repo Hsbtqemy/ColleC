@@ -40,6 +40,7 @@ from archives_tool.models import (
     Item,
     ItemCollection,
     TypeChamp,
+    TypeCollection,
 )
 
 
@@ -327,6 +328,113 @@ def reactiver_champ(db: Session, champ_id: int) -> ChampPersonnalise:
         db.commit()
         db.refresh(champ)
     return champ
+
+
+class CleNonPromouvable(FormulaireInvalide):
+    """La clé libre ne peut pas être promue en ChampPersonnalise
+    (clé absente, slug invalide, item sans miroir candidat).
+
+    Sous-classe de ``FormulaireInvalide`` pour cohérence des routes
+    qui catch via le type parent."""
+
+
+def promouvoir_cle_libre_en_champ(
+    db: Session,
+    item: Item,
+    cle: str,
+) -> tuple[ChampPersonnalise, Collection]:
+    """Formalise une clé libre de ``item.metadonnees`` en
+    ``ChampPersonnalise`` sur la miroir du fonds de l'item.
+
+    Workflow attendu : l'utilisateur voit dans le cartouche une clé
+    libre (rendue par le fallback Bug C V0.9.2-import) et clique
+    « Formaliser ». On crée le champ avec le libellé synthétisé
+    (`_libelle_depuis_cle` côté composer) et l'ordre 0. L'utilisateur
+    raffine ensuite via la page de gestion des champs.
+
+    Idempotent : si un ``ChampPersonnalise`` avec cette clé existe
+    déjà sur la miroir (actif ou déprécié), on le retourne tel quel
+    sans erreur — le bouton « Formaliser » peut donc être cliqué
+    deux fois sans casser, et un champ déprécié n'est pas
+    automatiquement réactivé (l'utilisateur conserve le contrôle).
+
+    Retourne ``(champ, miroir)`` pour permettre au caller de rediriger
+    vers la page de gestion ``/collection/<miroir.cote>/champs``.
+
+    Lève :class:`CleNonPromouvable` si :
+    - la clé n'est pas dans ``item.metadonnees`` ;
+    - la clé n'est pas un slug valide (PATTERN_CLE) ;
+    - l'item n'a pas de fonds (cas pathologique ; tous les items en
+      ont un en V0.9.0+).
+    """
+    # Lazy import : `_libelle_depuis_cle` vit dans dashboard.py qui
+    # importe déjà champs_personnalises.PATTERN_CLE (via la closure
+    # de composer_metadonnees_par_section, lui-même lazy). Un import
+    # top-level créerait une boucle au chargement du module.
+    from archives_tool.api.services.dashboard import _libelle_depuis_cle
+
+    cle_strip = cle.strip()
+    if not cle_strip:
+        raise CleNonPromouvable({"cle": "La clé est obligatoire."})
+    if not PATTERN_CLE.match(cle_strip):
+        raise CleNonPromouvable(
+            {"cle": (
+                "Cette clé n'est pas un slug valide — la promouvoir "
+                "exige des minuscules / chiffres / underscores. "
+                "Renommer la clé en amont (édition métadonnées) avant "
+                "de réessayer."
+            )}
+        )
+    meta = item.metadonnees or {}
+    if cle_strip not in meta:
+        raise CleNonPromouvable(
+            {"cle": f"La clé {cle_strip!r} n'est pas dans les métadonnées de cet item."}
+        )
+    if item.fonds_id is None:
+        raise CleNonPromouvable(
+            {"cle": "Item sans fonds — pas de miroir candidate pour la promotion."}
+        )
+
+    # Miroir du fonds : invariant V0.9.0 garantit qu'il en existe
+    # exactement une.
+    miroir = db.scalar(
+        select(Collection).where(
+            Collection.fonds_id == item.fonds_id,
+            Collection.type_collection == TypeCollection.MIROIR.value,
+        )
+    )
+    if miroir is None:
+        raise CleNonPromouvable(
+            {"cle": (
+                f"Aucune collection miroir trouvée pour le fonds {item.fonds_id} "
+                "— état incohérent."
+            )}
+        )
+
+    # Idempotence : si un champ existe déjà avec cette clé (actif ou
+    # déprécié), on le retourne tel quel.
+    existant = db.scalar(
+        select(ChampPersonnalise).where(
+            ChampPersonnalise.collection_id == miroir.id,
+            ChampPersonnalise.cle == cle_strip,
+        )
+    )
+    if existant is not None:
+        return existant, miroir
+
+    champ = ChampPersonnalise(
+        collection_id=miroir.id,
+        cle=cle_strip,
+        libelle=_libelle_depuis_cle(cle_strip),
+        type=TypeChamp.TEXTE.value,
+        obligatoire=False,
+        ordre=0,
+        actif=True,
+    )
+    db.add(champ)
+    db.commit()
+    db.refresh(champ)
+    return champ, miroir
 
 
 def supprimer_champ(db: Session, champ_id: int) -> None:

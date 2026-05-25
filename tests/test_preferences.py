@@ -410,11 +410,24 @@ def test_charger_colonnes_actives_n_emet_pas_plus_de_2_requetes(
 
 
 def test_page_collection_n_a_pas_de_details_filtres(base_demo: Path) -> None:
-    """Le filtrage passe par le drawer, pas par un `<details>` natif."""
+    """Le filtrage passe par le drawer, pas par un `<details>` natif.
+
+    Note V0.9.6 : la synthèse de collection introduit son propre
+    `<details open>` (composant `synthese_collection.html`), donc on
+    ne peut plus tester l'absence totale de `<summary>`. On vérifie
+    spécifiquement que le panneau de filtres n'utilise pas la balise
+    (signature du panneau = `data-panneau-filtres`)."""
     client = TestClient(app)
     resp = client.get("/collection/HK?fonds=HK")
     assert resp.status_code == 200
-    assert "<summary" not in resp.text
+    # Le drawer de filtres ne doit pas être implémenté en <details>.
+    idx_filtres = resp.text.find('id="panneau-filtres"')
+    assert idx_filtres > -1
+    # On extrait un bout suffisamment large autour du marqueur drawer
+    # et on vérifie qu'aucun <summary> n'apparaît à proximité (le
+    # composant filtres tient en ~80 lignes).
+    extrait = resp.text[idx_filtres : idx_filtres + 8000]
+    assert "<summary" not in extrait
 
 
 def test_post_preferences_persistance_aller_retour(base_demo: Path) -> None:

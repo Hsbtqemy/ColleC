@@ -127,6 +127,15 @@
 </a>
 {%- endmacro %}
 
+{# Synthèse de collection : section dense au-dessus du tableau d'items.
+   Auto-masquée si aucun item ou rien d'agrégable (synthese.vide).
+   `synthese` n'est rendu que pour le full-page (None sur swap HTMX). #}
+{% if synthese and not synthese.vide %}
+  {% with synthese=synthese, fonds_query=fonds_query %}
+    {% include 'components/synthese_collection.html' %}
+  {% endwith %}
+{% endif %}
+
 {% if filtres.actifs %}
   {% set sep = '&' if fonds_query else '?' %}
   <div class="flex flex-wrap items-center gap-1.5 mb-3 text-xs">

@@ -1,0 +1,182 @@
+{# Synthèse de collection (V0.9.6) — section dense au-dessus du
+   tableau d'items. Quatre zones :
+   1. Distribution temporelle (mini timeline)
+   2. Agrégats qualitatifs (langues, types, auteurs, sujets…)
+   3. Vignettes échantillonnées (carte d'identité visuelle)
+   4. Trous + activité récente
+
+   Variables attendues :
+   - `synthese` (SyntheseCollection)
+   - `fonds_query` (str | None)
+
+   Le composant est dans un `<details open>` pour permettre à
+   l'utilisateur de masquer la synthèse s'il préfère un accès
+   direct au tableau.
+
+   Le composant s'auto-masque si `synthese.vide` (collection sans
+   aucun item, sans rien à synthétiser).
+#}
+{% from 'components/panneau_fichiers.html' import vignette_placeholder %}
+
+{% if not synthese.vide %}
+<section class="mb-5">
+  <details open style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;background:#fff;">
+    <summary style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;list-style:none;">
+      <span style="font-size:13px;font-weight:500;color:#374151;letter-spacing:0.01em;">
+        Synthèse
+      </span>
+      <span style="font-size:11px;color:#9ca3af;">
+        {{ synthese.nb_items_total }} item{{ "s" if synthese.nb_items_total != 1 else "" }}
+        {%- if synthese.distribution_temporelle.annee_min %}
+          <span aria-hidden="true">·</span>
+          {{ synthese.distribution_temporelle.annee_min }}{% if synthese.distribution_temporelle.annee_max != synthese.distribution_temporelle.annee_min %}–{{ synthese.distribution_temporelle.annee_max }}{% endif %}
+        {% endif %}
+      </span>
+    </summary>
+
+    <div style="padding:0 14px 14px;">
+
+      {# -----------------------------------------------------------
+         1. Distribution temporelle — barres simples normalisées
+         ----------------------------------------------------------- #}
+      {% if not synthese.distribution_temporelle.vide %}
+      {% set dist = synthese.distribution_temporelle %}
+      {% set cmax = dist.count_max %}
+      <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.05);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+          Période ·
+          <span style="text-transform:none;letter-spacing:0;color:#6b7280;font-weight:400;">
+            {{ dist.annee_min }}–{{ dist.annee_max }}
+            ({{ 'par an' if dist.pas == 'annee' else 'par décennie' }})
+          </span>
+        </h3>
+        <div style="display:flex;align-items:flex-end;gap:2px;height:36px;">
+          {% for b in dist.barres %}
+            {% set h = (b.count * 100 / cmax) if cmax else 0 %}
+            <div title="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} · {{ b.count }} item{{ 's' if b.count != 1 else '' }}"
+                 style="flex:1;min-width:3px;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}#378ADD{% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"
+                 aria-label="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} : {{ b.count }}"></div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# -----------------------------------------------------------
+         Grid 3 colonnes : agrégats | vignettes | trous + activité
+         ----------------------------------------------------------- #}
+      <div class="grid grid-cols-1 lg:grid-cols-[1fr_220px_240px] gap-4">
+
+        {# -----------------------------------------------------------
+           2. Agrégats qualitatifs
+           ----------------------------------------------------------- #}
+        <div>
+          {% if synthese.agregats %}
+            {% for ag in synthese.agregats %}
+              <div style="margin-bottom:10px;font-size:13px;">
+                <div style="color:#374151;font-weight:500;margin-bottom:3px;">
+                  {{ ag.libelle }}
+                  <span style="color:#9ca3af;font-weight:400;font-size:12px;">
+                    ({{ ag.nb_distinct }}{% if ag.nb_distinct > ag.top|length %} dont top {{ ag.top|length }}{% endif %})
+                  </span>
+                </div>
+                <div style="color:#6b7280;font-size:12px;line-height:1.6;">
+                  {% for tv in ag.top -%}
+                    {{ tv.valeur }} <span style="color:#9ca3af;">({{ tv.count }})</span>{% if not loop.last %} · {% endif %}
+                  {%- endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p style="font-size:12px;color:#9ca3af;font-style:italic;">
+              Aucun champ qualitatif documenté.
+            </p>
+          {% endif %}
+        </div>
+
+        {# -----------------------------------------------------------
+           3. Vignettes échantillonnées
+           ----------------------------------------------------------- #}
+        <div>
+          <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+            Échantillon
+            {% if synthese.nb_items_total > synthese.vignettes|length %}
+              <span style="text-transform:none;letter-spacing:0;color:#6b7280;font-weight:400;font-size:11px;">
+                ({{ synthese.vignettes|length }} sur {{ synthese.nb_items_total }})
+              </span>
+            {% endif %}
+          </h3>
+          {% if synthese.vignettes %}
+            <div class="grid grid-cols-3 gap-1">
+              {% for v in synthese.vignettes %}
+                <a href="/item/{{ v.item_cote }}?fonds={{ v.fonds_cote }}"
+                   class="block rounded overflow-hidden hover:ring-2 hover:ring-blue-300"
+                   style="aspect-ratio:1;background:#f3f4f6;text-decoration:none;"
+                   title="{{ v.item_cote }} — {{ v.item_titre }}">
+                  {% if v.vignette_url %}
+                    <img src="{{ v.vignette_url }}" loading="lazy" alt="{{ v.item_cote }}"
+                         style="width:100%;height:100%;object-fit:cover;">
+                  {% else %}
+                    {{ vignette_placeholder(v.extension, taille='carre') }}
+                  {% endif %}
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p style="font-size:12px;color:#9ca3af;font-style:italic;margin:0;">
+              Aucune vignette disponible.
+            </p>
+          {% endif %}
+        </div>
+
+        {# -----------------------------------------------------------
+           4. Trous + activité récente
+           ----------------------------------------------------------- #}
+        <div>
+          {% if synthese.trous %}
+            <div style="margin-bottom:14px;">
+              <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+                À finir
+              </h3>
+              <ul style="list-style:none;margin:0;padding:0;font-size:12px;line-height:1.7;">
+                {% for t in synthese.trous %}
+                  <li style="color:{% if t.code == 'a_corriger' %}#b91c1c{% else %}#6b7280{% endif %};">
+                    <span aria-hidden="true">{% if t.code == 'a_corriger' %}⚠{% else %}·{% endif %}</span>
+                    {% if t.filtre_url %}
+                      <a href="{{ t.filtre_url }}" style="color:inherit;text-decoration:underline dotted;text-underline-offset:2px;">{{ t.libelle }}</a>
+                    {% else %}
+                      {{ t.libelle }}
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if synthese.items_recents %}
+            <div>
+              <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+                Activité récente
+              </h3>
+              <ul style="list-style:none;margin:0;padding:0;font-size:12px;line-height:1.5;">
+                {% for r in synthese.items_recents %}
+                  <li style="margin-bottom:6px;">
+                    <a href="/item/{{ r.cote }}?fonds={{ r.fonds_cote }}"
+                       style="color:#374151;text-decoration:none;">
+                      <span style="font-family:ui-monospace,monospace;font-size:11px;color:#9ca3af;">{{ r.cote }}</span>
+                      <span style="margin-left:4px;">{{ r.titre | truncate(40) }}</span>
+                    </a>
+                    <div style="color:#9ca3af;font-size:11px;margin-top:1px;">
+                      {{ r.modifie_le | temps_relatif }}{% if r.modifie_par %} · {{ r.modifie_par }}{% endif %}
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+  </details>
+</section>
+{% endif %}

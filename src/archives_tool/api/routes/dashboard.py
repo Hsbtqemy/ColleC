@@ -53,6 +53,7 @@ from archives_tool.api.services.dashboard import (
     composer_dashboard,
     composer_fiche_item,
     composer_page_collection,
+    composer_synthese_collection,
     composer_page_fonds,
     composer_page_item,
     parser_filtres_collection,
@@ -526,6 +527,11 @@ def page_collection(
     collection = _resoudre_collection(db, cote, fonds)
     detail = composer_page_collection(db, collection)
     # Parsing + validation des filtres contre les options dynamiques.
+    # Synthèse : seulement pour le rendu pleine page (pas pour les
+    # swaps HTMX qui ne rendent que le partial du tableau).
+    synthese = None
+    if request.headers.get("HX-Request") != "true":
+        synthese = composer_synthese_collection(db, collection, fonds_query=fonds)
     filtres = parser_filtres_collection(
         etat=etat,
         langue=langue,
@@ -587,6 +593,7 @@ def page_collection(
             nom_base,
             utilisateur,
             detail=detail,
+            synthese=synthese,
             listage=listage,
             colonnes_actives=resolu.actives,
             fonds_query=fonds,

@@ -35,7 +35,12 @@ from archives_tool.api.services.collaborateurs_fonds import (
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
 from archives_tool.api.services.items import ItemIntrouvable, ItemResume
-from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
+from archives_tool.api.services.vocabulaires import (
+    LANGUES_OPTIONS,
+    TYPES_COAR_OPTIONS,
+    libelle_pour_valeur,
+    resoudre_vocabulaire,
+)
 from archives_tool.api.services.sources_image import (
     SourceImage,
     resoudre_source_image,
@@ -1034,6 +1039,503 @@ def composer_page_collection(db: Session, collection: Collection) -> CollectionD
         modifie_par=c_mod_par,
         modifie_le=c_mod_le,
         options_filtres=options_filtres,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Synthèse de collection (V0.9.6) — orientation rapide au-dessus du tableau
+# ---------------------------------------------------------------------------
+
+
+#: Clés de `Item.metadonnees` qui sont **structurelles** (décompositions
+#: de cote, typologies internes) et n'ont pas vocation à apparaître dans
+#: les agrégats qualitatifs. Distinct de :data:`_META_FICHIER_TECHNIQUES`
+#: (qui couvre les fingerprints Nakala au niveau fichier).
+_META_ITEM_STRUCTURELLES: frozenset[str] = frozenset(
+    {"hierarchie", "typologie"}
+)
+
+#: Nombre maximum de valeurs distinctes affichées par agrégat. Au-delà,
+#: l'utilisateur ouvre le panneau Filtrer ou la page modifier pour le
+#: détail. Cap conservateur — ne pas grossir sans repenser le layout.
+_TOP_AGREGAT: int = 5
+
+#: Nombre de vignettes échantillonnées dans la synthèse. 12 tient sur
+#: 3 colonnes × 4 lignes ou 6 × 2 selon la largeur disponible.
+_NB_VIGNETTES_SYNTHESE: int = 12
+
+
+@dataclass(frozen=True)
+class TopValeur:
+    """Une entrée du top N d'un agrégat qualitatif."""
+
+    valeur: str
+    count: int
+
+
+@dataclass(frozen=True)
+class AgregatItemQuali:
+    """Synthèse d'un champ qualitatif sur les items d'une collection.
+
+    ``cle`` est la clé technique (ex. ``"auteur"``, ``"type_coar"``,
+    ``"langue"``). ``libelle`` est le libellé humain affiché. ``top``
+    contient au plus :data:`_TOP_AGREGAT` valeurs ; ``nb_distinct``
+    est le total — l'écart révèle « il y a N - 5 autres valeurs ».
+    """
+
+    cle: str
+    libelle: str
+    top: tuple[TopValeur, ...]
+    nb_distinct: int
+    nb_renseignes: int  # nb items qui ont au moins une valeur sur cette cle
+
+
+@dataclass(frozen=True)
+class BarreTemporelle:
+    """Une barre de la mini-distribution temporelle."""
+
+    annee_debut: int  # inclus
+    annee_fin: int  # inclus (= annee_debut si pas annuel)
+    count: int
+
+
+@dataclass(frozen=True)
+class DistributionTemporelle:
+    """Cartographie temporelle : bornes + barres.
+
+    ``pas`` vaut ``"annee"`` si la plage est étroite (≤ 30 ans), sinon
+    ``"decennie"``. Les barres couvrent l'intervalle [annee_min,
+    annee_max] sans trou — les années sans item ont count=0 (utile
+    visuellement : on voit les vides du chantier).
+    """
+
+    annee_min: int | None
+    annee_max: int | None
+    pas: Literal["annee", "decennie"] | None
+    barres: tuple[BarreTemporelle, ...]
+
+    @property
+    def vide(self) -> bool:
+        return not self.barres
+
+    @property
+    def count_max(self) -> int:
+        return max((b.count for b in self.barres), default=0)
+
+
+@dataclass(frozen=True)
+class VignetteSynthese:
+    """Une vignette échantillonnée — pointe sur la fiche item."""
+
+    item_cote: str
+    item_titre: str
+    fonds_cote: str
+    vignette_url: str | None
+    extension: str
+
+
+@dataclass(frozen=True)
+class TrouCatalographique:
+    """Une lacune catalographique repérée sur la collection.
+
+    ``filtre_url`` ouvre le tableau d'items filtré si possible (cas
+    « à corriger » qui réutilise `?etat=a_corriger`). Sinon ``None`` —
+    on signale, on ne deep-link pas (les autres trous demanderaient
+    des filtres dédiés non implémentés).
+    """
+
+    code: Literal["sans_titre", "sans_annee", "sans_fichier", "a_corriger"]
+    libelle: str
+    nb: int
+    filtre_url: str | None
+
+
+@dataclass(frozen=True)
+class ItemRecemmentModifie:
+    """Item récemment modifié — affiché dans la section « Activité »."""
+
+    cote: str
+    titre: str
+    fonds_cote: str
+    modifie_par: str | None
+    modifie_le: datetime
+
+
+@dataclass(frozen=True)
+class SyntheseCollection:
+    """Vue d'ensemble d'une collection : qualitatif + temporel +
+    visuel + trous + activité. Rendue par
+    ``components/synthese_collection.html`` au-dessus du tableau
+    d'items.
+
+    Garde-fou SQL : 4 requêtes principales indépendamment du volume
+    (items + sans-fichier + ids-ordonnes + items-echantillonnes).
+    """
+
+    distribution_temporelle: DistributionTemporelle
+    agregats: tuple[AgregatItemQuali, ...]
+    vignettes: tuple[VignetteSynthese, ...]
+    trous: tuple[TrouCatalographique, ...]
+    items_recents: tuple[ItemRecemmentModifie, ...]
+    nb_items_total: int
+
+    @property
+    def vide(self) -> bool:
+        """Aucune information à afficher — la collection est vide ou
+        sans rien d'agrégable. Le composant peut être masqué."""
+        return (
+            not self.agregats
+            and not self.vignettes
+            and self.distribution_temporelle.vide
+            and not self.trous
+            and not self.items_recents
+        )
+
+
+def _calculer_distribution_temporelle(
+    annees: list[int],
+) -> DistributionTemporelle:
+    """Construit la distribution temporelle à partir des années non
+    nulles des items. Choisit ``"annee"`` si la plage est ≤ 30 ans,
+    ``"decennie"`` au-delà. Garantit des barres sans trou pour
+    visualiser les vides.
+    """
+    if not annees:
+        return DistributionTemporelle(
+            annee_min=None, annee_max=None, pas=None, barres=()
+        )
+    a_min = min(annees)
+    a_max = max(annees)
+    span = a_max - a_min
+    pas: Literal["annee", "decennie"]
+    barres: list[BarreTemporelle] = []
+    if span <= 30:
+        pas = "annee"
+        counts: Counter[int] = Counter(annees)
+        for an in range(a_min, a_max + 1):
+            barres.append(
+                BarreTemporelle(annee_debut=an, annee_fin=an, count=counts[an])
+            )
+    else:
+        pas = "decennie"
+        # Décennie alignée sur le multiple de 10 inférieur — `1973` →
+        # décennie `1970`. L'utilisateur reconnaît mieux « années 70 »
+        # qu'un découpage `1973-1982`.
+        dec_min = (a_min // 10) * 10
+        dec_max = (a_max // 10) * 10
+        counts_dec: Counter[int] = Counter((a // 10) * 10 for a in annees)
+        for dec in range(dec_min, dec_max + 10, 10):
+            barres.append(
+                BarreTemporelle(
+                    annee_debut=dec, annee_fin=dec + 9, count=counts_dec[dec]
+                )
+            )
+    return DistributionTemporelle(
+        annee_min=a_min, annee_max=a_max, pas=pas, barres=tuple(barres)
+    )
+
+
+def _agreger_item_metadonnees_quali(
+    items_meta: list[dict[str, Any] | None],
+) -> dict[str, Counter[str]]:
+    """Agrège les valeurs documentaires de ``Item.metadonnees`` pour
+    les items d'une collection. Skip les clés structurelles
+    (``hierarchie``, ``typologie``) et les valeurs vides. Les listes
+    (vocabs multi-valeurs) sont dépiles : chaque valeur incrémente
+    son propre compteur.
+    """
+    par_cle: dict[str, Counter[str]] = {}
+    for meta in items_meta:
+        if not isinstance(meta, dict):
+            continue
+        for cle, val in meta.items():
+            if cle in _META_ITEM_STRUCTURELLES:
+                continue
+            if isinstance(val, dict):
+                # Décomposition structurée — skip ici (montré ailleurs).
+                continue
+            if isinstance(val, list):
+                for v in val:
+                    s = _valeur_metadonnee_str(v)
+                    if s:
+                        par_cle.setdefault(cle, Counter())[s] += 1
+            else:
+                s = _valeur_metadonnee_str(val)
+                if s:
+                    par_cle.setdefault(cle, Counter())[s] += 1
+    return par_cle
+
+
+def _agregat_depuis_counter(
+    cle: str,
+    libelle: str,
+    counter: Counter[str],
+    nb_renseignes: int,
+) -> AgregatItemQuali:
+    """Convertit un Counter en AgregatItemQuali (top N + tri stable)."""
+    top_items = counter.most_common(_TOP_AGREGAT)
+    top = tuple(TopValeur(valeur=v, count=c) for v, c in top_items)
+    return AgregatItemQuali(
+        cle=cle,
+        libelle=libelle,
+        top=top,
+        nb_distinct=len(counter),
+        nb_renseignes=nb_renseignes,
+    )
+
+
+def _ids_echantillonnes(ids_ordonnes: list[int], n: int) -> list[int]:
+    """Sélectionne n ids uniformément répartis dans la liste ordonnée.
+
+    Si la liste est plus petite que n, retourne tout. Sinon utilise un
+    stride flottant pour répartir équitablement (au lieu de prendre
+    les n premiers, qui ne sont pas représentatifs).
+    """
+    total = len(ids_ordonnes)
+    if total == 0:
+        return []
+    if total <= n:
+        return list(ids_ordonnes)
+    stride = total / n
+    return [ids_ordonnes[int(i * stride)] for i in range(n)]
+
+
+def composer_synthese_collection(
+    db: Session,
+    collection: Collection,
+    fonds_query: str | None = None,
+) -> SyntheseCollection:
+    """Composition d'une vue d'ensemble d'une collection.
+
+    Distincte de :func:`composer_page_collection` qui produit les
+    données du **bandeau** (compteurs, états, traçabilité) et des
+    filtres dynamiques. La synthèse ajoute le **qualitatif** (top N
+    auteurs/sujets/types/langues), le **temporel** (mini-timeline),
+    le **visuel** (vignettes échantillonnées) et l'**activité**
+    (5 derniers items modifiés + trous catalographiques).
+
+    ``fonds_query`` est la cote du fonds telle que présente dans la
+    query string courante (pour construire les liens de filtres
+    cohérents). ``None`` pour les transversales.
+
+    Garde-fou SQL : 4 requêtes principales pour les compteurs +
+    métadonnées, 1 pour les items récents, 2 pour les vignettes. Total
+    7, indépendant du volume.
+    """
+    # ---- 1. Pass principale : tous les items, attributs nécessaires
+    #    aux agrégats + au calcul des trous (sauf "sans fichier"). ----
+    lignes_items = db.execute(
+        select(
+            Item.id,
+            Item.cote,
+            Item.titre,
+            Item.langue,
+            Item.type_coar,
+            Item.annee,
+            Item.etat_catalogage,
+            Item.metadonnees,
+        )
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(ItemCollection.collection_id == collection.id)
+        .order_by(Item.cote)
+    ).all()
+    nb_items_total = len(lignes_items)
+
+    # ---- 1a. Distribution temporelle ----
+    annees_renseignees = [an for *_, an, _e, _m in lignes_items if an is not None]
+    distribution = _calculer_distribution_temporelle(annees_renseignees)
+
+    # ---- 1b. Agrégats qualitatifs ----
+    #    - langue / type_coar : valeurs des colonnes dédiées
+    #    - autres clés : extraites de `metadonnees`
+    counter_langue: Counter[str] = Counter()
+    counter_type: Counter[str] = Counter()
+    metas_brutes: list[dict[str, Any] | None] = []
+    nb_a_corriger = 0
+    nb_sans_titre = 0
+    nb_sans_annee = 0
+    for _id, _cote, titre, langue, type_coar, annee, etat, meta in lignes_items:
+        if langue:
+            counter_langue[langue] += 1
+        if type_coar:
+            counter_type[type_coar] += 1
+        metas_brutes.append(meta)
+        if etat == EtatCatalogage.A_CORRIGER.value:
+            nb_a_corriger += 1
+        if not (titre or "").strip():
+            nb_sans_titre += 1
+        if annee is None:
+            nb_sans_annee += 1
+
+    par_cle_meta = _agreger_item_metadonnees_quali(metas_brutes)
+
+    agregats: list[AgregatItemQuali] = []
+    # Langue + type_coar en tête (les plus structurants), avec libellés
+    # humains résolus via les vocabulaires hardcoded.
+    if counter_langue:
+        nb_renseignes_langue = sum(counter_langue.values())
+        counter_langue_humain: Counter[str] = Counter()
+        for code, n in counter_langue.items():
+            lib = libelle_pour_valeur(code, LANGUES_OPTIONS) or code
+            counter_langue_humain[lib] += n
+        agregats.append(
+            _agregat_depuis_counter(
+                "langue", "Langues", counter_langue_humain, nb_renseignes_langue
+            )
+        )
+    if counter_type:
+        nb_renseignes_type = sum(counter_type.values())
+        counter_type_humain: Counter[str] = Counter()
+        for uri, n in counter_type.items():
+            lib = libelle_pour_valeur(uri, TYPES_COAR_OPTIONS) or uri
+            counter_type_humain[lib] += n
+        agregats.append(
+            _agregat_depuis_counter(
+                "type_coar", "Types", counter_type_humain, nb_renseignes_type
+            )
+        )
+    # Puis les agrégats meta — triés par nb_renseignes décroissant (plus
+    # informatif d'abord). Cap à ~6 pour rester compact ; au-delà ça
+    # devient un mur, l'utilisateur ouvre les pages individuelles.
+    agregats_meta = sorted(
+        (
+            _agregat_depuis_counter(
+                cle, _libelle_depuis_cle(cle), counter, sum(counter.values())
+            )
+            for cle, counter in par_cle_meta.items()
+        ),
+        key=lambda a: (-a.nb_renseignes, a.cle),
+    )
+    agregats.extend(agregats_meta[:6])
+
+    # ---- 2. Trou « sans fichier » ----
+    #    Compte les items de la collection qui n'ont aucun Fichier
+    #    rattaché. Une seule query agrégée.
+    nb_sans_fichier = (
+        db.scalar(
+            select(func.count(Item.id))
+            .join(ItemCollection, ItemCollection.item_id == Item.id)
+            .where(
+                ItemCollection.collection_id == collection.id,
+                ~Item.fichiers.any(),
+            )
+        )
+        or 0
+    )
+
+    # Lien deep pour le trou « à corriger » (les autres trous n'ont pas
+    # encore de filtre dédié dans `parser_filtres_collection`).
+    base_url = f"/collection/{collection.cote}"
+    sep_fonds = f"&fonds={fonds_query}" if fonds_query else ""
+    url_a_corriger: str | None = (
+        f"{base_url}?etat=a_corriger{sep_fonds}"
+        if nb_a_corriger > 0
+        else None
+    )
+
+    trous: list[TrouCatalographique] = []
+    if nb_sans_titre > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_titre",
+                libelle=f"{nb_sans_titre} sans titre",
+                nb=nb_sans_titre,
+                filtre_url=None,
+            )
+        )
+    if nb_sans_annee > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_annee",
+                libelle=f"{nb_sans_annee} sans année",
+                nb=nb_sans_annee,
+                filtre_url=None,
+            )
+        )
+    if nb_sans_fichier > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_fichier",
+                libelle=f"{nb_sans_fichier} sans fichier",
+                nb=nb_sans_fichier,
+                filtre_url=None,
+            )
+        )
+    if nb_a_corriger > 0:
+        trous.append(
+            TrouCatalographique(
+                code="a_corriger",
+                libelle=f"{nb_a_corriger} à corriger",
+                nb=nb_a_corriger,
+                filtre_url=url_a_corriger,
+            )
+        )
+
+    # ---- 3. Items récemment modifiés ----
+    items_recents_rows = db.execute(
+        select(
+            Item.cote,
+            Item.titre,
+            Item.modifie_par,
+            Item.modifie_le,
+            Fonds.cote.label("fonds_cote"),
+        )
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .join(Fonds, Fonds.id == Item.fonds_id)
+        .where(ItemCollection.collection_id == collection.id)
+        .order_by(Item.modifie_le.desc())
+        .limit(5)
+    ).all()
+    items_recents = tuple(
+        ItemRecemmentModifie(
+            cote=cote,
+            titre=titre or cote,
+            fonds_cote=fonds_cote,
+            modifie_par=mod_par,
+            modifie_le=mod_le,
+        )
+        for cote, titre, mod_par, mod_le, fonds_cote in items_recents_rows
+        if mod_le is not None
+    )
+
+    # ---- 4. Vignettes échantillonnées ----
+    ids_ordonnes = [id_ for id_, *_ in lignes_items]
+    ids_echantillon = _ids_echantillonnes(ids_ordonnes, _NB_VIGNETTES_SYNTHESE)
+    vignettes: tuple[VignetteSynthese, ...] = ()
+    if ids_echantillon:
+        items_avec_fichier = db.execute(
+            select(Item, Fonds.cote.label("fonds_cote"))
+            .options(selectinload(Item.fichiers))
+            .join(Fonds, Fonds.id == Item.fonds_id)
+            .where(Item.id.in_(ids_echantillon))
+        ).all()
+        items_par_id = {item.id: (item, fonds_cote) for item, fonds_cote in items_avec_fichier}
+        vignettes_liste: list[VignetteSynthese] = []
+        for id_ in ids_echantillon:
+            entry = items_par_id.get(id_)
+            if entry is None:
+                continue
+            item, fonds_cote = entry
+            first_f = item.fichiers[0] if item.fichiers else None
+            src = resoudre_source_image(first_f) if first_f else None
+            vignettes_liste.append(
+                VignetteSynthese(
+                    item_cote=item.cote,
+                    item_titre=item.titre or item.cote,
+                    fonds_cote=fonds_cote,
+                    vignette_url=src.vignette_url if src else None,
+                    extension=_extension(first_f.nom_fichier) if first_f else "",
+                )
+            )
+        vignettes = tuple(vignettes_liste)
+
+    return SyntheseCollection(
+        distribution_temporelle=distribution,
+        agregats=tuple(agregats),
+        vignettes=vignettes,
+        trous=tuple(trous),
+        items_recents=items_recents,
+        nb_items_total=nb_items_total,
     )
 
 

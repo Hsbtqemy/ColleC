@@ -151,6 +151,34 @@
               type='number',
               help_text='Position dans la section « Champs personnalisés » du cartouche. Les ordres égaux sont triés par clé.') }}
 
+    {# V0.9.4 lot 3b : associer un vocabulaire personnalise (table
+       Vocabulaire). Pertinent pour les types « liste » /
+       « liste_multiple » — pour les autres types, l'association est
+       stockee mais sans effet sur la saisie. #}
+    <div style="margin-bottom:14px;">
+      <label for="champ-valeurs_controlees_id"
+             style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Vocabulaire associé
+      </label>
+      <select id="champ-valeurs_controlees_id" name="valeurs_controlees_id"
+              class="w-full"
+              style="padding:6px 10px;font-size:13px;
+                     border:1px solid rgba(0,0,0,0.16);border-radius:4px;background:#fff;">
+        <option value="">— aucun (saisie libre) —</option>
+        {% for v in vocabulaires_disponibles %}
+          <option value="{{ v.id }}"
+                  {% if formulaire.valeurs_controlees_id == v.id %}selected{% endif %}>
+            {{ v.libelle }} ({{ v.valeurs | length }} valeur{% if v.valeurs | length > 1 %}s{% endif %})
+          </option>
+        {% endfor %}
+      </select>
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        Optionnel — l'association n'a d'effet sur l'affichage que
+        pour les types « liste » / « liste_multiple ». Gérer les
+        vocabulaires depuis <a href="/vocabulaires" class="underline">/vocabulaires</a>.
+      </p>
+    </div>
+
     {{ textarea('aide', 'Aide à la saisie', formulaire.aide,
                 help_text='Affichée sous le champ dans le formulaire de modification de l\'item.',
                 lignes=2) }}

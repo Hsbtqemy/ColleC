@@ -49,6 +49,7 @@ from archives_tool.models import (
     ItemCollection,
     RoleCollaborateur,
     TypeCollection,
+    Vocabulaire,
 )
 
 # Clés de répartition des états de catalogage utilisées par le composant
@@ -1380,21 +1381,44 @@ def composer_metadonnees_par_section(
         "notes_internes",
     }
     perso: list[ChampMetadonnee] = []
+    # V0.9.4 lot 3c : charger les options des vocabulaires DB associés
+    # une seule fois par champ. `options_depuis_vocabulaire` exclut les
+    # valeurs dépréciées — les items qui les portent garderont la valeur
+    # brute dans `valeur` ; `valeur_affichee` retombera dessus si pas
+    # trouvée dans les options actives.
+    from archives_tool.api.services.vocabulaires_db import (
+        options_depuis_vocabulaire,
+    )
     for champ in sorted(champs_personnalises, key=lambda c: (c.ordre, c.cle)):
         if champ.cle in vus:
             continue
         vus.add(champ.cle)
         valeur = metadonnees_brutes.get(champ.cle)
+        valeur_str = _valeur_metadonnee_str(valeur)
+        options: tuple[tuple[str, str], ...] | None = None
+        valeur_affichee: str | None = valeur_str
+        if champ.vocabulaire is not None:
+            options = options_depuis_vocabulaire(champ.vocabulaire)
+            # Libellé humain : « Français » pour le code « fra ».
+            # Si la valeur stockée n'est pas dans le vocabulaire
+            # (legacy, déprécié), on retombe sur la valeur brute.
+            for code, libelle in options:
+                if code == valeur_str:
+                    valeur_affichee = libelle
+                    break
         perso.append(
             ChampMetadonnee(
                 cle=champ.cle,
                 libelle=champ.libelle,
-                valeur=_valeur_metadonnee_str(valeur),
+                valeur=valeur_str,
                 type_donnee=champ.type,
                 # Les champs personnalisés vivent dans Item.metadonnees (JSON)
-                # et leur édition nécessitera une UI dédiée (vocabulaires,
-                # listes). Non éditables inline pour l'instant.
+                # et leur édition nécessitera une UI dédiée. Non éditables
+                # inline pour l'instant — Lot 3.1 envisageable pour les
+                # champs avec vocabulaire (dropdown direct dans le cartouche).
                 editable=False,
+                options=options,
+                valeur_affichee=valeur_affichee,
             )
         )
 
@@ -1587,9 +1611,16 @@ def composer_page_item(
     # V0.9.4 : on filtre les champs dépréciés (actif=False) — leurs
     # valeurs en metadonnees tombent automatiquement dans le fallback
     # « clé libre » du composer, sans perte de donnée affichable.
+    # Lot 3c : eager-load `Vocabulaire.valeurs` pour éviter N+1 quand
+    # le composer résout les libellés humains via options_depuis_vocabulaire.
     champs = list(
         db.scalars(
             select(ChampPersonnalise)
+            .options(
+                selectinload(ChampPersonnalise.vocabulaire).selectinload(
+                    Vocabulaire.valeurs
+                )
+            )
             .join(
                 ItemCollection,
                 ItemCollection.collection_id == ChampPersonnalise.collection_id,

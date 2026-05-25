@@ -74,6 +74,12 @@ class FormulaireChamp(BaseModel):
     À la création, ``cle`` est obligatoire et validée par
     :data:`PATTERN_CLE`. À la modification standard, ``cle`` est
     ignorée — utiliser :func:`renommer_champ` pour la changer.
+
+    ``valeurs_controlees_id`` (V0.9.4 lot 3b) : id du Vocabulaire à
+    associer pour les types ``liste`` / ``liste_multiple``. None
+    pour pas de vocabulaire (saisie libre). Si renseigné mais le
+    type ne le supporte pas, ignoré (pas d'erreur — l'utilisateur
+    peut changer le type sans perdre l'association).
     """
 
     model_config = ConfigDict(str_strip_whitespace=False)
@@ -85,6 +91,7 @@ class FormulaireChamp(BaseModel):
     ordre: int = 0
     aide: str = Field(default="")
     description_interne: str = Field(default="")
+    valeurs_controlees_id: int | None = None
 
     @field_validator("type")
     @classmethod
@@ -92,6 +99,18 @@ class FormulaireChamp(BaseModel):
         if v and v not in {t.value for t in TypeChamp}:
             raise ValueError(f"Type de champ inconnu : {v!r}")
         return v or TypeChamp.TEXTE.value
+
+    @field_validator("valeurs_controlees_id", mode="before")
+    @classmethod
+    def _vocab_id_normaliser(cls, v: object) -> int | None:
+        """Form HTML envoie "" (chaîne vide) quand l'utilisateur
+        choisit « — aucun — ». On le convertit en None pour que
+        Pydantic ne plante pas sur la validation int."""
+        if v in (None, "", "None"):
+            return None
+        if isinstance(v, str):
+            return int(v)
+        return v  # type: ignore[return-value]
 
 
 def formulaire_depuis_champ(champ: ChampPersonnalise) -> FormulaireChamp:
@@ -104,6 +123,7 @@ def formulaire_depuis_champ(champ: ChampPersonnalise) -> FormulaireChamp:
         ordre=champ.ordre,
         aide=champ.aide or "",
         description_interne=champ.description_interne or "",
+        valeurs_controlees_id=champ.valeurs_controlees_id,
     )
 
 
@@ -197,6 +217,7 @@ def creer_champ(
         ordre=formulaire.ordre,
         aide=formulaire.aide.strip() or None,
         description_interne=formulaire.description_interne.strip() or None,
+        valeurs_controlees_id=formulaire.valeurs_controlees_id,
         actif=True,
     )
     db.add(champ)
@@ -228,6 +249,7 @@ def modifier_champ(
     champ.ordre = formulaire.ordre
     champ.aide = formulaire.aide.strip() or None
     champ.description_interne = formulaire.description_interne.strip() or None
+    champ.valeurs_controlees_id = formulaire.valeurs_controlees_id
     db.commit()
     db.refresh(champ)
     return champ

@@ -265,9 +265,17 @@ def _valider_valeur(
 def ajouter_valeur(
     db: Session, vocabulaire_id: int, formulaire: FormulaireValeur
 ) -> ValeurControlee:
-    """Ajoute une valeur à un vocabulaire."""
-    # Garde-fou : vocabulaire existe.
-    vocabulaire_par_id(db, vocabulaire_id)
+    """Ajoute une valeur à un vocabulaire.
+
+    Garantit la cohérence du cache ORM : on assigne via la relation
+    (``vocab.valeurs.append``) plutôt que la FK seule — sinon
+    ``vocab.valeurs`` resterait stale dans la même session (SQLAlchemy
+    ne back-populate que sur assignation via la relation, pas via la
+    FK). Sans ça, le composer cartouche qui résout les libellés
+    humains dans la même requête manquerait les nouvelles valeurs.
+    """
+    # Charge le vocab pour append côté relation (vs FK seule).
+    vocab = vocabulaire_par_id(db, vocabulaire_id)
     erreurs = _valider_valeur(db, vocabulaire_id, formulaire)
     if erreurs:
         raise ValeurInvalide(erreurs)
@@ -282,7 +290,6 @@ def ajouter_valeur(
     else:
         ordre = formulaire.ordre
     valeur = ValeurControlee(
-        vocabulaire_id=vocabulaire_id,
         code=formulaire.code.strip(),
         libelle=formulaire.libelle.strip(),
         uri=formulaire.uri.strip() or None,
@@ -290,7 +297,7 @@ def ajouter_valeur(
         ordre=ordre,
         actif=True,
     )
-    db.add(valeur)
+    vocab.valeurs.append(valeur)
     db.commit()
     db.refresh(valeur)
     return valeur

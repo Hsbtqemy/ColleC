@@ -43,6 +43,7 @@ from archives_tool.api.services.champs_personnalises import (
     renommer_champ,
     supprimer_champ,
 )
+from archives_tool.api.services.vocabulaires_db import lister_vocabulaires
 from archives_tool.api.templating import templates
 from archives_tool.models import ChampPersonnalise, TypeChamp
 
@@ -95,6 +96,7 @@ def page_champs(
             erreurs={},
             fonds_query=fonds,
             types_champ=list(TypeChamp),
+            vocabulaires_disponibles=lister_vocabulaires(db),
         ),
     )
 
@@ -130,6 +132,7 @@ def soumettre_creer_champ(
                 erreurs=e.erreurs,
                 fonds_query=fonds,
                 types_champ=list(TypeChamp),
+                vocabulaires_disponibles=lister_vocabulaires(db),
             ),
             status_code=400,
         )
@@ -165,6 +168,7 @@ def page_modifier_champ(
             erreurs={},
             fonds_query=fonds,
             types_champ=list(TypeChamp),
+            vocabulaires_disponibles=lister_vocabulaires(db),
         ),
     )
 
@@ -205,6 +209,7 @@ def soumettre_modifier_champ(
                 erreurs=e.erreurs,
                 fonds_query=fonds,
                 types_champ=list(TypeChamp),
+                vocabulaires_disponibles=lister_vocabulaires(db),
             ),
             status_code=400,
         )
@@ -247,6 +252,7 @@ def soumettre_renommer_champ(
                 tentative_renommage=nouvelle_cle,
                 fonds_query=fonds,
                 types_champ=list(TypeChamp),
+                vocabulaires_disponibles=lister_vocabulaires(db),
             ),
             status_code=400,
         )

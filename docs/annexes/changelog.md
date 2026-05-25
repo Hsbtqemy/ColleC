@@ -185,6 +185,40 @@ structurelle des champs personnalisés d'une collection.
   border 1px) ; tooltip explicatif.
 - 8 nouveaux tests (service + composer + routes).
 
+### Vocabulaires personnalisés (Lot 3 — CRUD + wire ChampPersonnalise + composer)
+
+- Service `vocabulaires_db.py` : CRUD complet `Vocabulaire` +
+  `ValeurControlee` (créer / modifier / supprimer / déprécier /
+  réactiver). Distinct des vocabs hardcoded (`LANGUES_OPTIONS`,
+  `TYPES_COAR_OPTIONS`, `ETATS_OPTIONS`) qui restent figés en code
+  comme fondamentaux du domaine.
+- Suppression d'un vocabulaire refusée s'il est encore référencé par
+  un `ChampPersonnalise` (`VocabulaireReference` avec liste des
+  champs en cause).
+- Routes `/vocabulaires`, `/vocabulaires/<id>`, ajout/modif/déprécier
+  des valeurs. Garde anti-confused-deputy sur l'appartenance
+  valeur→vocab.
+- Templates : `pages/vocabulaires.html` (liste + création),
+  `pages/vocabulaire_detail.html` (4 blocs : métadonnées, valeurs
+  contrôlées, ajout, suppression).
+- Lien discret « Vocabulaires » en haut à droite du dashboard.
+- Wire avec `ChampPersonnalise.valeurs_controlees_id` : dropdown
+  dans les formulaires de création et de modification d'un champ
+  personnalisé. Détacher = `<option value="">— aucun —</option>`
+  (Pydantic validator convertit "" en None).
+- Composer cartouche : pour un champ avec vocab DB, charge les
+  options et résout le libellé humain (« Bande dessinée » pour le
+  code « bd » stocké en `metadonnees`). Valeur hors vocab (legacy
+  ou déprécié) → fallback sur la valeur brute (pas de perte).
+- Eager loading `selectinload(ChampPersonnalise.vocabulaire).selectinload(Vocabulaire.valeurs)`
+  pour éviter N+1 dans le composer.
+- Bug fix : `ajouter_valeur` passait par la FK seule
+  (`vocabulaire_id=X`), ce qui laissait `vocab.valeurs` stale dans
+  la session courante. Refactor pour passer par la relation
+  (`vocab.valeurs.append(valeur)`) — back-populate auto.
+- 22 nouveaux tests vocab + 5 nouveaux tests champs (54 au total
+  sur les deux modules).
+
 ### Fix latent (migration FTS5)
 
 - `m1q2r3s4t5u6_fts5_recherche.upgrade` n'était pas idempotent face

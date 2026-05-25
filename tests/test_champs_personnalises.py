@@ -695,6 +695,181 @@ def test_route_promouvoir_silencieux_sur_erreur(base_demo: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Lot 3b : wire valeurs_controlees_id depuis le formulaire
+# ---------------------------------------------------------------------------
+
+
+def test_creer_champ_avec_vocabulaire(base_demo: Path) -> None:
+    """Crée un ChampPersonnalise avec un vocabulaire personnalisé
+    attaché. Le wire passe via le formulaire."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireVocabulaire,
+        creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags")
+        )
+        c = creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="tag",
+                libelle="Tag",
+                valeurs_controlees_id=v.id,
+            ),
+        )
+        s.refresh(c)
+        assert c.valeurs_controlees_id == v.id
+    engine.dispose()
+
+
+def test_formulaire_normalise_vocab_id_chaine_vide(base_demo: Path) -> None:
+    """Le form HTML envoie '' quand l'utilisateur choisit « aucun ».
+    Pydantic doit traiter '' comme None sans planter."""
+    formulaire = FormulaireChamp.model_validate({
+        "cle": "tag", "libelle": "Tag", "valeurs_controlees_id": ""
+    })
+    assert formulaire.valeurs_controlees_id is None
+
+
+def test_modifier_champ_change_vocabulaire(base_demo: Path) -> None:
+    """Modifier un champ peut changer (ou détacher) son vocabulaire."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireVocabulaire,
+        creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags")
+        )
+        c = creer_champ(s, cid, FormulaireChamp(cle="tag", libelle="Tag"))
+        # Attach
+        modifier_champ(
+            s, c.id,
+            FormulaireChamp(
+                cle="tag", libelle="Tag", valeurs_controlees_id=v.id
+            ),
+        )
+        s.refresh(c)
+        assert c.valeurs_controlees_id == v.id
+        # Détacher
+        modifier_champ(
+            s, c.id,
+            FormulaireChamp(cle="tag", libelle="Tag", valeurs_controlees_id=None),
+        )
+        s.refresh(c)
+        assert c.valeurs_controlees_id is None
+    engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Lot 3c : composer cartouche utilise vocab DB pour libellé humain
+# ---------------------------------------------------------------------------
+
+
+def test_composer_resout_libelle_humain_depuis_vocabulaire_db(base_demo: Path) -> None:
+    """Quand un ChampPersonnalise pointe sur un vocab DB et que l'item
+    porte une valeur correspondant à un code de ce vocab, le composer
+    expose le libellé humain dans `valeur_affichee`."""
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireValeur,
+        FormulaireVocabulaire,
+        ajouter_valeur,
+        creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Vocabulaire avec 1 valeur.
+        v = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="genre", libelle="Genres")
+        )
+        ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
+        # Champ associé.
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="genre",
+                libelle="Genre littéraire",
+                valeurs_controlees_id=v.id,
+            ),
+        )
+        # Item avec une valeur correspondante.
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["genre"] = "bd"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        detail = composer_page_item(s, "HK-001", fonds)
+        perso = detail.metadonnees_par_section["Champs personnalisés"]
+        genre = next(c for c in perso if c.cle == "genre")
+        assert genre.valeur == "bd"  # brut stocké
+        assert genre.valeur_affichee == "Bande dessinée"  # libellé humain
+        assert genre.options is not None
+        assert ("bd", "Bande dessinée") in genre.options
+    engine.dispose()
+
+
+def test_composer_valeur_hors_vocab_garde_brut(base_demo: Path) -> None:
+    """Si l'item porte une valeur qui n'est pas dans le vocab (legacy
+    ou déprécié), `valeur_affichee` retombe sur la valeur brute. Pas
+    de perte de donnée."""
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireValeur,
+        FormulaireVocabulaire,
+        ajouter_valeur,
+        creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="genre", libelle="Genres")
+        )
+        ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="genre", libelle="Genre", valeurs_controlees_id=v.id
+            ),
+        )
+        # Valeur HORS vocab.
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["genre"] = "inconnu"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        detail = composer_page_item(s, "HK-001", fonds)
+        perso = detail.metadonnees_par_section["Champs personnalisés"]
+        genre = next(c for c in perso if c.cle == "genre")
+        assert genre.valeur == "inconnu"
+        assert genre.valeur_affichee == "inconnu"  # fallback brut
+    engine.dispose()
+
+
 def test_route_champ_renommer_propage(base_demo: Path) -> None:
     client = TestClient(app)
     # Crée d'abord un champ et pose une valeur sur un item.

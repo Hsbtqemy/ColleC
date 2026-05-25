@@ -28,8 +28,22 @@ from archives_tool.api.routes._helpers import resoudre_item_ou_404
 from archives_tool.api.services.champs_personnalises import (
     lister_champs_actifs_pour_item,
 )
+from archives_tool.api.services.collections import (
+    CollectionIntrouvable,
+    CollectionInvalide,
+    formulaire_depuis_collection,
+    lire_collection_par_cote,
+    modifier_collection,
+)
+from archives_tool.api.services.fonds import (
+    FondsIntrouvable,
+    lire_fonds_par_cote,
+)
 from archives_tool.api.services.conflits import ConflitVersion
-from archives_tool.api.services.dashboard import CHAMPS_ITEM_EDITABLES_INLINE
+from archives_tool.api.services.dashboard import (
+    CHAMPS_COLLECTION_EDITABLES_INLINE,
+    CHAMPS_ITEM_EDITABLES_INLINE,
+)
 from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
 from archives_tool.api.services.vocabulaires_db import (
     options_depuis_vocabulaire,
@@ -135,7 +149,102 @@ def soumettre_edition_inline(
         request,
         "partials/inline_edit_valeur.html",
         {
-            "item": item_modifie,
+            "entity": item_modifie,
+            "field": field,
+            "valeur_brute": valeur_brute,
+            "valeur_affichee": valeur_affichee,
+            "vocabulaire": options is not None,
+        },
+    )
+
+
+@router.post(
+    "/collection/{cote}/champ/{field}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_edition_inline_collection(
+    cote: str,
+    field: str,
+    request: Request,
+    fonds: Annotated[str | None, Query()] = None,
+    version: Annotated[int, Form(...)] = 0,
+    valeur: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Modifie un seul champ d'une Collection. Symétrique de la route
+    item ci-dessus.
+
+    `fonds` désambiguïse une cote partagée avec un fonds (cas
+    courant : miroir et son fonds parent ont la même cote). `None`
+    autorisé pour les collections libres transversales — la cote y
+    est unique.
+
+    Refuse les champs hors :data:`CHAMPS_COLLECTION_EDITABLES_INLINE`
+    (cote / fonds_id / type_collection passent par la page Modifier).
+    """
+    if field not in CHAMPS_COLLECTION_EDITABLES_INLINE:
+        raise HTTPException(
+            status_code=403, detail=f"Champ {field!r} non éditable inline."
+        )
+
+    # Empty string from JS (transversale sans fonds) → None pour le
+    # lookup par cote. Cohérent avec parser_filtres_collection qui
+    # ignore les fonds vides.
+    fonds_id: int | None = None
+    if fonds:
+        try:
+            fonds_obj = lire_fonds_par_cote(db, fonds)
+            fonds_id = fonds_obj.id
+        except FondsIntrouvable:
+            raise HTTPException(
+                status_code=404, detail=f"Fonds {fonds!r} introuvable."
+            )
+    try:
+        collection = lire_collection_par_cote(db, cote, fonds_id=fonds_id)
+    except CollectionIntrouvable:
+        raise HTTPException(status_code=404, detail=f"Collection {cote!r} introuvable")
+
+    # Le formulaire de modification ne s'applique pas aux miroirs sur
+    # les champs structurants (cote, fonds_id). Mais sur les champs
+    # documentaires (titre, description, phase…) c'est légitime — la
+    # miroir reflète bien le fonds, on doit pouvoir éditer son titre
+    # sans toucher au fonds parent.
+    formulaire = formulaire_depuis_collection(collection)
+    formulaire.version = version
+    # `setattr` direct : tous les champs whitelist sont des attributs
+    # plats du formulaire (pas de chemin `metadonnees.<k>` comme pour
+    # les items à champs personnalisés).
+    setattr(formulaire, field, valeur)
+
+    try:
+        collection_modifiee = modifier_collection(
+            db, collection.id, formulaire, modifie_par=utilisateur
+        )
+    except ConflitVersion as e:
+        return templates.TemplateResponse(
+            request,
+            "partials/inline_edit_conflit.html",
+            {"field": field, "exc": e, "valeur": valeur},
+            status_code=409,
+        )
+    except CollectionInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "partials/inline_edit_erreur.html",
+            {"field": field, "erreurs": e.erreurs, "valeur": valeur},
+            status_code=400,
+        )
+
+    valeur_brute = getattr(collection_modifiee, field, None)
+    options, valeur_affichee = resoudre_vocabulaire(field, valeur_brute)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/inline_edit_valeur.html",
+        {
+            "entity": collection_modifiee,
             "field": field,
             "valeur_brute": valeur_brute,
             "valeur_affichee": valeur_affichee,

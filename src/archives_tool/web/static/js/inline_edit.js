@@ -34,14 +34,17 @@
   }
 
   function chercherContextItem() {
-    // La page item expose cote/fonds/version via <meta name="item-context">.
+    // Item ou Collection : la page expose cote/fonds/version via
+    // <meta name="entity-context"> (V0.9.6+). Pour compat ascendante,
+    // on lit aussi `item-context` (ancien nom item-only).
     // On garde la référence au noeud DOM pour resynchroniser la version
     // après chaque save sans nouveau querySelector.
-    const meta = document.querySelector('meta[name="item-context"]');
+    const meta = document.querySelector('meta[name="entity-context"]')
+      || document.querySelector('meta[name="item-context"]');
     if (!meta) return null;
     return {
       cote: meta.dataset.cote,
-      fonds: meta.dataset.fonds,
+      fonds: meta.dataset.fonds || "",
       version: parseInt(meta.dataset.version, 10),
       urlTemplate: meta.dataset.editUrlTemplate,
       meta,

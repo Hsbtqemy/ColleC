@@ -22,6 +22,31 @@
 {% block title %}{{ col.titre }} — archives-tool{% endblock %}
 
 {% block content %}
+{# Contexte collection exposé au JS d'édition inline (cf.
+   `inline_edit.js`). Marche aussi pour les transversales : `data-fonds`
+   est vide, la route le ré-interprète en None. #}
+{% if not est_lecture_seule() %}
+<meta name="entity-context"
+      data-cote="{{ col.cote }}"
+      data-fonds="{{ detail.fonds_parent.cote if detail.fonds_parent else '' }}"
+      data-version="{{ col.version }}"
+      data-edit-url-template="/collection/{cote}/champ/{field}?fonds={fonds}">
+{% endif %}
+
+{# Macro locale pour les lignes inline-editables du bandeau. Évite la
+   répétition des attributs data-edit-* et garde le markup lisible. #}
+{% macro _zone_inline(field, type_donnee="texte", options=None, titre=None, classes="", styles="") -%}
+  {%- set _editable = not est_lecture_seule() -%}
+  <span data-edit-field="{{ field }}"
+        data-edit-type="{{ type_donnee }}"
+        data-editable="{{ '1' if _editable else '0' }}"
+        {% if options %}data-edit-options='{{ options|tojson }}'{% endif %}
+        {% if _editable %}title="{{ titre or 'Double-cliquer pour modifier' }}" style="cursor:text;{{ styles }}"{% else %}style="{{ styles }}"{% endif %}
+        class="{{ classes }}">
+    <span data-value>{{ caller() }}</span>
+  </span>
+{%- endmacro %}
+
 <header class="mb-6">
   <p class="text-sm text-gray-500">
     <a href="/" class="hover:underline">Tableau de bord</a> ›
@@ -34,7 +59,9 @@
 
   <div class="flex items-start justify-between mt-2 gap-4">
     <div>
-      <h1 class="text-2xl font-medium">{{ col.titre | surligner_q(q_surligne) }}</h1>
+      <h1 class="text-2xl font-medium">
+        {% call _zone_inline("titre") %}{{ col.titre | surligner_q(q_surligne) }}{% endcall %}
+      </h1>
       <p class="text-sm text-gray-500 mt-1">
         <span class="font-mono">{{ col.cote }}</span>
         <span aria-hidden="true">·</span>
@@ -53,14 +80,24 @@
                     class="hover:underline">{{ detail.fonds_parent.titre }}</a>
           {% endif %}
         {% endif %}
-        {% if col.phase %}
-          <span aria-hidden="true">·</span>
-          {{ phase_chantier(col.phase | libelle_phase) }}
-        {% endif %}
+        <span aria-hidden="true">·</span>
+        {% call _zone_inline("phase", options=phases_options) -%}
+          {% if col.phase -%}
+            {{ phase_chantier(col.phase | libelle_phase) }}
+          {%- else -%}
+            <span class="text-gray-400 italic" style="font-size:12px;">phase non renseignée</span>
+          {%- endif %}
+        {%- endcall %}
       </p>
-      {% if col.description %}
-        <p class="text-sm text-gray-700 mt-1">{{ col.description | surligner_q(q_surligne) }}</p>
-      {% endif %}
+      <p class="text-sm text-gray-700 mt-1">
+        {% call _zone_inline("description", type_donnee="multiligne") -%}
+          {% if col.description -%}
+            {{ col.description | surligner_q(q_surligne) }}
+          {%- else -%}
+            <span class="text-gray-400 italic" style="font-size:12px;">description non renseignée</span>
+          {%- endif %}
+        {%- endcall %}
+      </p>
     </div>
     <div class="flex items-start gap-2">
       {% if detail.fonds_parent %}
@@ -267,4 +304,10 @@
      l'utilisateur n'a pas fait un hard refresh. #}
   <script src="{{ static_url('js/panneau_filtres.js') }}"></script>
   <script src="{{ static_url('js/panneau_colonnes.js') }}"></script>
+  {# Édition inline du bandeau collection (titre, description, phase).
+     Inactif en lecture seule — le meta entity-context n'est pas rendu
+     dans ce mode et les hooks restent dormants. #}
+  {% if not est_lecture_seule() %}
+    <script src="{{ static_url('js/inline_edit.js') }}"></script>
+  {% endif %}
 {% endblock %}

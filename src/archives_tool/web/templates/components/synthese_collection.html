@@ -42,6 +42,11 @@
       {% if not synthese.distribution_temporelle.vide %}
       {% set dist = synthese.distribution_temporelle %}
       {% set cmax = dist.count_max %}
+      {# Labels intermédiaires conditionnels : on n'affiche pas tous les
+         labels si trop de barres (lisibilité). 12+ barres = on saute 1
+         sur 2 ; sinon tout. Le `title` hover donne toujours le détail. #}
+      {% set _nb_barres = dist.barres | length %}
+      {% set _pas_label = 1 if _nb_barres <= 12 else 2 %}
       <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.05);">
         <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
           Période ·
@@ -50,12 +55,36 @@
             ({{ 'par an' if dist.pas == 'annee' else 'par décennie' }})
           </span>
         </h3>
-        <div style="display:flex;align-items:flex-end;gap:2px;height:36px;">
+        {# Barres + comptes au-dessus de la barre la plus haute, pour donner
+           le repère visuel sans tooltip. Le count est affiché si la barre
+           dépasse 25% de la hauteur (sinon on cache pour ne pas chevaucher
+           les barres voisines plus hautes). #}
+        <div style="display:flex;align-items:flex-end;gap:2px;height:48px;">
           {% for b in dist.barres %}
             {% set h = (b.count * 100 / cmax) if cmax else 0 %}
-            <div title="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} · {{ b.count }} item{{ 's' if b.count != 1 else '' }}"
-                 style="flex:1;min-width:3px;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}#378ADD{% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"
-                 aria-label="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} : {{ b.count }}"></div>
+            <div style="flex:1;min-width:3px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;"
+                 title="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} · {{ b.count }} item{{ 's' if b.count != 1 else '' }}">
+              {% if b.count and h >= 25 %}
+                <span style="font-size:9px;color:#6b7280;line-height:1;margin-bottom:2px;">{{ b.count }}</span>
+              {% endif %}
+              <div style="width:100%;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}#378ADD{% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"
+                   aria-label="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} : {{ b.count }}"></div>
+            </div>
+          {% endfor %}
+        </div>
+        {# Labels d'années sous les barres, alignés sur la même grille
+           flex pour rester en colonne avec chaque barre. #}
+        <div style="display:flex;gap:2px;margin-top:3px;">
+          {% for b in dist.barres %}
+            <span style="flex:1;text-align:center;font-size:10px;color:#9ca3af;font-variant-numeric:tabular-nums;">
+              {% if loop.index0 % _pas_label == 0 or loop.last %}
+                {%- if dist.pas == 'annee' -%}
+                  {{ b.annee_debut }}
+                {%- else -%}
+                  {{ b.annee_debut }}s
+                {%- endif -%}
+              {% endif %}
+            </span>
           {% endfor %}
         </div>
       </div>

@@ -227,3 +227,117 @@ def test_meta_item_context_dans_page(base_demo: Path) -> None:
     assert 'data-fonds="HK"' in resp.text
     assert "data-version=" in resp.text
     assert "inline_edit.js" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Inline edit collection (V0.9.6) — bandeau titre / description / phase
+# ---------------------------------------------------------------------------
+
+
+def _version_collection(db_path: Path, cote: str) -> int:
+    """Version courante de la miroir HK pour l'optimistic locking."""
+    from archives_tool.models import Collection, TypeCollection
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == cote,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        v = col.version
+    engine.dispose()
+    return v
+
+
+def test_inline_edit_collection_titre_succes(base_demo: Path) -> None:
+    """POST sur titre de la miroir : 200 + fragment, et la nouvelle
+    valeur est persistée en base."""
+    from archives_tool.models import Collection, TypeCollection
+    client = TestClient(app)
+    v = _version_collection(base_demo, "HK")
+    resp = client.post(
+        "/collection/HK/champ/titre?fonds=HK",
+        data={"version": str(v), "valeur": "Nouveau titre miroir HK"},
+    )
+    assert resp.status_code == 200
+    assert "Nouveau titre miroir HK" in resp.text
+    assert f'data-edit-new-version="{v + 1}"' in resp.text
+    # Persisté en base
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        assert col.titre == "Nouveau titre miroir HK"
+    engine.dispose()
+
+
+def test_inline_edit_collection_phase_avec_vocabulaire(base_demo: Path) -> None:
+    """Le champ `phase` est résolu via PHASES_OPTIONS — la réponse
+    affiche le libellé humain (`révision`) et conserve la valeur brute
+    pour la ré-édition."""
+    client = TestClient(app)
+    v = _version_collection(base_demo, "HK")
+    resp = client.post(
+        "/collection/HK/champ/phase?fonds=HK",
+        data={"version": str(v), "valeur": "revision"},
+    )
+    assert resp.status_code == 200
+    assert "révision" in resp.text  # libellé humain
+    assert 'data-edit-raw="revision"' in resp.text  # valeur brute conservée
+
+
+def test_inline_edit_collection_champ_hors_whitelist_refus(
+    base_demo: Path,
+) -> None:
+    """`cote` n'est pas dans la whitelist — refus 403."""
+    client = TestClient(app)
+    v = _version_collection(base_demo, "HK")
+    resp = client.post(
+        "/collection/HK/champ/cote?fonds=HK",
+        data={"version": str(v), "valeur": "PIRATE"},
+    )
+    assert resp.status_code == 403
+
+
+def test_inline_edit_collection_conflit_version(base_demo: Path) -> None:
+    """Version périmée → 409 avec fragment de conflit."""
+    client = TestClient(app)
+    v = _version_collection(base_demo, "HK")
+    resp = client.post(
+        "/collection/HK/champ/titre?fonds=HK",
+        data={"version": str(v - 99), "valeur": "X"},
+    )
+    assert resp.status_code == 409
+
+
+def test_meta_entity_context_dans_page_collection(base_demo: Path) -> None:
+    """La page collection lecture expose `<meta name="entity-context">`
+    avec cote/fonds/version et URL-template pointant sur la route
+    inline collection."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK?fonds=HK")
+    assert resp.status_code == 200
+    assert 'name="entity-context"' in resp.text
+    assert 'data-cote="HK"' in resp.text
+    assert 'data-fonds="HK"' in resp.text
+    assert "/collection/{cote}/champ/{field}" in resp.text
+    assert "inline_edit.js" in resp.text
+
+
+def test_collection_bandeau_hooks_inline_present(base_demo: Path) -> None:
+    """Les hooks `data-edit-field` sont posés sur titre / description /
+    phase du bandeau collection (pour que `inline_edit.js` les active
+    au double-clic)."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK?fonds=HK")
+    assert resp.status_code == 200
+    assert 'data-edit-field="titre"' in resp.text
+    assert 'data-edit-field="description"' in resp.text
+    assert 'data-edit-field="phase"' in resp.text

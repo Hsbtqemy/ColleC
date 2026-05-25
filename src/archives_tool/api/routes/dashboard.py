@@ -84,6 +84,7 @@ from archives_tool.api.services.champs_personnalises import (
 from archives_tool.api.services.preferences import charger_colonnes_actives
 from archives_tool.api.services.vocabulaires import (
     LANGUES_OPTIONS,
+    PHASES_OPTIONS,
     TYPES_COAR_OPTIONS,
 )
 from archives_tool.api.services.vocabulaires_db import (
@@ -601,6 +602,7 @@ def page_collection(
             etats_disponibles=list(EtatCatalogage),
             consultation_url=consultation_url,
             q_surligne=q,
+            phases_options=PHASES_OPTIONS,
         ),
     )
 

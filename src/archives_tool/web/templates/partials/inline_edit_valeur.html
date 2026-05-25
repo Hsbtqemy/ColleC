@@ -1,7 +1,13 @@
 {# Fragment retourné après un POST réussi d'inline edit. Swap dans
    le `[data-value]` de la ligne. Inclut la nouvelle version dans un
-   attribut pour que le JS rafraîchisse le hidden côté formulaire. #}
-<span data-edit-new-version="{{ item.version }}">
+   attribut pour que le JS rafraîchisse le hidden côté formulaire.
+
+   `entity` est l'objet modifié (Item ou Collection — duck typing sur
+   `.version`). Avant V0.9.6 c'était `item` ; le rendu inline collection
+   passe par le même partial. Le fallback `item` est conservé pour
+   compatibilité avec d'éventuels callers tiers. #}
+{% set _ent = entity if entity is defined else item %}
+<span data-edit-new-version="{{ _ent.version }}">
   {%- if valeur_brute is none or valeur_brute == '' -%}
     <span class="text-gray-400 italic" style="font-size:12px;">non renseigné</span>
   {%- elif vocabulaire -%}

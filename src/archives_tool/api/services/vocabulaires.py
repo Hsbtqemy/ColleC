@@ -70,11 +70,25 @@ ETATS_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Phases de chantier — utilisé pour l'inline edit du champ
+# Collection.phase (et déjà rendu via le composant phase_chantier
+# dans le bandeau). Source : PhaseChantier + LIBELLES_PHASE.
+PHASES_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("numerisation", "numérisation"),
+    ("catalogage", "catalogage"),
+    ("revision", "révision"),
+    ("finalisation", "finalisation"),
+    ("archivee", "archivée"),
+    ("en_pause", "en pause"),
+)
+
+
 # Mapping field → options pour le compositeur de cartouche.
 OPTIONS_PAR_CHAMP: dict[str, tuple[tuple[str, str], ...]] = {
     "langue": LANGUES_OPTIONS,
     "type_coar": TYPES_COAR_OPTIONS,
     "etat_catalogage": ETATS_OPTIONS,
+    "phase": PHASES_OPTIONS,
 }
 
 

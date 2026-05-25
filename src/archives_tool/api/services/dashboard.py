@@ -1954,6 +1954,37 @@ CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
 )
 
 
+#: Whitelist des champs Collection éditables inline depuis la page
+#: lecture (bandeau + section synthèse). Comme pour les items, restent
+#: hors whitelist et passent par `/collection/{cote}/modifier` :
+#: - `cote` : touche aux URLs et aux exports (renommage côté chantier)
+#: - `type_collection` : immuable (miroir vs libre par invariant)
+#: - `fonds_id` : immuable pour les miroirs ; pour les libres, demande
+#:   une UI dédiée (impact sur la junction `ItemCollection`)
+#: - `version` : verrou optimiste, purement technique
+#: - `profil_import_id`, `personnalite_associee`, `responsable_archives` :
+#:   rarement édités ; restent sur la page Modifier
+CHAMPS_COLLECTION_EDITABLES_INLINE: frozenset[str] = frozenset(
+    {
+        "titre",
+        "titre_secondaire",
+        "description",
+        "description_publique",
+        "description_interne",
+        "phase",
+        "editeur",
+        "lieu_edition",
+        "periodicite",
+        "issn",
+        "date_debut",
+        "date_fin",
+        "doi_nakala",
+        "doi_collection_nakala_parent",
+        "notes_internes",
+    }
+)
+
+
 def _valeur_metadonnee_str(valeur: Any) -> str | None:
     """Rend une valeur de `item.metadonnees` en string pour affichage.
 

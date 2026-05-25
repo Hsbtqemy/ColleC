@@ -290,3 +290,80 @@ def test_synthese_fonds_cartographie_affichee_si_libres(
     # (le seeder crée FA-CORRESP / FA-DOCU / FA-PHOTOS / FA-OEUVRES)
     libres_attendues = ["FA-CORRESP", "FA-DOCU", "FA-PHOTOS", "FA-OEUVRES"]
     assert any(lib in resp.text for lib in libres_attendues)
+
+
+# ---------------------------------------------------------------------------
+# Garde-fous : robustesse + budget SQL
+# ---------------------------------------------------------------------------
+
+
+def test_cartographie_ignore_les_transversales(base_demo: Path) -> None:
+    """Décision sémantique : la cartographie liste les collections
+    **du fonds** (miroir + libres rattachées), pas les transversales
+    qui empruntent des items mais n'appartiennent à aucun fonds.
+
+    Une transversale qui contient des items de HK ne doit donc PAS
+    apparaître dans la cartographie de HK.
+    """
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        # Crée une transversale qui contient des items de HK
+        trans = Collection(
+            cote="TRANSVERSAL-TEST",
+            titre="Transversale qui pioche dans HK",
+            type_collection=TypeCollection.LIBRE.value,
+            fonds_id=None,  # transversale = pas rattachée
+            cree_par="test",
+            modifie_par="test",
+        )
+        s.add(trans)
+        s.commit()
+        items_hk = list(s.scalars(
+            select(Item).where(Item.fonds_id == fonds.id).limit(3)
+        ).all())
+        for item in items_hk:
+            s.add(ItemCollection(item_id=item.id, collection_id=trans.id))
+        s.commit()
+
+        carto = _composer_cartographie_collections(s, fonds)
+        cotes = {e.cote for e in carto.entrees}
+        # La transversale n'apparaît pas dans les entrées
+        assert "TRANSVERSAL-TEST" not in cotes
+        # Seule la miroir HK reste (pas de libre rattachée HK)
+        assert cotes == {"HK"}
+    engine.dispose()
+
+
+def test_synthese_fonds_budget_sql_borne(base_demo: Path) -> None:
+    """Garde-fou perf : la synthèse fonds doit rester dans un budget
+    SQL borné indépendant du volume. Doc dit ~5-7 queries. On
+    plafonne à 10 (marge de sécurité face aux évolutions futures
+    qui pourraient ajouter une ou deux queries).
+    """
+    from sqlalchemy import event
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+
+    queries: list[str] = []
+
+    def _capter(conn, cursor, statement, params, context, executemany):
+        # Skip pragma SQLite (configurations, pas du code applicatif).
+        if not statement.lower().startswith("pragma"):
+            queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _capter)
+
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        queries.clear()  # Reset après le lookup fonds
+        _ = composer_synthese_fonds(s, fonds)
+
+    event.remove(engine, "before_cursor_execute", _capter)
+    engine.dispose()
+
+    assert len(queries) <= 10, (
+        f"composer_synthese_fonds a émis {len(queries)} queries "
+        f"(plafond 10). Liste : {[q[:60] for q in queries]}"
+    )

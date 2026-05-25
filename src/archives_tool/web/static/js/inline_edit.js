@@ -230,7 +230,12 @@
   function init() {
     const ctx = chercherContextItem();
     if (!ctx) return;
-    document.addEventListener("click", function (event) {
+    // Double-clic plutot que clic simple : protege contre les
+    // activations accidentelles pendant la relecture (selection de
+    // texte pour copier, clic en passant pour faire defiler). Decide
+    // apres test PF — le single-clic activait l'edition meme quand
+    // l'utilisateur voulait juste copier une valeur.
+    document.addEventListener("dblclick", function (event) {
       const ligne = event.target.closest(ligneSelector);
       if (!ligne) return;
       if (event.target.closest("a, button")) return; // laisser passer les liens

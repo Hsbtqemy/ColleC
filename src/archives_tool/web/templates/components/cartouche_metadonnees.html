@@ -85,12 +85,17 @@
 
 
 {%- macro ligne(label, field=None, type_donnee=None, editable=true, options=None) -%}
-<div class="flex border-t first:border-t-0"
-     style="border-color: rgba(0,0,0,0.08);padding:6px 14px;font-size:13px;line-height:20px;"
+{# `data-editable="1"` -> inline_edit.js active la ligne au double-clic.
+   Le tooltip + cursor:text signale la découvrabilité (l'utilisateur ne
+   devine pas spontanément qu'un double-clic active l'édition). #}
+{% set est_inline = field and editable %}
+<div class="flex border-t first:border-t-0 group"
+     style="border-color: rgba(0,0,0,0.08);padding:6px 14px;font-size:13px;line-height:20px;{% if est_inline %}cursor:text;{% endif %}"
+     {% if est_inline %}title="Double-cliquer pour modifier"{% endif %}
      {% if field %}data-edit-field="{{ field }}"{% endif %}
      {% if type_donnee %}data-edit-type="{{ type_donnee }}"{% endif %}
      {% if options %}data-edit-options="{{ options|tojson|forceescape }}"{% endif %}
-     data-editable="{{ '1' if (field and editable) else '0' }}">
+     data-editable="{{ '1' if est_inline else '0' }}">
   <div class="break-words" style="width:150px;flex:0 0 150px;color:#6b7280;padding-right:12px;">{{ label }}</div>
   <div class="flex-1 min-w-0 break-words" style="color:#1f1f1f;" data-value>
     {{ caller() }}

@@ -1014,6 +1014,33 @@ def test_inline_edit_champ_perso_avec_vocab_libelle_humain(base_demo: Path) -> N
     assert 'data-edit-raw="bd"' in resp.text  # valeur brute preservee
 
 
+def test_inline_edit_champ_perso_texte_long_mappe_multiligne(base_demo: Path) -> None:
+    """Garde-fou : le composer rend type_donnee="multiligne" pour
+    type=texte_long, ce qui declenche un <textarea> cote inline_edit.js
+    au lieu d'un <input>. Sinon le user editerait une description riche
+    dans une ligne unique — friction reelle vue avant V0.9.3."""
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_champ(
+            s, cid,
+            FormulaireChamp(cle="bio", libelle="Biographie", type="texte_long"),
+        )
+        fonds = lire_fonds_par_cote(s, "HK")
+        detail = composer_page_item(s, "HK-001", fonds)
+        perso = detail.metadonnees_par_section["Champs personnalisés"]
+        bio = next(c for c in perso if c.cle == "bio")
+        assert bio.editable is True
+        # Mapping critique : "multiligne" pour textarea, pas "texte_long"
+        # qui serait interprete comme un input simple.
+        assert bio.type_donnee == "multiligne"
+    engine.dispose()
+
+
 def test_inline_edit_champ_perso_liste_multiple_refuse(base_demo: Path) -> None:
     """liste_multiple n'a pas d'UI inline (pas de multi-select via
     input/select dans inline_edit.js). Route refuse en 403."""

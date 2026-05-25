@@ -83,20 +83,18 @@ def soumettre_edition_inline(
                 status_code=403, detail=f"Champ {field!r} non éditable inline."
             )
 
+    # `formulaire_depuis_item` initialise deja
+    # `formulaire.metadonnees = dict(item.metadonnees)` -> on modifie
+    # cette copie sans craindre d'ecraser les autres cles (cf. fix
+    # bug observe sur PF-002 dans /modifier — preservation).
     formulaire = formulaire_depuis_item(item)
     formulaire.version = version
     if champ_perso is None:
         setattr(formulaire, field, valeur)
+    elif valeur:
+        formulaire.metadonnees[field] = valeur
     else:
-        # Ecriture dans metadonnees, en preservant les autres cles
-        # (libres et formelles non touchees). Cf. le fix bug observe
-        # sur PF-002 dans /modifier — meme principe ici.
-        nouvelles_metas = dict(item.metadonnees or {})
-        if valeur:
-            nouvelles_metas[field] = valeur
-        else:
-            nouvelles_metas.pop(field, None)
-        formulaire.metadonnees = nouvelles_metas
+        formulaire.metadonnees.pop(field, None)
 
     try:
         item_modifie = modifier_item(db, item.id, formulaire, modifie_par=utilisateur)

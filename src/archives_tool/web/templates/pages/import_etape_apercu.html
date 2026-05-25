@@ -10,7 +10,11 @@
 {% block title %}Import — aperçu — archives-tool{% endblock %}
 
 {% block content %}
-<div style="max-width:680px;">
+{# Élargi à 1200px : la table preview des 10 premiers items + les
+   warnings/erreurs tiennent mieux sans wrap. Cap interne plutôt que
+   pleine largeur pour ne pas étirer les bandeaux d'alerte qui se
+   lisent mal sur une trop grande largeur. #}
+<div style="max-width:1200px;">
 
   {% with crumbs=[
     {'label': 'Tableau de bord', 'href': '/'},

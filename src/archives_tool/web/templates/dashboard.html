@@ -23,6 +23,13 @@
 </section>
 
 {# ----- Cartes de stats globales ------------------------------------ #}
+{# Cartes informatives (non-cliquables pour l'instant). Un essai
+   précédent les rendait cliquables vers `/recherche?types=...` mais
+   la recherche FTS5 exige une query non-vide, donc les liens
+   menaient à « Tapez une requête » — mauvaise UX. La capacité
+   `href=` est conservée dans `metric_card.html` pour usage futur
+   (vue « tout afficher » sans FTS, ou pages /items, /collections
+   dédiées si on les implémente). #}
 <section class="mb-10">
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
     {% with label="Fonds", value=resume.stats.nb_fonds, detail="" %}
@@ -92,7 +99,34 @@
     <ul class="space-y-1.5 text-sm">
       {% for a in resume.activite_recente %}
         <li class="flex items-baseline gap-2 border-b border-gray-100 pb-1.5">
-          <span class="text-xs uppercase text-gray-400 shrink-0 w-20 font-mono">{{ a.type | capitalize }}</span>
+          {# Badge type coloré (cohérent avec la page recherche :
+             items en bleu, fonds en rouge, collections en vert).
+             Remplace le badge gris monochrome qui ne distinguait
+             pas visuellement les types. #}
+          {% if a.type == 'item' %}
+            <span class="shrink-0"
+                  style="font-size:10px;font-weight:600;color:#1e3a8a;
+                         background:#dbeafe;padding:2px 8px;border-radius:9999px;
+                         text-transform:uppercase;letter-spacing:0.04em;">
+              Item
+            </span>
+          {% elif a.type == 'fonds' %}
+            <span class="shrink-0"
+                  style="font-size:10px;font-weight:600;color:#991b1b;
+                         background:#fee2e2;padding:2px 8px;border-radius:9999px;
+                         text-transform:uppercase;letter-spacing:0.04em;">
+              Fonds
+            </span>
+          {% elif a.type == 'collection' %}
+            <span class="shrink-0"
+                  style="font-size:10px;font-weight:600;color:#166534;
+                         background:#dcfce7;padding:2px 8px;border-radius:9999px;
+                         text-transform:uppercase;letter-spacing:0.04em;">
+              Collection
+            </span>
+          {% else %}
+            <span class="text-xs uppercase text-gray-400 shrink-0 font-mono">{{ a.type | capitalize }}</span>
+          {% endif %}
           <span class="grow">
             {% if a.type == 'item' and a.fonds_cote %}
               <a href="/item/{{ a.cote }}?fonds={{ a.fonds_cote }}" class="hover:underline">

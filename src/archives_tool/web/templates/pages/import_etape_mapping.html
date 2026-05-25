@@ -7,8 +7,13 @@
 
 {% block title %}Import — mapping — archives-tool{% endblock %}
 
+{# Mode avancé : grille de 28 cibles × N colonnes du tableur. Profite
+   du pleine largeur pour ne pas obliger l'utilisateur à scroller
+   horizontalement. Le container global capé à 1700px reste cohérent. #}
+{% block container_class %}max-w-full{% endblock %}
+
 {% block content %}
-<div style="max-width:680px;">
+<div>
 
   {% with crumbs=[
     {'label': 'Tableau de bord', 'href': '/'},

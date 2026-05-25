@@ -1,5 +1,20 @@
-<div class="metric-card">
-  <p class="text-sm text-gray-500 mb-1">{{ label }}</p>
-  <p class="text-2xl font-medium font-tabular">{{ value }}</p>
-  <p class="text-xs text-gray-400 mt-1">{{ detail }}</p>
-</div>
+{# Carte de stats du dashboard. Variables :
+   - label : intitulé (« Fonds », « Items validés »…)
+   - value : chiffre principal
+   - detail : ligne secondaire (peut être vide)
+   - href (optionnel) : si fourni, la carte devient un lien cliquable
+     vers une vue dédiée (ex. recherche filtrée). #}
+{%- if href is defined and href %}
+  <a href="{{ href }}" class="metric-card hover:bg-gray-50 transition-colors block"
+     style="text-decoration:none;color:inherit;">
+    <p class="text-sm text-gray-500 mb-1">{{ label }}</p>
+    <p class="text-2xl font-medium font-tabular">{{ value }}</p>
+    <p class="text-xs text-gray-400 mt-1">{{ detail }}</p>
+  </a>
+{%- else %}
+  <div class="metric-card">
+    <p class="text-sm text-gray-500 mb-1">{{ label }}</p>
+    <p class="text-2xl font-medium font-tabular">{{ value }}</p>
+    <p class="text-xs text-gray-400 mt-1">{{ detail }}</p>
+  </div>
+{%- endif %}

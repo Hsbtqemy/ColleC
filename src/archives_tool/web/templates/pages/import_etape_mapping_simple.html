@@ -35,7 +35,11 @@
 {% endmacro %}
 
 {% block content %}
-<div style="max-width:680px;">
+{# 4 questions explicites + bandeau récapitulatif des autres colonnes :
+   un peu plus large que 680 (910px) pour que le bandeau récap
+   respire sans tasser les selects. Reste contraint pour rester
+   narratif. #}
+<div style="max-width:910px;">
 
   {% with crumbs=[
     {'label': 'Tableau de bord', 'href': '/'},

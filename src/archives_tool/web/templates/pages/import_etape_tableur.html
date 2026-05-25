@@ -6,7 +6,11 @@
 {% block title %}Import — tableur — archives-tool{% endblock %}
 
 {% block content %}
-<div style="max-width:680px;">
+{# Élargi à 1100px par rapport au 680px historique : laisse de la
+   place à une éventuelle table d'analyse des colonnes (échantillons,
+   taux de remplissage) sans wrap. Cap interne pour ne pas étirer
+   l'input upload sur tout le viewport (lourd visuellement). #}
+<div style="max-width:1100px;">
 
   {% with crumbs=[
     {'label': 'Tableau de bord', 'href': '/'},

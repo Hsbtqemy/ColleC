@@ -124,7 +124,11 @@
             {% for ligne in _avec_meta %}
             <tr style="border-bottom:1px solid rgba(0,0,0,0.04);vertical-align:top;">
               <td style="padding:6px;color:#6b7280;font-variant-numeric:tabular-nums;">
-                <a href="{{ visionneuse_url }}&fichier_courant={{ ligne.ordre }}"
+                {# `ligne.ordre` = numéro de page affiché (peut sauter
+                   en cas de scans manquants) ;
+                   `ligne.position` = index 1-based dans la liste
+                   pour cibler le bon fichier dans la visionneuse. #}
+                <a href="{{ visionneuse_url }}&fichier_courant={{ ligne.position }}"
                    style="color:#378ADD;text-decoration:none;">
                   {{ '%02d' | format(ligne.ordre) }}
                 </a>

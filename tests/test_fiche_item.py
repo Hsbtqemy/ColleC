@@ -146,13 +146,46 @@ def test_composer_fiche_item_lignes_avec_badge_meta(base_demo: Path) -> None:
 
         fonds = lire_fonds_par_cote(s, "HK")
         fiche = composer_fiche_item(s, "HK-001", fonds)
-        par_id = {l.id: l for l in fiche.lignes_fichier}
+        par_id = {lg.id: lg for lg in fiche.lignes_fichier}
         assert par_id[fichiers[0].id].a_meta_documentaires is False
         assert par_id[fichiers[1].id].a_meta_documentaires is True
         assert par_id[fichiers[2].id].a_meta_documentaires is True
         # meta_extraits ne contient pas les techniques
         assert "data_url" not in par_id[fichiers[2].id].meta_extraits
         assert par_id[fichiers[2].id].meta_extraits.get("titre_page") == "Une page"
+    engine.dispose()
+
+
+def test_composer_fiche_item_position_independante_de_ordre(base_demo: Path) -> None:
+    """Garde-fou : `position` est 1-indexée dans la liste triée des
+    fichiers, différente de `ordre` quand il y a des sauts. Sinon le
+    lien « ouvrir cette page dans la visionneuse » irait sur le mauvais
+    fichier sur les items à scans manquants."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        fichiers = list(s.scalars(
+            select(Fichier).where(Fichier.item_id == item.id).order_by(Fichier.ordre)
+        ).all())
+        if len(fichiers) < 3:
+            pytest.skip("Item de demo avec trop peu de fichiers pour ce test.")
+        # Crée un saut : on supprime le fichier d'ordre 2 (s'il existe).
+        # Position resultante : ancien ordre=1 -> position 1, ordre=3 -> position 2.
+        f2 = next((f for f in fichiers if f.ordre == 2), None)
+        f3 = next((f for f in fichiers if f.ordre == 3), None)
+        if f2 is None or f3 is None:
+            pytest.skip("Pas d'ordre 2/3 dans le fixture pour reproduire le saut.")
+        s.delete(f2)
+        s.commit()
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        fiche = composer_fiche_item(s, "HK-001", fonds)
+        # Trouve la ligne pour f3 : son ordre est toujours 3, mais sa
+        # position dans la liste post-suppression est 2.
+        ligne_f3 = next(lg for lg in fiche.lignes_fichier if lg.id == f3.id)
+        assert ligne_f3.ordre == 3
+        assert ligne_f3.position == 2
     engine.dispose()
 
 

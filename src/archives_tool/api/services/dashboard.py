@@ -1207,10 +1207,20 @@ class AgregatChampFichier:
 class FichierFicheLigne:
     """Ligne du tableau compact « DÉTAIL » de la colonne fichiers de
     la fiche item. Contient juste ce qui est rendu — pas de source
-    image, pas de meta techniques."""
+    image, pas de meta techniques.
+
+    ``ordre`` : valeur du champ `Fichier.ordre` (= numéro de page
+    affiché à l'utilisateur, peut avoir des sauts si certains scans
+    manquent).
+    ``position`` : index 1-based dans la liste triée des fichiers
+    de l'item. Utilisé pour construire l'URL visionneuse
+    (``?fichier_courant=<position>``) qui attend une position, pas
+    un ordre. Différent de ``ordre`` quand il y a des sauts.
+    """
 
     id: int
     ordre: int
+    position: int  # 1-indexed dans la liste, pour les liens visionneuse
     nom_fichier: str
     extension: str
     a_meta_documentaires: bool  # True si meta non-triviales (badge ✎)
@@ -1778,14 +1788,18 @@ def composer_fiche_item(
     fichiers_resume = tuple(_resume_fichier(f) for f in item.fichiers)
     nb_fichiers = len(fichiers_resume)
 
-    # Lignes compactes pour le tableau colonne fichiers.
+    # Lignes compactes pour le tableau colonne fichiers. Position
+    # 1-indexed = index dans la liste triée par ordre — différent
+    # de `Fichier.ordre` si l'item a des sauts dans ses ordres
+    # (cas observé sur fac-similés incomplets, scans manquants).
     lignes: list[FichierFicheLigne] = []
-    for f in item.fichiers:
+    for idx, f in enumerate(item.fichiers, start=1):
         meta_doc = _meta_documentaires(f.metadonnees)
         lignes.append(
             FichierFicheLigne(
                 id=f.id,
                 ordre=f.ordre,
+                position=idx,
                 nom_fichier=f.nom_fichier,
                 extension=_extension(f.nom_fichier),
                 a_meta_documentaires=bool(meta_doc),

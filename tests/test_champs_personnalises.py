@@ -948,6 +948,60 @@ def test_route_item_modifier_liste_multiple_zero_coche_efface(
     engine.dispose()
 
 
+def test_route_item_modifier_preserve_cles_libres(base_demo: Path) -> None:
+    """Bug regression V0.9.4-fix : un POST qui edite un champ formel
+    ne doit PAS ecraser les autres cles (notamment les cles libres
+    sans ChampPersonnalise). Avant le fix, `formulaire.metadonnees`
+    repartait a {} car non expose en hidden input -> tout effacement.
+    Decouvert apres avoir wipe les cles libres de PF-002.
+    """
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Champ formel pour l'edition.
+        creer_champ(
+            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur")
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        # Item avec cles libres + 1 cle formelle.
+        meta = dict(item.metadonnees or {})
+        meta["auteur"] = "Topor"
+        meta["libre_un"] = "valeur libre 1"
+        meta["libre_deux"] = "valeur libre 2"
+        meta["libre_trois"] = ["a", "b"]
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    # POST qui modifie SEULEMENT auteur.
+    resp = client.post(
+        "/item/HK-001/modifier?fonds=HK",
+        data={
+            "cote": "HK-001", "titre": "T", "fonds_id": 1,
+            "version": version, "etat_catalogage": "brouillon",
+            "meta_auteur": "Topor (corrige)",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    # Verifier : auteur change, MAIS les libres sont preservees.
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = item.metadonnees or {}
+        assert meta.get("auteur") == "Topor (corrige)"
+        assert meta.get("libre_un") == "valeur libre 1"
+        assert meta.get("libre_deux") == "valeur libre 2"
+        assert meta.get("libre_trois") == ["a", "b"]
+    engine.dispose()
+
+
 def test_route_item_modifier_meta_vide_supprime_cle(base_demo: Path) -> None:
     """Soumettre meta_<cle>="" efface la clé de Item.metadonnees."""
     cid = _miroir_id(base_demo)

@@ -1086,9 +1086,15 @@ async def soumettre_modification_item(
     # request.form() (cache Starlette → pas de double lecture du body).
     # V0.9.6 : `liste_multiple` → getlist (checkboxes envoient N fois
     # le meme name) ; les autres types restent une seule valeur.
+    # V0.9.4-fix : on part de `item.metadonnees` (etat actuel DB) et
+    # NON de `formulaire.metadonnees` (qui repart a `{}` car le form
+    # n'expose pas la dict en hidden input). Sans ce fix, le POST
+    # d'une edition de champ formel ecrasait les cles libres
+    # restantes de l'item. Bug introduit dans 14139dc, observe sur
+    # PF-002 (5 cles libres -> 1 cle apres test interne).
     form_data = await request.form()
     champs_perso = lister_champs_actifs_pour_item(db, item.id)
-    nouvelles_metas = dict(formulaire.metadonnees or {})
+    nouvelles_metas = dict(item.metadonnees or {})
     for c in champs_perso:
         cle_form = f"meta_{c.cle}"
         if c.type == "liste_multiple":

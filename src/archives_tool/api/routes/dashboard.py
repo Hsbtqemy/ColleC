@@ -77,6 +77,10 @@ from archives_tool.api.services.items import (
     modifier_item,
 )
 from archives_tool.api.services.preferences import charger_colonnes_actives
+from archives_tool.api.services.vocabulaires import (
+    LANGUES_OPTIONS,
+    TYPES_COAR_OPTIONS,
+)
 from archives_tool.api.templating import templates
 from archives_tool.models import (
     CollaborateurFonds,
@@ -1031,6 +1035,8 @@ def formulaire_modifier_item(
             formulaire=formulaire,
             erreurs={},
             etats=list(EtatCatalogage),
+            langues_options=LANGUES_OPTIONS,
+            types_coar_options=TYPES_COAR_OPTIONS,
         ),
     )
 
@@ -1088,6 +1094,8 @@ def soumettre_modification_item(
                     )
                 },
                 etats=list(EtatCatalogage),
+                langues_options=LANGUES_OPTIONS,
+                types_coar_options=TYPES_COAR_OPTIONS,
             ),
             status_code=409,
         )
@@ -1103,6 +1111,8 @@ def soumettre_modification_item(
                 formulaire=formulaire,
                 erreurs=e.erreurs,
                 etats=list(EtatCatalogage),
+                langues_options=LANGUES_OPTIONS,
+                types_coar_options=TYPES_COAR_OPTIONS,
             ),
             status_code=400,
         )

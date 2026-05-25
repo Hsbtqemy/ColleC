@@ -106,11 +106,29 @@
     </div>
     <div class="grid grid-cols-2 gap-3">
       {{ champ('numero', 'Numéro', formulaire.numero) }}
-      {{ champ('langue', 'Langue (ISO 639-3)',
-               formulaire.langue, placeholder='fra, eng…') }}
+      {# V0.9.4 : selecteur avec libelle humain + fallback hors-liste.
+         Le code ISO reste stocke en base, l'utilisateur voit
+         « Francais » au lieu de « fra ». #}
+      {% set _libelles_langues = {} %}
+      {% for code, label in langues_options %}
+        {% set _ = _libelles_langues.update({code: label}) %}
+      {% endfor %}
+      {{ selecteur('langue', 'Langue',
+                   formulaire.langue,
+                   langues_options | map(attribute=0) | list,
+                   libelles=_libelles_langues,
+                   libelle_vide='— non renseigné —') }}
     </div>
-    {{ champ('type_coar', 'Type COAR (URI ou label)',
-             formulaire.type_coar) }}
+    {% set _libelles_coar = {} %}
+    {% for uri, label in types_coar_options %}
+      {% set _ = _libelles_coar.update({uri: label}) %}
+    {% endfor %}
+    {{ selecteur('type_coar', 'Type COAR',
+                 formulaire.type_coar,
+                 types_coar_options | map(attribute=0) | list,
+                 libelles=_libelles_coar,
+                 libelle_vide='— non renseigné —',
+                 help_text='URI canonique stockée en base ; libellé humain affiché ici.') }}
   </section>
 
   <section style="margin-bottom:28px;">

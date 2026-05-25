@@ -55,9 +55,21 @@
 {% endmacro %}
 
 {% macro selecteur(nom, label, valeur, options, libelles=None,
-                    help_text='', obligatoire=false) %}
+                    help_text='', obligatoire=false,
+                    libelle_vide=None) %}
   {# `options` : liste de chaînes ; `libelles` : dict optionnel
-     valeur→label affichable. Sans `libelles`, la valeur sert de label. #}
+     valeur→label affichable. Sans `libelles`, la valeur sert de label.
+
+     `libelle_vide` (V0.9.4) : si fourni, ajoute en tête une option
+     `value=""` portant ce libellé (ex. « — non renseigné — »). Permet
+     d'utiliser le selecteur pour des champs optionnels comme la langue
+     ou le type COAR (par défaut absents sur les items neufs).
+
+     Gestion hors-liste : si `valeur` n'est dans aucune des options,
+     on l'ajoute en queue avec le suffixe « (hors-liste) » — évite
+     de perdre silencieusement une valeur héritée d'un import legacy
+     qui ne matche pas le vocabulaire actuel. Aligné avec
+     `inline_edit.js` côté cartouche. #}
   {% set en_erreur = nom in erreurs %}
   <div style="margin-bottom:14px;">
     <label for="champ-{{ nom }}"
@@ -69,11 +81,17 @@
             style="padding:6px 10px;font-size:13px;
                    border:1px solid {% if en_erreur %}#E24B4A{% else %}rgba(0,0,0,0.16){% endif %};
                    border-radius:4px;background:#fff;">
+      {% if libelle_vide is not none %}
+        <option value="" {% if not valeur %}selected{% endif %}>{{ libelle_vide }}</option>
+      {% endif %}
       {% for opt in options %}
         <option value="{{ opt }}" {% if valeur == opt %}selected{% endif %}>
           {{ libelles[opt] if libelles and opt in libelles else opt }}
         </option>
       {% endfor %}
+      {% if valeur and valeur not in options %}
+        <option value="{{ valeur }}" selected>{{ valeur }} (hors-liste)</option>
+      {% endif %}
     </select>
     {% if en_erreur %}
       <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs[nom] }}</p>

@@ -39,37 +39,41 @@
   </a>
 </div>
 
-{# Grid 3 colonnes desktop, 1 colonne empilée mobile. Hauteur fixée
-   en desktop pour que chaque colonne scroll en interne. #}
-<div class="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_220px]"
-     style="--fiche-h: calc(100vh - 280px); min-height: 520px;">
+{# Grid 3 colonnes desktop, 1 colonne empilée mobile. Sur desktop :
+   - Item et Fichiers grandissent naturellement (no scroll interne).
+   - La page prend la hauteur de la plus grande des deux.
+   - Vignettes a un overflow-y:auto et un min-height:0 : grid étire
+     la cellule à la hauteur de la ligne (= max des 2 autres) et la
+     vignette scroll en interne si son contenu dépasse.
+   Sur mobile (< lg) : single column, tout coule naturellement. #}
+<style>
+  @media (min-width: 1024px) {
+    .fiche-col-vignettes {
+      min-height: 0;
+      max-height: 100%;
+      overflow-y: auto;
+    }
+  }
+</style>
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_220px] lg:items-stretch"
+     style="min-height: 520px;">
 
   {# ----------------------------------------------------------------------
      Colonne 1 — ITEM (cartouche)
      ---------------------------------------------------------------------- #}
-  <div class="lg:overflow-y-auto" style="height:auto;">
-    <style>
-      @media (min-width: 1024px) {
-        .fiche-col-item, .fiche-col-fichiers, .fiche-col-vignettes {
-          height: var(--fiche-h);
-          overflow-y: auto;
-        }
-      }
-    </style>
-    <div class="fiche-col-item">
-      {% set _miroir = (fiche.collections | selectattr('est_miroir') | list) %}
-      {% set _gestion = ('/collection/' ~ _miroir[0].cote ~ '/champs?fonds=' ~ fonds.cote) if _miroir else None %}
-      {{ cartouche_metadonnees(fiche.metadonnees_par_section, item.cote,
-                                q_surligne=q_surligne,
-                                promouvoir_url='/item/' ~ item.cote ~ '/promouvoir-cle?fonds=' ~ fonds.cote,
-                                gestion_champs_url=_gestion) }}
-    </div>
+  <div>
+    {% set _miroir = (fiche.collections | selectattr('est_miroir') | list) %}
+    {% set _gestion = ('/collection/' ~ _miroir[0].cote ~ '/champs?fonds=' ~ fonds.cote) if _miroir else None %}
+    {{ cartouche_metadonnees(fiche.metadonnees_par_section, item.cote,
+                              q_surligne=q_surligne,
+                              promouvoir_url='/item/' ~ item.cote ~ '/promouvoir-cle?fonds=' ~ fonds.cote,
+                              gestion_champs_url=_gestion) }}
   </div>
 
   {# ----------------------------------------------------------------------
      Colonne 2 — FICHIERS (agrégats + liste détaillée + annotations)
      ---------------------------------------------------------------------- #}
-  <div class="fiche-col-fichiers">
+  <div>
     <div class="bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);">
 
       {# Header colonne #}

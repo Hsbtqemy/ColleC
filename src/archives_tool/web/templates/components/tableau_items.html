@@ -60,7 +60,8 @@
     </td>
   {%- elif key == 'langue' -%}
     <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      <span style="font-size:12px;color:{{ '#374151' if item.langue else '#9ca3af' }};">{{ item.langue or '—' }}</span>
+      <span style="font-size:12px;color:{{ '#374151' if item.langue else '#9ca3af' }};"
+            title="{{ item.langue or '' }}">{{ (item.langue | libelle_langue) or '—' }}</span>
     </td>
   {%- elif key == 'description' -%}
     <td style="padding:12px 12px;vertical-align:top;max-width:280px;">

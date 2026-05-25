@@ -84,6 +84,15 @@
 {%- endif -%}
   {%- endmacro %}
 
+  {# Breadcrumb : Recherche est une page « profonde » (souvent atteinte
+     depuis les cartes du dashboard ou la barre globale d'une page
+     d'entité). Retour explicite vers le tableau de bord ici. #}
+  <p class="text-sm text-gray-500 mb-2">
+    <a href="/" class="hover:underline">Tableau de bord</a>
+    <span aria-hidden="true">›</span>
+    <span>Recherche{% if q %} : <span class="font-mono">{{ q }}</span>{% endif %}</span>
+  </p>
+
   <h1 class="text-2xl font-medium mb-4">Recherche</h1>
 
   {# Barre de recherche + filtres scope/types + filtres avancés.

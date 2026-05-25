@@ -1,9 +1,11 @@
 <header class="flex items-center justify-between mb-8 pb-4 border-b border-border-tertiary gap-4">
-  <div class="flex items-center gap-3 text-sm text-gray-500 shrink-0">
-    <span class="font-mono text-gray-700">{{ nom_base }}</span>
-    <span aria-hidden="true">·</span>
-    <span>{{ utilisateur }}</span>
-  </div>
+  {# Logo / nom produit à gauche, cliquable vers `/`. Pattern webapp
+     classique : le « logo » sert de bouton home persistant sur toutes
+     les pages. Plus parlant que le nom de fichier `.db` qu'on avait
+     précédemment ici — la base est déplacée à droite (info contextuelle). #}
+  <a href="/" class="shrink-0 text-xl font-medium hover:text-gray-600 transition-colors"
+     style="color:#1f1f1f;text-decoration:none;letter-spacing:-0.02em;"
+     title="Retour au tableau de bord">ColleC</a>
 
   {# Barre de recherche globale (Lot C V0.9.x). Submit GET → /recherche
      pour bookmark URL friendly. Raccourci `/` ou `Cmd+K` focus le
@@ -20,11 +22,21 @@
                   background:white;color:#1f1f1f;">
   </form>
 
-  {# Bouton contextuel « Mode consultation » — actif uniquement si la
-     route a passé `consultation_url`. Sur la liseuse elle-même, la
-     route passe `mode_consultation_actif=True` qui affiche un état
-     visuel distinct (« Mode consultation actif »). #}
-  <div class="shrink-0">
+  {# Bloc contextuel droit : base utilisée + utilisateur + bouton mode
+     consultation. La base est en mono pour signaler le fichier, mais
+     non-cliquable (le retour home passe par le logo ColleC à gauche). #}
+  <div class="flex items-center gap-3 shrink-0">
+    <div class="flex items-center gap-2 text-xs text-gray-500"
+         title="Base de travail courante · utilisateur configuré">
+      <span class="font-mono text-gray-600">{{ nom_base }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ utilisateur }}</span>
+    </div>
+
+    {# Bouton contextuel « Mode consultation » — actif uniquement si la
+       route a passé `consultation_url`. Sur la liseuse elle-même, la
+       route passe `mode_consultation_actif=True` qui affiche un état
+       visuel distinct (« Mode consultation actif »). #}
     {% if mode_consultation_actif %}
       <a href="/"
          class="inline-flex items-center gap-1.5 rounded"

@@ -159,10 +159,25 @@ class ItemResume:
 
     @property
     def type_label(self) -> str | None:
-        # Le label COAR n'est pas résolu ici (pas de table de
-        # libellés en V0.9.0). On expose l'URI brut, le template
-        # rend `type_label or type_coar or '—'`.
-        return None
+        # V0.9.4 : libellé humain résolu via TYPES_COAR_OPTIONS
+        # (la même table que le composer cartouche et la barre de
+        # filtres recherche). Le tableau d'items affichait sinon
+        # l'URI brute « http://purl.org/coar/resource_type/c_3e5a »
+        # — illisible quand la colonne Type est étroite.
+        from archives_tool.api.services.vocabulaires import (
+            TYPES_COAR_OPTIONS,
+            libelle_pour_valeur,
+        )
+        if not self.type_coar:
+            return None
+        libelle = libelle_pour_valeur(self.type_coar, TYPES_COAR_OPTIONS)
+        # `libelle_pour_valeur` retombe sur la valeur brute si
+        # l'URI n'est pas dans la table — on retourne None dans ce
+        # cas pour que le template tombe sur `type_coar` (idem que
+        # comportement V0.9.0, pas de double affichage).
+        if libelle == self.type_coar:
+            return None
+        return libelle
 
     @property
     def modifie_depuis(self) -> str:

@@ -145,15 +145,15 @@
     {% endif %}
 
     {% for lang in filtres.langues %}
-      {{ pastille_filtre('Langue: ' ~ lang,
+      {{ pastille_filtre('Langue: ' ~ (lang | libelle_langue),
                          filtres.to_query_string(retire_langue=lang),
                          base_url_avec_fonds, sep) }}
     {% endfor %}
 
     {% for t in filtres.types_coar %}
-      {{ pastille_filtre('Type: ' ~ (t.split('/')[-1] if '/' in t else t),
+      {{ pastille_filtre('Type: ' ~ (t | libelle_coar),
                          filtres.to_query_string(retire_type_coar=t),
-                         base_url_avec_fonds, sep, mono=True) }}
+                         base_url_avec_fonds, sep) }}
     {% endfor %}
   </div>
 {% endif %}
@@ -212,6 +212,10 @@
   },
 ] %}
 {% if detail.options_filtres.langues %}
+  {% set _libelles_langues = {} %}
+  {% for lang in detail.options_filtres.langues %}
+    {% set _ = _libelles_langues.update({lang: (lang | libelle_langue)}) %}
+  {% endfor %}
   {% set sections = sections + [
     {
       'titre': 'Langue',
@@ -219,17 +223,23 @@
       'champ': 'langue',
       'options': detail.options_filtres.langues,
       'valeur': filtres.langues,
+      'libelles': _libelles_langues,
     },
   ] %}
 {% endif %}
 {% if detail.options_filtres.types_coar %}
+  {% set _libelles_coar = {} %}
+  {% for t in detail.options_filtres.types_coar %}
+    {% set _ = _libelles_coar.update({t: (t | libelle_coar)}) %}
+  {% endfor %}
   {% set sections = sections + [
     {
-      'titre': 'Type COAR',
+      'titre': 'Type',
       'type': 'multi',
       'champ': 'type_coar',
       'options': detail.options_filtres.types_coar,
       'valeur': filtres.types_coar,
+      'libelles': _libelles_coar,
     },
   ] %}
 {% endif %}

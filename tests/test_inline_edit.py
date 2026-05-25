@@ -333,11 +333,41 @@ def test_meta_entity_context_dans_page_collection(base_demo: Path) -> None:
 
 def test_collection_bandeau_hooks_inline_present(base_demo: Path) -> None:
     """Les hooks `data-edit-field` sont posés sur titre / description /
-    phase du bandeau collection (pour que `inline_edit.js` les active
-    au double-clic)."""
+    phase / doi_nakala / doi_collection_nakala_parent du bandeau
+    collection (pour que `inline_edit.js` les active au double-clic)."""
     client = TestClient(app)
     resp = client.get("/collection/HK?fonds=HK")
     assert resp.status_code == 200
     assert 'data-edit-field="titre"' in resp.text
     assert 'data-edit-field="description"' in resp.text
     assert 'data-edit-field="phase"' in resp.text
+    assert 'data-edit-field="doi_nakala"' in resp.text
+    # DOI parent visible si défini OU si l'utilisateur peut éditer
+    # (pour pouvoir l'ajouter). HK demo n'a probablement pas de parent,
+    # mais en mode édition la zone existe.
+    assert 'data-edit-field="doi_collection_nakala_parent"' in resp.text
+
+
+def test_inline_edit_collection_doi_nakala_succes(base_demo: Path) -> None:
+    """POST sur doi_nakala : 200 + fragment, valeur persistée."""
+    from archives_tool.models import Collection, TypeCollection
+    client = TestClient(app)
+    v = _version_collection(base_demo, "HK")
+    nouveau_doi = "10.34847/nkl.test123"
+    resp = client.post(
+        "/collection/HK/champ/doi_nakala?fonds=HK",
+        data={"version": str(v), "valeur": nouveau_doi},
+    )
+    assert resp.status_code == 200
+    assert nouveau_doi in resp.text
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        col = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        assert col.doi_nakala == nouveau_doi
+    engine.dispose()

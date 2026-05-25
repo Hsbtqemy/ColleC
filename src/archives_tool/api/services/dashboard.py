@@ -790,6 +790,7 @@ class CollectionDansFonds:
     type_collection: str  # "miroir" / "libre"
     nb_items: int
     nb_partages: int  # nb items aussi présents dans une autre collection du fonds
+    doi_nakala: str | None = None  # DOI public de la collection si publiée
 
     @property
     def est_miroir(self) -> bool:
@@ -972,6 +973,7 @@ def _composer_cartographie_collections(
                 type_collection=c.type_collection,
                 nb_items=len(items_de_c),
                 nb_partages=nb_partages,
+                doi_nakala=c.doi_nakala,
             )
         )
 

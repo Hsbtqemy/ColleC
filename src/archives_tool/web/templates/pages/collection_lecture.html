@@ -98,6 +98,33 @@
           {%- endif %}
         {%- endcall %}
       </p>
+      {# Identifiants externes : DOI Nakala visible et editable inline.
+         Le DOI Nakala parent (cas d'une collection enfant d'une Nakala
+         collection mere) n'apparait que s'il est explicitement set. #}
+      <p class="text-xs text-gray-500 mt-2 flex flex-wrap items-baseline gap-x-4">
+        <span class="inline-flex items-baseline gap-1">
+          <span class="text-gray-400">DOI Nakala</span>
+          {% call _zone_inline("doi_nakala", classes="font-mono", styles="font-size:11px;color:#378ADD;") -%}
+            {% if col.doi_nakala -%}
+              {{ col.doi_nakala }}
+            {%- else -%}
+              <span class="text-gray-400 italic">—</span>
+            {%- endif %}
+          {%- endcall %}
+        </span>
+        {% if col.doi_collection_nakala_parent or not est_lecture_seule() %}
+        <span class="inline-flex items-baseline gap-1">
+          <span class="text-gray-400">DOI parent</span>
+          {% call _zone_inline("doi_collection_nakala_parent", classes="font-mono", styles="font-size:11px;color:#378ADD;") -%}
+            {% if col.doi_collection_nakala_parent -%}
+              {{ col.doi_collection_nakala_parent }}
+            {%- else -%}
+              <span class="text-gray-400 italic">—</span>
+            {%- endif %}
+          {%- endcall %}
+        </span>
+        {% endif %}
+      </p>
     </div>
     <div class="flex items-start gap-2">
       {% if detail.fonds_parent %}

@@ -7,10 +7,8 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm.attributes import flag_modified
 
 from archives_tool.api.services.dashboard import (
-    CartographieCollections,
     SyntheseFonds,
     _composer_cartographie_collections,
     composer_synthese_fonds,
@@ -361,6 +359,58 @@ def test_cartographie_ignore_les_transversales(base_demo: Path) -> None:
         # Seule la miroir HK reste (pas de libre rattachée HK)
         assert cotes == {"HK"}
     engine.dispose()
+
+
+def test_cartographie_remonte_doi_nakala_des_collections(
+    base_demo: Path,
+) -> None:
+    """Le DOI Nakala d'une collection est exposé dans la cartographie
+    pour distinguer visuellement les collections publiées."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Set DOI sur la miroir HK pour tester le surfacing
+        fonds = lire_fonds_par_cote(s, "HK")
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.fonds_id == fonds.id,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        miroir.doi_nakala = "10.34847/nkl.testfonds"
+        s.commit()
+
+        carto = _composer_cartographie_collections(s, fonds)
+        entree_miroir = next(e for e in carto.entrees if e.est_miroir)
+        assert entree_miroir.doi_nakala == "10.34847/nkl.testfonds"
+    engine.dispose()
+
+
+def test_synthese_fonds_doi_visible_dans_rendu(base_demo: Path) -> None:
+    """Garde-fou intégration : le DOI Nakala d'une collection apparaît
+    dans la cartographie rendue (avec lien clickable vers nakala.fr)."""
+    from fastapi.testclient import TestClient
+    from archives_tool.api.main import app
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.fonds_id == fonds.id,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        miroir.doi_nakala = "10.34847/nkl.visiblestest"
+        s.commit()
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    assert "10.34847/nkl.visiblestest" in resp.text
+    assert "https://nakala.fr/10.34847/nkl.visiblestest" in resp.text
 
 
 def test_synthese_fonds_budget_sql_borne(base_demo: Path) -> None:

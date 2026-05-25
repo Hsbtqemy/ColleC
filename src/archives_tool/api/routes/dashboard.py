@@ -54,6 +54,7 @@ from archives_tool.api.services.dashboard import (
     composer_fiche_item,
     composer_page_collection,
     composer_synthese_collection,
+    composer_synthese_fonds,
     composer_page_fonds,
     composer_page_item,
     parser_filtres_collection,
@@ -307,6 +308,9 @@ def page_fonds(
         raise HTTPException(
             status_code=404, detail=f"Fonds {cote!r} introuvable."
         ) from e
+    # Synthèse fonds : aggrégats cross-collection + temporel + vignettes.
+    # Auto-masqué côté template si `synthese.vide`.
+    synthese = composer_synthese_fonds(db, detail.fonds)
     # Premier item du fonds (cote ASC) pour le bouton « Mode consultation »
     # du header — entrée naturelle pour parcourir le fonds en mode liseuse.
     from archives_tool.models import Item
@@ -329,6 +333,7 @@ def page_fonds(
             nom_base,
             utilisateur,
             detail=detail,
+            synthese=synthese,
             roles_options=ROLES_OPTIONS,
             libelles_roles=LIBELLES_ROLE,
             consultation_url=consultation_url,

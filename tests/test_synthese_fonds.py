@@ -1,0 +1,292 @@
+"""Tests de la synthèse de fonds (V0.9.6) — section dense
+au-dessus de la liste des collections sur /fonds/<cote>."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
+
+from archives_tool.api.services.dashboard import (
+    CartographieCollections,
+    SyntheseFonds,
+    _composer_cartographie_collections,
+    composer_synthese_fonds,
+)
+from archives_tool.api.services.fonds import lire_fonds_par_cote
+from archives_tool.demo import peupler_base
+from archives_tool.db import creer_engine, creer_session_factory
+from archives_tool.models import (
+    Collection,
+    EtatCatalogage,
+    Fonds,
+    Item,
+    ItemCollection,
+    TypeCollection,
+)
+
+
+@pytest.fixture
+def base_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    db = tmp_path / "demo.db"
+    peupler_base(db)
+    monkeypatch.setenv("ARCHIVES_DB", str(db))
+    return db
+
+
+# ---------------------------------------------------------------------------
+# Cartographie cross-collection — cœur de la valeur ajoutée vs synthese
+# collection (qui reste, elle, intra-collection).
+# ---------------------------------------------------------------------------
+
+
+def test_cartographie_fonds_sans_libre_est_vide(base_demo: Path) -> None:
+    """Un fonds avec uniquement sa miroir (cas usuel : PF, HK, MAR) :
+    `cartographie.vide` est True — le composant masque la section, on
+    n'a rien à raconter de cross-collection."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        carto = _composer_cartographie_collections(s, fonds)
+        assert carto.vide
+        assert carto.nb_libres == 0
+        # Une seule entrée : la miroir
+        assert len(carto.entrees) == 1
+        assert carto.entrees[0].est_miroir
+        # Tous les items sont dans la miroir, aucun ailleurs
+        assert carto.nb_items_dans_libres == 0
+    engine.dispose()
+
+
+def test_cartographie_fonds_avec_libres_recense_chevauchements(
+    base_demo: Path,
+) -> None:
+    """Un fonds avec libres (cas demo `FA`) : la cartographie expose
+    pour chaque collection le nb d'items + nb partagés."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "FA")
+        carto = _composer_cartographie_collections(s, fonds)
+        assert not carto.vide
+        assert carto.nb_libres >= 1
+        # La miroir est toujours en première position
+        assert carto.entrees[0].est_miroir
+        # Cohérence : somme des items des libres == nb items dans libres
+        # (vrai uniquement si pas de chevauchement entre libres ; sur FA
+        # demo c'est le cas)
+        items_libres = sum(
+            e.nb_items for e in carto.entrees if not e.est_miroir
+        )
+        # nb_items_dans_libres compte les items distincts présents dans
+        # ≥1 libre : si les libres ne chevauchent pas, c'est égal à la
+        # somme ; sinon plus petit.
+        assert carto.nb_items_dans_libres <= items_libres
+    engine.dispose()
+
+
+def test_cartographie_compte_chevauchement_entre_libres(
+    base_demo: Path,
+) -> None:
+    """Quand un item est explicitement dans 2 libres, il doit être
+    compté dans `nb_items_dans_plusieurs_libres` et apparaître comme
+    partagé dans les `nb_partages` de chaque libre concernée."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Setup : créer 2 libres dans le fonds HK + un item qu'on
+        # rattache aux 2.
+        fonds = lire_fonds_par_cote(s, "HK")
+        libre_a = Collection(
+            cote="HK-LIBRE-A",
+            titre="HK Libre A",
+            type_collection=TypeCollection.LIBRE.value,
+            fonds_id=fonds.id,
+            cree_par="test",
+            modifie_par="test",
+        )
+        libre_b = Collection(
+            cote="HK-LIBRE-B",
+            titre="HK Libre B",
+            type_collection=TypeCollection.LIBRE.value,
+            fonds_id=fonds.id,
+            cree_par="test",
+            modifie_par="test",
+        )
+        s.add_all([libre_a, libre_b])
+        s.commit()
+
+        item = s.scalar(select(Item).where(Item.fonds_id == fonds.id).limit(1))
+        s.add(ItemCollection(item_id=item.id, collection_id=libre_a.id))
+        s.add(ItemCollection(item_id=item.id, collection_id=libre_b.id))
+        s.commit()
+
+        carto = _composer_cartographie_collections(s, fonds)
+        # L'item est dans 2 libres → compté dans
+        # nb_items_dans_plusieurs_libres
+        assert carto.nb_items_dans_plusieurs_libres >= 1
+        # Chaque libre voit ce partage avec l'autre
+        e_a = next(e for e in carto.entrees if e.cote == "HK-LIBRE-A")
+        e_b = next(e for e in carto.entrees if e.cote == "HK-LIBRE-B")
+        assert e_a.nb_partages >= 1
+        assert e_b.nb_partages >= 1
+    engine.dispose()
+
+
+def test_cartographie_fonds_sans_collection_renvoie_vide(
+    base_demo: Path,
+) -> None:
+    """Garde-fou : un Fonds sans aucune collection (cas pathologique —
+    invariant 1 dit qu'une miroir est créée à la création du fonds,
+    mais on teste la robustesse) ne crashe pas."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_vide = Fonds(
+            cote="VIDE-TEST",
+            titre="Fonds vide",
+            cree_par="test",
+            modifie_par="test",
+        )
+        s.add(fonds_vide)
+        s.commit()
+        carto = _composer_cartographie_collections(s, fonds_vide)
+        assert carto.vide
+        assert carto.entrees == ()
+    engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# composer_synthese_fonds — bout en bout
+# ---------------------------------------------------------------------------
+
+
+def test_synthese_fonds_structure_globale(base_demo: Path) -> None:
+    """Sur la demo, `HK` contient ≥ 1 item. La synthèse renvoie une
+    structure non vide avec items_recents, vignettes éventuelles,
+    cartographie (qui sera vide ici car pas de libre)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        synthese = composer_synthese_fonds(s, fonds)
+        assert isinstance(synthese, SyntheseFonds)
+        assert synthese.nb_items_total > 0
+        assert len(synthese.items_recents) <= 5
+        # Pas de libre sur HK demo : cartographie vide
+        assert synthese.cartographie.vide
+    engine.dispose()
+
+
+def test_synthese_fonds_etend_aux_items_de_toutes_collections(
+    base_demo: Path,
+) -> None:
+    """Garde-fou clé : la synthèse fonds agrège sur **tous les items
+    du fonds** (via `Item.fonds_id`), pas seulement ceux d'une
+    collection. Sur `FA` (fonds avec libres) on doit retrouver les 167
+    items du fonds (= ceux de la miroir, par invariant)."""
+    from sqlalchemy import func
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "FA")
+        synthese = composer_synthese_fonds(s, fonds)
+        nb_via_fonds_id = s.scalar(
+            select(func.count(Item.id)).where(Item.fonds_id == fonds.id)
+        )
+        assert synthese.nb_items_total == nb_via_fonds_id
+    engine.dispose()
+
+
+def test_synthese_fonds_vignettes_pointent_vers_le_fonds_courant(
+    base_demo: Path,
+) -> None:
+    """Les vignettes échantillonnées portent `fonds_cote=fonds.cote`
+    — important pour que le lien `/item/<cote>?fonds=<X>` du template
+    soit correct (cote item ambiguë sinon)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        synthese = composer_synthese_fonds(s, fonds)
+        for v in synthese.vignettes:
+            assert v.fonds_cote == "HK"
+    engine.dispose()
+
+
+def test_synthese_fonds_trous_a_corriger_remontent(base_demo: Path) -> None:
+    """Force un item à corriger → trou présent dans la synthèse.
+    Garde-fou : le trou est bien comptabilisé au niveau fonds (pas
+    juste collection)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = lire_fonds_par_cote(s, "HK")
+        item = s.scalar(select(Item).where(Item.fonds_id == fonds.id).limit(1))
+        item.etat_catalogage = EtatCatalogage.A_CORRIGER.value
+        s.commit()
+
+        synthese = composer_synthese_fonds(s, fonds)
+        trou_corr = next(
+            (t for t in synthese.trous if t.code == "a_corriger"), None
+        )
+        assert trou_corr is not None
+        assert trou_corr.nb >= 1
+        # Pas de deep-link (la page Fonds n'a pas de filtre par état)
+        assert trou_corr.filtre_url is None
+    engine.dispose()
+
+
+def test_synthese_fonds_vide_si_aucun_item(base_demo: Path) -> None:
+    """Un fonds frais sans aucun item → synthèse vide."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_vide = Fonds(
+            cote="EMPTY-TEST",
+            titre="Fonds sans items",
+            cree_par="test",
+            modifie_par="test",
+        )
+        s.add(fonds_vide)
+        s.commit()
+        synthese = composer_synthese_fonds(s, fonds_vide)
+        assert synthese.nb_items_total == 0
+        assert synthese.vide
+    engine.dispose()
+
+
+def test_synthese_fonds_rendu_html_page(base_demo: Path) -> None:
+    """Garde-fou intégration : la page fonds rend la synthèse."""
+    from fastapi.testclient import TestClient
+    from archives_tool.api.main import app
+
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    # Marqueur du composant synthèse_fonds (texte du summary commun
+    # à synthese_collection et synthese_fonds — heureusement le test
+    # ci-dessous différencie via le contenu).
+    assert "Synthèse" in resp.text
+    assert "<details open" in resp.text
+
+
+def test_synthese_fonds_cartographie_affichee_si_libres(
+    base_demo: Path,
+) -> None:
+    """Garde-fou intégration : pour le fonds FA (4 libres demo), la
+    section Cartographie apparait avec ses libres listées."""
+    from fastapi.testclient import TestClient
+    from archives_tool.api.main import app
+
+    client = TestClient(app)
+    resp = client.get("/fonds/FA")
+    assert resp.status_code == 200
+    assert "Cartographie" in resp.text
+    # Au moins une libre demo doit apparaitre dans le tableau cross-coll
+    # (le seeder crée FA-CORRESP / FA-DOCU / FA-PHOTOS / FA-OEUVRES)
+    libres_attendues = ["FA-CORRESP", "FA-DOCU", "FA-PHOTOS", "FA-OEUVRES"]
+    assert any(lib in resp.text for lib in libres_attendues)

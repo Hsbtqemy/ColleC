@@ -768,6 +768,432 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
 
 
 # ---------------------------------------------------------------------------
+# Synthèse fonds (V0.9.6) — orientation cross-collection
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CollectionDansFonds:
+    """Une entrée de la cartographie cross-collection d'un fonds.
+
+    Indique pour chaque collection du fonds : combien d'items elle
+    contient, dont combien sont **partagés** avec au moins une autre
+    libre (info utile pour repérer les chevauchements thématiques).
+
+    La miroir contient toujours tous les items du fonds par
+    invariant ; son nb_partages est égal à `nb_items_dans_au_moins_une_libre`
+    (les items présents dans une ou plusieurs libres, plus la miroir).
+    """
+
+    cote: str
+    titre: str
+    type_collection: str  # "miroir" / "libre"
+    nb_items: int
+    nb_partages: int  # nb items aussi présents dans une autre collection du fonds
+
+    @property
+    def est_miroir(self) -> bool:
+        return self.type_collection == TypeCollection.MIROIR.value
+
+
+@dataclass(frozen=True)
+class CartographieCollections:
+    """Vue d'ensemble des collections d'un fonds : la miroir + les
+    libres avec leurs chevauchements.
+
+    ``nb_items_uniquement_miroir`` : items qui ne sont dans aucune
+    libre — la « réserve » non encore classée thématiquement.
+    ``nb_items_dans_libres`` : items présents dans au moins une libre.
+    ``nb_items_dans_plusieurs_libres`` : items présents dans 2+ libres
+    (intersections thématiques).
+    """
+
+    entrees: tuple[CollectionDansFonds, ...]
+    nb_items_uniquement_miroir: int
+    nb_items_dans_libres: int
+    nb_items_dans_plusieurs_libres: int
+
+    @property
+    def nb_libres(self) -> int:
+        return sum(1 for e in self.entrees if not e.est_miroir)
+
+    @property
+    def vide(self) -> bool:
+        """Aucune libre ⇒ la cartographie n'apporte rien (la miroir
+        couvre tout, info déjà au bandeau). Le composant peut sauter
+        cette section."""
+        return self.nb_libres == 0
+
+
+@dataclass(frozen=True)
+class SyntheseFonds:
+    """Vue d'ensemble d'un fonds : qualitatif + temporel + visuel +
+    trous + activité + cartographie cross-collection.
+
+    Distincte de :func:`composer_page_fonds` qui produit les données
+    du bandeau (compteurs, états, traçabilité) et la liste détaillée
+    des collections. La synthèse ajoute l'orientation rapide.
+
+    Garde-fou SQL : ~5 requêtes principales (items + sans-fichier +
+    items-récents + vignettes + cross-collection), indépendant du
+    volume.
+    """
+
+    distribution_temporelle: DistributionTemporelle
+    agregats: tuple[AgregatItemQuali, ...]
+    vignettes: tuple[VignetteSynthese, ...]
+    trous: tuple[TrouCatalographique, ...]
+    items_recents: tuple[ItemRecemmentModifie, ...]
+    cartographie: CartographieCollections
+    nb_items_total: int
+
+    @property
+    def vide(self) -> bool:
+        """Aucune information à afficher — fonds sans items, sans rien
+        d'agrégable. Le composant peut être masqué."""
+        return (
+            not self.agregats
+            and not self.vignettes
+            and self.distribution_temporelle.vide
+            and not self.trous
+            and not self.items_recents
+            and self.cartographie.vide
+        )
+
+
+def _composer_cartographie_collections(
+    db: Session, fonds: Fonds
+) -> CartographieCollections:
+    """Calcule la cartographie cross-collection d'un fonds en 2
+    requêtes : nb items par collection + map item_id → set(collection_ids)
+    pour identifier les partages.
+
+    `nb_partages` d'une collection = nb items qu'elle a en commun avec
+    **au moins une autre collection** du fonds (incluant la miroir).
+    Pour la miroir, c'est donc `nb_items_dans_libres` (items dans ≥1
+    libre). Pour une libre, c'est `nb_items` de cette libre (puisqu'ils
+    sont tous aussi dans la miroir) — sauf si on veut compter les
+    partages avec d'autres libres, ce qui est plus informatif.
+
+    Choix sémantique : `nb_partages` ignore la miroir comme « autre »
+    (sinon toute libre aurait nb_partages = nb_items, trivial). Pour
+    la miroir, on compte les items partagés avec ≥1 libre.
+    """
+    # 1) Liste des collections du fonds, dans l'ordre miroir puis
+    # libres alphabétiques.
+    collections = list(
+        db.scalars(
+            select(Collection)
+            .where(Collection.fonds_id == fonds.id)
+            .order_by(
+                (Collection.type_collection != TypeCollection.MIROIR.value),
+                Collection.titre,
+            )
+        ).all()
+    )
+
+    if not collections:
+        return CartographieCollections(
+            entrees=(),
+            nb_items_uniquement_miroir=0,
+            nb_items_dans_libres=0,
+            nb_items_dans_plusieurs_libres=0,
+        )
+
+    # 2) Map item_id → set(collection_ids) du fonds, en une query.
+    appartenance_rows = db.execute(
+        select(ItemCollection.item_id, ItemCollection.collection_id)
+        .where(
+            ItemCollection.collection_id.in_([c.id for c in collections])
+        )
+    ).all()
+    appartenance: dict[int, set[int]] = {}
+    for item_id, col_id in appartenance_rows:
+        appartenance.setdefault(item_id, set()).add(col_id)
+
+    miroir_id = next(
+        (
+            c.id
+            for c in collections
+            if c.type_collection == TypeCollection.MIROIR.value
+        ),
+        None,
+    )
+    libre_ids = {
+        c.id
+        for c in collections
+        if c.type_collection != TypeCollection.MIROIR.value
+    }
+
+    # 3) Compteurs cross-collection.
+    nb_items_uniquement_miroir = 0
+    nb_items_dans_libres = 0
+    nb_items_dans_plusieurs_libres = 0
+    for item_id, col_set in appartenance.items():
+        libres_de_cet_item = col_set & libre_ids
+        if libres_de_cet_item:
+            nb_items_dans_libres += 1
+            if len(libres_de_cet_item) >= 2:
+                nb_items_dans_plusieurs_libres += 1
+        elif miroir_id in col_set:
+            nb_items_uniquement_miroir += 1
+
+    # 4) Construction des entrées par collection.
+    entrees: list[CollectionDansFonds] = []
+    for c in collections:
+        # Items de cette collection.
+        items_de_c = {
+            item_id
+            for item_id, col_set in appartenance.items()
+            if c.id in col_set
+        }
+        # Partages : pour la miroir, items aussi dans ≥1 libre ; pour
+        # une libre, items aussi dans une AUTRE libre (la miroir ne
+        # compte pas comme « autre » sinon nb_partages = nb_items).
+        if c.id == miroir_id:
+            nb_partages = sum(
+                1 for i in items_de_c if appartenance[i] & libre_ids
+            )
+        else:
+            autres_libres = libre_ids - {c.id}
+            nb_partages = sum(
+                1 for i in items_de_c if appartenance[i] & autres_libres
+            )
+        entrees.append(
+            CollectionDansFonds(
+                cote=c.cote,
+                titre=c.titre,
+                type_collection=c.type_collection,
+                nb_items=len(items_de_c),
+                nb_partages=nb_partages,
+            )
+        )
+
+    return CartographieCollections(
+        entrees=tuple(entrees),
+        nb_items_uniquement_miroir=nb_items_uniquement_miroir,
+        nb_items_dans_libres=nb_items_dans_libres,
+        nb_items_dans_plusieurs_libres=nb_items_dans_plusieurs_libres,
+    )
+
+
+def composer_synthese_fonds(db: Session, fonds: Fonds) -> SyntheseFonds:
+    """Composition d'une vue d'ensemble d'un fonds.
+
+    Réutilise les helpers de `composer_synthese_collection` pour
+    l'aggregation qualitative + temporelle, mais portée à tous les
+    items du fonds (pas juste une collection). Ajoute la cartographie
+    cross-collection (`CartographieCollections`) qui n'a de sens
+    qu'au niveau fonds.
+
+    Garde-fou SQL : ~5-7 requêtes, indépendant du volume.
+    """
+    # ---- 1. Items du fonds (tous, via Item.fonds_id) ----
+    lignes_items = db.execute(
+        select(
+            Item.id,
+            Item.cote,
+            Item.titre,
+            Item.langue,
+            Item.type_coar,
+            Item.annee,
+            Item.date,
+            Item.etat_catalogage,
+            Item.metadonnees,
+        )
+        .where(Item.fonds_id == fonds.id)
+        .order_by(Item.cote)
+    ).all()
+    nb_items_total = len(lignes_items)
+
+    # ---- 2. Agrégats + résolution année effective (idem collection)
+    counter_langue: Counter[str] = Counter()
+    counter_type: Counter[str] = Counter()
+    metas_brutes: list[dict[str, Any] | None] = []
+    annees_effectives: list[int] = []
+    nb_a_corriger = 0
+    nb_sans_titre = 0
+    nb_sans_annee = 0
+    for (
+        _id, _cote, titre, langue, type_coar, annee, date, etat, meta
+    ) in lignes_items:
+        if langue:
+            counter_langue[langue] += 1
+        if type_coar:
+            counter_type[type_coar] += 1
+        metas_brutes.append(meta)
+        if etat == EtatCatalogage.A_CORRIGER.value:
+            nb_a_corriger += 1
+        if not (titre or "").strip():
+            nb_sans_titre += 1
+        annee_effective = annee if annee is not None else _annee_depuis_date_edtf(date)
+        if annee_effective is None:
+            nb_sans_annee += 1
+        else:
+            annees_effectives.append(annee_effective)
+
+    distribution = _calculer_distribution_temporelle(annees_effectives)
+    par_cle_meta = _agreger_item_metadonnees_quali(metas_brutes)
+
+    agregats: list[AgregatItemQuali] = []
+    if counter_langue:
+        counter_langue_humain: Counter[str] = Counter()
+        for code, n in counter_langue.items():
+            counter_langue_humain[_resoudre_libelle_langue(code)] += n
+        agregats.append(
+            _agregat_depuis_counter(
+                "langue",
+                "Langue" if len(counter_langue_humain) == 1 else "Langues",
+                counter_langue_humain,
+            )
+        )
+    if counter_type:
+        counter_type_humain: Counter[str] = Counter()
+        for uri, n in counter_type.items():
+            lib = libelle_pour_valeur(uri, TYPES_COAR_OPTIONS) or uri
+            counter_type_humain[lib] += n
+        agregats.append(
+            _agregat_depuis_counter(
+                "type_coar",
+                "Type" if len(counter_type_humain) == 1 else "Types",
+                counter_type_humain,
+            )
+        )
+    agregats_meta_candidats: list[AgregatItemQuali] = []
+    for cle, counter in par_cle_meta.items():
+        valeur_dominante_count = counter.most_common(1)[0][1] if counter else 0
+        if valeur_dominante_count <= 1 and len(counter) >= 5:
+            continue
+        agregats_meta_candidats.append(
+            _agregat_depuis_counter(cle, _libelle_depuis_cle(cle), counter)
+        )
+    agregats_meta = sorted(
+        agregats_meta_candidats,
+        key=lambda a: (-sum(tv.count for tv in a.top), a.cle),
+    )
+    agregats.extend(agregats_meta[:6])
+
+    # ---- 3. Trous (mêmes calculs qu'en collection, à l'échelle fonds)
+    nb_sans_fichier = (
+        db.scalar(
+            select(func.count(Item.id))
+            .where(Item.fonds_id == fonds.id, ~Item.fichiers.any())
+        )
+        or 0
+    )
+
+    # Deep-link possible vers la page Fonds qui n'a pas (encore) de
+    # filtre par état : pour l'instant on signale sans lien.
+    trous: list[TrouCatalographique] = []
+    if nb_sans_titre > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_titre",
+                libelle=f"{nb_sans_titre} sans titre",
+                nb=nb_sans_titre,
+                filtre_url=None,
+            )
+        )
+    if nb_sans_annee > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_annee",
+                libelle=f"{nb_sans_annee} sans année",
+                nb=nb_sans_annee,
+                filtre_url=None,
+            )
+        )
+    if nb_sans_fichier > 0:
+        trous.append(
+            TrouCatalographique(
+                code="sans_fichier",
+                libelle=f"{nb_sans_fichier} sans fichier",
+                nb=nb_sans_fichier,
+                filtre_url=None,
+            )
+        )
+    if nb_a_corriger > 0:
+        trous.append(
+            TrouCatalographique(
+                code="a_corriger",
+                libelle=f"{nb_a_corriger} à corriger",
+                nb=nb_a_corriger,
+                # Pas de filtre par état sur la page fonds aujourd'hui ;
+                # on pointe vers la miroir filtrée (cas dominant : fonds
+                # = miroir). Pour fonds multi-collection, l'utilisateur
+                # ouvre quand même la liste filtrée d'une collection.
+                filtre_url=None,
+            )
+        )
+
+    # ---- 4. Items récemment modifiés ----
+    items_recents_rows = db.execute(
+        select(
+            Item.cote,
+            Item.titre,
+            Item.modifie_par,
+            Item.modifie_le,
+        )
+        .where(Item.fonds_id == fonds.id)
+        .order_by(Item.modifie_le.desc())
+        .limit(5)
+    ).all()
+    items_recents = tuple(
+        ItemRecemmentModifie(
+            cote=cote,
+            titre=titre or cote,
+            fonds_cote=fonds.cote,
+            modifie_par=mod_par,
+            modifie_le=mod_le,
+        )
+        for cote, titre, mod_par, mod_le in items_recents_rows
+        if mod_le is not None
+    )
+
+    # ---- 5. Vignettes échantillonnées ----
+    ids_ordonnes = [id_ for id_, *_ in lignes_items]
+    ids_echantillon = _ids_echantillonnes(ids_ordonnes, _NB_VIGNETTES_SYNTHESE)
+    vignettes: tuple[VignetteSynthese, ...] = ()
+    if ids_echantillon:
+        items_avec_fichier = db.execute(
+            select(Item)
+            .options(selectinload(Item.fichiers))
+            .where(Item.id.in_(ids_echantillon))
+        ).all()
+        items_par_id = {row[0].id: row[0] for row in items_avec_fichier}
+        vignettes_liste: list[VignetteSynthese] = []
+        for id_ in ids_echantillon:
+            item = items_par_id.get(id_)
+            if item is None:
+                continue
+            first_f = item.fichiers[0] if item.fichiers else None
+            src = resoudre_source_image(first_f) if first_f else None
+            vignettes_liste.append(
+                VignetteSynthese(
+                    item_cote=item.cote,
+                    item_titre=item.titre or item.cote,
+                    fonds_cote=fonds.cote,
+                    vignette_url=src.vignette_url if src else None,
+                    extension=_extension(first_f.nom_fichier) if first_f else "",
+                )
+            )
+        vignettes = tuple(vignettes_liste)
+
+    # ---- 6. Cartographie cross-collection ----
+    cartographie = _composer_cartographie_collections(db, fonds)
+
+    return SyntheseFonds(
+        distribution_temporelle=distribution,
+        agregats=tuple(agregats),
+        vignettes=vignettes,
+        trous=tuple(trous),
+        items_recents=items_recents,
+        cartographie=cartographie,
+        nb_items_total=nb_items_total,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Page collection (lecture)
 # ---------------------------------------------------------------------------
 

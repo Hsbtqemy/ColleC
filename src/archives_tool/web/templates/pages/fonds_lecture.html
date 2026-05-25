@@ -86,6 +86,14 @@
   </div>
 </header>
 
+{# Synthèse fonds : section dense au-dessus de la liste des collections.
+   Auto-masquée si aucun item ou rien d'agrégable (synthese.vide). #}
+{% if synthese and not synthese.vide %}
+  {% with synthese=synthese, fonds_cote=detail.fonds.cote %}
+    {% include 'components/synthese_fonds.html' %}
+  {% endwith %}
+{% endif %}
+
 <section class="mb-8">
   <h2 class="text-lg font-medium mb-3">
     Collections du fonds <span class="text-gray-400">({{ detail.collections_resume | length }})</span>

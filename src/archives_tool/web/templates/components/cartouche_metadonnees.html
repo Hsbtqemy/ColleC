@@ -42,7 +42,13 @@
 {%- endmacro %}
 
 
-{%- macro section(titre, info=None, default_open=True, anchor=None) -%}
+{%- macro section(titre, info=None, default_open=True, anchor=None,
+                    action_url=None, action_label=None) -%}
+{# `action_url` + `action_label` (V0.9.4) : si fournis, rend un lien
+   discret dans le slot droit du header. Ex : « Champs personnalisés »
+   avec lien « Gérer » vers /collection/<miroir>/champs. Le clic doit
+   se propager hors du `<summary>` sans toggler le `<details>` —
+   `event.stopPropagation()` inline pour eviter le toggle. #}
 <section class="border-t first:border-t-0" style="border-color: rgba(0,0,0,0.08);"
          data-section{% if anchor %} id="meta-{{ anchor }}"{% endif %}>
   <details {% if default_open %}open{% endif %}>
@@ -55,9 +61,20 @@
         </svg>
         <span style="font-size:12px;font-weight:500;color:#374151;">{{ titre }}</span>
       </span>
-      {%- if info %}
-        <span style="font-size:11px;color:#9ca3af;">{{ info }}</span>
-      {%- endif %}
+      <span class="flex items-center gap-2">
+        {%- if info %}
+          <span style="font-size:11px;color:#9ca3af;">{{ info }}</span>
+        {%- endif %}
+        {%- if action_url and action_label %}
+          <a href="{{ action_url }}"
+             onclick="event.stopPropagation();"
+             class="hover:bg-blue-50 rounded"
+             style="font-size:11px;color:#378ADD;padding:2px 8px;
+                    border:1px solid rgba(55,138,221,0.25);text-decoration:none;">
+            {{ action_label }}
+          </a>
+        {%- endif %}
+      </span>
     </summary>
     <div data-section-body>
       {{ caller() }}
@@ -150,10 +167,18 @@
    que le champ a `est_libre_promouvable=True`, on rend un mini
    bouton « Formaliser » à droite de la valeur. Sans cette URL, ou
    en mode lecture seule, le bouton n'est pas rendu. #}
-{%- macro cartouche_metadonnees(sections, cote, q_surligne="", promouvoir_url=None) -%}
+{%- macro cartouche_metadonnees(sections, cote, q_surligne="",
+                                  promouvoir_url=None, gestion_champs_url=None) -%}
 {% call cartouche_wrapper() %}
   {% for nom_section, champs in sections.items() %}
-    {% call section(nom_section) %}
+    {# Lien « Gérer » uniquement sur la section « Champs personnalisés »,
+       et seulement quand gestion_champs_url est fournie (lecture sans
+       mutation → masque le lien). #}
+    {% set _action_url = gestion_champs_url if nom_section == "Champs personnalisés" else None %}
+    {% set _action_label = "Gérer" if _action_url else None %}
+    {% call section(nom_section,
+                     action_url=_action_url,
+                     action_label=_action_label) %}
       {%- if champs %}
         {% for champ in champs %}
           {% call ligne(

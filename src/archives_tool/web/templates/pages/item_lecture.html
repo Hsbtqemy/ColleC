@@ -35,9 +35,16 @@
   {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote) }}
 
   <div style="flex:0 0 460px;height:100%;">
+    {# Lien « Gérer » sur le header de la section « Champs personnalisés »
+       pointe vers la page de gestion des champs de la miroir du fonds.
+       La miroir est la cible naturelle puisque c'est elle qui porte les
+       ChampPersonnalise formels apres une promotion (cf. Lot 2). #}
+    {% set _miroir = (detail.collections | selectattr('est_miroir') | list) %}
+    {% set _gestion_champs_url = ('/collection/' ~ _miroir[0].cote ~ '/champs?fonds=' ~ fonds.cote) if _miroir else None %}
     {{ cartouche_metadonnees(detail.metadonnees_par_section, item.cote,
                               q_surligne=q_surligne,
-                              promouvoir_url='/item/' ~ item.cote ~ '/promouvoir-cle?fonds=' ~ fonds.cote) }}
+                              promouvoir_url='/item/' ~ item.cote ~ '/promouvoir-cle?fonds=' ~ fonds.cote,
+                              gestion_champs_url=_gestion_champs_url) }}
   </div>
 
   <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;">

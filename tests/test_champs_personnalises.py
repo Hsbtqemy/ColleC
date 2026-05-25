@@ -899,6 +899,65 @@ def test_route_item_modifier_liste_multiple_persiste_list(base_demo: Path) -> No
     engine.dispose()
 
 
+def test_route_item_modifier_liste_multiple_tolere_csv_legacy(
+    base_demo: Path,
+) -> None:
+    """Tolerance d'affichage : si une cle libre vaut une chaine CSV
+    ("image; pdf; other" depuis l'import Nakala), apres formalisation
+    en liste_multiple les checkboxes correspondantes sont pre-cochees.
+    Split sur `,` OU `;` (cas Nakala observe sur PF). Une fois sauve,
+    la valeur passe en list propre — la tolerance n'agit qu'au
+    premier rendu."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireValeur, FormulaireVocabulaire,
+        ajouter_valeur, creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="cat", libelle="Cat"))
+        for code in ("image", "pdf", "other", "autre"):
+            ajouter_valeur(s, v.id, FormulaireValeur(code=code, libelle=code.title()))
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="categories", libelle="Categories",
+                type="liste_multiple", valeurs_controlees_id=v.id,
+            ),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        # Valeur CSV legacy avec separateur `;` ET virgules, espaces
+        # mixtes — comme un import Nakala typique.
+        meta = dict(item.metadonnees or {})
+        meta["categories"] = "image; pdf, other"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/modifier?fonds=HK")
+    assert resp.status_code == 200
+    # Les 3 valeurs pre-cochees, la 4e (« autre ») non.
+    html = resp.text
+    # Pattern: <input ... value="image" ... checked>
+    import re
+    def coche(code: str) -> bool:
+        # le checked vient apres value sur la meme ligne <input>
+        pat = re.compile(
+            r'name="meta_categories"\s+value="' + re.escape(code)
+            + r'"\s*\n?\s*checked',
+            re.MULTILINE,
+        )
+        return bool(pat.search(html))
+    assert coche("image")
+    assert coche("pdf")
+    assert coche("other")
+    assert not coche("autre")
+
+
 def test_route_item_modifier_liste_multiple_zero_coche_efface(
     base_demo: Path,
 ) -> None:

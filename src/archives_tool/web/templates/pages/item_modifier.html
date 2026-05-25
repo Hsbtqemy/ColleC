@@ -146,13 +146,17 @@
         {# V0.9.6 : checkboxes pour liste_multiple. valeurs_actives doit
            etre une list[str] — si _val est une liste, on l'utilise
            telle quelle ; si c'est une chaine (legacy CSV non encore
-           normalisee), on la split sur la virgule. #}
+           normalisee), on la split sur `,` OU `;` (les exports Nakala
+           et certains imports utilisent `;` comme separateur). Une
+           fois resauve via les checkboxes, la valeur est stockee en
+           list propre — la tolerance ne sert qu'au premier rendu
+           apres formalisation d'une cle libre legacy. #}
         {% set _libs = {} %}
         {% for code, lib in options_par_champ_perso[c.cle] %}
           {% set _ = _libs.update({code: lib}) %}
         {% endfor %}
         {% if _val is string %}
-          {% set _valeurs_actives = (_val.split(',') | map('trim') | reject('equalto', '') | list) if _val else [] %}
+          {% set _valeurs_actives = (_val.replace(';', ',').split(',') | map('trim') | reject('equalto', '') | list) if _val else [] %}
         {% else %}
           {% set _valeurs_actives = _val or [] %}
         {% endif %}

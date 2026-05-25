@@ -1692,6 +1692,11 @@ class SyntheseCollection:
     trous: tuple[TrouCatalographique, ...]
     items_recents: tuple[ItemRecemmentModifie, ...]
     nb_items_total: int
+    # Identifiants Nakala de la collection elle-même (V0.9.6) — exposés
+    # dans la synthèse pour édition inline directe sans détour par la
+    # page Modifier. None si non renseigné.
+    doi_nakala: str | None = None
+    doi_collection_nakala_parent: str | None = None
 
     @property
     def vide(self) -> bool:
@@ -2069,6 +2074,8 @@ def composer_synthese_collection(
         trous=tuple(trous),
         items_recents=items_recents,
         nb_items_total=nb_items_total,
+        doi_nakala=collection.doi_nakala,
+        doi_collection_nakala_parent=collection.doi_collection_nakala_parent,
     )
 
 

@@ -333,19 +333,25 @@ def test_meta_entity_context_dans_page_collection(base_demo: Path) -> None:
 
 def test_collection_bandeau_hooks_inline_present(base_demo: Path) -> None:
     """Les hooks `data-edit-field` sont posés sur titre / description /
-    phase / doi_nakala / doi_collection_nakala_parent du bandeau
-    collection (pour que `inline_edit.js` les active au double-clic)."""
+    phase dans le bandeau, et sur doi_nakala / doi_collection_nakala_parent
+    dans la boîte Synthèse (déplacement V0.9.6 suite à retour utilisateur :
+    le DOI a sa place dans la synthèse, pas dans le bandeau)."""
     client = TestClient(app)
     resp = client.get("/collection/HK?fonds=HK")
     assert resp.status_code == 200
+    # Bandeau (au-dessus de la synthèse)
     assert 'data-edit-field="titre"' in resp.text
     assert 'data-edit-field="description"' in resp.text
     assert 'data-edit-field="phase"' in resp.text
+    # Synthèse (dans la boîte <details>)
     assert 'data-edit-field="doi_nakala"' in resp.text
-    # DOI parent visible si défini OU si l'utilisateur peut éditer
-    # (pour pouvoir l'ajouter). HK demo n'a probablement pas de parent,
-    # mais en mode édition la zone existe.
     assert 'data-edit-field="doi_collection_nakala_parent"' in resp.text
+    # Garde-fou : le DOI ne doit PAS être resté dans le bandeau (l'ancien
+    # placement V0.9.6 initial). On vérifie sa position via l'ordre :
+    # « DOI Nakala » apparait APRÈS l'en-tête « Synthèse » du composant.
+    idx_synthese = resp.text.find("Synthèse")
+    idx_doi = resp.text.find("DOI Nakala")
+    assert idx_synthese > -1 and idx_doi > idx_synthese
 
 
 def test_inline_edit_collection_doi_nakala_succes(base_demo: Path) -> None:

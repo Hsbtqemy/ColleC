@@ -37,6 +37,46 @@
     <div style="padding:0 14px 14px;">
 
       {# -----------------------------------------------------------
+         0. Identifiants (V0.9.6) — DOI Nakala de la collection
+         elle-même, edition inline (hooks lus par inline_edit.js,
+         le meta entity-context est rendu par collection_lecture.html).
+         Toujours affichés (même quand vides) pour permettre l'ajout
+         hors page Modifier — sauf en lecture seule où l'on masque
+         le DOI parent vide pour ne pas montrer un champ inerte.
+         ----------------------------------------------------------- #}
+      {% set _editable = not est_lecture_seule() %}
+      <div style="padding-top:8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;font-size:12px;">
+        <span style="display:inline-flex;align-items:baseline;gap:4px;">
+          <span style="color:#9ca3af;">DOI Nakala</span>
+          <span data-edit-field="doi_nakala"
+                data-edit-type="texte"
+                data-editable="{{ '1' if _editable else '0' }}"
+                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% endif %}>
+            <span data-value>{% if synthese.doi_nakala -%}
+              {{ synthese.doi_nakala }}
+            {%- else -%}
+              <span class="text-gray-400 italic">non renseigné</span>
+            {%- endif %}</span>
+          </span>
+        </span>
+        {% if synthese.doi_collection_nakala_parent or _editable %}
+        <span style="display:inline-flex;align-items:baseline;gap:4px;">
+          <span style="color:#9ca3af;">DOI parent</span>
+          <span data-edit-field="doi_collection_nakala_parent"
+                data-edit-type="texte"
+                data-editable="{{ '1' if _editable else '0' }}"
+                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% endif %}>
+            <span data-value>{% if synthese.doi_collection_nakala_parent -%}
+              {{ synthese.doi_collection_nakala_parent }}
+            {%- else -%}
+              <span class="text-gray-400 italic">non renseigné</span>
+            {%- endif %}</span>
+          </span>
+        </span>
+        {% endif %}
+      </div>
+
+      {# -----------------------------------------------------------
          1. Distribution temporelle — barres simples normalisées
          ----------------------------------------------------------- #}
       {% if not synthese.distribution_temporelle.vide %}

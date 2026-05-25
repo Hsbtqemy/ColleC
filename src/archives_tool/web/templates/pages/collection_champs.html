@@ -124,15 +124,20 @@
         action="/collection/{{ collection.cote }}/champs/creer{{ fonds_q }}"
         style="max-width:680px;">
 
-    {{ champ('cle', 'Clé', formulaire.cle,
-              placeholder='auteur_principal',
-              help_text='Commence par une lettre minuscule, puis minuscules / chiffres / underscores. C\'est la clé stockée dans Item.metadonnees.',
-              mono=true, obligatoire=true) }}
-
+    {# V0.9.4 polish : libellé d'abord, clé en dessous avec auto-slug
+       depuis le libellé via JS (script en bas du form). L'utilisateur
+       lit naturellement « je veux un champ Auteur principal » puis
+       voit la cle se calculer ; il peut toujours la modifier
+       manuellement (le JS arrête de sync au premier input dans cle). #}
     {{ champ('libelle', 'Libellé', formulaire.libelle,
               placeholder='Auteur principal',
               help_text='Affiché dans le cartouche item.',
               obligatoire=true) }}
+
+    {{ champ('cle', 'Clé', formulaire.cle,
+              placeholder='auteur_principal',
+              help_text='Identifiant technique stocké dans Item.metadonnees. Auto-générée depuis le libellé — modifiable.',
+              mono=true, obligatoire=true) }}
 
     {% set libelles_types = {
       'texte': 'Texte court',
@@ -202,6 +207,39 @@
       </button>
     </div>
   </form>
+
+  {# Auto-slug clé depuis libellé. La sync s'arrête au premier input
+     manuel dans `cle` (l'utilisateur peut toujours override). NFD +
+     drop diacritics pour gerer les accents (« Auteur principal »
+     -> « auteur_principal », « Mots-clés » -> « mots_cles »). #}
+  <script>
+  (function() {
+    const libelle = document.getElementById('champ-libelle');
+    const cle = document.getElementById('champ-cle');
+    if (!libelle || !cle) return;
+    // Si la cle est deja remplie au load (reprise apres erreur), on
+    // considere que l'utilisateur l'a deja touchee.
+    let userTouchedCle = (cle.value || '').trim() !== '';
+    cle.addEventListener('input', function () { userTouchedCle = true; });
+    function slugify(text) {
+      let slug = (text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')   // diacritiques
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      // PATTERN_CLE exige une lettre en tete : strip les chiffres
+      // initiaux. « 1er auteur » -> « er_auteur » (l'utilisateur
+      // verra et corrigera).
+      slug = slug.replace(/^[0-9]+_?/, '');
+      return slug;
+    }
+    libelle.addEventListener('input', function () {
+      if (userTouchedCle) return;
+      cle.value = slugify(libelle.value);
+    });
+  })();
+  </script>
 </section>
 {% else %}
 <p class="text-sm text-amber-700 italic"

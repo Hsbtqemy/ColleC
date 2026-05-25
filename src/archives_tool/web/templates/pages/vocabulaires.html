@@ -78,15 +78,17 @@
   </h2>
 
   <form method="post" action="/vocabulaires/creer" style="max-width:680px;">
-    {{ champ('code', 'Code', formulaire.code,
-              placeholder='tag_personnage',
-              help_text='Alphanumérique, underscores, tirets ou points (ex. : tag_personnage, dc_lang, c_18cf).',
-              mono=true, obligatoire=true) }}
-
+    {# Libellé d'abord pour ordre de lecture naturel, code dessous
+       avec auto-slug depuis le libellé via JS (cf. script en bas). #}
     {{ champ('libelle', 'Libellé', formulaire.libelle,
               placeholder='Personnages cités',
               help_text='Affiché dans les sélecteurs et la liste.',
               obligatoire=true) }}
+
+    {{ champ('code', 'Code', formulaire.code,
+              placeholder='tag_personnage',
+              help_text='Identifiant technique alphanumérique. Auto-généré depuis le libellé — modifiable.',
+              mono=true, obligatoire=true) }}
 
     {{ textarea('description', 'Description publique',
                  formulaire.description,
@@ -118,6 +120,34 @@
       </button>
     </div>
   </form>
+
+  {# Auto-slug code depuis libellé (cf. collection_champs.html pour
+     justification). Le pattern PATTERN_CODE_VOCAB autorise tirets
+     et points en plus de [a-z0-9_], mais l'auto-slug normalise tout
+     en underscore — l'utilisateur peut adopter `-` / `.` manuellement
+     s'il veut. #}
+  <script>
+  (function() {
+    const libelle = document.getElementById('champ-libelle');
+    const code = document.getElementById('champ-code');
+    if (!libelle || !code) return;
+    let userTouchedCode = (code.value || '').trim() !== '';
+    code.addEventListener('input', function () { userTouchedCode = true; });
+    function slugify(text) {
+      let slug = (text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      return slug;
+    }
+    libelle.addEventListener('input', function () {
+      if (userTouchedCode) return;
+      code.value = slugify(libelle.value);
+    });
+  })();
+  </script>
 </section>
 {% else %}
 <p class="text-sm text-amber-700 italic"

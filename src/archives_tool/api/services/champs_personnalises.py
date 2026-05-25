@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -432,7 +433,25 @@ def promouvoir_cle_libre_en_champ(
         actif=True,
     )
     db.add(champ)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Race : un autre transaction a insere le meme (collection_id,
+        # cle) entre notre SELECT et notre INSERT. On rollback et on
+        # retourne le champ gagnant — coherent avec l'idempotence
+        # documentee.
+        db.rollback()
+        existant = db.scalar(
+            select(ChampPersonnalise).where(
+                ChampPersonnalise.collection_id == miroir.id,
+                ChampPersonnalise.cle == cle_strip,
+            )
+        )
+        if existant is None:
+            # IntegrityError sans champ correspondant : contrainte non
+            # liee a notre cle. Re-leve.
+            raise
+        return existant, miroir
     db.refresh(champ)
     return champ, miroir
 

@@ -570,6 +570,39 @@ def test_promouvoir_refuse_cle_absente(base_demo: Path) -> None:
     engine.dispose()
 
 
+def test_composer_marque_formels_non_promouvables(base_demo: Path) -> None:
+    """Un ChampPersonnalise formel doit avoir `est_libre_promouvable=False`
+    (le bouton « Formaliser » serait absurde — il l'est déjà). Garde-fou
+    contre une régression future qui aurait set le flag par défaut à True."""
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.models import Collection, Fonds, TypeCollection
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.fonds_id == fonds.id,
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Crée un champ formel ET pose la valeur sur un item.
+        creer_champ(s, miroir.id, FormulaireChamp(cle="auteur", libelle="Auteur"))
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        meta = dict(item.metadonnees or {})
+        meta["auteur"] = "Topor"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+
+        detail = composer_page_item(s, "HK-001", fonds)
+        champs_perso = detail.metadonnees_par_section["Champs personnalisés"]
+        auteur = next(c for c in champs_perso if c.cle == "auteur")
+        assert auteur.est_libre_promouvable is False
+    engine.dispose()
+
+
 def test_composer_marque_libre_promouvable_pour_slugs_valides(base_demo: Path) -> None:
     """Vérifie que `est_libre_promouvable=True` pour les clés libres
     avec slug valide, False pour les clés invalides."""

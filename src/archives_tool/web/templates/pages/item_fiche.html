@@ -1,0 +1,218 @@
+{# Fiche item — notice complète sans visionneuse (V0.9.5).
+
+   Layout 3 colonnes (responsive empilé en mobile) :
+   - gauche : cartouche métadonnées item (édition inline conservée)
+   - centre : agrégats fichier + liste compacte + placeholder annotations
+   - droite : grille de vignettes scrollable, badge ✓ sur celles à méta docs
+
+   Variables :
+   - fiche (FicheItem)
+   - fonds_cote, visionneuse_url, consultation_url, q_surligne
+#}
+{% extends "base.html" %}
+{% from 'components/bandeau_item.html' import bandeau_item %}
+{% from 'components/cartouche_metadonnees.html' import cartouche_metadonnees %}
+
+{% set item = fiche.item %}
+{% set fonds = fiche.fonds %}
+
+{% block title %}{{ item.titre or item.cote }} — archives-tool{% endblock %}
+
+{% block content %}
+{# Contexte item exposé au JS d'édition inline (cf. inline_edit.js). #}
+<meta name="item-context"
+      data-cote="{{ item.cote }}"
+      data-fonds="{{ fonds.cote }}"
+      data-version="{{ item.version }}"
+      data-edit-url-template="/item/{cote}/champ/{field}?fonds={fonds}">
+
+{{ bandeau_item(item, fonds, fiche.nb_fichiers, fiche.navigation, fiche.collections, q_surligne=q_surligne) }}
+
+{# Bouton visionneuse en haut à droite, accès direct au layout
+   page-par-page (workflow catalogage). #}
+<div class="flex items-center justify-end mb-3 gap-2" style="font-size:13px;">
+  <a href="{{ visionneuse_url }}"
+     class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+     style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+    Visionneuse →
+  </a>
+</div>
+
+{# Grid 3 colonnes desktop, 1 colonne empilée mobile. Hauteur fixée
+   en desktop pour que chaque colonne scroll en interne. #}
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr_220px]"
+     style="--fiche-h: calc(100vh - 280px); min-height: 520px;">
+
+  {# ----------------------------------------------------------------------
+     Colonne 1 — ITEM (cartouche)
+     ---------------------------------------------------------------------- #}
+  <div class="lg:overflow-y-auto" style="height:auto;">
+    <style>
+      @media (min-width: 1024px) {
+        .fiche-col-item, .fiche-col-fichiers, .fiche-col-vignettes {
+          height: var(--fiche-h);
+          overflow-y: auto;
+        }
+      }
+    </style>
+    <div class="fiche-col-item">
+      {% set _miroir = (fiche.collections | selectattr('est_miroir') | list) %}
+      {% set _gestion = ('/collection/' ~ _miroir[0].cote ~ '/champs?fonds=' ~ fonds.cote) if _miroir else None %}
+      {{ cartouche_metadonnees(fiche.metadonnees_par_section, item.cote,
+                                q_surligne=q_surligne,
+                                promouvoir_url='/item/' ~ item.cote ~ '/promouvoir-cle?fonds=' ~ fonds.cote,
+                                gestion_champs_url=_gestion) }}
+    </div>
+  </div>
+
+  {# ----------------------------------------------------------------------
+     Colonne 2 — FICHIERS (agrégats + liste détaillée + annotations)
+     ---------------------------------------------------------------------- #}
+  <div class="fiche-col-fichiers">
+    <div class="bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);">
+
+      {# Header colonne #}
+      <div style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.08);background:#f9fafb;">
+        <h2 style="font-size:12px;font-weight:500;color:#374151;">
+          Fichiers · {{ fiche.nb_fichiers }}
+        </h2>
+      </div>
+
+      {# Agrégats #}
+      {% if fiche.agregats_fichier %}
+      <section style="padding:12px 14px;border-bottom:1px solid rgba(0,0,0,0.06);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px;">
+          Agrégats
+        </h3>
+        {% for ag in fiche.agregats_fichier %}
+          <div style="margin-bottom:12px;font-size:13px;">
+            <div style="color:#374151;font-weight:500;margin-bottom:3px;">
+              {{ ag.libelle }} <span style="color:#9ca3af;font-weight:400;">({{ ag.valeurs | length }})</span>
+            </div>
+            <div style="color:#6b7280;font-size:12px;line-height:1.6;">
+              {% for val, count in ag.valeurs -%}
+                {{ val }} <span style="color:#9ca3af;">({{ count }})</span>{% if not loop.last %} · {% endif %}
+              {%- endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      {# Détail — uniquement les fichiers à méta documentaires.
+         Si l'item n'a aucun fichier riche, on saute la section
+         (la liste pleine est accessible via détail fichier individuel). #}
+      {% set _avec_meta = fiche.lignes_fichier | selectattr('a_meta_documentaires') | list %}
+      {% if _avec_meta %}
+      <section style="padding:12px 14px;border-bottom:1px solid rgba(0,0,0,0.06);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px;">
+          Détail ({{ _avec_meta | length }} sur {{ fiche.nb_fichiers }})
+        </h3>
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead>
+            <tr style="color:#9ca3af;border-bottom:1px solid rgba(0,0,0,0.08);">
+              <th style="text-align:left;padding:4px 6px;width:34px;">#</th>
+              <th style="text-align:left;padding:4px 6px;">Métadonnées</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ligne in _avec_meta %}
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.04);vertical-align:top;">
+              <td style="padding:6px;color:#6b7280;font-variant-numeric:tabular-nums;">
+                <a href="{{ visionneuse_url }}&fichier_courant={{ ligne.ordre }}"
+                   style="color:#378ADD;text-decoration:none;">
+                  {{ '%02d' | format(ligne.ordre) }}
+                </a>
+              </td>
+              <td style="padding:6px;color:#374151;line-height:1.5;">
+                {% for cle, val in ligne.meta_extraits.items() %}
+                  <div style="margin-bottom:2px;">
+                    <span style="color:#9ca3af;font-size:11px;">{{ cle | replace('_', ' ') }}</span>
+                    <span style="margin-left:4px;">{{ val | truncate(80) }}</span>
+                  </div>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endif %}
+
+      {# Annotations placeholder #}
+      <section style="padding:12px 14px;">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;">
+          Annotations IIIF (V2)
+        </h3>
+        <p style="font-size:12px;color:#9ca3af;font-style:italic;margin:0;">
+          Aucune annotation. Module Annotorious prévu V1.x/V2.
+        </p>
+      </section>
+
+    </div>
+  </div>
+
+  {# ----------------------------------------------------------------------
+     Colonne 3 — VIGNETTES (grille 2 colonnes, scrollable)
+     ---------------------------------------------------------------------- #}
+  <div class="fiche-col-vignettes">
+    <div class="bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);">
+
+      <div style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.08);background:#f9fafb;">
+        <h2 style="font-size:12px;font-weight:500;color:#374151;">
+          Vignettes ({{ fiche.nb_fichiers }})
+        </h2>
+      </div>
+
+      {% if fiche.fichiers %}
+        {# Map id fichier → ligne (pour le badge ✓). #}
+        {% set _meta_par_id = {} %}
+        {% for ligne in fiche.lignes_fichier %}
+          {% set _ = _meta_par_id.update({ligne.id: ligne}) %}
+        {% endfor %}
+
+        <div class="grid grid-cols-2 gap-2" style="padding:10px;">
+          {% for f in fiche.fichiers %}
+            {% set _ligne = _meta_par_id.get(f.id) %}
+            {% set _has_meta = _ligne and _ligne.a_meta_documentaires %}
+            <a href="{{ visionneuse_url }}&fichier_courant={{ loop.index }}"
+               class="relative block rounded overflow-hidden hover:ring-2"
+               style="aspect-ratio:1;background:#f3f4f6;text-decoration:none;"
+               title="Page {{ f.ordre }} — {{ f.nom_fichier }}{% if _has_meta %} · méta documentaires{% endif %}">
+              {% if f.source_image and f.source_image.vignette_url %}
+                <img src="{{ f.source_image.vignette_url }}" loading="lazy" alt="page {{ f.ordre }}"
+                     style="width:100%;height:100%;object-fit:cover;">
+              {% else %}
+                <div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#9ca3af;font-size:11px;">
+                  {{ '%02d' | format(f.ordre) }}
+                </div>
+              {% endif %}
+              {% if _has_meta %}
+                <span style="position:absolute;top:3px;right:3px;background:#378ADD;color:white;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;"
+                      aria-label="page avec metadonnees documentaires">✓</span>
+              {% endif %}
+              <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,0.88);padding:1px 4px;font-size:10px;color:#374151;text-align:center;font-variant-numeric:tabular-nums;">
+                {{ f.ordre }}
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="padding:24px 12px;font-size:12px;color:#9ca3af;font-style:italic;text-align:center;">
+          Aucun fichier rattaché à cet item.
+        </p>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {# inline_edit.js : édition inline du cartouche (colonne 1).
+     Masqué en mode lecture seule, comme sur l'ancien layout. #}
+  {% if not est_lecture_seule() %}
+    <script src="{{ static_url('js/inline_edit.js') }}"></script>
+  {% endif %}
+{% endblock %}

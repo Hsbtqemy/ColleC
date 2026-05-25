@@ -51,6 +51,7 @@ from archives_tool.api.routes._helpers import (
 )
 from archives_tool.api.services.dashboard import (
     composer_dashboard,
+    composer_fiche_item,
     composer_page_collection,
     composer_page_fonds,
     composer_page_item,
@@ -810,7 +811,7 @@ def soumettre_retirer_item(
 
 
 @router.get("/item/{cote}", response_class=HTMLResponse)
-def page_item(
+def page_item_fiche(
     cote: str,
     request: Request,
     fonds: str = Query(
@@ -820,7 +821,6 @@ def page_item(
             "uniques que par fonds)."
         ),
     ),
-    fichier_courant: int = Query(1, ge=1),
     q: str = Query(
         "",
         description=(
@@ -832,8 +832,50 @@ def page_item(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
-    """Page de lecture d'un item : bandeau, collections d'appartenance,
-    visionneuse et tableau des fichiers."""
+    """Fiche item (V0.9.5) : notice complète sans visionneuse —
+    landing par défaut pour comprendre un item. Layout 3 colonnes :
+    métadonnées item, agrégats fichier + liste compacte, grille de
+    vignettes scrollable.
+
+    Pour l'ancien layout (cartouche + visionneuse), passer par
+    ``/item/<cote>/visionneuse?fonds=X``.
+    """
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
+    try:
+        fiche = composer_fiche_item(db, cote, fonds_obj)
+    except ItemIntrouvable as e:
+        raise HTTPException(
+            status_code=404, detail=f"Item {cote!r} introuvable."
+        ) from e
+    return templates.TemplateResponse(
+        request,
+        "pages/item_fiche.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            fiche=fiche,
+            fonds_cote=fonds_obj.cote,
+            visionneuse_url=f"/item/{cote}/visionneuse?fonds={fonds_obj.cote}",
+            consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
+            q_surligne=q,
+        ),
+    )
+
+
+@router.get("/item/{cote}/visionneuse", response_class=HTMLResponse)
+def page_item_visionneuse(
+    cote: str,
+    request: Request,
+    fonds: str = Query(...),
+    fichier_courant: int = Query(1, ge=1),
+    q: str = Query(""),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Ancien layout V0.9.2-gamma : 3 zones cartouche / visionneuse /
+    panneau fichiers. Reste utile pour le catalogage page-par-page —
+    ``/item/<cote>`` envoie sur la fiche depuis V0.9.5."""
     fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
         detail = composer_page_item(
@@ -852,6 +894,7 @@ def page_item(
             detail=detail,
             fonds_cote=fonds_obj.cote,
             consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
+            fiche_url=f"/item/{cote}?fonds={fonds_obj.cote}",
             q_surligne=q,
         ),
     )

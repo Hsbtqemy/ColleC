@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections import Counter
 from typing import Any, Literal
 
 from sqlalchemy import func, select
@@ -1170,6 +1171,72 @@ class ItemDetail:
     navigation: NavigationItem
 
 
+# Clés de `Fichier.metadonnees` considérées comme techniques (URLs
+# Nakala / data, extension, chiffre interne) — exclues des agrégats
+# de la fiche item et du badge « méta non triviales » sur les
+# vignettes. Sans cette liste noire, chaque fichier porterait une
+# soixantaine de valeurs uniques (data_url, embed_url, …) et les
+# agrégats seraient dominés par ces fingerprints sans valeur
+# documentaire.
+_META_FICHIER_TECHNIQUES: frozenset[str] = frozenset(
+    {
+        "data_url", "embed_url", "preview_url", "thumb", "thumbnail",
+        "iiif", "iiif_url", "iiif_url_nakala", "info_json",
+        "chiffre", "ext", "extension",
+        "hash", "hash_sha256", "sha", "sha256", "checksum",
+    }
+)
+
+
+@dataclass(frozen=True)
+class AgregatChampFichier:
+    """Synthèse d'une clé de ``Fichier.metadonnees`` sur tous les
+    fichiers d'un item : valeurs distinctes + nb d'occurrences.
+
+    Utilisé par la fiche item (V0.9.5) pour montrer en un coup d'œil
+    « Dessinateurs (6) : Perich (8) · Maximo (12) … » sans imposer
+    le clic page par page.
+    """
+
+    cle: str  # clé brute, ex. "collaborateur_dessinateur"
+    libelle: str  # synthétisé via `_libelle_depuis_cle`
+    valeurs: tuple[tuple[str, int], ...]  # (valeur, count), trié desc puis alpha
+
+
+@dataclass(frozen=True)
+class FichierFicheLigne:
+    """Ligne du tableau compact « DÉTAIL » de la colonne fichiers de
+    la fiche item. Contient juste ce qui est rendu — pas de source
+    image, pas de meta techniques."""
+
+    id: int
+    ordre: int
+    nom_fichier: str
+    extension: str
+    a_meta_documentaires: bool  # True si meta non-triviales (badge ✎)
+    meta_extraits: dict[str, str]  # clés non-techniques → str affichable
+
+
+@dataclass(frozen=True)
+class FicheItem:
+    """Notice complète d'un item, sans visionneuse (V0.9.5).
+
+    Composée par :func:`composer_fiche_item` ; rendue par
+    ``pages/item_fiche.html``. Three columns : item-level metadata,
+    fichier aggregates + compact list, vignettes scrollables.
+    """
+
+    item: Item
+    fonds: Fonds
+    collections: tuple[CollectionAppartenance, ...]
+    metadonnees_par_section: dict[str, list[ChampMetadonnee]]
+    fichiers: tuple[FichierResume, ...]  # source des vignettes col 3
+    nb_fichiers: int
+    agregats_fichier: tuple[AgregatChampFichier, ...]
+    lignes_fichier: tuple[FichierFicheLigne, ...]  # liste compacte col 2
+    navigation: NavigationItem
+
+
 def _extension(nom_fichier: str) -> str:
     if "." in nom_fichier:
         return nom_fichier.rsplit(".", 1)[1].lower()
@@ -1627,5 +1694,148 @@ def composer_page_item(
         nb_fichiers=nb_fichiers,
         collections=collections,
         metadonnees_par_section=composer_metadonnees_par_section(item, champs),
+        navigation=navigation_items(db, item, fonds),
+    )
+
+
+def _meta_documentaires(meta: dict[str, Any] | None) -> dict[str, str]:
+    """Sous-ensemble de ``Fichier.metadonnees`` jugé documentaire :
+    on retire les URLs Nakala, hash, extension, chiffre interne
+    (cf. :data:`_META_FICHIER_TECHNIQUES`). Renvoie un dict normalisé
+    (valeurs converties en str non vide) — vide si rien d'utile.
+    """
+    if not isinstance(meta, dict):
+        return {}
+    out: dict[str, str] = {}
+    for cle, val in meta.items():
+        if cle in _META_FICHIER_TECHNIQUES:
+            continue
+        s = _valeur_metadonnee_str(val)
+        if s:
+            out[cle] = s
+    return out
+
+
+def _agreger_fichier_metadonnees(
+    fichiers: list[Fichier],
+) -> tuple[AgregatChampFichier, ...]:
+    """Pour chaque clé non-technique présente dans les
+    `Fichier.metadonnees`, agrège les valeurs distinctes + comptes.
+    Trié par fréquence décroissante (utile pour la fiche : on voit
+    d'abord les valeurs les plus représentées).
+
+    Coût : O(N fichiers × M clés). 7454 × ~5 clés sur PF = 37k ops,
+    instantané. Pas d'index SQL : pour des items avec 10k+ fichiers
+    il faudrait passer à un GROUP BY json_extract — pas le cas
+    aujourd'hui.
+    """
+    par_cle: dict[str, Counter[str]] = {}
+    for f in fichiers:
+        for cle, val in _meta_documentaires(f.metadonnees).items():
+            par_cle.setdefault(cle, Counter())[val] += 1
+    agregats: list[AgregatChampFichier] = []
+    for cle, counter in sorted(par_cle.items()):
+        valeurs = tuple(
+            sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        )
+        agregats.append(
+            AgregatChampFichier(
+                cle=cle,
+                libelle=_libelle_depuis_cle(cle),
+                valeurs=valeurs,
+            )
+        )
+    return tuple(agregats)
+
+
+def composer_fiche_item(
+    db: Session,
+    cote: str,
+    fonds: Fonds,
+) -> FicheItem:
+    """Notice complète d'un item, sans visionneuse (V0.9.5).
+
+    Mêmes briques que :func:`composer_page_item` (réutilise items,
+    fichiers, collections, champs perso) + nouvelles :
+    - ``agregats_fichier`` : synthèse des clés documentaires de
+      ``Fichier.metadonnees`` sur les N fichiers de l'item ;
+    - ``lignes_fichier`` : projection compacte pour le tableau de
+      droite (sans `source_image` ni URLs techniques, allégée par
+      rapport à `FichierResume`).
+
+    Garde-fou SQL : ≤ 4 requêtes (item + fichiers eager, collections,
+    champs perso). Agrégats calculés en Python pour rester portable
+    (SQLite + Postgres futur sans JSON ops vendor-specific).
+    """
+    item = db.scalar(
+        select(Item)
+        .options(selectinload(Item.fichiers))
+        .where(Item.cote == cote, Item.fonds_id == fonds.id)
+    )
+    if item is None:
+        raise ItemIntrouvable(f"cote={cote!r} dans le fonds {fonds.id}")
+
+    fichiers_resume = tuple(_resume_fichier(f) for f in item.fichiers)
+    nb_fichiers = len(fichiers_resume)
+
+    # Lignes compactes pour le tableau colonne fichiers.
+    lignes: list[FichierFicheLigne] = []
+    for f in item.fichiers:
+        meta_doc = _meta_documentaires(f.metadonnees)
+        lignes.append(
+            FichierFicheLigne(
+                id=f.id,
+                ordre=f.ordre,
+                nom_fichier=f.nom_fichier,
+                extension=_extension(f.nom_fichier),
+                a_meta_documentaires=bool(meta_doc),
+                meta_extraits=meta_doc,
+            )
+        )
+
+    # Collections d'appartenance + métadonnées item — identique au
+    # composer_page_item (même flot). Pas DRY'd parce que cohérence
+    # de signature vs duplication minime.
+    rows = db.execute(
+        select(
+            Collection.cote,
+            Collection.titre,
+            Collection.type_collection,
+            Collection.fonds_id,
+            Fonds.cote.label("fonds_cote"),
+        )
+        .join(ItemCollection, ItemCollection.collection_id == Collection.id)
+        .outerjoin(Fonds, Fonds.id == Collection.fonds_id)
+        .where(ItemCollection.item_id == item.id)
+        .order_by(
+            (Collection.type_collection != TypeCollection.MIROIR.value),
+            Collection.titre,
+        )
+    ).all()
+    collections = tuple(
+        CollectionAppartenance(
+            cote=cote_c,
+            titre=titre,
+            type_collection=type_c,
+            fonds_id=fonds_id_c,
+            fonds_cote=fonds_cote,
+        )
+        for cote_c, titre, type_c, fonds_id_c, fonds_cote in rows
+    )
+
+    from archives_tool.api.services.champs_personnalises import (
+        lister_champs_actifs_pour_item,
+    )
+    champs = lister_champs_actifs_pour_item(db, item.id)
+
+    return FicheItem(
+        item=item,
+        fonds=fonds,
+        collections=collections,
+        metadonnees_par_section=composer_metadonnees_par_section(item, champs),
+        fichiers=fichiers_resume,
+        nb_fichiers=nb_fichiers,
+        agregats_fichier=_agreger_fichier_metadonnees(list(item.fichiers)),
+        lignes_fichier=tuple(lignes),
         navigation=navigation_items(db, item, fonds),
     )

@@ -948,6 +948,120 @@ def test_route_item_modifier_liste_multiple_zero_coche_efface(
     engine.dispose()
 
 
+def test_inline_edit_champ_perso_texte(base_demo: Path) -> None:
+    """V0.9.4 inline-edit-champs-perso : un POST sur
+    /item/<cote>/champ/<cle_perso> ecrit dans item.metadonnees et
+    retourne le fragment HTML avec la nouvelle valeur."""
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur"))
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/champ/auteur?fonds=HK",
+        data={"version": str(version), "valeur": "Topor"},
+    )
+    assert resp.status_code == 200
+    assert "Topor" in resp.text
+    assert "data-edit-new-version" in resp.text
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert (item.metadonnees or {}).get("auteur") == "Topor"
+    engine.dispose()
+
+
+def test_inline_edit_champ_perso_avec_vocab_libelle_humain(base_demo: Path) -> None:
+    """Inline edit d'un champ perso avec vocab DB attache : le
+    fragment renvoie le libelle humain + valeur brute en
+    data-edit-raw pour la prochaine edition."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireValeur, FormulaireVocabulaire,
+        ajouter_valeur, creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="genres", libelle="Genres"))
+        ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="genre", libelle="Genre",
+                type="liste", valeurs_controlees_id=v.id,
+            ),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/champ/genre?fonds=HK",
+        data={"version": str(version), "valeur": "bd"},
+    )
+    assert resp.status_code == 200
+    assert "Bande dessin" in resp.text  # libelle humain affiche
+    assert 'data-edit-raw="bd"' in resp.text  # valeur brute preservee
+
+
+def test_inline_edit_champ_perso_liste_multiple_refuse(base_demo: Path) -> None:
+    """liste_multiple n'a pas d'UI inline (pas de multi-select via
+    input/select dans inline_edit.js). Route refuse en 403."""
+    from archives_tool.api.services.vocabulaires_db import (
+        FormulaireVocabulaire, creer_vocabulaire,
+    )
+
+    cid = _miroir_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tags", libelle="Tags"))
+        creer_champ(
+            s, cid,
+            FormulaireChamp(
+                cle="tags", libelle="Tags",
+                type="liste_multiple", valeurs_controlees_id=v.id,
+            ),
+        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/champ/tags?fonds=HK",
+        data={"version": str(version), "valeur": "a"},
+    )
+    assert resp.status_code == 403
+
+
+def test_inline_edit_champ_inconnu_refuse(base_demo: Path) -> None:
+    """Une cle ni DC core ni ChampPersonnalise actif retourne 403."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        version = item.version
+    engine.dispose()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/item/HK-001/champ/cle_inexistante?fonds=HK",
+        data={"version": str(version), "valeur": "x"},
+    )
+    assert resp.status_code == 403
+
+
 def test_route_item_modifier_preserve_cles_libres(base_demo: Path) -> None:
     """Bug regression V0.9.4-fix : un POST qui edite un champ formel
     ne doit PAS ecraser les autres cles (notamment les cles libres

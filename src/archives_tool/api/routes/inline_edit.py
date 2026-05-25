@@ -25,9 +25,15 @@ from archives_tool.api.deps import (
     get_utilisateur_courant,
 )
 from archives_tool.api.routes._helpers import resoudre_item_ou_404
+from archives_tool.api.services.champs_personnalises import (
+    lister_champs_actifs_pour_item,
+)
 from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services.dashboard import CHAMPS_ITEM_EDITABLES_INLINE
 from archives_tool.api.services.vocabulaires import resoudre_vocabulaire
+from archives_tool.api.services.vocabulaires_db import (
+    options_depuis_vocabulaire,
+)
 from archives_tool.api.services.items import (
     ItemInvalide,
     formulaire_depuis_item,
@@ -59,15 +65,38 @@ def soumettre_edition_inline(
     - 400 + fragment d'erreur si la valeur est invalide ;
     - 403 si le champ n'est pas dans la whitelist.
     """
-    if field not in CHAMPS_ITEM_EDITABLES_INLINE:
-        raise HTTPException(
-            status_code=403, detail=f"Champ {field!r} non éditable inline."
-        )
-
     item, _fonds_obj = resoudre_item_ou_404(db, cote, fonds)
+
+    # V0.9.4 inline-edit-champs-perso : un `field` est valide soit
+    # via la whitelist DC core, soit via les ChampPersonnalise actifs
+    # des collections de l'item. On distingue les deux pour router
+    # l'ecriture (setattr vs metadonnees) et la resolution de
+    # libelle humain (OPTIONS_PAR_CHAMP hardcoded vs vocab DB).
+    champ_perso = None
+    if field not in CHAMPS_ITEM_EDITABLES_INLINE:
+        for c in lister_champs_actifs_pour_item(db, item.id):
+            if c.cle == field and c.type != "liste_multiple":
+                champ_perso = c
+                break
+        if champ_perso is None:
+            raise HTTPException(
+                status_code=403, detail=f"Champ {field!r} non éditable inline."
+            )
+
     formulaire = formulaire_depuis_item(item)
     formulaire.version = version
-    setattr(formulaire, field, valeur)
+    if champ_perso is None:
+        setattr(formulaire, field, valeur)
+    else:
+        # Ecriture dans metadonnees, en preservant les autres cles
+        # (libres et formelles non touchees). Cf. le fix bug observe
+        # sur PF-002 dans /modifier — meme principe ici.
+        nouvelles_metas = dict(item.metadonnees or {})
+        if valeur:
+            nouvelles_metas[field] = valeur
+        else:
+            nouvelles_metas.pop(field, None)
+        formulaire.metadonnees = nouvelles_metas
 
     try:
         item_modifie = modifier_item(db, item.id, formulaire, modifie_par=utilisateur)
@@ -90,8 +119,20 @@ def soumettre_edition_inline(
     # (« Texte » plutôt que l'URI COAR) avec la valeur brute stockée
     # dans `data-edit-raw` pour que la prochaine édition pré-remplisse
     # correctement le <select>.
-    valeur_brute = getattr(item_modifie, field, None)
-    options, valeur_affichee = resoudre_vocabulaire(field, valeur_brute)
+    if champ_perso is None:
+        valeur_brute = getattr(item_modifie, field, None)
+        options, valeur_affichee = resoudre_vocabulaire(field, valeur_brute)
+    else:
+        # Champ perso : valeur dans metadonnees, vocab via DB.
+        valeur_brute = (item_modifie.metadonnees or {}).get(field)
+        options = None
+        valeur_affichee = valeur_brute
+        if champ_perso.vocabulaire is not None:
+            options = options_depuis_vocabulaire(champ_perso.vocabulaire)
+            for code, libelle in options:
+                if code == valeur_brute:
+                    valeur_affichee = libelle
+                    break
     return templates.TemplateResponse(
         request,
         "partials/inline_edit_valeur.html",

@@ -1405,17 +1405,21 @@ def composer_metadonnees_par_section(
                 if code == valeur_str:
                     valeur_affichee = libelle
                     break
+        # V0.9.4 inline-edit-champs-perso : editable sauf
+        # liste_multiple (inline_edit.js ne sait pas faire de
+        # multi-select via input/select). texte_long mappé sur
+        # `multiligne` pour que le JS crée un <textarea>.
+        type_donnee_inline = (
+            "multiligne" if champ.type == "texte_long" else champ.type
+        )
+        est_editable_inline = champ.type != "liste_multiple"
         perso.append(
             ChampMetadonnee(
                 cle=champ.cle,
                 libelle=champ.libelle,
                 valeur=valeur_str,
-                type_donnee=champ.type,
-                # Les champs personnalisés vivent dans Item.metadonnees (JSON)
-                # et leur édition nécessitera une UI dédiée. Non éditables
-                # inline pour l'instant — Lot 3.1 envisageable pour les
-                # champs avec vocabulaire (dropdown direct dans le cartouche).
-                editable=False,
+                type_donnee=type_donnee_inline,
+                editable=est_editable_inline,
                 options=options,
                 valeur_affichee=valeur_affichee,
             )

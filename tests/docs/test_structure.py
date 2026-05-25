@@ -25,6 +25,7 @@ FICHIERS_REQUIS = [
     "premiers-pas/premier-import.md",
     "premiers-pas/workflow-type.md",
     "guide/concepts.md",
+    "guide/champs-vocabulaires.md",
     "guide/cli/index.md",
     "guide/cli/collections.md",
     "reference/index.md",

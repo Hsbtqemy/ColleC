@@ -55,6 +55,14 @@ extra:
 exclude_docs: |
   developpeurs/deploiement-future.md
   developpeurs/v092-import-refonte.md
+  developpeurs/portail-public-future.md
+  developpeurs/annotations-image-future.md
+  developpeurs/workflow-numerisation.md
+  developpeurs/plan-de-chantier.md
+  developpeurs/sites-statiques-future.md
+  developpeurs/notebooks-sdk-future.md
+  developpeurs/zotero-future.md
+  developpeurs/idees-ui-vrac.md
 
 markdown_extensions:
   - admonition
@@ -95,6 +103,7 @@ nav:
     - Recherche: guide/recherche.md
     - Liseuse de consultation: guide/liseuse.md
     - Assistant d'import (web): guide/import-assistant.md
+    - Champs personnalisés + vocabulaires: guide/champs-vocabulaires.md
     - CLI:
       - Vue d'ensemble: guide/cli/index.md
       - importer: guide/cli/importer.md

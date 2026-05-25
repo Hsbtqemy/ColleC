@@ -121,14 +121,21 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
-## V0.9.4 (en cours, 2026-05-25)
+## V0.9.4 (stable, 2026-05-25)
 
-Itération courte après V0.9.3 stable, démarrée pendant la poursuite
-du test d'usage Por Favor. Cible : combler le gap V0.7 backlog
-identifié sur Por Favor — l'import dumpe les colonnes hors socle DC
-en clés libres dans `Item.metadonnees` sans qu'on puisse les
-formaliser depuis l'UI. Aboutit à une UI complète de gestion
-structurelle des champs personnalisés d'une collection.
+Itération après V0.9.3 stable, démarrée pendant la poursuite du test
+d'usage Por Favor. Cible : combler le gap V0.7 backlog — l'import
+dumpe les colonnes hors socle DC en clés libres dans
+`Item.metadonnees` sans qu'on puisse les formaliser depuis l'UI.
+
+Aboutit à un workflow champs personnalisés bouclé bout-en-bout :
+import → bouton « Formaliser » sur clé libre → page de gestion par
+collection → édition de valeur depuis le formulaire item → affichage
+du libellé humain dans le cartouche. Plus une UI complète de
+vocabulaires custom (CRUD `Vocabulaire` + `ValeurControlee`)
+attachables à un `ChampPersonnalise` de type `liste` / `liste_multiple`.
+
+1015+ tests verts au total, ruff src clean.
 
 ### Champs personnalisés (Lot 1)
 
@@ -218,6 +225,77 @@ structurelle des champs personnalisés d'une collection.
   (`vocab.valeurs.append(valeur)`) — back-populate auto.
 - 22 nouveaux tests vocab + 5 nouveaux tests champs (54 au total
   sur les deux modules).
+
+### Item modifier expose les champs personnalisés (Lot V0.9.5)
+
+Avant ce lot, formaliser une clé libre via le cartouche créait bien
+le `ChampPersonnalise` mais l'utilisateur n'avait aucune UI pour
+**éditer la valeur** d'un item. Il fallait éditer le JSON
+`metadonnees` à la main. La page de modification ignorait totalement
+les `ChampPersonnalise`.
+
+- Helper `lister_champs_actifs_pour_item(db, item_id)` factorisé
+  depuis `composer_page_item` (eager-load vocab + valeurs, filtre
+  `actif=True`, trié par (ordre, cle)). Composer et page modifier
+  utilisent maintenant la même requête.
+- Route `POST /item/<cote>/modifier` convertie en `async` pour
+  pouvoir relire `request.form()` après le parse Pydantic. Itère
+  sur les champs perso actifs, extrait les `meta_<cle>` du form,
+  fusionne dans `formulaire.metadonnees`. Valeur vide = clé
+  supprimée (sémantique cohérente avec import + cartouche).
+- Template `item_modifier.html` : section « Champs personnalisés »
+  entre Catalogage et Identifiants externes. Rendu conditionnel
+  selon le type :
+  - `liste_multiple` + vocab → grille de checkboxes (cases_a_cocher)
+  - `liste` + vocab → `<select>` libellé humain + hors-liste fallback
+  - `texte_long` → textarea 5 lignes
+  - `nombre` → `<input type="number">`
+  - autres → input texte
+- `obligatoire=True` ajoute l'attribut HTML5 `required` sur
+  input / textarea / select (defense en profondeur, bloque le submit
+  navigateur si vide). Pas de validation côté service — un catalogue
+  WIP peut avoir des champs perso non remplis.
+
+### Affichage libellé humain (polish transversal)
+
+Plusieurs endroits affichaient encore les valeurs brutes des
+vocabulaires système au lieu des libellés humains :
+
+- `ItemResume.type_label` résout via `TYPES_COAR_OPTIONS` (le
+  commentaire « pas de table de libellés en V0.9.0 » était obsolète
+  depuis V0.9.3).
+- Pastilles de filtres actifs Collection : `t | libelle_coar` et
+  `lang | libelle_langue` (avant : « Type: c_3e5a », « Langue: fra »).
+- Drawer panneau filtres Collection : `libelles` dict pour Langue
+  et Type — le composant supportait déjà le slot.
+- Colonne « Langue » du `tableau_items` : `item.langue | libelle_langue`.
+- Item modifier : `<select>` pour `langue` et `type_coar` (avant :
+  inputs libres). Macro `selecteur` étendue avec `libelle_vide`
+  (option `value=""` en tête) et fallback hors-liste (valeur
+  courante absente du vocab → ajoutée en queue avec suffixe).
+
+### Lien « Gérer » sur le cartouche
+
+Friction UX du Lot 2 fermée : après « Formaliser » une clé libre,
+4 clics étaient nécessaires pour atteindre la page de gestion (Item
+→ Collections → Collection → bouton « Champs perso »). Ajout d'un
+lien discret « Gérer » dans le header de la section « Champs
+personnalisés » du cartouche → `/collection/<miroir>/champs`. 1 clic.
+
+Macro `section()` étendue avec `action_url` + `action_label` ; le
+clic appelle `event.stopPropagation()` pour ne pas toggler le
+`<details>`. Lien rendu uniquement si `gestion_champs_url` est
+fournie (page consultation `lire_item.html` ne le passe pas →
+read-only).
+
+### Race protection (polish Lot 2)
+
+- `promouvoir_cle_libre_en_champ` : try/except `IntegrityError` qui
+  recharge le champ existant si une autre transaction a inséré le
+  même `(collection_id, cle)` entre notre SELECT et notre INSERT.
+  Cohérent avec l'idempotence documentée.
+- `aria-label` explicite sur le bouton « Formaliser » pour les
+  lecteurs d'écran.
 
 ### Fix latent (migration FTS5)
 

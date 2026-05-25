@@ -18,16 +18,57 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.0 stable livré** (449 tests verts, doc déployée
+**Statut :** **V0.9.4 stable livré** (1015+ tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
-Fonds / Collection / Item, CLI complète, interface web,
-documentation utilisateur + référence + développeurs. Mode actuel :
-local mono-utilisateur. La V0.9.1 prépare le test d'usage (verrou
-optimiste, lecture seule, WAL explicite) ; la V1.0 ajoutera le
-déploiement VPS et l'auth multi-utilisateurs simples — voir la
-section *Roadmap* plus bas et le document interne
+Fonds / Collection / Item, CLI complète, interface web complète
+(workflow champs personnalisés + vocabulaires UI bouclé bout-en-bout
+depuis V0.9.4 ; recherche FTS5 depuis V0.9.3 ; restauration
+ergonomique 4 pages détail depuis V0.9.2 ; renforcement mode local
+WAL + verrou optimiste + lecture seule depuis V0.9.1), documentation
+utilisateur + référence + développeurs. Mode actuel : local
+mono-utilisateur. La V1.0 ajoutera le déploiement VPS et l'auth
+multi-utilisateurs simples — voir la section *Roadmap* plus bas et
+le document interne
 [`docs/developpeurs/deploiement-future.md`](docs/developpeurs/deploiement-future.md)
 pour les décisions d'infrastructure.
+
+D'autres décisions structurantes pour la suite du projet sont
+préservées sous `docs/developpeurs/` (toutes exclues du build
+MkDocs, accessibles aux contributeurs et à Claude Code) :
+
+- [`portail-public-future.md`](docs/developpeurs/portail-public-future.md)
+  — évaluation eXist-db / TEI, stack recommandée pour le futur
+  portail public consommateur (FastAPI + Meilisearch + IIIF).
+- [`annotations-image-future.md`](docs/developpeurs/annotations-image-future.md)
+  — module d'annotation d'image (W3C Web Annotations +
+  Annotorious sur l'OpenSeadragon existant), sketch technique et
+  roadmap V1.x/V2.
+- [`workflow-numerisation.md`](docs/developpeurs/workflow-numerisation.md)
+  — articulation amont avec scanners, ScanTailor, Tesseract ; les
+  trois racines `masters` / `derives_travail` / `vignettes` ; les
+  deux scénarios d'entrée dans ColleC.
+- [`plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md)
+  — usage de ColleC pour la planification catalographique en
+  amont de la numérisation ; manques UX identifiés (création en
+  série, onglet Avancement).
+- [`sites-statiques-future.md`](docs/developpeurs/sites-statiques-future.md)
+  — exporter site statique (Quarto en phase 1, Hugo en phase 3),
+  pivot Markdown neutre vis-à-vis du SSG, multi-appartenance par
+  duplication, trois modes images. Inspirations OPUS /
+  publication-efe et nakala-quarto-view.
+- [`notebooks-sdk-future.md`](docs/developpeurs/notebooks-sdk-future.md)
+  — usage de ColleC depuis Jupyter / scripts Python. Pas un SDK
+  à construire, l'API publique est déjà là (services métier +
+  exporters + modèles ORM en lecture). Livrable principal : une
+  page guide avec recettes concrètes.
+- [`zotero-future.md`](docs/developpeurs/zotero-future.md)
+  — intégration Zotero (export BibTeX/RIS en V2/V3, import
+  différé sur demande). Mapping centralisé, pas de sync
+  bidirectionnel.
+- [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
+  — réserve d'idées UX non formalisées (étiquettes colorées,
+  command palette, édition inline étendue, historique navigable,
+  etc.). À puiser au gré des opportunités, pas un engagement.
 
 ---
 
@@ -1566,6 +1607,70 @@ pages Fonds, Collection et Item.
   pour servir les aperçus locaux. Garde-fou SQL ≤ 8 requêtes.
   +14 tests verts (529 au total).
 
+### V0.9.3 — Recherche full-text + livrables transversaux ✅ livrée
+
+Voir `docs/annexes/changelog.md` V0.9.3 stable (2026-05-25) :
+recherche FTS5, mode « tout afficher », filtres avancés, libellés
+humains COAR/langue, layout responsive, raccourcis clavier, polish
+des cartes dashboard, doc liseuse + import-assistant.
+
+### V0.9.4 — Champs personnalisés + vocabulaires UI ✅ livrée
+
+Workflow champs personnalisés bouclé bout-en-bout. Comble le gap
+V0.7 backlog identifié pendant le test PF (l'import dumpait toutes
+les colonnes hors socle DC en clés libres dans `Item.metadonnees`
+sans aucune UI pour les formaliser).
+
+- **Lot 1** : CRUD `ChampPersonnalise` depuis l'UI
+  (`/collection/<cote>/champs?fonds=<f>`) — créer / renommer (avec
+  propagation aux items) / déprécier (toggle `actif`) / réactiver
+  / supprimer. Migration `n2r3s4t5u6v7` ajoute la colonne `actif`.
+- **Lot 2** : bouton « Formaliser » sur les clés libres du cartouche
+  → crée un `ChampPersonnalise` sur la miroir du fonds avec libellé
+  synthétisé via `_libelle_depuis_cle`. Idempotent (re-clic
+  retourne le champ existant), refus silencieux des clés à slug
+  invalide (filtré côté composer). Race protection via try/except
+  `IntegrityError` qui recharge l'existant.
+- **Lot 3a** : CRUD vocabulaires personnalisés depuis l'UI
+  (`/vocabulaires`) — service `vocabulaires_db.py`, `Vocabulaire` +
+  `ValeurControlee` (créer / modifier / déprécier / supprimer).
+  Distinct des vocabs hardcoded (`LANGUES_OPTIONS`,
+  `TYPES_COAR_OPTIONS`, `ETATS_OPTIONS`) qui restent figés en code.
+  Suppression d'un vocab référencé refusée (`VocabulaireReference`).
+- **Lot 3b** : wire `ChampPersonnalise.valeurs_controlees_id` depuis
+  les formulaires de création / modification d'un champ.
+- **Lot 3c** : composer cartouche résout le libellé humain depuis
+  le vocab DB (« Bande dessinée » pour le code « bd » stocké en
+  `metadonnees`). Eager loading
+  `selectinload(vocabulaire).selectinload(valeurs)` pour éviter N+1.
+- **Lot V0.9.5** : `/item/<cote>/modifier` expose une section
+  « Champs personnalisés ». Route POST passée en `async` pour
+  relire `request.form()` après le parse Pydantic (les noms
+  `meta_<cle>` sont dynamiques). Rendu selon `TypeChamp` :
+  `liste_multiple` → checkboxes, `liste` → select, `texte_long` →
+  textarea, `nombre` → `<input type="number">`, `texte` /
+  `date_edtf` / `reference` → input texte. Valeur vide = clé
+  supprimée (cohérent avec import + cartouche).
+- **Polish transversal libellé humain** : `ItemResume.type_label`
+  via `TYPES_COAR_OPTIONS`, pastilles + drawer filtres Collection,
+  colonne Langue du `tableau_items`, formulaire item modifier.
+  Macro `selecteur` étendue avec `libelle_vide` (option
+  `value=""`) et fallback hors-liste (valeur courante absente du
+  vocab → ajoutée en queue avec suffixe).
+- **Polish UX** : lien « Gérer » discret sur le header de la
+  section « Champs personnalisés » du cartouche →
+  `/collection/<miroir>/champs` (résout la friction « 4 clics pour
+  refiner après Formaliser »). `obligatoire=True` ajoute l'attribut
+  HTML5 `required` sur input / textarea / select.
+
+Bug fix latent : `m1q2r3s4t5u6_fts5_recherche.upgrade` rendu
+idempotent face aux triggers FTS5 déjà créés par
+`assurer_tables_fts` au startup. `ajouter_valeur` passe par la
+relation (`vocab.valeurs.append`) au lieu de la FK seule —
+SQLAlchemy back-populate auto, sinon `vocab.valeurs` restait stale
+dans la session courante et le composer manquait les valeurs
+nouvellement ajoutées dans la même requête.
+
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
 Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si
@@ -1607,7 +1712,23 @@ Claude Code).
   à choisir : AG Grid, Handsontable, ou équivalent).
 - Journal de bord auto-généré par collection, consultable, avec
   possibilité d'annoter les entrées.
-- Création en série d'items (pattern + incrément).
+- Création en série d'items (pattern + incrément) — manquant
+  critique pour le plan de chantier, voir
+  [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
+- Onglet « Avancement » consolidé sur la page Fonds (lecture par
+  jalons : planifiés / numérisés / OCR / catalogués / validés) —
+  voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
+- **Module d'annotation d'image** (W3C Web Annotations sur
+  l'OpenSeadragon existant via Annotorious) — indexation à la
+  granularité région, pivot pour la recherche fine côté futur
+  portail. Tirable en V1.x si la pression du chantier Por Favor
+  le justifie. Voir
+  [`docs/developpeurs/annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
+- **Export site statique** (arbre Markdown + assets prêt pour
+  Quarto en phase 1, Hugo en phase 3, autres SSG extensibles via
+  templates Jinja). Format de sortie parallèle à DC/Nakala/xlsx,
+  produit la donnée pas le thème. Voir
+  [`docs/developpeurs/sites-statiques-future.md`](docs/developpeurs/sites-statiques-future.md).
 - « Feuille de scan » : flux rapide avec raccourcis clavier.
 - Consultation Nakala (API REST + IIIF) pour vérification croisée
   et import de notices.
@@ -1628,10 +1749,113 @@ Claude Code).
 - Déploiement cloud.
 - Import direct par glisser-déposer de fichiers externes dans le
   navigateur.
+- **Édition d'image et OCR intégrés.** Restent en outils
+  spécialisés en amont (ScanTailor, Tesseract, etc.). Voir
+  [`docs/developpeurs/workflow-numerisation.md`](docs/developpeurs/workflow-numerisation.md).
+- **Portail public.** Projet séparé, en lecture seule, alimenté
+  par les exports / synchros ColleC — pas une extension du
+  présent dépôt. Voir
+  [`docs/developpeurs/portail-public-future.md`](docs/developpeurs/portail-public-future.md).
+- **Gestion de projet** (dates prévues, assignations, priorités,
+  Gantt). Reste en outil tiers (Trello, Notion, Excel partagé).
+  ColleC garde la traçabilité historique, pas le prévisionnel.
 
 ---
 
 ## Décisions d'architecture notables
+
+### Séparation ColleC interne / portail public
+
+**Décision stratégique** (mai 2026, suite à plusieurs sessions de
+discussion sur le positionnement) : ColleC reste un **espace de
+travail interne** (équipe + invités à identité nommée), et le
+**public général ne consulte pas ColleC** mais des artefacts
+produits par lui (sites statiques figés via
+[`sites-statiques-future.md`](docs/developpeurs/sites-statiques-future.md),
+portail dynamique séparé via
+[`portail-public-future.md`](docs/developpeurs/portail-public-future.md)).
+
+Trois raisons décisives :
+
+1. **L'auth V1.0 est explicitement « attribution, pas sécurité
+   forte »** (cf. `deploiement-future.md`). Suffisant pour une
+   équipe en confiance derrière une URL semi-privée, inadéquat
+   pour exposer publiquement. Passer à de la vraie auth
+   (passwords, sessions, rate limiting, audit, RGPD) = chantier
+   majeur non planifié, pollue le focus catalographique.
+2. **Les UX divergent fondamentalement.** Catalogueur =
+   tableau dense, raccourcis, édition inline silencieuse,
+   filtres complexes. Visiteur = grande image, texte aéré,
+   navigation thématique, dossiers éditoriaux. Faire les deux
+   dans la même UI finit toujours en compromis (Omeka S l'a
+   fait et c'est sa principale faiblesse).
+3. **Cohérence avec le principe directeur n°1**
+   (« la base locale est la source de vérité pendant le
+   travail »). Les exports / sites statiques / portail sont des
+   sorties, pas la vérité courante.
+
+**Trois catégories d'identité, pas deux** (raffinement issu des
+scénarios « consultation externe » et « contribution
+spécialiste ») :
+
+- **Anonyme public** → portail / site statique (lecture seule,
+  sans identité).
+- **Externe à identité nommée** (invité contributeur, invité
+  consultation, peer-reviewer) → ColleC avec compte temporaire
+  + scope limité. Cf. matrice d'identités dans
+  `deploiement-future.md`.
+- **Équipe interne permanente** → ColleC avec compte permanent
+  + scope global.
+
+**Réversibilité asymétrique préservée.** Si un besoin précis
+émerge un jour (« on veut que telle vue soit publique pour tel
+projet »), on peut **ajouter** une route publique anonyme en
+lecture seule sur ColleC, sur un sous-ensemble bien défini de
+routes, sans pour autant fusionner les deux applications.
+L'inverse (retirer la dimension publique d'un monolithe une fois
+que le monde s'est habitué à cette URL) est nettement plus
+coûteux. La décision actuelle n'est donc pas un cul-de-sac.
+
+### Une instance = une DB = un contexte
+
+ColleC ne supporte qu'une seule base SQLite par instance. Le
+**multi-fonds vit dans le modèle** (autant de lignes `Fonds`
+qu'on veut dans la même DB, avec navigation, recherche
+transversale, collections transversales), **pas dans le
+déploiement**.
+
+Les besoins de cloisonnement fort se résolvent **par déploiements
+séparés**, pas par multi-DB intra-instance :
+
+- **Confidentialité forte / NDA** : deux instances ColleC
+  distinctes, deux URLs, deux DBs, aucun chevauchement.
+- **Multi-institutionnel** (Huma-Num hébergeant pour plusieurs
+  institutions) : une instance par institution, chacune cliente
+  de sa propre DB.
+- **Dualité local / institutionnel** : un ColleC local
+  (`localhost:8000`) + un ColleC institutionnel
+  (`colle-c.institution.fr`) dans le navigateur, transfert
+  d'un fonds entre les deux via les exporters / import existants.
+
+**Pourquoi cette règle.** Le multi-tenancy intra-instance
+introduirait : session-management cross-DB, switching UX,
+auth globale qui doit savoir parler à N DBs, multi-appartenance
+impossible entre items de DBs différentes, exports cross-DB
+impossibles, migrations en parallèle, sauvegardes éclatées. Pour
+zéro gain par rapport à des déploiements séparés. La règle
+préserve la simplicité, protège la sécurité par cloisonnement
+physique pour les cas qui le réclament, et évite l'illusion
+qu'une auth globale résoudrait des permissions complexes
+(elles sont presque toujours mieux servies par des instances
+séparées avec leurs propres comptes).
+
+**Indication visuelle d'instance** (à prévoir si un utilisateur
+alterne entre deux instances dans la journée) : bandeau coloré
+en haut de chaque ColleC, nom de l'instance, type
+d'environnement (« production institutionnelle » / « local
+Hugo »). Extension naturelle du pattern `est_lecture_seule`
+existant. Pas un sujet V1.0, juste une attention UX à avoir si
+le cas se présente.
 
 ### Stockage des chemins
 

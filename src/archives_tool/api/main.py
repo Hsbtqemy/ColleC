@@ -75,7 +75,7 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="archives-tool",
     description="Outil de gestion de collections numérisées",
-    version="0.9.3",
+    version="0.9.4",
     lifespan=_lifespan,
 )
 

@@ -115,6 +115,122 @@ Les utilisateurs sont créés par admin via CLI :
 archives-tool utilisateurs ajouter --nom "Marie"
 ```
 
+### Matrice d'identités (extension future)
+
+Tirée des scénarios discutés en mai 2026 (consultation externe
+pour vérification, contribution spécialiste, archivistes d'une
+même institution travaillant sur fonds partiellement disjoints).
+
+Tout utilisateur se positionne sur trois axes orthogonaux :
+
+| Axe | Valeurs | Sémantique |
+|---|---|---|
+| **Permanence** | permanent / invité (date d'expiration) | Membre de l'équipe ou collaborateur ponctuel |
+| **Droit** | éditeur / lecteur seul | Peut modifier ou seulement consulter |
+| **Scope** | global / restreint (liste de `fonds_id`) | Voit tout / voit un sous-ensemble |
+
+Rôles typiques comme combinaisons des trois axes :
+
+- **Membre permanent de l'équipe** = permanent + éditeur +
+  global. C'est le seul rôle livré en V1.0.
+- **Membre avec scope** = permanent + éditeur + restreint.
+  Future Marie qui édite uniquement HK et Manet, pas PF.
+- **Conservateur observateur** = permanent + lecteur + global.
+  Un directeur scientifique qui suit tout sans modifier.
+- **Invité contributeur** = invité (avec date d'expiration) +
+  éditeur + restreint (typiquement à un fonds). Le spécialiste
+  externe qui corrige et propose des ajouts sur un fonds dont
+  il est expert.
+- **Invité consultation** = invité + lecteur + restreint. Le
+  peer-reviewer qui vient vérifier l'état catalographique
+  (`etat_catalogage`, items à corriger, traçabilité), ce qui
+  n'est pas dans le portail public.
+
+#### Modèle de données
+
+Extension de `Utilisateur` avec quatre colonnes additionnelles
+(à préparer en V1.0, à activer progressivement) :
+
+```python
+class Utilisateur(Base):
+    id: Mapped[int]
+    nom: Mapped[str]
+    actif: Mapped[bool]
+    peut_editer: Mapped[bool]              # existant V1.0
+
+    # Extensions matrice (V1.x ou V2 selon besoin)
+    permanent: Mapped[bool] = True         # invité si False
+    expire_le: Mapped[date | None] = None  # date d'expiration si invité
+    voit_tout: Mapped[bool] = True         # scope global si True
+    fonds_editables: Mapped[list[int]]     # JSON array, vide si voit_tout
+    fonds_visibles: Mapped[list[int]]      # JSON array, vide si voit_tout
+    invite_par: Mapped[int | None]         # FK Utilisateur, qui a invité
+```
+
+`voit_tout=True` est la valeur par défaut compatible avec V1.0 ;
+les listes `fonds_editables` / `fonds_visibles` ne sont
+consultées que si `voit_tout=False`. Le passage à `voit_tout=False`
+active le filtrage sans casser les comptes existants.
+
+#### Plan de livraison
+
+**V1.0** livre uniquement la combinaison **permanent + éditeur +
+global** — c'est la cible « Hugo + 1-2 collègues » d'une même
+institution travaillant en confiance. Les conflits sur fonds
+partagés sont gérés par le **verrou optimiste** (`StaleDataError`
+sur les champs `version`) déjà en place V0.9.1.
+
+**V1.x — invité consultation** (lecture seule, scope restreint,
+expiration). Plus simple à activer car le mode lecture seule
+existe déjà (`middleware_lecture_seule`), il s'agit de le
+restreindre par scope au lieu d'être global.
+
+**V1.x ou V2 — invité contributeur** (édition avec scope
+restreint, expiration). Demande l'activation effective du
+filtrage par scope dans les services métier (`Item.fonds_id in
+user.fonds_editables` avant toute opération d'écriture). Plus
+de tests à écrire.
+
+**V2+ — membre avec scope** (éditeur permanent, scope
+restreint). Active le même filtrage, mais sans expiration.
+Pertinent quand l'équipe grossit (5+ archivistes) ou quand
+certains fonds doivent être éditables seulement par certains.
+
+**V2+ — conservateur observateur** (lecteur permanent, scope
+global). Cas particulier, peut s'activer en même temps que les
+autres.
+
+#### Cas concret : deux archivistes, fonds en commun
+
+Hugo et Marie travaillent dans la même institution :
+
+- Hugo édite PF et Manet par habitude.
+- Marie édite HK et Manet par habitude.
+- Manet est partagé.
+
+**V1.0** : tous deux sont permanent + éditeur + global. Ils
+voient les trois fonds. Convention sociale : on ne touche pas au
+fonds de l'autre sauf Manet. Le verrou optimiste protège des
+écrasements silencieux sur Manet (« cet item a été modifié par
+Hugo depuis votre ouverture, recharger ou forcer ? »). Le
+journal trace tout. Suffisant à cette échelle.
+
+**Si jamais l'équipe grossit** (V1.x) : on bascule Hugo et Marie
+en scope restreint (`fonds_editables = [PF, Manet]` pour Hugo,
+`fonds_editables = [HK, Manet]` pour Marie). Les boutons
+« Modifier » se désactivent visuellement sur les fonds hors
+scope, mais la consultation reste possible. Aucune migration
+douloureuse — juste deux champs à renseigner.
+
+#### Filtrage des champs sensibles selon le rôle
+
+Les `notes_internes` (privé chantier) restent invisibles même
+pour les invités lecture, sauf flag explicite sur leur compte
+(`voit_notes_internes: bool`). Les autres champs catalographiques
+restent visibles. Cette filtration se fait au niveau du service
+de composition (`composer_page_item` etc.), pas au niveau ORM —
+pour ne pas dupliquer la logique de chargement.
+
 ## Verrou optimiste
 
 Le champ `version: int` existe déjà sur `TracabiliteMixin` (toutes

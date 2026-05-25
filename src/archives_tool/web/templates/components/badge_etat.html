@@ -29,11 +29,16 @@
 
 {% macro badge_etat(etat, kind='item') -%}
   {%- set m = _ETATS[kind][etat] -%}
+  {#- `data-badge-etat="{kind}"` permet à `inline_edit.js` de retrouver
+      le badge à rafraîchir quand on save `etat_catalogage` depuis le
+      cartouche (sans reload page). `data-badge-dot` / `-label` ciblent
+      les deux sous-spans à mettre à jour (couleur + texte). -#}
   <span class="inline-flex items-center gap-1.5 rounded bg-gray-100 text-gray-800"
-        style="padding:2px 10px;font-size:12px;line-height:16px;">
-    <span aria-hidden="true"
+        style="padding:2px 10px;font-size:12px;line-height:16px;"
+        data-badge-etat="{{ kind }}">
+    <span aria-hidden="true" data-badge-dot
           style="width:6px;height:6px;border-radius:9999px;background:{{ m.dot }};flex:0 0 6px;"></span>
-    {{ m.label }}
+    <span data-badge-label>{{ m.label }}</span>
   </span>
 {%- endmacro %}
 

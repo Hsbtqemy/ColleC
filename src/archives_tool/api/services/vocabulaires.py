@@ -55,10 +55,26 @@ TYPES_COAR_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Workflow d'état du catalogage : les 5 états « actifs » du cycle de
+# vie d'un item (brouillon → à vérifier → vérifié → validé, plus
+# l'état « à corriger » qui permet de re-rentrer dans le cycle). Les
+# états techniques (`actif`, `remplace`, `corbeille`) sont exclus du
+# sélecteur d'édition inline — ils relèvent du cycle de vie de la
+# notice (suppression / archivage), pas du suivi de catalogage.
+ETATS_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("brouillon", "brouillon"),
+    ("a_verifier", "à vérifier"),
+    ("verifie", "vérifié"),
+    ("valide", "validé"),
+    ("a_corriger", "à corriger"),
+)
+
+
 # Mapping field → options pour le compositeur de cartouche.
 OPTIONS_PAR_CHAMP: dict[str, tuple[tuple[str, str], ...]] = {
     "langue": LANGUES_OPTIONS,
     "type_coar": TYPES_COAR_OPTIONS,
+    "etat_catalogage": ETATS_OPTIONS,
 }
 
 

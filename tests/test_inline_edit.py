@@ -69,8 +69,8 @@ def test_inline_edit_version_perimee_409(base_demo: Path) -> None:
 
 
 def test_inline_edit_champ_hors_whitelist_403(base_demo: Path) -> None:
-    """Champs sensibles (cote, version, fonds_id, etat_catalogage)
-    interdits — passe par la page /modifier complète."""
+    """Champs sensibles (cote, fonds_id) interdits — passent par la
+    page /modifier complète."""
     client = TestClient(app)
     v = _version_courante(base_demo, "HK-001")
     resp = client.post(
@@ -78,6 +78,37 @@ def test_inline_edit_champ_hors_whitelist_403(base_demo: Path) -> None:
         data={"version": str(v), "valeur": "HK-XXX"},
     )
     assert resp.status_code == 403
+
+
+def test_inline_edit_etat_catalogage_ok(base_demo: Path) -> None:
+    """V0.9.3 : `etat_catalogage` est désormais éditable inline pour
+    fluidifier les vérifications en série. Vérifie le succès du POST
+    + le libellé humain dans le markup retourné + la valeur brute
+    dans `data-edit-raw` (pour pré-remplir le `<select>` au prochain
+    clic)."""
+    client = TestClient(app)
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/etat_catalogage?fonds=HK",
+        data={"version": str(v), "valeur": "verifie"},
+    )
+    assert resp.status_code == 200
+    # Libellé humain affiché (« vérifié », pas « verifie »)
+    assert "vérifié" in resp.text
+    # Valeur brute conservée pour pré-remplir le select
+    assert 'data-edit-raw="verifie"' in resp.text
+
+
+def test_inline_edit_etat_catalogage_valeur_invalide_400(base_demo: Path) -> None:
+    """Une valeur d'état hors enum est rejetée par la validation
+    Pydantic (renvoie 400 avec le fragment d'erreur)."""
+    client = TestClient(app)
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/etat_catalogage?fonds=HK",
+        data={"version": str(v), "valeur": "XXXX_INVALIDE"},
+    )
+    assert resp.status_code == 400
 
 
 def test_inline_edit_item_inexistant_404(base_demo: Path) -> None:

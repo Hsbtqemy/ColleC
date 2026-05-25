@@ -8,6 +8,31 @@
 (function () {
   const ligneSelector = '[data-edit-field][data-editable="1"]';
 
+  // Mapping état → libellé + couleur du point. Doit rester aligné avec
+  // `components/badge_etat.html` (source de vérité Jinja). On duplique
+  // ici parce que la route inline ne renvoie que la valeur brute du
+  // champ — on rafraîchit le badge du bandeau côté client sans refetch.
+  // Si la table change côté Jinja, la mettre à jour ici aussi (rare :
+  // 5 états workflow stables).
+  const BADGE_ETAT_ITEM = {
+    brouillon: { label: "Brouillon", dot: "#888780" },
+    a_verifier: { label: "À vérifier", dot: "#BA7517" },
+    verifie: { label: "Vérifié", dot: "#378ADD" },
+    valide: { label: "Validé", dot: "#639922" },
+    a_corriger: { label: "À corriger", dot: "#E24B4A" },
+  };
+
+  function rafraichirBadgeEtatItem(nouvelleValeur) {
+    const badge = document.querySelector('[data-badge-etat="item"]');
+    if (!badge) return;
+    const m = BADGE_ETAT_ITEM[nouvelleValeur];
+    if (!m) return;
+    const dot = badge.querySelector("[data-badge-dot]");
+    if (dot) dot.style.background = m.dot;
+    const label = badge.querySelector("[data-badge-label]");
+    if (label) label.textContent = m.label;
+  }
+
   function chercherContextItem() {
     // La page item expose cote/fonds/version via <meta name="item-context">.
     // On garde la référence au noeud DOM pour resynchroniser la version
@@ -141,6 +166,12 @@
               ctx.version = nv;
               ctx.meta.dataset.version = String(nv);
             }
+          }
+          // Si on vient de sauver `etat_catalogage`, rafraîchir le
+          // badge état du bandeau item (sinon il reste figé sur
+          // l'ancienne valeur jusqu'au reload — UX trompeur).
+          if (field === "etat_catalogage") {
+            rafraichirBadgeEtatItem(input.value);
           }
         }
       } catch (e) {

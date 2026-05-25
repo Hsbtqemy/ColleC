@@ -1,9 +1,15 @@
 """Édition inline d'un champ item (cartouche métadonnées).
 
-Whitelist stricte de champs simples : cote, fonds_id, etat_catalogage
-et version restent gérés par la page `/item/{cote}/modifier` complète
-(la cote touche aux chemins, l'état porte des implications workflow,
-le fonds_id est immuable, la version est purement technique).
+Whitelist stricte (cf. `CHAMPS_ITEM_EDITABLES_INLINE`). Restent
+exclus et gérés par la page `/item/{cote}/modifier` complète :
+- `cote` : touche aux chemins fichiers (renommage)
+- `fonds_id` : immuable (suppression + recréation pour déplacer)
+- `version` : purement technique (verrou optimiste)
+- champs personnalisés JSON : nécessitent une UI dédiée
+  (vocabulaires, listes)
+
+`etat_catalogage` est inclus dans l'inline depuis V0.9.3 — workflow
+de vérification en série (cf. dashboard.CHAMPS_ITEM_EDITABLES_INLINE).
 """
 
 from __future__ import annotations

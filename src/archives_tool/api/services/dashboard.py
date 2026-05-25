@@ -1222,6 +1222,10 @@ def _url_telechargement_externe(fichier: Fichier) -> str | None:
 
 _LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (
     # (clé, libellé, type_donnee)
+    # État en tête : c'est le champ qu'on touche le plus souvent pendant
+    # une vérification en série (« passer cet item de brouillon à
+    # vérifié »). L'avoir au top du cartouche réduit le scroll.
+    ("etat_catalogage", "État", "texte"),
     ("cote", "Cote", "texte"),
     ("titre", "Titre", "texte"),
     ("type_coar", "Type COAR", "texte"),
@@ -1238,12 +1242,17 @@ _LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (
 # `ChampMetadonnee.editable` — ainsi la macro ne pose `data-editable="1"`
 # que sur les lignes vraiment éditables.
 #
-# Cote, fonds_id, version, etat_catalogage et les champs personnalisés
-# (JSON) sont volontairement exclus : la cote touche aux chemins,
-# l'état porte un workflow, le fonds_id est immuable, la version est
-# technique, et le JSON nécessite une UI dédiée (vocabulaires, listes).
+# Cote, fonds_id, version et les champs personnalisés (JSON) restent
+# exclus : la cote touche aux chemins, le fonds_id est immuable, la
+# version est technique, le JSON nécessite une UI dédiée (vocabulaires,
+# listes). `etat_catalogage` est inclus depuis V0.9.3 — l'exclusion
+# précédente (« l'état porte un workflow ») était trop conservatrice :
+# en pratique l'utilisateur fait des vérifications en série et avoir
+# à passer par la page « Modifier » pour chaque changement d'état
+# (~6 clics + reload) était une friction quotidienne.
 CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
     {
+        "etat_catalogage",
         "titre",
         "type_coar",
         "date",

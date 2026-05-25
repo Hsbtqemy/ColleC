@@ -677,10 +677,22 @@ def test_composer_page_item_charge_metadonnees_par_section(
         "Identifiants externes",
         "Description",
     }
-    # La section Identification contient toujours la cote en première
-    # position (clé fixe).
+    # La section Identification contient l'état en tête (depuis V0.9.3,
+    # facilité de vérification en série) puis la cote.
     libelles_id = [c.cle for c in sections["Identification"]]
-    assert libelles_id[0] == "cote"
+    assert libelles_id[0] == "etat_catalogage"
+    assert libelles_id[1] == "cote"
+
+    # L'état doit être éditable inline avec un vocabulaire fermé (les
+    # 5 états du workflow : brouillon / à vérifier / vérifié / validé /
+    # à corriger). Cf. ETATS_OPTIONS dans vocabulaires.py.
+    champ_etat = sections["Identification"][0]
+    assert champ_etat.editable is True
+    assert champ_etat.options is not None
+    valeurs_options = {v for v, _ in champ_etat.options}
+    assert valeurs_options == {
+        "brouillon", "a_verifier", "verifie", "valide", "a_corriger",
+    }
     # La section Identifiants externes liste les 2 DOI (pré-définis)
     cles_doi = [c.cle for c in sections["Identifiants externes"]]
     assert cles_doi == ["doi_nakala", "doi_collection_nakala"]

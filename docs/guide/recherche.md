@@ -56,6 +56,33 @@ Pas de syntaxe avancée (NOT, OR, parenthèses) côté utilisateur :
 les opérateurs FTS5 sont neutralisés pour éviter les surprises et
 les erreurs de syntaxe.
 
+## Mode « tout afficher » (sans requête)
+
+La barre de recherche n'est pas obligatoire. Si vous chargez `/recherche`
+**sans `q`** mais avec **une intention** (scope, type restreint, ou
+filtre actif), la page affiche **tous les résultats correspondants**
+sans matching FTS.
+
+Exemples d'URL :
+
+- `/recherche?types=item` → liste tous les items (mode utilisé par
+  la carte « Items » du tableau de bord)
+- `/recherche?etat=brouillon` → liste tous les items en brouillon
+- `/recherche?fonds_id=12&types=item` → tous les items du fonds 12
+- `/recherche?types=item&etat=valide&langue=fra` → items validés en
+  français
+
+Pour déclencher ce mode, la **restriction doit être explicite** :
+au moins une case type décochée, ou un filtre / scope posé.
+Soumettre le formulaire avec un champ vide et toutes les cases
+cochées **garde l'invitation « Tapez une requête »** — sinon
+chaque clic accidentel sur « Rechercher » listerait toute la base.
+
+En mode « tout afficher », les résultats sont triés par
+`(type, cote)` ASC — donc les collections apparaissent avant les
+fonds, et les items par cote croissante. Les badges colorés
+distinguent les types en un coup d'œil.
+
 ## Périmètre
 
 Par défaut, la recherche balaie **tout l'outil** : tous les fonds,

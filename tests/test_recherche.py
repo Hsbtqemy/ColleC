@@ -565,6 +565,72 @@ def test_rechercher_filtres_items_n_affecte_pas_fonds(
     assert "REVS" in cotes_fonds
 
 
+def test_rechercher_tout_afficher_via_types(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """Mode « tout afficher » : `q=""` + `types={"item"}` retourne
+    tous les items du périmètre via SELECT direct (sans FTS). Permet
+    aux cartes du dashboard (« Items 173 ») de mener à une vraie
+    liste plutôt qu'à la page « Tapez une requête »."""
+    res = rechercher(session_avec_corpus_filtrable, "", types={"item"})
+    # 4 items créés dans la fixture (R-001 à R-004)
+    assert res.total_par_type.get("item") == 4
+    assert len(res.resultats) == 4
+    # Tri par cote ASC (canonique mode tout afficher)
+    cotes = [r.cote for r in res.resultats if r.type_entite == "item"]
+    assert cotes == sorted(cotes)
+    # Pas de snippet (rien à surligner sans query)
+    assert all(r.snippet == "" for r in res.resultats)
+
+
+def test_rechercher_tout_afficher_via_filtre(
+    session_avec_corpus_filtrable: Session,
+) -> None:
+    """`q=""` + filtre `etats=('brouillon',)` retourne tous les items
+    en brouillon sans devoir taper de query — mode équivalent à
+    « liste filtrée »."""
+    from archives_tool.api.services.recherche import FiltresRecherche
+
+    res = rechercher(
+        session_avec_corpus_filtrable, "",
+        filtres=FiltresRecherche(etats=("brouillon",)),
+    )
+    items = [r for r in res if r.type_entite == "item"]
+    cotes = {r.cote for r in items}
+    # R-001 est en brouillon dans la fixture
+    assert cotes == {"R-001"}
+
+
+def test_rechercher_tout_afficher_via_scope(
+    session_avec_corpus: Session,
+) -> None:
+    """`q=""` + `scope.fonds_id` posé → liste tous les items/collections
+    du fonds. Permet d'utiliser la recherche comme un parcours du fonds
+    quand on sait juste le périmètre."""
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.recherche import Scope
+
+    fonds_hk = lire_fonds_par_cote(session_avec_corpus, "HK")
+    res = rechercher(session_avec_corpus, "", scope=Scope(fonds_id=fonds_hk.id))
+    # Items HK uniquement (HK-001/002/003), pas les items PF
+    items = [r for r in res if r.type_entite == "item"]
+    cotes_items = {r.cote for r in items}
+    assert cotes_items == {"HK-001", "HK-002", "HK-003"}
+
+
+def test_rechercher_aucune_intention_retourne_vide(
+    session_avec_corpus: Session,
+) -> None:
+    """`q=""` + rien d'autre → objet vide qui déclenche l'invitation
+    « Tapez une requête » côté template. Le mode « tout afficher »
+    ne se déclenche QUE si une intention est posée (scope, types,
+    filtre) — sinon on aurait des centaines de résultats sans
+    intention claire."""
+    res = rechercher(session_avec_corpus, "")
+    assert res.total == 0
+    assert res.resultats == []
+
+
 def test_filtres_recherche_actifs_et_affecte_items(
     session_avec_corpus_filtrable: Session,
 ) -> None:

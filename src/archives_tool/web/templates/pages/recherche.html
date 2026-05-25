@@ -282,8 +282,9 @@
   {# Pastilles de filtres actifs avec retrait individuel.
      Chaque pastille forge une URL `/recherche?...` qui omet le filtre
      concerné — tous les autres paramètres sont préservés via la macro
-     `_query_string` définie au sommet du template. #}
-  {% if q and filtres and filtres.actifs %}
+     `_query_string` définie au sommet du template. Visible dès qu'un
+     filtre est posé, indépendamment de `q` (mode « tout afficher »). #}
+  {% if filtres and filtres.actifs %}
     <div class="flex flex-wrap gap-2 mb-3">
       {% if filtres.q_dans_resultats %}
         {# Tronque visuellement à 40 chars pour éviter qu'une pastille
@@ -366,19 +367,24 @@
     </div>
   {% endif %}
 
-  {% if q and not resultats %}
+  {# Logique d'affichage en 3 branches selon l'intention :
+     1. intention posée (q OU filtres OU scope OU types) mais 0 résultat → message « aucun résultat »
+     2. on a des résultats → compteur + liste (que ce soit en mode query ou « tout afficher »)
+     3. rien de posé → invitation « Tapez une requête ». #}
+  {% set intention_posee = q or (filtres and filtres.actifs) or fonds_scope or collection_scope or (types_filtres|length) %}
+  {% if intention_posee and not resultats %}
     <p class="text-sm text-gray-500 italic">
-      Aucun résultat pour <strong>« {{ q }} »</strong>{% if fonds_scope %}
+      Aucun résultat{% if q %} pour <strong>« {{ q }} »</strong>{% endif %}{% if fonds_scope %}
       dans le fonds {{ fonds_scope.cote }}{% endif %}{% if collection_scope %}
       dans la collection {{ collection_scope.cote }}{% endif %}.
     </p>
-  {% elif q %}
-    {# Compteur principal = total EXACT (compte FTS5 COUNT sans
-       LIMIT). Quand paginé, indique aussi la tranche affichée :
-       « 173 résultats trouvés (51–100) ». #}
+  {% elif resultats %}
+    {# Compteur principal = total EXACT (COUNT sans LIMIT). Quand
+       `q` est vide (mode « tout afficher »), on ne dit pas « pour
+       "..." » — la phrase change selon l'intention dominante. #}
     <p class="text-sm text-gray-500 mb-4">
-      <strong>{{ total_global }}</strong> résultat{{ 's' if total_global > 1 else '' }} trouvé{{ 's' if total_global > 1 else '' }} pour
-      <strong>« {{ q }} »</strong>{% if fonds_scope %}
+      <strong>{{ total_global }}</strong> résultat{{ 's' if total_global > 1 else '' }}{% if q %} trouvé{{ 's' if total_global > 1 else '' }} pour
+      <strong>« {{ q }} »</strong>{% endif %}{% if fonds_scope %}
       dans le fonds <code class="font-mono">{{ fonds_scope.cote }}</code>{% endif %}{% if collection_scope %}
       dans la collection <code class="font-mono">{{ collection_scope.cote }}</code>{% endif %}{% if nb_pages > 1 %}
       <span class="text-gray-400">(<strong>{{ premier_index }}–{{ dernier_index }}</strong> sur cette page)</span>{% endif %}.

@@ -283,6 +283,9 @@ def rechercher(
     pour un outil interne) ; au-delà, affiner via filtres.
     """
     filtres = filtres or FiltresRecherche()
+    scope = scope or Scope()
+    types_eff: set[TypeEntite] = types or {"item", "fonds", "collection"}
+
     # `q_dans_resultats` est un raffinement : concaténer à `q` avec
     # un espace donne un AND implicite en FTS5 (équivaut à taper les
     # 2 dans la barre).
@@ -290,8 +293,26 @@ def rechercher(
     if filtres.q_dans_resultats.strip():
         q_combinee = f"{q} {filtres.q_dans_resultats}".strip()
     requete_fts = _preparer_requete_fts(q_combinee)
-    types_eff: set[TypeEntite] = types or {"item", "fonds", "collection"}
-    if requete_fts is None:
+
+    # Mode « tout afficher » : pas de query texte mais l'utilisateur
+    # a posé une intention (scope, types **restreint**, ou filtre
+    # actif). On bascule sur des SELECT directs (sans FTS) ordonnés
+    # par cote — utile pour « tous les items en brouillon », « toutes
+    # les collections du fonds HK », etc. sans devoir chercher un mot.
+    # Si rien n'est posé du tout (page d'atterrissage sans intention),
+    # on retourne l'objet vide qui déclenche l'invitation « Tapez une
+    # requête… » côté template.
+    # Note : `types is not None and len(types) < 3` plutôt que juste
+    # `types is not None` — le formulaire HTML envoie les 3 cases
+    # cochées par défaut, donc cliquer « Rechercher » avec un champ
+    # vide ne doit pas lister toute la base. Une restriction
+    # *explicite* (au moins une case décochée) signale l'intention.
+    types_restreint = types is not None and len(types) < 3
+    intention_sans_query = (
+        requete_fts is None
+        and (filtres.affecte_items_seulement or not scope.est_global or types_restreint)
+    )
+    if requete_fts is None and not intention_sans_query:
         return ResultatsRecherche(
             resultats=[],
             total_par_type={t: 0 for t in types_eff},
@@ -299,7 +320,6 @@ def rechercher(
             par_page=par_page,
         )
 
-    scope = scope or Scope()
     resultats_tous: list[ResultatRecherche] = []
     totaux: dict[TypeEntite, int] = {}
 
@@ -317,9 +337,16 @@ def rechercher(
         )
         totaux["collection"] = _compter_collections(db, requete_fts, scope)
 
-    # Tri global par pertinence (bm25 ASC = meilleur en premier),
-    # puis pagination en Python sur la liste plate.
-    resultats_tous.sort(key=lambda r: r.score)
+    # Tri global : par score (bm25 ASC = meilleur en premier) en mode
+    # FTS, par cote ASC en mode « tout afficher » (les `score=0` sont
+    # tous égaux, le tri par cote remonte les ResultatRecherche dans
+    # un ordre stable et prévisible — déjà appliqué par SQL au niveau
+    # de chaque type, ré-trié globalement ici pour avoir une liste
+    # plate cohérente cross-types).
+    if requete_fts is None:
+        resultats_tous.sort(key=lambda r: (r.type_entite, r.cote))
+    else:
+        resultats_tous.sort(key=lambda r: r.score)
     offset = max(0, (page - 1) * par_page)
     page_courante = resultats_tous[offset:offset + par_page]
     # `cap_atteint` signale qu'un type a dépassé le cap dur (et donc
@@ -373,13 +400,17 @@ def _clause_filtres_items(filtres: FiltresRecherche) -> tuple[str, dict]:
 
 def _compter_items(
     db: Session,
-    requete_fts: str,
+    requete_fts: str | None,
     scope: Scope,
     filtres: FiltresRecherche | None = None,
 ) -> int:
-    """COUNT(*) sans LIMIT pour avoir le total exact item_fts."""
+    """COUNT(*) sans LIMIT pour avoir le total exact.
+
+    `requete_fts=None` → mode « tout afficher » (SELECT direct sur
+    `item` sans passer par FTS5). Sinon mode FTS classique.
+    """
     where_supp = ""
-    params: dict = {"q": requete_fts}
+    params: dict = {}
     if scope.fonds_id is not None:
         where_supp = " AND item.fonds_id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
@@ -394,67 +425,80 @@ def _compter_items(
         frag_filtres, params_filtres = _clause_filtres_items(filtres)
         where_supp += frag_filtres
         params.update(params_filtres)
-    sql = text(
-        f"""
-        SELECT COUNT(*) FROM item_fts
-        JOIN item ON item.id = item_fts.rowid
-        WHERE item_fts MATCH :q{where_supp}
-        """
-    )
+    if requete_fts is None:
+        sql = text(f"SELECT COUNT(*) FROM item WHERE 1=1{where_supp}")
+    else:
+        params["q"] = requete_fts
+        sql = text(
+            f"""
+            SELECT COUNT(*) FROM item_fts
+            JOIN item ON item.id = item_fts.rowid
+            WHERE item_fts MATCH :q{where_supp}
+            """
+        )
     return int(db.execute(sql, params).scalar_one() or 0)
 
 
-def _compter_fonds(db: Session, requete_fts: str, scope: Scope) -> int:
+def _compter_fonds(db: Session, requete_fts: str | None, scope: Scope) -> int:
     if scope.collection_id is not None:
         return 0  # collection scope exclut les fonds
     where_supp = ""
-    params: dict = {"q": requete_fts}
+    params: dict = {}
     if scope.fonds_id is not None:
         where_supp = " AND fonds.id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
-    sql = text(
-        f"""
-        SELECT COUNT(*) FROM fonds_fts
-        JOIN fonds ON fonds.id = fonds_fts.rowid
-        WHERE fonds_fts MATCH :q{where_supp}
-        """
-    )
+    if requete_fts is None:
+        sql = text(f"SELECT COUNT(*) FROM fonds WHERE 1=1{where_supp}")
+    else:
+        params["q"] = requete_fts
+        sql = text(
+            f"""
+            SELECT COUNT(*) FROM fonds_fts
+            JOIN fonds ON fonds.id = fonds_fts.rowid
+            WHERE fonds_fts MATCH :q{where_supp}
+            """
+        )
     return int(db.execute(sql, params).scalar_one() or 0)
 
 
-def _compter_collections(db: Session, requete_fts: str, scope: Scope) -> int:
+def _compter_collections(
+    db: Session, requete_fts: str | None, scope: Scope,
+) -> int:
     where_supp = ""
-    params: dict = {"q": requete_fts}
+    params: dict = {}
     if scope.fonds_id is not None:
         where_supp = " AND collection.fonds_id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
     elif scope.collection_id is not None:
         where_supp = " AND collection.id = :collection_id"
         params["collection_id"] = scope.collection_id
-    sql = text(
-        f"""
-        SELECT COUNT(*) FROM collection_fts
-        JOIN collection ON collection.id = collection_fts.rowid
-        WHERE collection_fts MATCH :q{where_supp}
-        """
-    )
+    if requete_fts is None:
+        sql = text(f"SELECT COUNT(*) FROM collection WHERE 1=1{where_supp}")
+    else:
+        params["q"] = requete_fts
+        sql = text(
+            f"""
+            SELECT COUNT(*) FROM collection_fts
+            JOIN collection ON collection.id = collection_fts.rowid
+            WHERE collection_fts MATCH :q{where_supp}
+            """
+        )
     return int(db.execute(sql, params).scalar_one() or 0)
 
 
 def _rechercher_items(
     db: Session,
-    requete_fts: str,
+    requete_fts: str | None,
     scope: Scope,
     filtres: FiltresRecherche | None,
     limite: int,
 ) -> list[ResultatRecherche]:
-    """Items matchés, avec snippet sur les colonnes textuelles.
-
-    `snippet(item_fts, -1, '<mark>', '</mark>', '…', 30)` : -1 = toutes
-    colonnes considérées, 30 tokens de contexte.
+    """Items matchés. Si `requete_fts=None` → mode « tout afficher »
+    (SELECT direct, ordre cote ASC, pas de snippet, score=0). Sinon
+    mode FTS avec snippet+bm25.
     """
     where_supp = ""
-    params: dict = {"q": requete_fts, "limite": limite}
+    params: dict = {"limite": limite}
     if scope.fonds_id is not None:
         where_supp = " AND item.fonds_id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
@@ -470,6 +514,43 @@ def _rechercher_items(
         where_supp += frag_filtres
         params.update(params_filtres)
 
+    if requete_fts is None:
+        # Mode « tout afficher » : SELECT direct sur `item`, sans
+        # passer par FTS5. Pas de snippet (rien à surligner), score=0
+        # (tri global par cote géré côté `rechercher`).
+        sql = text(
+            f"""
+            SELECT
+                item.id AS id,
+                item.cote AS cote,
+                item.titre AS titre,
+                item.fonds_id AS fonds_id,
+                fonds.cote AS fonds_cote
+            FROM item
+            JOIN fonds ON fonds.id = item.fonds_id
+            WHERE 1=1{where_supp}
+            ORDER BY item.cote
+            LIMIT :limite
+            """
+        )
+        rows = db.execute(sql, params).all()
+        return [
+            ResultatRecherche(
+                type_entite="item",
+                id=row.id,
+                cote=row.cote,
+                titre=row.titre or "",
+                snippet="",
+                score=0.0,
+                extras={
+                    "fonds_id": row.fonds_id,
+                    "fonds_cote": row.fonds_cote,
+                },
+            )
+            for row in rows
+        ]
+
+    params["q"] = requete_fts
     sql = text(
         f"""
         SELECT
@@ -507,13 +588,13 @@ def _rechercher_items(
 
 
 def _rechercher_fonds(
-    db: Session, requete_fts: str, scope: Scope, limite: int
+    db: Session, requete_fts: str | None, scope: Scope, limite: int,
 ) -> list[ResultatRecherche]:
     """Fonds matchés. Le scope `fonds_id` limite au fonds courant,
     `collection_id` exclut tous les fonds (le scope est plus étroit
     que la collection)."""
     where_supp = ""
-    params: dict = {"q": requete_fts, "limite": limite}
+    params: dict = {"limite": limite}
     if scope.fonds_id is not None:
         where_supp = " AND fonds.id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
@@ -523,6 +604,27 @@ def _rechercher_fonds(
         # fonds parent).
         return []
 
+    if requete_fts is None:
+        sql = text(
+            f"""
+            SELECT fonds.id AS id, fonds.cote AS cote, fonds.titre AS titre
+            FROM fonds
+            WHERE 1=1{where_supp}
+            ORDER BY fonds.cote
+            LIMIT :limite
+            """
+        )
+        rows = db.execute(sql, params).all()
+        return [
+            ResultatRecherche(
+                type_entite="fonds",
+                id=row.id, cote=row.cote, titre=row.titre or "",
+                snippet="", score=0.0,
+            )
+            for row in rows
+        ]
+
+    params["q"] = requete_fts
     sql = text(
         f"""
         SELECT
@@ -553,13 +655,13 @@ def _rechercher_fonds(
 
 
 def _rechercher_collections(
-    db: Session, requete_fts: str, scope: Scope, limite: int
+    db: Session, requete_fts: str | None, scope: Scope, limite: int,
 ) -> list[ResultatRecherche]:
     """Collections matchées. `scope.fonds_id` limite aux collections
     du fonds (miroir + libres rattachées). `scope.collection_id`
     exclut les autres collections (un seul résultat possible)."""
     where_supp = ""
-    params: dict = {"q": requete_fts, "limite": limite}
+    params: dict = {"limite": limite}
     if scope.fonds_id is not None:
         where_supp = " AND collection.fonds_id = :fonds_id"
         params["fonds_id"] = scope.fonds_id
@@ -567,6 +669,42 @@ def _rechercher_collections(
         where_supp = " AND collection.id = :collection_id"
         params["collection_id"] = scope.collection_id
 
+    if requete_fts is None:
+        sql = text(
+            f"""
+            SELECT
+                collection.id AS id,
+                collection.cote AS cote,
+                collection.titre AS titre,
+                collection.fonds_id AS fonds_id,
+                fonds.cote AS fonds_cote,
+                collection.type_collection AS type_collection
+            FROM collection
+            LEFT JOIN fonds ON fonds.id = collection.fonds_id
+            WHERE 1=1{where_supp}
+            ORDER BY collection.cote
+            LIMIT :limite
+            """
+        )
+        rows = db.execute(sql, params).all()
+        return [
+            ResultatRecherche(
+                type_entite="collection",
+                id=row.id,
+                cote=row.cote,
+                titre=row.titre or "",
+                snippet="",
+                score=0.0,
+                extras={
+                    "fonds_id": row.fonds_id,
+                    "fonds_cote": row.fonds_cote,
+                    "type_collection": row.type_collection,
+                },
+            )
+            for row in rows
+        ]
+
+    params["q"] = requete_fts
     sql = text(
         f"""
         SELECT

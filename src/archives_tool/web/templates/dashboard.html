@@ -23,22 +23,26 @@
 </section>
 
 {# ----- Cartes de stats globales ------------------------------------ #}
-{# Cartes informatives (non-cliquables pour l'instant). Un essai
-   précédent les rendait cliquables vers `/recherche?types=...` mais
-   la recherche FTS5 exige une query non-vide, donc les liens
-   menaient à « Tapez une requête » — mauvaise UX. La capacité
-   `href=` est conservée dans `metric_card.html` pour usage futur
-   (vue « tout afficher » sans FTS, ou pages /items, /collections
-   dédiées si on les implémente). #}
+{# Cartes cliquables : profitent du mode « tout afficher » de la
+   recherche (q vide + types/filtres → liste directe sans FTS).
+   « Fonds » → /recherche?types=fonds (liste les fonds),
+   « Collections » → idem pour collections, « Items » → idem,
+   « Items validés » → items + filtre etat=valide.
+   « Fichiers » reste statique : pas de vue recherche par fichier
+   (l'index FTS ne couvre pas les fichiers, roadmap V3 avec OCR). #}
 <section class="mb-10">
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-    {% with label="Fonds", value=resume.stats.nb_fonds, detail="" %}
+    {% with label="Fonds", value=resume.stats.nb_fonds, detail="",
+            href="/recherche?types=fonds" %}
       {% include "components/metric_card.html" %}
     {% endwith %}
-    {% with label="Collections", value=resume.stats.nb_collections, detail="miroirs + libres + transversales" %}
+    {% with label="Collections", value=resume.stats.nb_collections,
+            detail="miroirs + libres + transversales",
+            href="/recherche?types=collection" %}
       {% include "components/metric_card.html" %}
     {% endwith %}
-    {% with label="Items", value=resume.stats.nb_items, detail="" %}
+    {% with label="Items", value=resume.stats.nb_items, detail="",
+            href="/recherche?types=item" %}
       {% include "components/metric_card.html" %}
     {% endwith %}
     {% with label="Fichiers", value=resume.stats.nb_fichiers, detail="" %}
@@ -47,7 +51,8 @@
     {% with
       label="Items validés",
       value=("%.0f" % resume.stats.pct_valides) + " %",
-      detail=(resume.stats.nb_items_valides | string) + " / " + (resume.stats.nb_items | string) + " items"
+      detail=(resume.stats.nb_items_valides | string) + " / " + (resume.stats.nb_items | string) + " items",
+      href="/recherche?types=item&etat=valide"
     %}
       {% include "components/metric_card.html" %}
     {% endwith %}

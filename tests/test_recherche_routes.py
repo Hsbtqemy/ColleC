@@ -273,6 +273,66 @@ def test_route_recherche_pagination_preserve_filtres(
     assert any("etat=brouillon" in h and "types=item" in h for h in hrefs)
 
 
+def test_route_recherche_tout_afficher_types_sans_query(
+    client_demo: TestClient,
+) -> None:
+    """`/recherche?types=item` sans `q` liste tous les items (mode
+    « tout afficher »). Le compteur indique « X résultats » sans
+    le « pour "..." » (q vide), et la pagination fonctionne."""
+    response = client_demo.get("/recherche?types=item")
+    assert response.status_code == 200
+    # Pas le message d'invitation « Tapez une requête »
+    assert "Tapez une requête" not in response.text
+    # Compteur présent : « N résultats. »
+    assert "résultats" in response.text
+    # Pas de « pour "..." » (q vide)
+    assert 'pour <strong>«' not in response.text
+    # Liens vers des items rendus (au moins quelques-uns dans la
+    # base demo qui a ~333 items)
+    assert response.text.count('href="/item/') > 0
+
+
+def test_route_recherche_tout_afficher_filtre_etat_sans_query(
+    client_demo: TestClient,
+) -> None:
+    """`/recherche?etat=brouillon` sans `q` liste tous les items en
+    brouillon. La pastille du filtre actif est visible."""
+    response = client_demo.get("/recherche?etat=brouillon")
+    assert response.status_code == 200
+    # Pas l'invitation
+    assert "Tapez une requête" not in response.text
+    # Pastille état brouillon
+    assert "État :" in response.text
+    # Le seeder demo a 56 items en brouillon — au moins quelques-uns
+    # rendus sur la première page
+    assert response.text.count('href="/item/') > 0
+
+
+def test_route_recherche_sans_intention_garde_invitation(
+    client_demo: TestClient,
+) -> None:
+    """Sans q ni filtres ni scope, on garde l'invitation
+    « Tapez une requête » — sinon /recherche tout court listerait
+    toute la base (intention pas claire)."""
+    response = client_demo.get("/recherche")
+    assert response.status_code == 200
+    assert "Tapez une requête" in response.text
+
+
+def test_route_dashboard_cartes_metric_cliquables(
+    client_demo: TestClient,
+) -> None:
+    """Les cartes Fonds / Collections / Items / Items validés du
+    dashboard pointent vers `/recherche?types=...` (mode « tout
+    afficher »). Vérifie la présence des liens en attribut href."""
+    response = client_demo.get("/")
+    assert response.status_code == 200
+    assert 'href="/recherche?types=fonds"' in response.text
+    assert 'href="/recherche?types=collection"' in response.text
+    assert 'href="/recherche?types=item"' in response.text
+    assert 'href="/recherche?types=item&amp;etat=valide"' in response.text
+
+
 def test_route_recherche_libelles_humains_coar_et_langue(
     client_demo: TestClient, base_demo_path: Path,
 ) -> None:

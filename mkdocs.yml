@@ -109,6 +109,7 @@ nav:
       - Vue d'ensemble: guide/cli/index.md
       - importer: guide/cli/importer.md
       - collections: guide/cli/collections.md
+      - items: guide/cli/items.md
       - exporter: guide/cli/exporter.md
       - controler: guide/cli/controler.md
       - montrer: guide/cli/montrer.md

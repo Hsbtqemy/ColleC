@@ -1722,6 +1722,41 @@ Garde-fous SQL : synthese fonds ≤ 10 queries, synthese collection
 ≤ 7 queries. +85 tests au total (synthese collection 28, fonds 13,
 inline edit étendu 14, fiche item maintien 30+).
 
+### V0.9.7 — Création en série d'items ✅ livrée
+
+Chantier ciblé : combler le manquant identifié dans
+[`plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md) —
+préparer N fiches d'items placeholders avant numérisation, pour
+pouvoir y rattacher les scans au fil. La création unitaire via
+l'UI est rebutante pour 60+ items, et le pipeline d'import Excel
+est lourd quand on veut juste pré-créer une plage de cotes.
+
+- **Service** `creer_items_en_serie` (`services/items.py`) :
+  pattern Python `str.format` avec variable `{n}` (ex
+  `PF-{n:03d}`), plage `de_n..a_n` (inclus, cap dur 1000), titre
+  template optionnel (`Numéro {n}`), valeurs par défaut
+  `etat`/`type_coar`/`langue`. Résolution collection : miroir par
+  défaut, libre rattachée ou transversale. Invariant 6 respecté
+  (rattachement miroir auto si cible libre). Validation conflits
+  en amont (SELECT) + détection doublons intra-série (pattern
+  sans `{n}` → ItemInvalide explicite). `ignorer_existants` pour
+  la rejouabilité. Transactionnel, rollback complet si erreur
+  mid-bulk. `RapportSerieItems(crees, ignores)`.
+- **CLI** `archives-tool items creer-serie --fonds PF --pattern
+  "PF-{n:03d}" --de 1 --a 60 --titre "Por Favor n°{n}"` — sub-app
+  `items` enregistrée sur l'app principal. Options exhaustives,
+  codes de sortie 0/1/2 standard.
+- **UI** `/collection/<cote>/items/serie?fonds=X` : formulaire
+  avec pattern pré-rempli sur la cote (`{cote}-{n:03d}`),
+  validation côté serveur, re-render avec erreurs si invalides.
+  POST réussi redirige avec flash `serie_crees=N` lu par la page
+  collection. Bouton **+ Créer une série** sur la page collection
+  (miroir + libres rattachées). Masqué sur transversales et en
+  lecture seule. Middleware bloque le POST direct (423 Locked).
+
+27 tests (15 service, 6 CLI, 9 UI dont 4 garde-fou : transversale,
+lecture seule pour le bouton + le POST). 1117/1117 verts.
+
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
 Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si
@@ -1763,9 +1798,12 @@ Claude Code).
   à choisir : AG Grid, Handsontable, ou équivalent).
 - Journal de bord auto-généré par collection, consultable, avec
   possibilité d'annoter les entrées.
-- Création en série d'items (pattern + incrément) — manquant
-  critique pour le plan de chantier, voir
-  [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
+- ✅ Création en série d'items (pattern + incrément) — **livrée
+  en V0.9.7** (service `creer_items_en_serie` + CLI
+  `archives-tool items creer-serie` + bouton UI sur page
+  collection). Voir
+  [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md)
+  et [`docs/guide/cli/items.md`](docs/guide/cli/items.md).
 - Onglet « Avancement » consolidé sur la page Fonds (lecture par
   jalons : planifiés / numérisés / OCR / catalogués / validés) —
   voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).

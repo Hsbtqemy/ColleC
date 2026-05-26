@@ -131,3 +131,80 @@ def test_bouton_creer_serie_present_sur_collection(base_demo: Path) -> None:
     assert r.status_code == 200
     assert "Créer une série" in r.text
     assert "/collection/HK/items/serie?fonds=HK" in r.text
+
+
+def test_bouton_masque_sur_transversale(base_demo: Path) -> None:
+    """Une collection transversale ne doit pas exposer le bouton
+    (création nécessite un fonds explicite, qu'une transversale n'a
+    pas par définition)."""
+    from archives_tool.api.services.collections import (
+        FormulaireCollection, creer_collection_libre,
+    )
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="TRANS-BTN", titre="Transversale", fonds_id=None,
+            ),
+        )
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get("/collection/TRANS-BTN")
+    assert r.status_code == 200
+    # « + Créer une série » absente — le bouton « + Ajouter des items »
+    # peut être present (libre non-miroir), c'est OK.
+    assert "/collection/TRANS-BTN/items/serie" not in r.text
+
+
+def test_bouton_masque_en_lecture_seule(
+    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En lecture seule, le bouton est masqué (cohérent avec « +
+    Ajouter des items » qui suit la même règle)."""
+    from archives_tool.api import templating
+    monkeypatch.setitem(
+        templating.templates.env.globals, "est_lecture_seule", lambda: True
+    )
+    client = TestClient(app)
+    r = client.get("/collection/HK?fonds=HK")
+    assert r.status_code == 200
+    assert "/collection/HK/items/serie" not in r.text
+
+
+def test_post_serie_bloque_par_middleware_lecture_seule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Même si l'utilisateur forge l'URL POST directement, le
+    middleware lecture seule renvoie 423 (Locked). Garde-fou
+    indépendant du masquage des boutons côté template.
+
+    On configure une base demo + un config_local.yaml avec
+    `lecture_seule: true` (méthode utilisée par test_lecture_seule.py)."""
+    db = tmp_path / "demo.db"
+    peupler_base(db)
+    monkeypatch.setenv("ARCHIVES_DB", str(db))
+    # Config lecture_seule via fichier YAML (lu par charger_config()
+    # auquel le middleware se rattache).
+    racine = tmp_path / "miniatures"
+    racine.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        f"utilisateur: test\n"
+        f"lecture_seule: true\n"
+        f"racines:\n  demo: {racine}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+
+    client = TestClient(app)
+    r = client.post(
+        "/collection/HK/items/serie?fonds=HK",
+        data={
+            "pattern_cote": "HK-PIRATE-{n}",
+            "de_n": "1", "a_n": "3",
+        },
+    )
+    assert r.status_code == 423

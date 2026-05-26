@@ -46,11 +46,13 @@
   <div id="visionneuse-{{ fichier.id }}"
        class="visionneuse-osd"
        style="width:100%;height:100%;background:#1a1a1a;border-radius:6px;"
+       data-fichier-id="{{ fichier.id }}"
        data-source='{{ {
          "primary": fichier.source_image.primary,
          "fallback": fichier.source_image.fallback,
          "telecharger": src_brut,
-         "nom": fichier.nom_fichier
+         "nom": fichier.nom_fichier,
+         "fichier_id": fichier.id
        } | tojson }}'></div>
 {%- endif %}
 {%- endmacro %}

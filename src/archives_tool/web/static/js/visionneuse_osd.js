@@ -66,6 +66,15 @@
       showFullPageControl: true,
       gestureSettingsMouse: { clickToZoom: false },
     });
+    // Expose l'instance OSD + fichier_id pour les scripts qui se
+    // greffent (Annotorious, mesures, etc.). Pattern d'événement
+    // pour découpler — pas de couplage direct avec un script tiers.
+    osd.addHandler("open", function () {
+      viz.dispatchEvent(new CustomEvent("visionneuse:pret", {
+        bubbles: true,
+        detail: { osd: osd, fichier_id: data.fichier_id || null },
+      }));
+    });
     osd.addHandler("open-failed", function () {
       const fb = tuilesPour(data.fallback);
       if (fb) {

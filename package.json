@@ -8,6 +8,7 @@
     "vendor": "node scripts/vendor.mjs"
   },
   "dependencies": {
+    "@recogito/annotorious-openseadragon": "^2.7.0",
     "htmx.org": "^1.9.10",
     "openseadragon": "^4.1.0",
     "pdfjs-dist": "^5.6.205",

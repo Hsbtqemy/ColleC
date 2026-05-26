@@ -76,4 +76,18 @@ copierDossier(
   join(RACINE_VENDOR, "pdfjs", "wasm"),
 );
 
+// Annotorious (plugin OpenSeadragon) — annotations IIIF / W3C
+// sur l'image. Mode édition activable depuis la visionneuse. Voir
+// `docs/developpeurs/annotations-image-future.md`.
+copierFichier(
+  "node_modules/@recogito/annotorious-openseadragon/dist/openseadragon-annotorious.min.js",
+  join(RACINE_VENDOR, "annotorious"),
+  "openseadragon-annotorious.min.js",
+);
+copierFichier(
+  "node_modules/@recogito/annotorious-openseadragon/dist/annotorious.min.css",
+  join(RACINE_VENDOR, "annotorious"),
+  "annotorious.min.css",
+);
+
 console.log("✓ Vendors synchronisés.");

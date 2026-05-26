@@ -47,8 +47,28 @@
                               gestion_champs_url=_gestion_champs_url) }}
   </div>
 
-  <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;">
-    {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+  <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column;gap:4px;">
+    {# Barre de contrôles compacte au-dessus de la visionneuse —
+       bouton « Annoter » uniquement quand l'écriture est possible
+       (sinon en lecture seule, le clic POSTrait et le middleware
+       renverrait 423). Le bouton bascule readOnly côté Annotorious
+       et change son libellé via data-annoter-actif. #}
+    {% if f_courant and not est_lecture_seule() %}
+    <div style="display:flex;gap:8px;align-items:center;font-size:12px;">
+      <button type="button"
+              data-annoter-toggle="visionneuse-{{ f_courant.id }}"
+              class="inline-flex items-center"
+              style="padding:4px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:#fff;cursor:pointer;color:#374151;">
+        Annoter
+      </button>
+      <span class="text-gray-500" style="font-size:11px;">
+        Double-clic dans l'image pour valider une zone tracée.
+      </span>
+    </div>
+    {% endif %}
+    <div style="flex:1;min-height:0;">
+      {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -56,6 +76,17 @@
 {% block scripts %}
   <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
   <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
+  {# Annotations IIIF (V0.9.7 beta) — Annotorious sur l'instance OSD.
+     Charge la CSS Annotorious + le plugin + le script de wiring REST.
+     Inactif si Annotorious n'est pas vendor (warning console mais
+     pas de crash de la visionneuse). En lecture seule on ne charge
+     pas — les annotations restent lisibles via l'API mais l'UI
+     d'édition est inutile (et le bouton n'apparait pas). #}
+  {% if f_courant and not est_lecture_seule() %}
+    <link rel="stylesheet" href="{{ static_url('js/vendor/annotorious/annotorious.min.css') }}">
+    <script src="{{ static_url('js/vendor/annotorious/openseadragon-annotorious.min.js') }}"></script>
+    <script src="{{ static_url('js/annotations_osd.js') }}"></script>
+  {% endif %}
   {# inline_edit.js POSTe au blur/change sur /item/.../champ/...
      En mode lecture seule, le middleware bloque ces POSTs (423),
      mais l'utilisateur peut quand même cliquer sur un champ et

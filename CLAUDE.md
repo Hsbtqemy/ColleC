@@ -1722,14 +1722,17 @@ Garde-fous SQL : synthese fonds ≤ 10 queries, synthese collection
 ≤ 7 queries. +85 tests au total (synthese collection 28, fonds 13,
 inline edit étendu 14, fiche item maintien 30+).
 
-### V0.9.7 — Création en série d'items ✅ livrée
+### V0.9.7 — Création en série + annotations IIIF (en cours)
 
-Chantier ciblé : combler le manquant identifié dans
-[`plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md) —
-préparer N fiches d'items placeholders avant numérisation, pour
-pouvoir y rattacher les scans au fil. La création unitaire via
-l'UI est rebutante pour 60+ items, et le pipeline d'import Excel
-est lourd quand on veut juste pré-créer une plage de cotes.
+Deux chantiers groupés sous V0.9.7 (tag stable après les deux) :
+
+**Création en série d'items ✅ livrée** —
+[`plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
+Combler le manquant : préparer N fiches d'items placeholders avant
+numérisation, pour pouvoir y rattacher les scans au fil. La création
+unitaire via l'UI est rebutante pour 60+ items, et le pipeline
+d'import Excel est lourd quand on veut juste pré-créer une plage de
+cotes.
 
 - **Service** `creer_items_en_serie` (`services/items.py`) :
   pattern Python `str.format` avec variable `{n}` (ex
@@ -1755,7 +1758,47 @@ est lourd quand on veut juste pré-créer une plage de cotes.
   lecture seule. Middleware bloque le POST direct (423 Locked).
 
 27 tests (15 service, 6 CLI, 9 UI dont 4 garde-fou : transversale,
-lecture seule pour le bouton + le POST). 1117/1117 verts.
+lecture seule pour le bouton + le POST).
+
+**Annotations IIIF 🚧 alpha livré** —
+[`annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
+Module d'annotation d'image conforme W3C Web Annotation Data Model
++ IIIF Presentation API 3. Cible : chantier Por Favor (identifier
+les dessinateurs, marquer caricatures avec lien Wikidata,
+indexation à la granularité région).
+
+- **Modèle** `AnnotationRegion` (`models/annotation.py`) : FK
+  CASCADE sur Fichier, `selecteur` (text), `selecteur_type`
+  (`fragment` | `svg`), `corps` (JSON liste de bodies W3C),
+  `motivation` (text). TracabiliteMixin standard. Index
+  `(fichier_id, cree_le)` pour listing chronologique. Relation
+  `Fichier.annotations` avec cascade delete-orphan.
+- **Migration Alembic** `o3s4t5u6v7w8` idempotente (skip si table
+  déjà créée via Base.metadata.create_all).
+- **Service** `services/annotations.py` : CRUD avec verrou
+  optimiste. `FormulaireAnnotation` (Pydantic) avec validators
+  stricts (`motivation` ∈ `MOTIVATIONS_W3C` 13 valeurs standard,
+  `selecteur_type` ∈ `{fragment, svg}`). Sérialisation W3C
+  JSON-LD à la volée — jamais stockée. Omet les champs
+  optionnels (`creator`, `modified`) quand absents (W3C strict).
+- **5 routes REST** sous `/api` : GET liste, POST création, GET
+  unitaire, PUT modification (verrou optimiste, 409 si conflit),
+  DELETE idempotent (204). POST/PUT acceptent forme simple OU
+  forme W3C native (target/body) — un client Annotorious peut
+  envoyer son JSON-LD natif sans conversion.
+
+Reste **β** (intégration Annotorious sur OSD existante de la
+visionneuse), **γ** (autocomplete vocabulaire + champ URI sur
+`ValeurControlee` pour pivot Wikidata/VIAF), **δ** (export Nakala
+JSON W3C déposé à côté des images, référencé dans le manifeste
+IIIF de l'item).
+
+25 tests annotations (11 service, 9 routes, 5 garde-fou :
+cascade Fichier, cascade Item, isolation entre fichiers,
+sérialisation W3C strict avec champs null omis, motivation
+hors W3C refusée).
+
+**1145/1145 verts** au total après alpha annotations.
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
@@ -1807,11 +1850,12 @@ Claude Code).
 - Onglet « Avancement » consolidé sur la page Fonds (lecture par
   jalons : planifiés / numérisés / OCR / catalogués / validés) —
   voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
-- **Module d'annotation d'image** (W3C Web Annotations sur
-  l'OpenSeadragon existant via Annotorious) — indexation à la
-  granularité région, pivot pour la recherche fine côté futur
-  portail. Tirable en V1.x si la pression du chantier Por Favor
-  le justifie. Voir
+- 🚧 **Module d'annotation d'image** (W3C Web Annotations sur
+  l'OpenSeadragon existant via Annotorious) — **alpha livré
+  en V0.9.7** (modèle `AnnotationRegion` + migration Alembic +
+  service + 5 routes REST + 25 tests). Reste β (UI Annotorious),
+  γ (autocomplete vocabulaire + URI Wikidata), δ (export
+  Nakala). Voir
   [`docs/developpeurs/annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 - **Export site statique** (arbre Markdown + assets prêt pour
   Quarto en phase 1, Hugo en phase 3, autres SSG extensibles via

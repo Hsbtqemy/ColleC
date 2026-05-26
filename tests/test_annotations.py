@@ -518,3 +518,107 @@ def test_route_cascade_suppression_fichier(base_demo: Path) -> None:
         # Annotation aussi disparue
         assert s.get(AnnotationRegion, annotation_id) is None
     engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Garde-fou supplémentaires (passe revue post-alpha)
+# ---------------------------------------------------------------------------
+
+
+def test_isolation_entre_fichiers(base_demo: Path) -> None:
+    """GET sur le fichier A ne doit pas renvoyer les annotations du
+    fichier B. Garde-fou critique pour éviter une fuite cross-fichier
+    si quelqu'un casse le `where(fichier_id=...)`.
+    """
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Récupère 2 fichiers distincts du seeder
+        fichiers = list(s.scalars(
+            select(Fichier).order_by(Fichier.id).limit(2)
+        ).all())
+        assert len(fichiers) == 2
+        fid_a, fid_b = fichiers[0].id, fichiers[1].id
+
+        creer_annotation(
+            s, fid_a,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "annotation-A"}],
+            ),
+        )
+        creer_annotation(
+            s, fid_b,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "annotation-B"}],
+            ),
+        )
+
+    client = TestClient(app)
+    r_a = client.get(f"/api/fichiers/{fid_a}/annotations")
+    r_b = client.get(f"/api/fichiers/{fid_b}/annotations")
+    items_a = r_a.json()["items"]
+    items_b = r_b.json()["items"]
+    assert len(items_a) == 1
+    assert len(items_b) == 1
+    assert items_a[0]["body"][0]["value"] == "annotation-A"
+    assert items_b[0]["body"][0]["value"] == "annotation-B"
+    engine.dispose()
+
+
+def test_cascade_item_supprime_aussi_annotations(base_demo: Path) -> None:
+    """Cascade complète : supprimer un Item supprime ses Fichier
+    (cascade existante Item.fichiers), qui à leur tour suppriment
+    leurs AnnotationRegion (cascade nouvelle V0.9.7)."""
+    from archives_tool.models import Item
+    fid = _premier_fichier_id(base_demo)
+    client = TestClient(app)
+    r = client.post(
+        f"/api/fichiers/{fid}/annotations",
+        json={
+            "selecteur": "xywh=0,0,10,10",
+            "corps": [{"type": "TextualBody", "value": "x"}],
+        },
+    )
+    annotation_id = int(r.json()["id"].rsplit("/", 1)[-1])
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        f = s.get(Fichier, fid)
+        item_id = f.item_id
+        item = s.get(Item, item_id)
+        s.delete(item)
+        s.commit()
+        # Annotation supprimée en cascade via Fichier
+        assert s.get(AnnotationRegion, annotation_id) is None
+        # Fichier aussi
+        assert s.get(Fichier, fid) is None
+    engine.dispose()
+
+
+def test_serialiser_w3c_omet_champs_null(base_demo: Path) -> None:
+    """W3C spec : champs optionnels (creator, modified) doivent être
+    OMIS quand absents, pas inclus en `null`. Garantit la
+    compatibilité avec les viewers stricts (Mirador, Recogito)."""
+    fid = _premier_fichier_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Annotation sans cree_par → `creator` doit être absent.
+        a = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "x"}],
+            ),
+            cree_par=None,  # explicite — pas de creator
+        )
+        w3c = serialiser_w3c(a)
+        assert "creator" not in w3c
+        # Jamais modifiée → `modified` absent
+        assert "modified" not in w3c
+        # En revanche `created` est posé via server_default → présent
+        assert "created" in w3c
+    engine.dispose()

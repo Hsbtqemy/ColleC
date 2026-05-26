@@ -9,7 +9,7 @@ Voir `docs/developpeurs/annotations-image-future.md`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -129,22 +129,27 @@ def serialiser_w3c(annotation: AnnotationRegion, *, base_url: str = "") -> dict[
     else:
         selector = {"type": "FragmentSelector", "value": annotation.selecteur}
 
-    return {
+    # W3C spec : les champs optionnels DOIVENT être omis quand absents
+    # (pas inclus en `null`). Les serializers stricts (Mirador, etc.)
+    # peuvent rejeter `"creator": null`.
+    out: dict[str, Any] = {
         "@context": "http://www.w3.org/ns/anno.jsonld",
         "id": f"{base_url}/api/annotations/{annotation.id}",
         "type": "Annotation",
         "motivation": annotation.motivation,
-        "created": annotation.cree_le.isoformat() if annotation.cree_le else None,
-        "creator": annotation.cree_par,
-        "modified": (
-            annotation.modifie_le.isoformat() if annotation.modifie_le else None
-        ),
         "target": {
             "source": f"{base_url}/api/fichiers/{annotation.fichier_id}",
             "selector": selector,
         },
         "body": list(annotation.corps),
     }
+    if annotation.cree_le is not None:
+        out["created"] = annotation.cree_le.isoformat()
+    if annotation.cree_par:
+        out["creator"] = annotation.cree_par
+    if annotation.modifie_le is not None:
+        out["modified"] = annotation.modifie_le.isoformat()
+    return out
 
 
 def serialiser_collection_w3c(
@@ -165,13 +170,6 @@ def serialiser_collection_w3c(
         "type": "AnnotationPage",
         "items": [serialiser_w3c(a, base_url=base_url) for a in annotations],
     }
-
-
-@dataclass(frozen=True)
-class RapportAnnotation:
-    """Résultat d'une création/modification (renvoyé par la route)."""
-
-    annotation: AnnotationRegion
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +249,6 @@ def modifier_annotation(
     Lève `AnnotationInvalide` (validation), `AnnotationIntrouvable`
     (id inconnu), `ConflitVersion` (version périmée).
     """
-    from datetime import datetime
     erreurs = _valider(formulaire)
     if erreurs:
         raise AnnotationInvalide(erreurs)

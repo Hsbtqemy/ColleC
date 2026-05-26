@@ -121,6 +121,160 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.6 (stable, 2026-05-26)
+
+Chantier UX dirigé par les tests d'usage sur le fonds Por Favor.
+Objectif : combler les deux angles morts d'orientation —
+(a) sur la page collection on saute du compteur d'items au tableau
+sans aucune synthèse intermédiaire ;
+(b) la moindre édition de métadonnée passe par une page Modifier
+séparée.
+
+Aboutit à : (1) une **synthèse** dense au-dessus du tableau d'items
+sur les pages collection ET fonds, qui répond à « quoi / quand /
+quelle gueule / quoi finir / où j'en suis » ; (2) l'**édition inline
+complète** des bandeaux et identifiants sur les 3 entités (item,
+collection, fonds) — plus aucun détour par /modifier pour les
+champs courants ; (3) le redirect URL `/item/<cote>` vers la fiche
+notice (la visionneuse vit sur `/visionneuse`) qui était en chantier
+V0.9.5 mais non formellement livré.
+
+**1090/1090 tests verts** au total — première fois que la suite
+complète passe depuis le bascule fiche V0.9.5 (6 tests visionneuse
+pointaient sur l'ancienne URL, dette de 8 mois résorbée).
+
+### Synthèse de collection (Lot 1)
+
+Composant `synthese_collection.html` au-dessus du tableau d'items
+sur `/collection/<cote>`. Service `composer_synthese_collection`
+en ~4 requêtes SQL bornées indépendamment du volume.
+
+Sections (toutes auto-masquées si vide) :
+- **Identifiants** : DOI Nakala + DOI parent inline-éditables
+  (déplacé du bandeau après retour utilisateur — tout dans la même
+  boîte)
+- **Période** : mini-timeline avec barres + comptes + labels d'année.
+  Pas annuel si plage ≤ 30 ans, sinon décennal aligné sur multiples
+  de 10. Année dérivée de `Item.date` EDTF si `Item.annee` est NULL
+  (cas import Nakala). Cap de labels (1 sur 2) au-delà de 12 barres.
+- **Agrégats qualitatifs** : Langues + Types COAR (libellés humains
+  via vocab, fallback ISO 639-1 → 639-3 pour `es` → `Espagnol`),
+  puis top 6 clés `Item.metadonnees` les plus fréquentes. Rendu
+  compact « Langue : Espagnol (172) » sur 1 ligne quand
+  `nb_distinct == 1` (sinon header multi-ligne avec top N).
+- **Vignettes** : 12 vignettes échantillonnées uniformément (stride
+  flottant), placeholder par extension pour les non-images.
+- **À finir** : trous catalographiques (sans titre / sans année /
+  sans fichier / à corriger), seul « à corriger » a un deep-link
+  vers la liste filtrée.
+- **Activité récente** : 5 derniers items modifiés du périmètre.
+
+Heuristiques anti-bruit côté agrégats :
+- Blacklist `_META_ITEM_TECHNIQUES_SYNTHESE` (num_files, hash,
+  sha256, data_url, iiif_url, categories, …) — fingerprints Nakala
+  sans valeur documentaire.
+- Filtre identifiants : un champ dont la valeur la plus fréquente
+  apparaît ≤ 1 fois ET ≥ 5 valeurs distinctes est écarté (cas PF :
+  `ancienne_cote` = 173 valeurs uniques, identifiant pur).
+
+### Synthèse de fonds + cartographie cross-collection (Lot 2)
+
+Composant `synthese_fonds.html` au-dessus de la liste des
+collections sur `/fonds/<cote>`. Service `composer_synthese_fonds`
+en ~5-7 requêtes SQL bornées (test garde-fou à 10).
+
+Réutilise les helpers de la synthèse collection portés à tous les
+items du fonds (via `Item.fonds_id`). Ajoute :
+
+- **Bloc Identifiants revue** : Éditeur, Lieu, Périodicité, ISSN,
+  Début, Fin, Responsable, Personnalité. Tous inline-éditables.
+  En lecture seule, seuls les champs renseignés apparaissent ;
+  en édition, les vides sont à `opacity:0.55` avec placeholder
+  « + ajouter » (s'effacent visuellement sans dominer l'œil).
+- **Collections** : cartographie cross-collection toujours visible
+  (mêmes si une seule miroir). Par collection : barre proportion +
+  nb items + nb partagés avec une autre libre + DOI Nakala
+  cliquable vers nakala.fr. Header adapté :
+  - « Collections · uniquement la miroir » (cas usuel 1 collection)
+  - « N items uniquement dans la miroir · M dans plusieurs libres »
+    (cas multi-libres, cas demo FA avec 4 libres)
+  Exclut les transversales (elles empruntent des items mais
+  n'appartiennent pas au fonds — décision sémantique testée).
+
+### Édition inline complète sur les 3 entités (Lot 3)
+
+Le pattern V0.9.1 d'édition inline (item) est étendu à collection
+et fonds. Plus aucun champ courant ne nécessite la page Modifier.
+
+- **Items** (déjà V0.9.1) : `CHAMPS_ITEM_EDITABLES_INLINE`
+  (etat_catalogage, titre, type_coar, date, annee, langue, numero,
+  description, notes_internes, doi_nakala, doi_collection_nakala).
+- **Collection** (V0.9.6 Lot 3) :
+  `CHAMPS_COLLECTION_EDITABLES_INLINE` (15 champs). Bandeau :
+  titre + description + phase (avec select PHASES_OPTIONS).
+  Synthèse Identifiants : DOI Nakala + DOI parent.
+  Route POST `/collection/<cote>/champ/<field>?fonds=X`.
+- **Fonds** (V0.9.6 Lot 3) :
+  `CHAMPS_FONDS_EDITABLES_INLINE` (12 champs). Bandeau : titre +
+  description. Synthèse Identifiants : 8 champs revue.
+  Route POST `/fonds/<cote>/champ/<field>`.
+
+Le `<meta name="entity-context">` (renommé depuis `item-context`,
+avec fallback compat pour pages item) est lu par `inline_edit.js`
+qui ouvre l'input au double-clic, POST la valeur, swap la réponse
+dans `[data-value]`, met à jour la version. Partial
+`inline_edit_valeur.html` rendu générique (entity / item fallback).
+
+Restent hors whitelist (page Modifier) sur les 3 entités : `cote`
+(URLs + exports + renommage chantier), `version` (technique),
+`fonds_id` / `type_collection` (invariants).
+
+### Pages détaillées item — bascule URL formellement livrée
+
+V0.9.5 avait mis en place la fiche item (notice 3 colonnes sans
+visionneuse) comme vue par défaut sur `/item/<cote>`, avec la
+visionneuse déplacée sur `/item/<cote>/visionneuse`. Le bascule
+n'avait pas été formellement livré : 6 tests `test_page_item_lecture_*`
+pointaient encore sur l'ancienne URL et échouaient silencieusement.
+
+V0.9.6 : tests mis à jour vers `/visionneuse`, docstrings actualisées.
+Pleine suite passe (1090/1090).
+
+Composants livrés en V0.9.5 (formellement intégrés en V0.9.6) :
+- `pages/item_fiche.html` : layout 3 colonnes (cartouche métadonnées,
+  fichiers compact, vignettes scrollables).
+- `composer_fiche_item` : agrégats meta fichier (sans techniques),
+  position 1-indexed (distincte de Fichier.ordre qui peut avoir
+  des sauts sur fac-similés incomplets).
+- `_META_FICHIER_TECHNIQUES` : blacklist URL Nakala / hash / chiffre
+  pour les agrégats fichier.
+
+### Détails techniques notables
+
+- `_LANGUES_ISO1_VERS_ISO3` : mapping défensif pour résoudre les
+  codes ISO 639-1 (`fr`, `es`…) que Nakala/DC exportent
+  fréquemment, alors que `LANGUES_OPTIONS` est en ISO 639-3.
+- `_annee_depuis_date_edtf` : extraction de l'année (4 chiffres) depuis
+  une chaîne EDTF tolérante. Sert de fallback à `Item.annee`.
+- `PHASES_OPTIONS` exporté depuis `vocabulaires` + enregistré dans
+  `OPTIONS_PAR_CHAMP` pour résolution du libellé humain dans
+  l'inline edit.
+- Service `composer_page_collection` reste inchangé (bandeau + filtres) ;
+  la synthèse vit en parallèle dans `composer_synthese_collection`
+  pour séparation des responsabilités.
+
+### Tests
+
++85 nouveaux tests (synthese collection 28, synthese fonds 13,
+inline edit étendu 14, fiche item maintien 30+). Garde-fous SQL :
+synthese fonds ≤ 10 queries, synthese collection ≤ 7 queries.
+
+### Migration
+
+Pas de migration de données. Pas de migration de config. Hot-reload
+sans risque.
+
+
 ## V0.9.4 (stable, 2026-05-25)
 
 Itération après V0.9.3 stable, démarrée pendant la poursuite du test

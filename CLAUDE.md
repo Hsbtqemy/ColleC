@@ -18,10 +18,12 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.4 stable livré** (1015+ tests verts, doc déployée
+**Statut :** **V0.9.6 stable livré** (1090/1090 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
-(workflow champs personnalisés + vocabulaires UI bouclé bout-en-bout
+(synthèse collection + fonds avec cartographie cross-collection +
+édition inline complète bandeau et identifiants depuis V0.9.6 ;
+workflow champs personnalisés + vocabulaires UI bouclé bout-en-bout
 depuis V0.9.4 ; recherche FTS5 depuis V0.9.3 ; restauration
 ergonomique 4 pages détail depuis V0.9.2 ; renforcement mode local
 WAL + verrou optimiste + lecture seule depuis V0.9.1), documentation
@@ -1670,6 +1672,55 @@ relation (`vocab.valeurs.append`) au lieu de la FK seule —
 SQLAlchemy back-populate auto, sinon `vocab.valeurs` restait stale
 dans la session courante et le composer manquait les valeurs
 nouvellement ajoutées dans la même requête.
+
+### V0.9.6 — Synthèse + édition inline complète ✅ livrée
+
+Chantier UX dirigé par les tests d'usage Por Favor. Deux angles
+morts d'orientation comblés : (a) synthèse au-dessus des tableaux
+d'items sur collection ET fonds ; (b) édition inline complète sur
+les 3 entités (item / collection / fonds).
+
+- **Synthèse collection** : composant `synthese_collection.html`
+  rendant Identifiants (DOI Nakala + DOI parent inline), Période
+  (mini-timeline avec barres + comptes + labels d'année), Agrégats
+  qualitatifs (Langues, Types, top 6 méta items), Vignettes
+  échantillonnées (12 max), Trous catalographiques (sans titre /
+  sans année / sans fichier / à corriger), Activité récente (5
+  derniers items modifiés). Cap top 5 par agrégat, rendu compact
+  pour les agrégats à 1 valeur (« Langue : Espagnol (172) »).
+- **Synthèse fonds** : composant `synthese_fonds.html` réutilisant
+  les helpers de la synthèse collection (portés à tous les items
+  via `Item.fonds_id`) + nouveau bloc **Cartographie cross-collection**
+  : barre proportion + nb items + nb partagés par collection,
+  toujours visible (même 1 miroir), DOI cliquable vers nakala.fr.
+  Plus un **bloc Identifiants revue** (8 champs : Éditeur, Lieu,
+  Périodicité, ISSN, Début, Fin, Responsable, Personnalité)
+  inline-éditables, opacity:0.55 + « + ajouter » sur les vides.
+- **Inline edit complet** : `CHAMPS_COLLECTION_EDITABLES_INLINE`
+  (15 champs) + `CHAMPS_FONDS_EDITABLES_INLINE` (12 champs). Routes
+  POST `/collection/<cote>/champ/<field>` et `/fonds/<cote>/champ/<field>`.
+  Meta `<meta name="entity-context">` (rebaptisé depuis `item-context`,
+  avec fallback compat). Partial `inline_edit_valeur.html` rendu
+  générique. Hors whitelist (page Modifier) : cote, version,
+  fonds_id, type_collection.
+- **Heuristiques anti-bruit** sur la synthèse :
+  - Blacklist `_META_ITEM_TECHNIQUES_SYNTHESE` (num_files, hash,
+    sha256, data_url, iiif_url, categories…) — fingerprints Nakala.
+  - Filtre identifiants : champ dont valeur la plus fréquente apparaît
+    ≤ 1 fois ET ≥ 5 distinctes est écarté (`ancienne_cote` PF).
+  - `_LANGUES_ISO1_VERS_ISO3` : fallback défensif `es` → `spa` →
+    « Espagnol » (Nakala/DC exportent en ISO 639-1).
+  - `_annee_depuis_date_edtf` : derive l'année depuis `Item.date`
+    si `Item.annee` NULL (cas import Nakala).
+- **Bascule URL fiche item V0.9.5 formellement livrée** : 6 tests
+  `test_page_item_lecture_*` qui pointaient encore sur l'ancienne
+  URL `/item/<cote>` (qui rend la fiche depuis V0.9.5) basculés
+  vers `/item/<cote>/visionneuse`. Pleine suite passe désormais
+  (1090/1090 verts — première fois depuis 8 mois).
+
+Garde-fous SQL : synthese fonds ≤ 10 queries, synthese collection
+≤ 7 queries. +85 tests au total (synthese collection 28, fonds 13,
+inline edit étendu 14, fiche item maintien 30+).
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 

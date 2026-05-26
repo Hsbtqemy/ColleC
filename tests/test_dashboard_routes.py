@@ -812,8 +812,12 @@ def test_page_item_lecture_visionneuse_premier_fichier(
 ) -> None:
     """Le premier fichier (ordre=1) est affiché par défaut dans le
     panneau fichiers ; la visionneuse pointe sur ce fichier (data-source
-    présent quand un aperçu est disponible, fallback message sinon)."""
-    response = client_demo.get("/item/HK-001?fonds=HK")
+    présent quand un aperçu est disponible, fallback message sinon).
+
+    V0.9.5+ : la visionneuse n'est plus la vue par défaut de `/item/<cote>`
+    (qui rend la fiche notice). L'URL dédiée est `/visionneuse`.
+    """
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
     assert response.status_code == 200
     # Le seeder crée des fichiers nommés `{cote}-{ordre:02d}.tif`.
     assert "HK-001-01.tif" in response.text
@@ -836,8 +840,10 @@ def test_page_item_lecture_visionneuse_affiche_placeholder_demo(
     """Sur la base demo, tous les fichiers pointent sur un JPEG
     placeholder unique sous `/derives/miniatures/`. La visionneuse
     OpenSeadragon est donc instanciée avec cette source plutôt que
-    de tomber sur le message « Aucun aperçu disponible »."""
-    response = client_demo.get("/item/HK-001?fonds=HK")
+    de tomber sur le message « Aucun aperçu disponible ».
+
+    V0.9.5+ : URL dédiée `/visionneuse`."""
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
     assert response.status_code == 200
     assert "demo_placeholder_apercu.jpg" in response.text
     assert "visionneuse-osd" in response.text
@@ -854,9 +860,12 @@ def test_page_item_lecture_clamp_position_si_depasse(
 
 
 def test_page_item_lecture_layout_trois_zones(client_demo: TestClient) -> None:
-    """La page item rend les 3 zones (panneau fichiers, cartouche
-    métadonnées, visionneuse) et charge OpenSeadragon."""
-    response = client_demo.get("/item/HK-001?fonds=HK")
+    """La page visionneuse rend les 3 zones (panneau fichiers, cartouche
+    métadonnées, visionneuse) et charge OpenSeadragon.
+
+    V0.9.5+ : URL dédiée `/visionneuse` (la fiche notice est la vue par
+    défaut sur `/item/<cote>` mais sans visionneuse OSD)."""
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
     assert response.status_code == 200
     assert "panneau-fichiers" in response.text
     assert "cartouche-metadonnees" in response.text
@@ -892,7 +901,11 @@ def test_page_item_visionneuse_telecharger_url_nakala_pour_fichier_nakala_only(
         fid = f.id
 
     try:
-        response = client_demo.get("/item/HK-001?fonds=HK&fichier_courant=99")
+        # V0.9.5+ : la visionneuse vit sur `/visionneuse`, pas sur
+        # `/item/<cote>` (qui rend la fiche notice).
+        response = client_demo.get(
+            "/item/HK-001/visionneuse?fonds=HK&fichier_courant=99"
+        )
         assert response.status_code == 200
         # Le href dans le data-source (JSON sérialisé) ou dans le
         # fallback message contient l'URL Nakala directe.
@@ -957,8 +970,9 @@ def test_page_item_panneau_fichiers_checkbox_avant_aside(
     apparaître AVANT l'`<aside class="panneau-fichiers">` dans le
     HTML rendu, pour que le sélecteur CSS `#…:checked ~ aside.…`
     fonctionne (frères directs).
-    """
-    response = client_demo.get("/item/HK-001?fonds=HK")
+
+    V0.9.5+ : URL dédiée `/visionneuse`."""
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
     assert response.status_code == 200
     pos_input = response.text.find('id="panneau-fichiers-pin"')
     pos_aside = response.text.find('class="panneau-fichiers"')
@@ -974,8 +988,9 @@ def test_page_item_panneau_fichiers_largeur_dans_style_tag(
     """Régression : la déclaration `width: 36px` doit être dans un
     `<style>` (pas inline) pour que `:hover` et `:checked ~` puissent
     surcharger la spécificité.
-    """
-    response = client_demo.get("/item/HK-001?fonds=HK")
+
+    V0.9.5+ : URL dédiée `/visionneuse`."""
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
     assert response.status_code == 200
     # La largeur initiale est dans la règle CSS interne, pas inline.
     assert "aside.panneau-fichiers" in response.text

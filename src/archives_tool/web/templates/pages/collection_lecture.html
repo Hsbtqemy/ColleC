@@ -208,16 +208,41 @@
 {% endif %}
 
 <section class="mb-8">
+  {# Flash de succes apres creation en serie d'items (V0.9.7).
+     La route POST redirige avec serie_crees=N&serie_ignores=M en
+     query string ; on les lit ici pour confirmer visuellement. #}
+  {% set serie_crees = request.query_params.get('serie_crees') %}
+  {% set serie_ignores = request.query_params.get('serie_ignores') %}
+  {% if serie_crees and serie_crees|int > 0 %}
+    <div class="mb-3 p-3 rounded border border-green-300 bg-green-50 text-sm text-green-900">
+      ✓ {{ serie_crees }} item(s) créé(s) en série.
+      {% if serie_ignores and serie_ignores|int > 0 %}
+        ({{ serie_ignores }} cote(s) déjà existante(s) ignorée(s).)
+      {% endif %}
+    </div>
+  {% endif %}
   <div class="flex items-baseline justify-between mb-2">
     <h2 class="text-lg font-medium">
       Items
     </h2>
-    {% if not est_miroir and not est_lecture_seule() %}
-      <a href="/collection/{{ col.cote }}/items/picker{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
-         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
-        + Ajouter des items
-      </a>
-    {% endif %}
+    <div class="flex items-center gap-2">
+      {# Creation en serie : autorisee sur collections rattachees a un
+         fonds (miroir et libres). Transversales exclues (besoin d'un
+         fonds explicite, flux dedie a part). #}
+      {% if not est_transversale and not est_lecture_seule() %}
+        <a href="/collection/{{ col.cote }}/items/serie{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+           title="Créer N fiches d'items d'un coup (préparation avant numérisation)">
+          + Créer une série
+        </a>
+      {% endif %}
+      {% if not est_miroir and not est_lecture_seule() %}
+        <a href="/collection/{{ col.cote }}/items/picker{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+          + Ajouter des items
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Le partial `collection_items.html` rend la macro `tableau_items`

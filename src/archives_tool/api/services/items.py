@@ -542,6 +542,271 @@ def creer_item(
     return item
 
 
+#: Cap dur sur le nombre d'items créés par appel à
+#: :func:`creer_items_en_serie`. Garde-fou contre la création
+#: accidentelle de 100 000 items qui saturerait la DB. Le besoin
+#: réel sur archives (60-200 items par revue typique) est largement
+#: en-dessous. Si un fonds plus gros nécessite +1000 items, faire
+#: plusieurs appels ou passer par l'import tableur.
+_CAP_SERIE_ITEMS: int = 1000
+
+
+@dataclass(frozen=True)
+class RapportSerieItems:
+    """Rapport d'une création en série d'items.
+
+    ``crees`` : items effectivement créés, dans l'ordre de génération.
+    ``ignores`` : cotes qui existaient déjà et ont été sautées
+    (uniquement si l'appelant a passé ``ignorer_existants=True``).
+    """
+
+    crees: tuple[Item, ...]
+    ignores: tuple[str, ...]
+
+    @property
+    def nb_crees(self) -> int:
+        return len(self.crees)
+
+    @property
+    def nb_ignores(self) -> int:
+        return len(self.ignores)
+
+
+def creer_items_en_serie(
+    db: Session,
+    *,
+    fonds_id: int,
+    pattern_cote: str,
+    de_n: int,
+    a_n: int,
+    titre_template: str = "",
+    collection_id: int | None = None,
+    etat: str = "brouillon",
+    type_coar: str | None = None,
+    langue: str | None = None,
+    ignorer_existants: bool = False,
+    cree_par: str | None = None,
+) -> RapportSerieItems:
+    """Crée une série d'items dans un fonds, du numéro ``de_n`` au
+    numéro ``a_n`` (inclus).
+
+    Cas d'usage typique : préparer 60 fiches d'items d'une revue avant
+    numérisation, pour pouvoir y rattacher les scans au fil.
+
+    Paramètres :
+
+    - ``pattern_cote`` : template Python `str.format` avec une
+      variable ``{n}`` (ou ``{n:03d}`` pour zéro-padding). Ex :
+      ``"PF-{:03d}"`` produit ``PF-001``, ``PF-002``, ...
+    - ``de_n`` / ``a_n`` : bornes inclusives. ``de_n <= a_n``,
+      plage ≤ :data:`_CAP_SERIE_ITEMS`.
+    - ``titre_template`` : template optionnel pour le titre. Mêmes
+      variables que pour la cote. ``""`` = titre vide (acceptable).
+    - ``collection_id`` : collection cible (libre ou miroir). ``None``
+      = la miroir du fonds. Doit appartenir au fonds (ou être une
+      transversale).
+    - ``etat`` / ``type_coar`` / ``langue`` : valeurs par défaut pour
+      tous les items créés.
+    - ``ignorer_existants`` : si ``True``, les cotes déjà présentes
+      sont sautées silencieusement. Si ``False`` (défaut), un conflit
+      lève :class:`ItemInvalide` avec la liste des cotes en conflit.
+
+    Lève :
+
+    - :class:`ItemInvalide` : pattern invalide, plage hors limites,
+      conflit de cote sans ``ignorer_existants``, collection
+      incompatible avec le fonds.
+    - :class:`OperationItemInterdite` : fonds sans miroir (anomalie),
+      collection_id introuvable.
+
+    Transactionnel : tous les items sont créés en une seule
+    transaction. Si l'insert échoue mid-way, rollback complet.
+    """
+    # ---- Validation des bornes ----
+    erreurs: dict[str, str] = {}
+    if de_n > a_n:
+        erreurs["plage"] = (
+            f"La borne inférieure ({de_n}) est supérieure à la borne "
+            f"supérieure ({a_n})."
+        )
+    nb_demande = max(0, a_n - de_n + 1)
+    if nb_demande > _CAP_SERIE_ITEMS:
+        erreurs["plage"] = (
+            f"Plage trop large : {nb_demande} items demandés, cap à "
+            f"{_CAP_SERIE_ITEMS}. Faire plusieurs appels ou utiliser "
+            f"l'import tableur pour un plus gros volume."
+        )
+    if nb_demande == 0:
+        erreurs["plage"] = "Plage vide."
+
+    # ---- Validation du pattern ----
+    if not pattern_cote.strip():
+        erreurs["pattern_cote"] = "Le pattern de cote est obligatoire."
+    else:
+        try:
+            cote_test = pattern_cote.format(n=de_n)
+            if not cote_test.strip():
+                erreurs["pattern_cote"] = (
+                    "Le pattern produit une cote vide."
+                )
+        except (KeyError, IndexError, ValueError) as e:
+            erreurs["pattern_cote"] = (
+                f"Pattern invalide : {e}. Utilisez {{n}} ou {{n:03d}} "
+                f"comme variable."
+            )
+
+    # ---- Validation titre template (si fourni) ----
+    if titre_template:
+        try:
+            titre_template.format(n=de_n)
+        except (KeyError, IndexError, ValueError) as e:
+            erreurs["titre_template"] = (
+                f"Pattern titre invalide : {e}. Variables disponibles : "
+                f"{{n}} (numéro courant)."
+            )
+
+    # ---- Validation état ----
+    if etat not in _ETATS_VALIDES:
+        erreurs["etat"] = (
+            f"État invalide : {etat!r}. Valeurs autorisées : "
+            f"{', '.join(sorted(_ETATS_VALIDES))}."
+        )
+
+    if erreurs:
+        raise ItemInvalide(erreurs)
+
+    # ---- Lookup fonds + miroir ----
+    fonds = db.get(Fonds, fonds_id)
+    if fonds is None:
+        raise ItemInvalide({"fonds_id": f"Le fonds {fonds_id} n'existe pas."})
+
+    miroir_id = db.scalar(
+        select(Collection.id).where(
+            Collection.fonds_id == fonds.id,
+            Collection.type_collection == TypeCollection.MIROIR.value,
+        )
+    )
+    if miroir_id is None:
+        raise OperationItemInterdite(
+            f"Le fonds {fonds.cote!r} (id={fonds.id}) n'a pas de "
+            "collection miroir — anomalie d'intégrité."
+        )
+
+    # ---- Lookup collection cible ----
+    cible_id = collection_id if collection_id is not None else miroir_id
+    cible_collection = db.get(Collection, cible_id)
+    if cible_collection is None:
+        raise OperationItemInterdite(
+            f"La collection {cible_id} n'existe pas."
+        )
+    # Une collection rattachée à un autre fonds est interdite. Une
+    # transversale (fonds_id NULL) est OK — elle peut accueillir des
+    # items de n'importe quel fonds.
+    if (
+        cible_collection.fonds_id is not None
+        and cible_collection.fonds_id != fonds.id
+    ):
+        raise ItemInvalide({
+            "collection_id": (
+                f"La collection {cible_collection.cote!r} appartient au "
+                f"fonds {cible_collection.fonds_id}, pas au fonds "
+                f"{fonds.cote!r}."
+            )
+        })
+
+    # ---- Génération des cotes + détection des conflits ----
+    cotes_demandees: list[str] = []
+    titres: list[str] = []
+    for k in range(de_n, a_n + 1):
+        cotes_demandees.append(pattern_cote.format(n=k))
+        titres.append(titre_template.format(n=k) if titre_template else "")
+
+    # Doublons intra-série : un pattern sans `{n}` (ex `"PF-fixe"`)
+    # produit la même cote pour tous les items. À détecter avant le
+    # insert sinon SQLAlchemy lève un IntegrityError opaque mid-bulk.
+    if len(set(cotes_demandees)) != len(cotes_demandees):
+        # Identifie les cotes répétées pour le message d'erreur.
+        from collections import Counter as _Counter
+        compte = _Counter(cotes_demandees)
+        doublons = sorted(c for c, n in compte.items() if n > 1)
+        raise ItemInvalide({
+            "pattern_cote": (
+                f"Le pattern produit des cotes en doublon dans la série "
+                f"({len(doublons)} cote(s) répétée(s) : "
+                f"{', '.join(doublons[:5])}). Vérifier que le pattern "
+                f"contient bien la variable `{{n}}` (ex : `PF-{{n:03d}}`)."
+            )
+        })
+
+    cotes_existantes = set(
+        db.scalars(
+            select(Item.cote).where(
+                Item.fonds_id == fonds.id,
+                Item.cote.in_(cotes_demandees),
+            )
+        ).all()
+    )
+
+    if cotes_existantes and not ignorer_existants:
+        # Liste tronquée si trop longue (>10) pour ne pas saturer l'erreur.
+        exemples = sorted(cotes_existantes)[:10]
+        suffixe = (
+            f" (+ {len(cotes_existantes) - 10} autres)"
+            if len(cotes_existantes) > 10
+            else ""
+        )
+        raise ItemInvalide({
+            "cotes_en_conflit": (
+                f"{len(cotes_existantes)} cote(s) déjà présente(s) "
+                f"dans le fonds {fonds.cote!r} : "
+                f"{', '.join(exemples)}{suffixe}. Utiliser "
+                f"`ignorer_existants=True` pour les sauter."
+            )
+        })
+
+    # ---- Création en bulk ----
+    items_a_creer: list[tuple[Item, str]] = []  # (item, cote_pour_log)
+    ignores: list[str] = []
+    for cote, titre in zip(cotes_demandees, titres):
+        if cote in cotes_existantes:
+            ignores.append(cote)
+            continue
+        item = Item(
+            fonds_id=fonds.id,
+            cote=cote,
+            titre=titre or "",
+            etat_catalogage=etat,
+            type_coar=type_coar,
+            langue=langue,
+            cree_par=cree_par,
+        )
+        items_a_creer.append((item, cote))
+        db.add(item)
+
+    if not items_a_creer:
+        # Tout était déjà existant — aucune création, mais on rend
+        # le rapport pour signaler les ignorés.
+        return RapportSerieItems(crees=(), ignores=tuple(ignores))
+
+    db.flush()  # garantit les item.id pour la junction
+    # Rattachement à la collection cible
+    for item, _ in items_a_creer:
+        db.add(ItemCollection(item_id=item.id, collection_id=cible_id))
+        # Invariant 6 : si la cible n'est pas la miroir, ajouter
+        # AUSSI à la miroir (un item est toujours dans sa miroir).
+        if cible_id != miroir_id:
+            db.add(ItemCollection(item_id=item.id, collection_id=miroir_id))
+    db.commit()
+
+    for item, _ in items_a_creer:
+        db.refresh(item)
+
+    return RapportSerieItems(
+        crees=tuple(item for item, _ in items_a_creer),
+        ignores=tuple(ignores),
+    )
+
+
 def modifier_item(
     db: Session,
     item_id: int,

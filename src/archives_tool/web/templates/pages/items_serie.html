@@ -1,0 +1,155 @@
+{# Création en série d'items dans une collection (V0.9.7).
+
+   Variables :
+   - `collection` (Collection ORM)
+   - `fonds` (Fonds ORM) : le fonds parent de la collection
+   - `fonds_query` (str | None) : pour les liens de retour
+   - `etats_disponibles` (list[EtatCatalogage])
+   - `erreurs` (dict) : erreurs de validation à afficher
+   - `valeurs` (dict) : valeurs précédentes à ré-injecter en cas d'erreur
+#}
+{% extends "base.html" %}
+
+{% block title %}Créer une série d'items — {{ collection.titre }}{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/fonds/{{ fonds.cote }}" class="hover:underline font-mono">{{ fonds.cote }}</a> ›
+    <a href="/collection/{{ collection.cote }}{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+       class="hover:underline">{{ collection.titre }}</a> ›
+    <span>Créer une série d'items</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">Créer une série d'items</h1>
+  <p class="text-sm text-gray-600 mt-1">
+    Dans <span class="font-mono">{{ collection.cote }}</span> — {{ collection.titre }}
+  </p>
+  <p class="text-sm text-gray-500 mt-3 max-w-3xl">
+    Crée N fiches placeholders d'un coup en interpolant un pattern.
+    Utile pour préparer le catalogage avant numérisation (créer
+    PF-001 à PF-180 puis remplir au fil).
+    Les cotes existantes sont signalées en erreur (utiliser
+    « ignorer les existantes » pour les sauter et continuer).
+  </p>
+</header>
+
+<form method="post"
+      action="/collection/{{ collection.cote }}/items/serie{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+      class="max-w-2xl">
+
+  {% if erreurs %}
+  <div class="mb-4 p-3 rounded border border-red-300 bg-red-50 text-sm text-red-900">
+    <p class="font-medium mb-1">Validation refusée :</p>
+    <ul class="list-disc ml-5">
+      {% for champ, msg in erreurs.items() %}
+        <li><span class="font-mono">{{ champ }}</span> — {{ msg }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <fieldset class="mb-5 p-4 border border-gray-200 rounded">
+    <legend class="px-2 text-xs uppercase tracking-wide text-gray-500">
+      Pattern de cote
+    </legend>
+
+    <label class="block mb-3">
+      <span class="text-sm text-gray-700">Pattern <span class="text-red-600">*</span></span>
+      <input type="text" name="pattern_cote" required
+             value="{{ valeurs.pattern_cote if valeurs.pattern_cote is defined else collection.cote + '-{n:03d}' }}"
+             placeholder="ex : {{ collection.cote }}-{n:03d}"
+             class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded font-mono text-sm">
+      <span class="text-xs text-gray-500 mt-1 block">
+        Variable disponible : <code>{n}</code> (numéro courant).
+        Format zéro-padding : <code>{n:03d}</code> donne 001, 002, …
+      </span>
+    </label>
+
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block">
+        <span class="text-sm text-gray-700">Numéro de départ <span class="text-red-600">*</span></span>
+        <input type="number" name="de_n" required min="0"
+               value="{{ valeurs.de_n if valeurs.de_n is defined else 1 }}"
+               class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded font-mono text-sm">
+      </label>
+      <label class="block">
+        <span class="text-sm text-gray-700">Numéro de fin <span class="text-red-600">*</span></span>
+        <input type="number" name="a_n" required min="0"
+               value="{{ valeurs.a_n if valeurs.a_n is defined else 10 }}"
+               class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded font-mono text-sm">
+      </label>
+    </div>
+    <p class="text-xs text-gray-500 mt-2">
+      Cap dur : 1000 items par appel.
+    </p>
+  </fieldset>
+
+  <fieldset class="mb-5 p-4 border border-gray-200 rounded">
+    <legend class="px-2 text-xs uppercase tracking-wide text-gray-500">
+      Valeurs par défaut (optionnel)
+    </legend>
+
+    <label class="block mb-3">
+      <span class="text-sm text-gray-700">Titre template</span>
+      <input type="text" name="titre_template"
+             value="{{ valeurs.titre_template if valeurs.titre_template is defined else '' }}"
+             placeholder="ex : Numéro {n}"
+             class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded text-sm">
+      <span class="text-xs text-gray-500 mt-1 block">
+        Vide = titre vide. Variable <code>{n}</code> disponible.
+      </span>
+    </label>
+
+    <div class="grid grid-cols-3 gap-3">
+      <label class="block">
+        <span class="text-sm text-gray-700">État initial</span>
+        <select name="etat"
+                class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded text-sm">
+          {% for e in etats_disponibles %}
+            <option value="{{ e.value }}"
+                    {% if valeurs.etat == e.value or (not valeurs.etat and e.value == 'brouillon') %}selected{% endif %}>
+              {{ e.value | libelle_etat }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="text-sm text-gray-700">Type COAR (URI)</span>
+        <input type="text" name="type_coar"
+               value="{{ valeurs.type_coar if valeurs.type_coar is defined else '' }}"
+               placeholder="optionnel"
+               class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded text-sm font-mono">
+      </label>
+      <label class="block">
+        <span class="text-sm text-gray-700">Langue</span>
+        <input type="text" name="langue"
+               value="{{ valeurs.langue if valeurs.langue is defined else '' }}"
+               placeholder="ex : fra, spa"
+               class="mt-1 w-full px-3 py-1.5 border border-gray-300 rounded text-sm font-mono">
+      </label>
+    </div>
+  </fieldset>
+
+  <label class="flex items-center gap-2 mb-5 text-sm text-gray-700">
+    <input type="checkbox" name="ignorer_existants" value="true"
+           {% if valeurs.ignorer_existants %}checked{% endif %}>
+    Ignorer silencieusement les cotes déjà présentes (au lieu de refuser la série entière)
+  </label>
+
+  <div class="flex items-center gap-3">
+    {% if not est_lecture_seule() %}
+      <button type="submit"
+              class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+        Créer les items
+      </button>
+    {% else %}
+      <span class="px-4 py-2 text-sm text-gray-400 italic">
+        Création désactivée (mode lecture seule)
+      </span>
+    {% endif %}
+    <a href="/collection/{{ collection.cote }}{% if fonds_query %}?fonds={{ fonds_query }}{% endif %}"
+       class="text-sm text-gray-600 hover:underline">Annuler</a>
+  </div>
+</form>
+{% endblock %}

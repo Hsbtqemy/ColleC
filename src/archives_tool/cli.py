@@ -30,7 +30,11 @@ from archives_tool.api.services.dashboard import (
     composer_page_item,
 )
 from archives_tool.api.services.fonds import lister_fonds
-from archives_tool.api.services.items import ItemIntrouvable
+from archives_tool.api.services.items import (
+    ItemIntrouvable,
+    ItemInvalide,
+    creer_items_en_serie,
+)
 from sqlalchemy import select as sa_select
 from sqlalchemy.orm import selectinload
 
@@ -1453,6 +1457,160 @@ def _forcer_utf8_stdout() -> None:
             except (AttributeError, OSError):
                 # Stream redirigé / wrappé : pas de reconfigure dispo.
                 pass
+
+
+items_app = typer.Typer(
+    help="Gestion des items (création en série, …).",
+    no_args_is_help=True,
+)
+app.add_typer(items_app, name="items")
+
+
+@items_app.command("creer-serie")
+def cmd_items_creer_serie(
+    fonds: str = typer.Option(
+        ...,
+        "--fonds",
+        "-f",
+        help="Cote du fonds dans lequel créer les items.",
+    ),
+    pattern: str = typer.Option(
+        ...,
+        "--pattern",
+        "-p",
+        help=(
+            "Pattern de cote avec variable `{n}` (ou `{n:03d}` pour "
+            "zéro-padding). Ex : `PF-{n:03d}` produit `PF-001`, `PF-002`, ..."
+        ),
+    ),
+    de_n: int = typer.Option(
+        1, "--de", help="Numéro de départ (inclus). Défaut 1.",
+    ),
+    a_n: int = typer.Option(
+        ..., "--a", help="Numéro de fin (inclus).",
+    ),
+    titre: str = typer.Option(
+        "",
+        "--titre",
+        help="Template du titre (variable `{n}`). Vide = titre vide.",
+    ),
+    collection: str | None = typer.Option(
+        None,
+        "--collection",
+        "-c",
+        help=(
+            "Cote de la collection cible. Omettre pour utiliser la "
+            "miroir du fonds."
+        ),
+    ),
+    etat: str = typer.Option(
+        "brouillon",
+        "--etat",
+        help=(
+            "État de catalogage initial. Valeurs : brouillon, a_verifier, "
+            "verifie, valide, a_corriger."
+        ),
+    ),
+    type_coar: str | None = typer.Option(
+        None,
+        "--type-coar",
+        help="URI COAR appliqué à tous les items créés.",
+    ),
+    langue: str | None = typer.Option(
+        None,
+        "--langue",
+        help="Code langue (ISO 639-3 ou 639-1) appliqué à tous les items.",
+    ),
+    ignorer_existants: bool = typer.Option(
+        False,
+        "--ignorer-existants",
+        help=(
+            "Ignorer silencieusement les cotes déjà présentes au lieu "
+            "de refuser la série entière."
+        ),
+    ),
+    utilisateur: str | None = typer.Option(
+        None,
+        "--utilisateur",
+        "-u",
+        help="Nom à inscrire dans `cree_par`. Défaut : config locale.",
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Créer une série d'items dans un fonds en une transaction.
+
+    Cas d'usage : préparer 60 fiches d'items d'une revue avant
+    numérisation, pour pouvoir rattacher les scans au fil.
+
+    Exemple :
+
+    \b
+        archives-tool items creer-serie \\
+            --fonds PF --pattern "PF-{n:03d}" \\
+            --de 1 --a 60 \\
+            --titre "Por Favor n°{n}" \\
+            --etat brouillon
+    """
+    # `cree_par` est passé directement via --utilisateur (None
+    # accepté côté service → cree_par reste NULL en base, l'item
+    # est tracé sans nom d'utilisateur).
+    nom_utilisateur = utilisateur
+
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+
+        # Résolution optionnelle de la collection cible.
+        collection_id: int | None = None
+        if collection:
+            try:
+                col = lire_collection_par_cote(
+                    session, collection, fonds_id=fonds_obj.id
+                )
+            except CollectionIntrouvable:
+                # Tentative en transversale si pas trouvée dans le fonds.
+                try:
+                    col = lire_collection_par_cote(session, collection)
+                except CollectionIntrouvable:
+                    typer.echo(
+                        f"Erreur : collection {collection!r} introuvable.",
+                        err=True,
+                    )
+                    raise typer.Exit(1) from None
+            collection_id = col.id
+
+        try:
+            rapport = creer_items_en_serie(
+                session,
+                fonds_id=fonds_obj.id,
+                pattern_cote=pattern,
+                de_n=de_n,
+                a_n=a_n,
+                titre_template=titre,
+                collection_id=collection_id,
+                etat=etat,
+                type_coar=type_coar,
+                langue=langue,
+                ignorer_existants=ignorer_existants,
+                cree_par=nom_utilisateur,
+            )
+        except ItemInvalide as e:
+            typer.echo("Erreur de validation :", err=True)
+            for champ, msg in e.erreurs.items():
+                typer.echo(f"  • {champ} : {msg}", err=True)
+            raise typer.Exit(1) from None
+
+        typer.echo(
+            f"✓ {rapport.nb_crees} item(s) créé(s) dans le fonds "
+            f"{fonds_obj.cote!r}."
+        )
+        if rapport.nb_crees > 0:
+            premiere = rapport.crees[0].cote
+            derniere = rapport.crees[-1].cote
+            typer.echo(f"  Plage : {premiere} → {derniere}")
+        if rapport.nb_ignores > 0:
+            typer.echo(
+                f"  {rapport.nb_ignores} cote(s) ignorée(s) (déjà existante(s))."
+            )
 
 
 def main() -> None:

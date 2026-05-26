@@ -820,6 +820,150 @@ def soumettre_retirer_item(
 
 
 # ---------------------------------------------------------------------------
+# Collection : creation en serie d'items (V0.9.7)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/collection/{cote}/items/serie",
+    response_class=HTMLResponse,
+)
+def page_serie_items_formulaire(
+    cote: str,
+    request: Request,
+    fonds: str | None = Query(None),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Formulaire de creation en serie d'items dans une collection.
+
+    Accepte miroir et libre rattachee (transversale refusee : il
+    faudrait choisir un fonds explicite — flux a part).
+    """
+    collection = _resoudre_collection(db, cote, fonds)
+    if collection.fonds_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Creation en serie indisponible sur les transversales "
+                "(necessite un fonds explicite). Creer dans une collection "
+                "rattachee a un fonds et ajouter manuellement a la "
+                "transversale."
+            ),
+        )
+    fonds_obj = db.get(Fonds, collection.fonds_id)
+    return templates.TemplateResponse(
+        request,
+        "pages/items_serie.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            collection=collection,
+            fonds=fonds_obj,
+            fonds_query=fonds,
+            etats_disponibles=list(EtatCatalogage),
+            erreurs={},
+            valeurs={},
+        ),
+    )
+
+
+@router.post(
+    "/collection/{cote}/items/serie",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_serie_items(
+    cote: str,
+    request: Request,
+    pattern_cote: Annotated[str, Form()],
+    de_n: Annotated[int, Form()],
+    a_n: Annotated[int, Form()],
+    titre_template: Annotated[str, Form()] = "",
+    etat: Annotated[str, Form()] = "brouillon",
+    type_coar: Annotated[str, Form()] = "",
+    langue: Annotated[str, Form()] = "",
+    ignorer_existants: Annotated[bool, Form()] = False,
+    fonds: str | None = Query(None),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Crée une serie d'items via le formulaire. Redirige vers la
+    collection si succes, re-rend le form avec erreurs sinon."""
+    from archives_tool.api.services.items import (
+        ItemInvalide,
+        creer_items_en_serie,
+    )
+
+    collection = _resoudre_collection(db, cote, fonds)
+    if collection.fonds_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Creation en serie indisponible sur les transversales.",
+        )
+    fonds_obj = db.get(Fonds, collection.fonds_id)
+    # On choisit la miroir comme cible defaut si la collection courante
+    # est la miroir, sinon la libre courante. Le service rattachera
+    # automatiquement a la miroir (invariant 6) si on cible une libre.
+    cible_id = collection.id
+
+    valeurs = {
+        "pattern_cote": pattern_cote,
+        "de_n": de_n,
+        "a_n": a_n,
+        "titre_template": titre_template,
+        "etat": etat,
+        "type_coar": type_coar,
+        "langue": langue,
+        "ignorer_existants": ignorer_existants,
+    }
+
+    try:
+        rapport = creer_items_en_serie(
+            db,
+            fonds_id=fonds_obj.id,
+            pattern_cote=pattern_cote,
+            de_n=de_n,
+            a_n=a_n,
+            titre_template=titre_template,
+            collection_id=cible_id,
+            etat=etat,
+            type_coar=type_coar or None,
+            langue=langue or None,
+            ignorer_existants=ignorer_existants,
+            cree_par=utilisateur,
+        )
+    except ItemInvalide as e:
+        return templates.TemplateResponse(
+            request,
+            "pages/items_serie.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                collection=collection,
+                fonds=fonds_obj,
+                fonds_query=fonds,
+                etats_disponibles=list(EtatCatalogage),
+                erreurs=e.erreurs,
+                valeurs=valeurs,
+            ),
+            status_code=400,
+        )
+
+    # Succes : redirige vers la collection avec un flash dans la query
+    # string (lu par le template).
+    url = _url_collection(cote, fonds)
+    sep = "&" if "?" in url else "?"
+    flash = (
+        f"{sep}serie_crees={rapport.nb_crees}"
+        f"&serie_ignores={rapport.nb_ignores}"
+    )
+    return RedirectResponse(url + flash, status_code=303)
+
+
+# ---------------------------------------------------------------------------
 # Item : lecture, modification, service de fichier
 # ---------------------------------------------------------------------------
 

@@ -47,28 +47,23 @@
                               gestion_champs_url=_gestion_champs_url) }}
   </div>
 
-  <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;display:flex;flex-direction:column;gap:4px;">
-    {# Barre de contrôles compacte au-dessus de la visionneuse —
-       bouton « Annoter » uniquement quand l'écriture est possible
-       (sinon en lecture seule, le clic POSTrait et le middleware
-       renverrait 423). Le bouton bascule readOnly côté Annotorious
-       et change son libellé via data-annoter-actif. #}
+  <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;position:relative;">
+    {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
+    {# Bouton « Annoter » en flottant au-dessus du viewer — ne touche
+       pas la structure flex existante (sinon le wrapper interne
+       casse la propagation `height:100%` du fallback PDF / OSD).
+       Position : coin haut-gauche, sous les contrôles OSD natifs
+       qui sont en haut-droite. Masqué en lecture seule. #}
     {% if f_courant and not est_lecture_seule() %}
-    <div style="display:flex;gap:8px;align-items:center;font-size:12px;">
+    <div style="position:absolute;top:8px;left:8px;z-index:10;display:flex;gap:8px;align-items:center;font-size:12px;">
       <button type="button"
               data-annoter-toggle="visionneuse-{{ f_courant.id }}"
               class="inline-flex items-center"
-              style="padding:4px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:#fff;cursor:pointer;color:#374151;">
+              style="padding:4px 10px;border:1px solid rgba(0,0,0,0.20);border-radius:4px;background:rgba(255,255,255,0.92);cursor:pointer;color:#374151;backdrop-filter:blur(4px);">
         Annoter
       </button>
-      <span class="text-gray-500" style="font-size:11px;">
-        Double-clic dans l'image pour valider une zone tracée.
-      </span>
     </div>
     {% endif %}
-    <div style="flex:1;min-height:0;">
-      {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
-    </div>
   </div>
 </div>
 {% endblock %}

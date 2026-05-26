@@ -35,9 +35,11 @@ sans contraindre la sémantique Nakala pour la publication.
 
 ## État du projet
 
-Version actuelle : V0.9.0 (release candidate). Modèle stable,
-fonctionnalités complètes. La V1.0 marquera la stabilisation
-après usage en production sur plusieurs vrais fonds.
+Version actuelle : **V0.9.6 stable**. Modèle stable, fonctionnalités
+complètes (CLI + interface web complète + synthèse collection / fonds
++ édition inline complète + recherche FTS5 + champs personnalisés +
+vocabulaires + liseuse de consultation). La V1.0 ajoutera le
+déploiement VPS et l'auth multi-utilisateurs simples.
 
 ## Contexte
 

@@ -88,22 +88,35 @@ champs (l'utilisateur peut éditer une valeur même filtrée).
 
 ## Édition inline
 
-Au double-clic sur n'importe quelle valeur portant l'icône « modifier »
-(cartouche item, bandeau collection/fonds, bloc Identifiants des
-synthèses), un input remplace le texte. La saisie est envoyée par
-POST sur un endpoint dédié (`/item/<cote>/champ/<field>`,
-`/collection/<cote>/champ/<field>`, `/fonds/<cote>/champ/<field>`).
-Le serveur valide, met à jour, retourne le fragment HTML qui remplace
-la valeur précédente. La version (verrou optimiste) est incrémentée
-automatiquement.
+Au double-clic sur une valeur éditable (cartouche item, bandeau
+collection/fonds, bloc Identifiants des synthèses), un input remplace
+le texte. Les zones éditables se signalent par le curseur `text` au
+survol et un tooltip « Double-cliquer pour modifier ». Le double-clic
+(plutôt que le simple clic) est un garde-fou contre les éditions
+accidentelles pendant la consultation.
+
+La saisie est envoyée par POST sur un endpoint dédié
+(`/item/<cote>/champ/<field>`, `/collection/<cote>/champ/<field>`,
+`/fonds/<cote>/champ/<field>`). Le serveur valide, met à jour,
+retourne le fragment HTML qui remplace la valeur précédente. La
+version (verrou optimiste) est incrémentée automatiquement.
 
 ### Champs éditables inline
 
 | Entité | Bandeau | Synthèse / Cartouche | Page Modifier seulement |
 |---|---|---|---|
 | **Item** | — | titre, type COAR, date, année, langue, numéro, description, notes internes, DOI Nakala, DOI collection Nakala, état, champs personnalisés non-multivaleurs | cote, fonds_id, champs personnalisés `liste_multiple` |
-| **Collection** | titre, description, phase | DOI Nakala, DOI parent | cote, type_collection, fonds_id, version |
-| **Fonds** | titre, description | Éditeur, Lieu, Périodicité, ISSN, Début, Fin, Responsable, Personnalité, description_publique, description_interne | cote, version |
+| **Collection** | titre, description, phase | DOI Nakala, DOI parent | cote, type_collection, fonds_id, version, titre_secondaire, description_publique, description_interne, editeur, lieu_edition, périodicité, ISSN, dates, notes internes |
+| **Fonds** | titre, description | Éditeur, Lieu, Périodicité, ISSN, Début, Fin, Responsable, Personnalité | cote, version, description_publique, description_interne |
+
+!!! note
+    Les champs « Page Modifier seulement » sont soit immuables (cote,
+    fonds_id, type_collection, version), soit dans la whitelist
+    inline mais non rendus dans le bandeau / synthèse — accessibles
+    via le bouton « Modifier » qui ouvre le formulaire complet. Si un
+    de ces champs devient utile à éditer fréquemment, l'ajouter à la
+    synthèse demande juste un bloc template (les hooks backend
+    existent).
 
 ### Champs à vocabulaire contrôlé
 

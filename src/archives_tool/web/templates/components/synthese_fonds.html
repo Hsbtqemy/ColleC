@@ -64,21 +64,24 @@
       <div style="padding-top:8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 18px;font-size:12px;">
         {% for _cle, _libelle, _type, _classes in _champs_identifiants %}
           {% set _val = synthese[_cle] %}
-          {# En lecture seule on saute les champs vides. En mode
-             edition on affiche un placeholder pour permettre l'ajout. #}
+          {# En lecture seule : on saute les champs vides pour ne pas
+             empiler des placeholders inertes. En edition : on garde
+             les vides mais en gris pale (opacite 0.55) pour qu'ils
+             s'effacent visuellement et ne masquent pas les valeurs
+             reellement renseignees. Le double-clic les active malgre tout. #}
           {% if _editable or _val %}
-          <span style="display:inline-flex;align-items:baseline;gap:4px;">
+          <span style="display:inline-flex;align-items:baseline;gap:4px;{% if not _val %}opacity:0.55;{% endif %}">
             <span style="color:#9ca3af;">{{ _libelle }}</span>
             <span data-edit-field="{{ _cle }}"
                   data-edit-type="{{ _type }}"
                   data-editable="{{ '1' if _editable else '0' }}"
                   {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;color:#374151;"{% else %}style="color:#374151;"{% endif %}
-                  class="{{ _classes }}">
-              <span data-value>{% if _val -%}
+                  {% if _classes %}class="{{ _classes }}"{% endif %}>
+              <span data-value>{%- if _val -%}
                 {{ _val }}
               {%- else -%}
-                <span class="text-gray-400 italic">non renseigné</span>
-              {%- endif %}</span>
+                <span style="color:#9ca3af;font-style:italic;">+ ajouter</span>
+              {%- endif -%}</span>
             </span>
           </span>
           {% endif %}

@@ -448,6 +448,83 @@ def test_fonds_bandeau_hooks_inline_present(base_demo: Path) -> None:
         assert f'data-edit-field="{cle}"' in resp.text, f"hook manquant : {cle}"
 
 
+def test_fonds_bandeau_n_a_plus_de_dl_dt_metadata(base_demo: Path) -> None:
+    """Garde-fou de non-régression : le `<dl><dt>` du bandeau fonds
+    a été supprimé en V0.9.6 au profit du bloc Identifiants dans la
+    synthèse. Si quelqu'un remet le pattern, ce test le signale."""
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")
+    assert resp.status_code == 200
+    # L'ancien pattern utilisait `<dt class="text-gray-500">Responsable Archives</dt>`
+    # et similaires. Aucun de ces dt ne doit subsister dans le bandeau.
+    anciens_labels_dl = [
+        '<dt class="text-gray-500">Responsable Archives</dt>',
+        '<dt class="text-gray-500">Éditeur</dt>',
+        '<dt class="text-gray-500">ISSN</dt>',
+        '<dt class="text-gray-500">Périodicité</dt>',
+    ]
+    for marqueur in anciens_labels_dl:
+        assert marqueur not in resp.text, f"ancien dl/dt revenu : {marqueur}"
+
+
+def test_fonds_identifiants_vides_masques_en_lecture_seule(
+    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En lecture seule, le bloc Identifiants ne montre QUE les champs
+    renseignés (pas de placeholder « + ajouter » qui n'a aucun sens si
+    on ne peut pas éditer)."""
+    # Crée un fonds vierge (sans aucun identifiant) pour pouvoir tester
+    # proprement le rendu en lecture seule sans bruit du seeder.
+    from archives_tool.api.services.fonds import (
+        FormulaireFonds, creer_fonds,
+    )
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Fonds vide test"))
+    engine.dispose()
+
+    # Active le mode lecture seule via le filtre Jinja (le check est
+    # dans les globals de l'env templates).
+    from archives_tool.api import templating
+    monkeypatch.setitem(
+        templating.templates.env.globals, "est_lecture_seule", lambda: True
+    )
+
+    client = TestClient(app)
+    resp = client.get("/fonds/VIDE")
+    assert resp.status_code == 200
+    # Aucun identifiant rempli + lecture seule → bloc Identifiants
+    # entièrement masqué.
+    assert "+ ajouter" not in resp.text
+    assert 'data-edit-field="editeur"' not in resp.text
+    assert 'data-edit-field="issn"' not in resp.text
+    # Le bandeau a aussi son meta entity-context masqué en lecture
+    # seule (puisqu'on ne peut rien éditer).
+    assert 'name="entity-context"' not in resp.text
+
+
+def test_fonds_identifiants_champs_remplis_visibles_en_lecture_seule(
+    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Contre-test : en lecture seule, les champs **remplis** sont bien
+    visibles (juste sans hook d'édition). Garantit qu'on ne masque pas
+    par excès."""
+    from archives_tool.api import templating
+    monkeypatch.setitem(
+        templating.templates.env.globals, "est_lecture_seule", lambda: True
+    )
+    client = TestClient(app)
+    resp = client.get("/fonds/HK")  # HK demo a editeur/lieu/periodicite remplis
+    assert resp.status_code == 200
+    # Les valeurs apparaissent
+    assert "Éditions du Square" in resp.text
+    assert "Paris" in resp.text
+    assert "mensuel" in resp.text
+    # Mais sans hooks d'édition (data-editable="0")
+    assert 'data-editable="0"' in resp.text
+
+
 def test_inline_edit_collection_doi_nakala_succes(base_demo: Path) -> None:
     """POST sur doi_nakala : 200 + fragment, valeur persistée."""
     from archives_tool.models import Collection, TypeCollection

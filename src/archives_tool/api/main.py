@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from archives_tool.api.deps import chemin_base_courant
 from archives_tool.api.middleware import middleware_lecture_seule
 from archives_tool.api.routes import (
+    annotations,
     champs,
     dashboard,
     derives,
@@ -98,3 +99,4 @@ app.include_router(preferences.router)
 app.include_router(inline_edit.router)
 app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)
+app.include_router(annotations.router)

@@ -26,6 +26,7 @@ from .base import Base
 from .enums import EtatFichier, TypePage
 
 if TYPE_CHECKING:
+    from .annotation import AnnotationRegion
     from .item import Item
     from .journal import OperationFichier
 
@@ -86,6 +87,11 @@ class Fichier(Base):
 
     item: Mapped[Item] = relationship(back_populates="fichiers")
     operations: Mapped[list[OperationFichier]] = relationship(back_populates="fichier")
+    annotations: Mapped[list["AnnotationRegion"]] = relationship(
+        back_populates="fichier",
+        cascade="all, delete-orphan",
+        order_by="AnnotationRegion.cree_le",
+    )
 
     __table_args__ = (
         UniqueConstraint("racine", "chemin_relatif", name="uq_fichier_chemin"),

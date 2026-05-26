@@ -6,6 +6,7 @@ classes sur `Base.metadata` pour Alembic et `create_all`.
 
 from __future__ import annotations
 
+from .annotation import AnnotationRegion
 from .base import Base, TracabiliteMixin
 from .collaborateur import CollaborateurCollection
 from .collaborateur_fonds import CollaborateurFonds
@@ -35,6 +36,7 @@ from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulair
 from .session_import import ETAPES_IMPORT, SessionImport
 
 __all__ = [
+    "AnnotationRegion",
     "Base",
     "TracabiliteMixin",
     "Fonds",

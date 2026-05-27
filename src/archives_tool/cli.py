@@ -34,6 +34,8 @@ from archives_tool.api.services.items import (
     ItemIntrouvable,
     ItemInvalide,
     creer_items_en_serie,
+    lire_item_par_cote,
+    supprimer_item,
 )
 from sqlalchemy import select as sa_select
 from sqlalchemy.orm import selectinload
@@ -51,6 +53,7 @@ from archives_tool.api.services.collections import (
 from archives_tool.api.services.fonds import (
     FondsIntrouvable,
     lire_fonds_par_cote,
+    supprimer_fonds,
 )
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
@@ -1611,6 +1614,106 @@ def cmd_items_creer_serie(
             typer.echo(
                 f"  {rapport.nb_ignores} cote(s) ignorée(s) (déjà existante(s))."
             )
+
+
+@items_app.command("supprimer")
+def cmd_items_supprimer(
+    cote: str = typer.Argument(..., help="Cote de l'item à supprimer."),
+    fonds: str = typer.Option(
+        ...,
+        "--fonds",
+        "-f",
+        help="Cote du fonds (obligatoire — les cotes d'item sont uniques par fonds).",
+    ),
+    confirme: bool = typer.Option(
+        False, "--yes", "-y", help="Sauter la confirmation interactive."
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Supprimer un item et tous ses fichiers + annotations en cascade."""
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        if fonds_obj is None:
+            raise typer.Exit(1)
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+
+        nb_fichiers = len(item.fichiers)
+        nb_collections = len(item.collections)
+        if not confirme:
+            typer.echo(
+                f"Supprimer l'item {item.cote} (fonds {fonds_obj.cote}) — "
+                f"{item.titre or '(sans titre)'} ?"
+            )
+            typer.echo(
+                f"  {nb_fichiers} fichier(s) + leurs annotations seront "
+                f"supprimés en cascade. L'item sera retiré de "
+                f"{nb_collections} collection(s)."
+            )
+            if not typer.confirm("Confirmer ?", default=False):
+                raise typer.Abort()
+
+        supprimer_item(session, item.id)
+        typer.echo(f"✓ Item {item.cote} supprimé.")
+
+
+fonds_app = typer.Typer(
+    help="Gestion des fonds (suppression, …).",
+    no_args_is_help=True,
+)
+app.add_typer(fonds_app, name="fonds")
+
+
+@fonds_app.command("supprimer")
+def cmd_fonds_supprimer(
+    cote: str = typer.Argument(..., help="Cote du fonds à supprimer."),
+    confirme: bool = typer.Option(
+        False, "--yes", "-y", help="Sauter la confirmation interactive."
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Supprimer un fonds et toute sa descendance (items + miroir +
+    collaborateurs). Les collections libres rattachées deviennent
+    transversales (FK ON DELETE SET NULL). Cascade irréversible."""
+    with _ouvrir_session_existante(db_path) as session:
+        try:
+            fonds_obj = lire_fonds_par_cote(session, cote)
+        except FondsIntrouvable as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+
+        nb_items = len(fonds_obj.items)
+        # Collections : miroir + libres rattachées. Les libres deviendront
+        # transversales, on les compte séparément pour le récap.
+        miroir = fonds_obj.collection_miroir
+        libres = [c for c in fonds_obj.collections if c is not miroir]
+        nb_fichiers = sum(len(it.fichiers) for it in fonds_obj.items)
+
+        if not confirme:
+            typer.echo(
+                f"Supprimer le fonds {fonds_obj.cote} — "
+                f"{fonds_obj.titre or '(sans titre)'} ?"
+            )
+            typer.echo(
+                f"  {nb_items} item(s) + {nb_fichiers} fichier(s) + "
+                f"annotations seront supprimés."
+            )
+            if miroir is not None:
+                typer.echo(f"  La miroir {miroir.cote!r} sera supprimée.")
+            if libres:
+                typer.echo(
+                    f"  {len(libres)} collection(s) libre(s) rattachée(s) "
+                    f"deviendront transversales (préservées) : "
+                    f"{', '.join(c.cote for c in libres)}"
+                )
+            if not typer.confirm("Confirmer ?", default=False):
+                raise typer.Abort()
+
+        supprimer_fonds(session, fonds_obj.id)
+        typer.echo(f"✓ Fonds {cote} supprimé.")
 
 
 def main() -> None:

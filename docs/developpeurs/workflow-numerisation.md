@@ -4,8 +4,8 @@
     Cette page n'est pas publiée sur le site MkDocs (exclue via
     `exclude_docs` dans `mkdocs.yml`). Elle préserve les décisions
     structurantes prises en discussion (mai 2026) sur l'articulation
-    entre les outils amont (scanners, ScanTailor, Tesseract) et
-    ColleC.
+    entre les outils amont (scanners, ScanTailor, ABBYY FineReader,
+    pdfalto) et ColleC.
 
     Tenue à jour au fil des sessions. Pas une référence utilisateur
     directe (un guide utilisateur pourra être dérivé en V2 quand
@@ -55,13 +55,25 @@ optimal dépend du scénario de départ — voir plus bas.
 5. **OCR.** Sur les images post-traitées (la qualité d'OCR
    dépend directement de la qualité du post-traitement, jamais
    l'inverse).
-   - **Tesseract 5** en batch, avec les langues pertinentes
-     installées (`spa` pour Por Favor, `fra` pour Hara-Kiri,
-     etc.).
-   - **Sortie** : hOCR ou ALTO (avec coordonnées des mots, utile
-     pour la recherche plein texte avec surlignage régionalisé)
-     ou PDF/A avec text layer (utile pour la liseuse PDF Lot 2
-     côté ColleC). Les deux peuvent coexister.
+   - **ABBYY FineReader** est l'outil principal pour les
+     chantiers natifs. Layout analysis de qualité industrielle
+     (détecte correctement colonnes, illustrations, légendes,
+     tableaux — crucial pour les revues à mise en page complexe
+     type Por Favor), sortie ALTO conforme native, qualité OCR
+     supérieure aux alternatives sur corpus européens. Commercial.
+   - **pdfalto** ([dépôt GitHub](https://github.com/kermitt2/pdfalto),
+     GPL2, maintenu par Patrice Lopez) pour les **corpus PDF
+     externes déjà OCRisés** — typiquement reçus depuis Nakala
+     ou d'une autre institution. **Ne fait pas d'OCR** : extrait
+     l'ALTO depuis un PDF qui contient déjà un text layer. Évite
+     le re-OCR coûteux quand l'OCR d'origine est exploitable.
+   - **Sortie canonique : ALTO XML** (avec coordonnées des mots,
+     ordre de lecture, scores de confiance par mot). PDF/A avec
+     text layer en sortie secondaire pour la liseuse PDF Lot 2
+     côté ColleC. Hors ABBYY/pdfalto, tout outil OCR produisant
+     un ALTO conforme (Tesseract, Transkribus pour manuscrit
+     ancien) est acceptable — ColleC est agnostique sur l'outil,
+     contrat ALTO uniquement.
    - **Pour les cas difficiles** (manuscrits, polices anciennes,
      mises en page complexes) : ABBYY FineReader (payant) ou
      Transkribus (paléographie, payant en lot mais qualité
@@ -169,8 +181,17 @@ Workflow récupération — ColleC sert d'abord à diagnostiquer, puis
 3. **Post-traitement** : un numéro entier passé en lot dans
    ScanTailor (~15 min pour un opérateur exercé), sortie JPEG
    2000 ou JPEG haute qualité dans `derives_travail`.
-4. **OCR** : Tesseract castillan en batch (`tesseract -l spa`),
-   sortie ALTO + PDF/A text layer.
+4. **OCR** : pour Por Favor, deux situations selon le matériau :
+   - **JPEGs natifs** (chantier de re-numérisation, ou versions
+     locales) → ABBYY FineReader en batch sur les JPEGs, sortie
+     ALTO direct avec coords pixels.
+   - **PDFs Nakala existants déjà OCRisés** → pdfalto sur chaque
+     PDF, puis script de split par page et conversion des coords
+     PDF → pixels JPEG. Pas de re-OCR.
+
+   Voir [`ocr-module-future.md`](ocr-module-future.md) pour la
+   stratégie progressive Phase A (baseline) / Phase B (audit via
+   scores de confiance) / Phase C (re-OCR ABBYY ciblée).
 5. **Rattachement** : `archives-tool importer profil_pf.yaml`
    par numéro.
 6. **Enrichissement** : annotations des dessins (Copi, Forges,
@@ -185,6 +206,12 @@ l'étape 6, étapes amont gardent leurs outils naturels.
 
 - **ColleC ne fait ni édition d'image, ni OCR.** Outils
   spécialisés en amont, point.
+- **OCR canonique = ABBYY FineReader** pour le natif (qualité
+  supérieure, layout analysis industrielle), **pdfalto** pour
+  les PDFs externes déjà OCRisés (évite le re-OCR). ColleC reste
+  agnostique : le contrat est « un Fichier a un
+  `ocr_chemin_relatif` qui pointe vers un ALTO valide », d'où il
+  vient est libre.
 - **Trois racines distinctes** : `masters`, `derives_travail`,
   `vignettes`. Discipline opérationnelle dès maintenant.
 - **Retouches toujours avant rattachement.** Pas de re-édition
@@ -195,14 +222,19 @@ l'étape 6, étapes amont gardent leurs outils naturels.
   (ColleC pour l'état des lieux). Le modèle supporte les deux
   sans modification.
 - **Pas d'automatisation amont depuis ColleC.** Ne pas chercher
-  à lancer ScanTailor ou Tesseract depuis l'UI — c'est tentant
-  mais c'est le début d'une dérive vers un orchestrateur de
-  chaîne, hors scope.
+  à lancer ScanTailor, ABBYY ou pdfalto depuis l'UI — c'est
+  tentant mais c'est le début d'une dérive vers un orchestrateur
+  de chaîne, hors scope. Des scripts de commodité dans
+  `scripts/` (par exemple `preparer_ocr_pf.py` pour orchestrer
+  pdfalto + split + conversion sur les 173 PDFs Por Favor) sont
+  acceptables — pas des modules.
 
 ## Renvois
 
 - Plan de chantier (planification dans ColleC en amont de la
   numérisation) : `plan-de-chantier.md`.
+- Module OCR (consommateur des ALTO produits ici, stratégie A/B/C,
+  couplage avec annotations) : `ocr-module-future.md`.
 - Annotations (étape 7) : `annotations-image-future.md`.
 - Portail public (consommateur en aval de l'étape 7) :
   `portail-public-future.md`.

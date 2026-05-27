@@ -63,6 +63,8 @@ exclude_docs: |
   developpeurs/notebooks-sdk-future.md
   developpeurs/zotero-future.md
   developpeurs/idees-ui-vrac.md
+  developpeurs/ocr-module-future.md
+  developpeurs/contribution-fichiers-structures-future.md
 
 markdown_extensions:
   - admonition

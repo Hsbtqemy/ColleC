@@ -353,6 +353,39 @@ champs `titre_es:` / `titre_fr:` / etc. dans le modèle ColleC,
 et l'exporter saura les sérialiser — décision repoussée tant
 qu'il n'y a pas de besoin concret.
 
+### Visionneuse embarquée dans le site généré
+
+**Choix du projet de site, pas de ColleC.** ColleC produit les
+manifestes IIIF et les liens vers les ressources (Nakala IIIF
+Image API), le site généré choisit la visionneuse qui les
+consomme.
+
+Trois candidats pertinents, équivalents à ceux discutés pour
+le portail dynamique (cf. `portail-public-future.md` section
+*Choix de la visionneuse*) :
+
+- **OpenSeadragon** seul si UI custom souhaitée et faible
+  besoin d'une couche multi-format.
+- **Universal Viewer** comme viewer clé-en-main avec UI
+  « pro de bibliothèque ». Bon défaut pour un site
+  d'exposition ou de catalogue grand public.
+- **Mirador** si le site cible un public érudit qui veut
+  comparer les ressources entre elles (cas Por Favor à terme).
+
+**Conséquence pour le template Jinja** : prévoir une variable
+de config dans `_quarto.yml.j2` (ou équivalent) qui détermine
+quel viewer est embarqué. Trois templates partiels possibles
+(`_viewer_osd.qmd.j2`, `_viewer_uv.qmd.j2`, `_viewer_mirador.qmd.j2`)
+dans `exporters/templates/site_statique/{cible}/partials/`,
+sélectionnés par le frontmatter du site. L'utilisateur choisit
+au moment de la configuration de son projet de site, ColleC
+fournit les trois recettes.
+
+**Interop préservée.** Les trois viewers consomment le même
+manifeste IIIF et les mêmes W3C Web Annotations produits par
+ColleC — le choix est réversible côté site, aucune transformation
+des données à prévoir.
+
 ## Phases de développement
 
 ### Phase 1 — alpha (1 session)

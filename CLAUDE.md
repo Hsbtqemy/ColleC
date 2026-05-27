@@ -71,6 +71,23 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,
   etc.). À puiser au gré des opportunités, pas un engagement.
+- [`ocr-module-future.md`](docs/developpeurs/ocr-module-future.md)
+  — module OCR + indexation textuelle. ALTO format pivot, ABBYY
+  FineReader pour le natif, pdfalto pour les corpus PDF externes
+  (cas Por Favor Nakala). Stratégie progressive Phase A/B/C
+  (baseline / audit confiance / re-OCR ciblée). Couplage explicite
+  avec module annotations (pré-segmentation depuis `<Illustration>`
+  ALTO, complémentarité sur BDs). Roadmap V1.x/V2 grâce à pdfalto
+  qui évite le re-OCR massif.
+- [`contribution-fichiers-structures-future.md`](docs/developpeurs/contribution-fichiers-structures-future.md)
+  — troisième mode de contribution externe via fichiers XML/TEI
+  structurés (Oxygen, VSCode, git), en complément de l'UI web et
+  de l'API Python. Round-trip des exporters, `id_persistant`
+  comme pré-requis, workflow git optionnel. Pour TEI : option
+  par défaut **stay-in-stack** (TEI dans ColleC + CETEIcean ou
+  static generation, aucun moteur XML séparé), pattern hybride
+  avec eXist+TEI Publisher / BaseX+MaX / EVT uniquement si
+  l'usage TEI le justifie réellement. Décision agnostique.
 
 ---
 
@@ -1997,6 +2014,13 @@ Claude Code).
   templates Jinja). Format de sortie parallèle à DC/Nakala/xlsx,
   produit la donnée pas le thème. Voir
   [`docs/developpeurs/sites-statiques-future.md`](docs/developpeurs/sites-statiques-future.md).
+- **Module OCR + indexation textuelle** (ALTO format pivot,
+  ABBYY pour le natif, pdfalto pour PDFs externes type Por Favor
+  Nakala). Indexation FTS5 du contenu OCR + surlignage régionalisé
+  dans OSD + audit qualité via scores de confiance ALTO. Tirable
+  en V1.x si pression Por Favor (l'OCR existant des PDFs Nakala
+  est exploitable sans re-OCR). Voir
+  [`docs/developpeurs/ocr-module-future.md`](docs/developpeurs/ocr-module-future.md).
 - « Feuille de scan » : flux rapide avec raccourcis clavier.
 - Consultation Nakala (API REST + IIIF) pour vérification croisée
   et import de notices.
@@ -2124,6 +2148,42 @@ d'environnement (« production institutionnelle » / « local
 Hugo »). Extension naturelle du pattern `est_lecture_seule`
 existant. Pas un sujet V1.0, juste une attention UX à avoir si
 le cas se présente.
+
+### Formats d'interchange
+
+ColleC est un système hybride par construction — chaque format
+de données est choisi pour son domaine d'interchange spécifique,
+pas par préférence idéologique. **Aucun format d'interchange
+n'est promu en format de stockage natif.** Le cœur reste
+relationnel SQL + JSON columns ; XML et JSON-LD interviennent
+uniquement aux frontières.
+
+| Niveau | Format | Pourquoi |
+|---|---|---|
+| Stockage interne | SQL + JSON columns | Performance, invariants, jointures, FTS5 |
+| API live (HTMX, REST) | JSON | Frontend, intégration moderne |
+| Échange IIIF (images, annotations, manifestes) | JSON-LD | Standard web actuel — consommable par OSD, UV, Mirador, Annotorious |
+| Échange archivistique (Dublin Core, ALTO, TEI futur) | XML | Standard documentaire long terme — Nakala, interop institutionnelle |
+| Sites statiques (frontmatter + corps) | Markdown + YAML | Standard SSG (Quarto, Hugo) |
+| Profils d'import | YAML | Lisibilité humaine, édition à la main |
+
+**Implication architecturale.** ColleC ingère du XML (ALTO en
+entrée, profils import YAML), produit du XML (DC en sortie, ALTO
+si re-OCR ABBYY local), produit du JSON-LD (annotations W3C,
+manifestes IIIF si générés), consomme du JSON-LD (manifestes
+IIIF Nakala), tout en gardant son cœur relationnel SQL. **Règle
+qui évite l'usine à gaz** : on parse en entrée, on sérialise en
+sortie, on stocke à plat en interne. Si demain un nouveau
+standard émerge (Linked Art enrichi, remplacement de DC, autre),
+il s'ajoute en exporter parallèle aux autres, sans toucher au
+cœur.
+
+**Le XML n'est pas un fardeau.** `lxml` en Python est mature,
+les schémas (XSD pour ALTO, DC, TEI) sont stables et bien
+documentés, les validations community DH sont réutilisables.
+Quand un module produit ou consomme du XML, c'est parce que le
+standard du domaine l'exige — et la complexité reste contenue
+dans ce module, pas dispersée dans le reste du code.
 
 ### Stockage des chemins
 

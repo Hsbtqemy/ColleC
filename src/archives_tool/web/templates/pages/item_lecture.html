@@ -30,17 +30,50 @@
 
 {{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections, q_surligne=q_surligne) }}
 
-{# Bouton « ← Notice » : pendant inverse du « Visionneuse → » de la
-   fiche item. Sur la visionneuse l'utilisateur cataloguait page par
-   page, mais doit pouvoir revenir à la notice à tout moment sans
-   chercher un lien obscur. Même placement que « Visionneuse → »
-   sur la fiche pour cohérence visuelle (mirror). #}
-<div class="flex items-center justify-end mb-3 gap-2" style="font-size:13px;">
+{# Barre d'actions visionneuse : bouton retour Notice + navigation
+   pages entre fichiers de l'item. Symétrique de la liseuse de
+   consultation qui a Page ← N/X → bien visible — l'utilisateur n'a
+   pas à cliquer sur les vignettes du panneau gauche pour avancer.
+
+   Le bouton « ← Notice » est le pendant inverse du « Visionneuse → »
+   de la fiche item (`pages/item_fiche.html`), même placement (
+   flex-end, sous le bandeau) pour cohérence visuelle mirror. #}
+{% set _pos = detail.position_courante %}
+{% set _f_prev = detail.fichiers[_pos - 2] if _pos > 1 else None %}
+{% set _f_next = detail.fichiers[_pos] if _pos < detail.fichiers|length else None %}
+<div class="flex items-center justify-between mb-3 gap-2" style="font-size:13px;">
   <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
      class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
      style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
     ← Notice
   </a>
+
+  {% if detail.nb_fichiers > 1 %}
+  <div class="flex items-center gap-1" aria-label="Navigation pages">
+    <span class="text-xs text-gray-400 mr-1">Page</span>
+    {% if _f_prev %}
+      <a href="/item/{{ item.cote }}/visionneuse?fonds={{ fonds.cote }}&fichier_courant={{ _pos - 1 }}"
+         class="inline-flex items-center rounded hover:bg-gray-50"
+         style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+         title="Page précédente">‹</a>
+    {% else %}
+      <span class="inline-flex items-center rounded cursor-not-allowed"
+            style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">‹</span>
+    {% endif %}
+    <span class="font-tabular text-gray-700" style="padding:0 8px;">
+      {{ _pos }} / {{ detail.nb_fichiers }}
+    </span>
+    {% if _f_next %}
+      <a href="/item/{{ item.cote }}/visionneuse?fonds={{ fonds.cote }}&fichier_courant={{ _pos + 1 }}"
+         class="inline-flex items-center rounded hover:bg-gray-50"
+         style="padding:5px 8px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+         title="Page suivante">›</a>
+    {% else %}
+      <span class="inline-flex items-center rounded cursor-not-allowed"
+            style="padding:5px 8px;font-size:13px;color:#9ca3af;border:1px solid rgba(0,0,0,0.06);">›</span>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 <div class="layout-trois-zones flex gap-4"

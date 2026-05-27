@@ -76,7 +76,7 @@
 {%- endmacro %}
 
 
-{% macro liste_vignettes(fichiers, position_courante, cote, fonds_cote, mode_consultation=False) -%}
+{% macro liste_vignettes(fichiers, position_courante, cote, fonds_cote, mode_consultation=False, mode_visionneuse=False) -%}
 {%- if not fichiers %}
   <p class="text-xs text-gray-400 italic" style="padding:4px 14px;">
     Aucun fichier rattaché.
@@ -104,6 +104,14 @@
            hx-push-url="/lire/{{ fonds_cote }}/{{ cote }}?fichier={{ loop.index }}"
            href="/lire/{{ fonds_cote }}/{{ cote }}?fichier={{ loop.index }}"
            class="flex items-center gap-2 hover:bg-gray-50 cursor-pointer"
+           style="padding:6px 14px;
+                  {% if est_courant %}background:#f3f6fb;{% endif %}">
+        {%- elif mode_visionneuse %}
+        {# Mode visionneuse item (/item/<cote>/visionneuse) : reste sur
+           la visionneuse en navigant entre fichiers. Sinon l'utilisateur
+           est ramené à la fiche notice — friction au catalogage. #}
+        <a href="/item/{{ cote }}/visionneuse?fonds={{ fonds_cote }}&fichier_courant={{ loop.index }}"
+           class="flex items-center gap-2 hover:bg-gray-50"
            style="padding:6px 14px;
                   {% if est_courant %}background:#f3f6fb;{% endif %}">
         {%- else %}
@@ -139,7 +147,7 @@
 {%- endmacro %}
 
 
-{% macro panneau_fichiers(fichiers, position_courante, cote, fonds_cote) -%}
+{% macro panneau_fichiers(fichiers, position_courante, cote, fonds_cote, mode_visionneuse=False) -%}
 <style>
   /* Etat collapsed (defaut) : 36 px, fermeture immediate (pas de delay). */
   aside.panneau-fichiers {
@@ -237,7 +245,7 @@
       </h3>
     </div>
 
-    {{ liste_vignettes(fichiers, position_courante, cote, fonds_cote) }}
+    {{ liste_vignettes(fichiers, position_courante, cote, fonds_cote, mode_visionneuse=mode_visionneuse) }}
 
     <div style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);margin-top:8px;">
       <span aria-disabled="true"

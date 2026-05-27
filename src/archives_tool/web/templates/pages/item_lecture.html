@@ -11,7 +11,7 @@
 {% from 'components/bandeau_item.html' import bandeau_item %}
 {% from 'components/cartouche_metadonnees.html' import cartouche_metadonnees %}
 {% from 'components/panneau_fichiers.html' import panneau_fichiers %}
-{% from 'components/visionneuse_osd.html' import visionneuse_osd %}
+{% from 'components/visionneuse_consultation.html' import visionneuse_consultation %}
 
 {% set item = detail.item %}
 {% set fonds = detail.fonds %}
@@ -32,7 +32,7 @@
 
 <div class="layout-trois-zones flex gap-4"
      style="height:calc(100vh - 240px);min-height:520px;">
-  {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote) }}
+  {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote, mode_visionneuse=True) }}
 
   <div style="flex:0 0 460px;height:100%;">
     {# Lien « Gérer » sur le header de la section « Champs personnalisés »
@@ -48,14 +48,20 @@
   </div>
 
   <div class="zone-visionneuse" style="flex:1;min-width:0;height:100%;position:relative;">
-    {{ visionneuse_osd(f_courant, item.cote, fonds_cote) }}
-    {# Bouton « Annoter » en flottant au-dessus du viewer — ne touche
-       pas la structure flex existante (sinon le wrapper interne
-       casse la propagation `height:100%` du fallback PDF / OSD).
-       Position : coin haut-gauche, sous les contrôles OSD natifs
-       qui sont en haut-droite. Masqué en lecture seule. #}
-    {% if f_courant and not est_lecture_seule() %}
-    <div style="position:absolute;top:8px;left:8px;z-index:10;display:flex;gap:8px;align-items:center;font-size:12px;">
+    {# Dispatcher : PDF.js si fichier PDF, OSD si image, fallback
+       Télécharger sinon. Avant V0.9.7 fix : on appelait directement
+       visionneuse_osd qui ne savait pas rendre les PDFs visuellement
+       (tentait IIIF + open-failed). Maintenant le PDF s'affiche
+       vraiment via PDF.js sur cette page aussi. #}
+    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote) }}
+    {# Bouton « Annoter » en flottant — seulement quand le viewer
+       courant est OSD (extension image). Pour un PDF, Annotorious
+       n'a rien à annoter et le bouton serait trompeur. Position :
+       coin haut-DROITE car OSD met ses contrôles natifs (zoom, home,
+       full page, rotation) en haut-gauche. Masqué en lecture seule. #}
+    {% set _EXTENSIONS_IMAGE = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] %}
+    {% if f_courant and f_courant.extension in _EXTENSIONS_IMAGE and not est_lecture_seule() %}
+    <div style="position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:8px;align-items:center;font-size:12px;">
       <button type="button"
               data-annoter-toggle="visionneuse-{{ f_courant.id }}"
               class="inline-flex items-center"

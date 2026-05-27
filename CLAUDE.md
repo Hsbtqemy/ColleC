@@ -1864,14 +1864,26 @@ n'était inclus par aucune page. Inclus maintenant dans
 `base.html`), masqué en lecture seule. `static/js/menu_importer.js`
 chargé globalement (inerte sans bouton à toggler).
 
-**État test suite sur le poste de dev (27/05/2026)** :
-- 16 suppression + 13 annotations β + 1136 autres = 1165 verts.
-- 8 échecs `tests/test_lecture_seule.py` pré-existants
-  (`OperationalError: no such table: fonds`), indépendants des
-  chantiers ci-dessus — fixture du test n'initialise pas la DB par
-  défaut. Reproductible sur `git stash`, donc dette antérieure.
-  À investiguer hors-chantier (probablement un seeding manquant
-  dans la fixture `config_lecture_seule`).
+**CLI suppression** (suite V0.9.7) — symétrie côté CLI ajoutée
+maintenant que les routes web existent : `archives-tool fonds
+supprimer COTE [--yes]` (cascade complète : items + fichiers +
+miroir + collaborateurs, libres rattachées deviennent
+transversales) et `archives-tool items supprimer COTE --fonds COTE
+[--yes]` (cascade fichiers + annotations + junctions). Confirmation
+interactive par défaut avec récap des cascades attendues (« N
+item(s) + N fichier(s) seront supprimés »), `--yes` pour scripts.
+Réutilise les services backend partagés avec les routes web. 6
+tests dans `test_cli_suppression.py`.
+
+**Test suite** — fix collatéral de la fixture `test_lecture_seule.py`
+qui ne settait jamais `ARCHIVES_DB` : la fixture retombait sur
+`data/archives.db` (défaut) qui n'existe pas sur un checkout propre
+→ `OperationalError: no such table: fonds` sur 8 tests qui rendent
+des pages (dashboard, /import). Fix : helper `_amorcer_base_vide`
+qui crée une SQLite avec le schéma seul (sans peupler — ~50× plus
+rapide que `peupler_base`, suffit pour ces tests qui ne consultent
+pas de données). **1180/1180 verts** sur ce poste pour la première
+fois.
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 

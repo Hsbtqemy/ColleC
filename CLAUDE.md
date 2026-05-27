@@ -1760,7 +1760,7 @@ cotes.
 27 tests (15 service, 6 CLI, 9 UI dont 4 garde-fou : transversale,
 lecture seule pour le bouton + le POST).
 
-**Annotations IIIF ✅ α + β livrés** —
+**Annotations IIIF ✅ α + β + γ livrés** —
 [`annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 Module d'annotation d'image conforme W3C Web Annotation Data Model
 + IIIF Presentation API 3. Cible : chantier Por Favor (identifier
@@ -1807,15 +1807,42 @@ indexation à la granularité région).
   `/item/<cote>` et la liseuse `/lire/...` ne chargent pas
   Annotorious.
 
-Reste **γ** (autocomplete vocabulaire + champ URI sur
-`ValeurControlee` pour pivot Wikidata/VIAF), **δ** (export Nakala
-JSON W3C déposé à côté des images, référencé dans le manifeste
-IIIF de l'item).
+- **γ — Panneau latéral + autocomplete vocabulaire + pivot URI**
+  (commits `691203d` + `784b227`) :
+  - γ.1 — Panneau flottant en haut-droite sous le bouton Annoter
+    (`<aside data-panneau-annotations>`), liste numérotée du fichier
+    courant, synchronisée via `rafraichirPanneau` à
+    create/update/delete. Clic = `anno.selectAnnotation(id)` +
+    `anno.fitBounds(annotation)` → zoom OSD sur la région et popup
+    d'édition ouvert. Auto-masqué (`data-vide="1"`) quand 0
+    annotations. Rendu HTML même en lecture seule (préparé pour
+    futur lot consultation sans JS lourd Annotorious 380 Ko).
+  - γ.2 — `ValeurControlee.uri` existait déjà sur le modèle, le
+    formulaire service (`FormulaireValeurControlee.uri`) et la page
+    UI `/vocabulaires/<id>` (champ « URI canonique »). Pas
+    d'ajout — γ.2 ✓ par construction.
+  - γ.3 — Endpoint `GET /api/vocabulaires/autocomplete` qui liste
+    toutes les `ValeurControlee` actives (libellé, code, URI,
+    vocabulaire racine) — 1 requête léger, alimentation client.
+    `annotations_osd.js` précharge via `_vocabReady` Promise (race
+    fix : l'init Annotorious await avant d'instancier le widget
+    TAG). Widget TAG natif Annotorious configuré avec
+    `vocabulary: _vocabLibelles` → suggestions à la frappe.
+    `enrichirBodiesAvecUri` parcourt les `TextualBody` au
+    create/update et, si le `value` matche une `ValeurControlee`
+    connue avec URI (matching normalisé NFD-lowercase), ajoute un
+    body `SpecificResource purpose=identifying source=<URI>`
+    (idempotent contre la duplication). Pivot Wikidata/VIAF prêt
+    pour l'export Nakala δ.
 
-25 tests α annotations + 9 tests β (intégration template :
-CSS+JS+bouton présents en édition, absents en lecture seule,
-masqués sur PDF, fiche notice sans Annotorious) + 5 tests nav
-visionneuse complémentaires.
+25 tests α annotations + 9 tests β + 3 tests γ (panneau présent
+sur image, absent sur PDF, rendu en lecture seule) + 2 tests
+γ.3 (POST avec body SpecificResource roundtrip, endpoint
+autocomplete avec filtrage actif=true). 43 tests annotations au
+total.
+
+Reste **δ** (export Nakala JSON W3C déposé à côté des images,
+référencé dans le manifeste IIIF de l'item).
 
 **Suppression d'entités depuis l'UI** (suite du chantier V0.9.7) —
 manque historique comblé : le projet avait des CRUD complets partout
@@ -1936,12 +1963,10 @@ Claude Code).
   jalons : planifiés / numérisés / OCR / catalogués / validés) —
   voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
 - 🚧 **Module d'annotation d'image** (W3C Web Annotations sur
-  l'OpenSeadragon existant via Annotorious) — **α + β livrés
-  en V0.9.7** (modèle `AnnotationRegion` + migration Alembic +
-  service + 5 routes REST + plugin Annotorious greffé sur OSD
-  via `annotations_osd.js` + bouton « Annoter » flottant sur la
-  page visionneuse + 34 tests). Reste γ (autocomplete
-  vocabulaire + URI Wikidata), δ (export Nakala). Voir
+  l'OpenSeadragon existant via Annotorious) — **α + β + γ livrés
+  en V0.9.7** (modèle + 5 routes REST + Annotorious sur OSD +
+  panneau latéral + autocomplete vocabulaire avec pivot URI
+  Wikidata/VIAF, 43 tests). Reste δ (export Nakala). Voir
   [`docs/developpeurs/annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 - **Export site statique** (arbre Markdown + assets prêt pour
   Quarto en phase 1, Hugo en phase 3, autres SSG extensibles via

@@ -506,6 +506,46 @@ def test_route_get_unitaire_succes(base_demo: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_route_post_accepte_specific_resource_uri_pivot(
+    base_demo: Path,
+) -> None:
+    """Garde-fou pivot URI : un client (Annotorious enrichi γ.3) peut
+    envoyer un body `SpecificResource` avec `source` URI Wikidata/VIAF.
+    L'API doit l'accepter et le restituer tel quel dans le GET.
+
+    Sans ce test, une régression côté validation pourrait stripper
+    l'URI au save — perte du pivot autorité pour l'export Nakala (δ)
+    et les requêtes cross-fonds (« toutes annotations de Copi »).
+    """
+    fid = _premier_fichier_id(base_demo)
+    client = TestClient(app)
+    r = client.post(
+        f"/api/fichiers/{fid}/annotations",
+        json={
+            "selecteur": "xywh=100,100,200,200",
+            "selecteur_type": "fragment",
+            "corps": [
+                {"type": "TextualBody", "purpose": "tagging", "value": "Copi"},
+                {
+                    "type": "SpecificResource",
+                    "purpose": "identifying",
+                    "source": "https://www.wikidata.org/entity/Q733678",
+                },
+            ],
+            "motivation": "tagging",
+        },
+    )
+    assert r.status_code == 201, r.text
+    annotation_id = int(r.json()["id"].rsplit("/", 1)[-1])
+
+    # GET roundtrip — l'URI doit être préservée
+    r_get = client.get(f"/api/annotations/{annotation_id}")
+    assert r_get.status_code == 200
+    bodies = r_get.json()["body"]
+    sources = [b.get("source") for b in bodies if b.get("type") == "SpecificResource"]
+    assert "https://www.wikidata.org/entity/Q733678" in sources
+
+
 def test_route_autocomplete_vocabulaires_liste_actives(base_demo: Path) -> None:
     """L'endpoint autocomplete liste les ValeurControlee actives avec
     leurs URIs (pour le pivot Wikidata/VIAF). Couvre tous les

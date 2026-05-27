@@ -75,11 +75,12 @@
       console.warn("[annotations] Précharge vocabulaires échouée :", e);
     }
   }
-  // Lance la précharge dès le script chargé. L'init Annotorious viendra
-  // après — si la précharge n'a pas fini, le widget TAG sera initialisé
-  // avec une liste vide puis enrichi (Annotorious recharge le widget à
-  // chaque édition).
-  chargerVocabulaires();
+  // Lance la précharge dès le script chargé. L'event `visionneuse:pret`
+  // (déclenché APRÈS OSD.open) await cette promise avant d'initialiser
+  // Annotorious — sinon le widget TAG démarre avec une liste vide et
+  // l'utilisateur n'a pas de suggestions tant qu'il ne recharge pas.
+  // Race fix V0.9.7 γ.3-revue.
+  const _vocabReady = chargerVocabulaires();
 
   /** Récupère l'ID local d'une annotation depuis son URI W3C. */
   function extraireIdAnnotation(annotation) {
@@ -381,11 +382,14 @@
 
   // Écoute l'événement émis par `visionneuse_osd.js` quand OSD est
   // prêt. On greffe Annotorious dessus une fois par viewer.
-  document.addEventListener("visionneuse:pret", function (e) {
+  // Attend la précharge vocabulaires pour que le widget TAG ait ses
+  // suggestions à l'instanciation (race fix γ.3-revue).
+  document.addEventListener("visionneuse:pret", async function (e) {
     const viz = e.target;
     if (_annosParViseur.has(viz)) return; // déjà greffé (re-open)
     const { osd, fichier_id } = e.detail || {};
     if (!osd) return;
+    await _vocabReady;
     const anno = initialiserAnnotorious(osd, fichier_id);
     if (anno) {
       _annosParViseur.set(viz, anno);

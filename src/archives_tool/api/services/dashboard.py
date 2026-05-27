@@ -2289,6 +2289,26 @@ class FichierFicheLigne:
 
 
 @dataclass(frozen=True)
+class TagAnnotationAgrege:
+    """Tag agrégé au niveau item, calculé depuis les annotations
+    W3C de tous ses fichiers (V0.9.7 γ-fiche).
+
+    Permet d'afficher sur la fiche notice une vue d'ensemble des
+    dessinateurs / sujets / personnes annotés dans le contenu du
+    numéro, sans devoir ouvrir chaque fichier.
+
+    ``libelle`` est l'étiquette humaine (`Copi`). ``uri`` peut être
+    None pour un tag libre, sinon l'URI d'autorité (Wikidata, VIAF…).
+    ``nb`` est le nombre d'annotations distinctes (régions) portant
+    ce tag dans l'item.
+    """
+
+    libelle: str
+    uri: str | None
+    nb: int
+
+
+@dataclass(frozen=True)
 class FicheItem:
     """Notice complète d'un item, sans visionneuse (V0.9.5).
 
@@ -2306,6 +2326,12 @@ class FicheItem:
     agregats_fichier: tuple[AgregatChampFichier, ...]
     lignes_fichier: tuple[FichierFicheLigne, ...]  # liste compacte col 2
     navigation: NavigationItem
+    #: Tags annotations agrégés depuis les `AnnotationRegion` des
+    #: fichiers de l'item — triés par fréquence décroissante puis
+    #: alphabétique. Vide si aucune annotation. Permet sur la fiche
+    #: notice de voir d'un coup d'œil « qui dessine / qui est représenté »
+    #: sans ouvrir page par page (V0.9.7 γ-fiche).
+    tags_annotations: tuple[TagAnnotationAgrege, ...] = ()
 
 
 def _extension(nom_fichier: str) -> str:
@@ -2957,6 +2983,11 @@ def composer_fiche_item(
     )
     champs = lister_champs_actifs_pour_item(db, item.id)
 
+    # Tags annotations agrégés depuis tous les fichiers de l'item.
+    # Une seule requête SQL pour charger les bodies des annotations,
+    # puis agrégation Python par libellé. Voir _agreger_tags_item.
+    tags_annotations = _agreger_tags_item(db, item.id)
+
     return FicheItem(
         item=item,
         fonds=fonds,
@@ -2967,4 +2998,72 @@ def composer_fiche_item(
         agregats_fichier=_agreger_fichier_metadonnees(list(item.fichiers)),
         lignes_fichier=tuple(lignes),
         navigation=navigation_items(db, item, fonds),
+        tags_annotations=tags_annotations,
     )
+
+
+def _agreger_tags_item(
+    db: Session, item_id: int
+) -> tuple[TagAnnotationAgrege, ...]:
+    """Agrège les tags W3C des AnnotationRegion de tous les fichiers
+    de l'item, dédupliqué par (libellé, URI), trié par fréquence
+    décroissante puis alphabétique.
+
+    Parcourt les bodies en cherchant :
+    - TextualBody purpose=tagging value=<libellé> (tag libre)
+    - SpecificResource purpose=tagging source={id, label} (tag avec URI)
+    - SpecificResource purpose=identifying source={id, label} (γ.3
+      enrichissement)
+
+    Une seule requête : `corps` est JSON sur SQLite, agrégation
+    Python. Pour gros volumes (>10k annotations), envisager un index
+    fonctionnel JSON. Pas le cas aujourd'hui.
+    """
+    from archives_tool.models import AnnotationRegion, Fichier
+
+    rows = db.execute(
+        select(AnnotationRegion.corps)
+        .join(Fichier, Fichier.id == AnnotationRegion.fichier_id)
+        .where(Fichier.item_id == item_id)
+    ).all()
+
+    # Clé d'agrégation : (libellé, uri) — un tag libre « Copi » et un
+    # tag Wikidata « Copi » sont des entrées distinctes (l'URI vaut
+    # autorité de la valeur).
+    par_cle: dict[tuple[str, str | None], int] = {}
+    for (corps,) in rows:
+        if not isinstance(corps, list):
+            continue
+        for body in corps:
+            if not isinstance(body, dict):
+                continue
+            purpose = body.get("purpose")
+            if purpose not in ("tagging", "identifying"):
+                continue
+            libelle: str | None = None
+            uri: str | None = None
+            # TextualBody : value est le libellé
+            if body.get("type") == "TextualBody":
+                libelle = body.get("value")
+            # SpecificResource : source peut être chaîne URI ou
+            # objet {id, label} (Annotorious 2.7 natif)
+            elif body.get("type") == "SpecificResource":
+                source = body.get("source")
+                if isinstance(source, str):
+                    libelle = source
+                    uri = source if source.startswith(("http://", "https://")) else None
+                elif isinstance(source, dict):
+                    libelle = source.get("label") or source.get("id")
+                    uri = source.get("id")
+            if not libelle:
+                continue
+            cle = (libelle, uri)
+            par_cle[cle] = par_cle.get(cle, 0) + 1
+
+    tags = [
+        TagAnnotationAgrege(libelle=lib, uri=uri, nb=nb)
+        for (lib, uri), nb in par_cle.items()
+    ]
+    # Tri : fréquence décroissante, libellé asc en cas d'égalité.
+    tags.sort(key=lambda t: (-t.nb, t.libelle.lower()))
+    return tuple(tags)

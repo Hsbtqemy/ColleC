@@ -1760,7 +1760,7 @@ cotes.
 27 tests (15 service, 6 CLI, 9 UI dont 4 garde-fou : transversale,
 lecture seule pour le bouton + le POST).
 
-**Annotations IIIF 🚧 alpha livré** —
+**Annotations IIIF ✅ α + β livrés** —
 [`annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 Module d'annotation d'image conforme W3C Web Annotation Data Model
 + IIIF Presentation API 3. Cible : chantier Por Favor (identifier
@@ -1787,18 +1787,91 @@ indexation à la granularité région).
   forme W3C native (target/body) — un client Annotorious peut
   envoyer son JSON-LD natif sans conversion.
 
-Reste **β** (intégration Annotorious sur OSD existante de la
-visionneuse), **γ** (autocomplete vocabulaire + champ URI sur
+- **β — Annotorious sur OSD** (commit `ce468dd` + 4 polish) :
+  plugin `@recogito/annotorious-openseadragon` 2.7 ajouté au
+  `package.json`, copié via `scripts/vendor.mjs` vers
+  `static/js/vendor/annotorious/`. Script `annotations_osd.js`
+  écoute `visionneuse:pret` émis par `visionneuse_osd.js` et
+  greffe Annotorious sur l'instance OSD ; charge les annotations
+  existantes via `GET /api/fichiers/<id>/annotations` au load.
+  Bouton « Annoter » flottant coin haut-droite (haut-gauche est
+  occupé par les contrôles natifs OSD) du viewer item, masqué
+  sur PDF et en lecture seule. Toggle bascule `anno.readOnly` +
+  `setDrawingTool("rect")`. Events Annotorious `createAnnotation`
+  / `updateAnnotation` / `deleteAnnotation` POSTent / PUTent /
+  DELETEnt vers l'API REST α — l'API accepte la forme W3C native
+  donc aucune conversion client. L'`id` retourné par le POST
+  remplace l'id temporaire d'Annotorious pour que les updates
+  ultérieurs ciblent la bonne ressource. β est livrée sur la
+  page `/item/<cote>/visionneuse` (catalogage). La fiche
+  `/item/<cote>` et la liseuse `/lire/...` ne chargent pas
+  Annotorious.
+
+Reste **γ** (autocomplete vocabulaire + champ URI sur
 `ValeurControlee` pour pivot Wikidata/VIAF), **δ** (export Nakala
 JSON W3C déposé à côté des images, référencé dans le manifeste
 IIIF de l'item).
 
-25 tests annotations (11 service, 9 routes, 5 garde-fou :
-cascade Fichier, cascade Item, isolation entre fichiers,
-sérialisation W3C strict avec champs null omis, motivation
-hors W3C refusée).
+25 tests α annotations + 9 tests β (intégration template :
+CSS+JS+bouton présents en édition, absents en lecture seule,
+masqués sur PDF, fiche notice sans Annotorious) + 5 tests nav
+visionneuse complémentaires.
 
-**1145/1145 verts** au total après alpha annotations.
+**Suppression d'entités depuis l'UI** (suite du chantier V0.9.7) —
+manque historique comblé : le projet avait des CRUD complets partout
+sauf le D pour fonds / collection / item. Trois routes
+`POST /<entité>/<cote>/supprimer` ajoutées dans
+`api/routes/dashboard.py` pour fonds / collection libre+transversale /
+item, plus une zone de suppression rouge en bas de chaque page
+`/_/<cote>/modifier`. Double-confirmation par recopie de la cote
+(`confirmer` form param = `cote`, sinon 400). Bouton submit
+désactivé côté client tant que l'input ne matche pas
+(`static/js/zone_suppression.js` lit `data-cote-confirmer` sur le
+form). Lecture seule bloquée par le middleware en amont (423).
+Miroir refusée par le service `supprimer_collection_libre`, et la
+page modifier d'une miroir était déjà en 403 via `_refuser_si_miroir`
+→ l'utilisateur ne peut pas atteindre la zone. Cascade ORM
+existante (déjà bien faite côté modèles) : fonds → items + miroir +
+collaborateurs (libres rattachées deviennent transversales via
+FK ON DELETE SET NULL), collection libre → junctions item_collection
+seules (items survivent dans leur fonds + miroir + autres
+collections), item → fichiers + annotations + junctions.
+
+Dette identifiée et documentée :
+- Pas de verrou optimiste sur delete (cohérent avec les autres
+  delete du projet : champ, collaborateur, vocabulaire).
+- Pas de journal pour les delete d'entités (cohérent avec
+  l'existant — la dette est globale au projet, principe directeur
+  n°4 demande journal des opérations destructives mais
+  `OperationFichier` ne couvre que les opérations sur fichiers).
+- Pas de redirect avec flash en cas de 400 confirmation invalide
+  (JSON brut affiché ; mitigé par la garde client-side qui
+  empêche le submit en cas de typo).
+- Pas de suppression de fichier individuel (ni route, ni UI).
+- Pas de multi-sélection / lot.
+
+16 tests dédiés dans `test_suppression_entites.py` : happy path
+par entité + cascade items-survivent sur libre + confirmation
+invalide + lecture seule (423) + miroir refusée + zone absente en
+lecture seule + attribut `data-cote-confirmer` présent + 404 sur
+cote inconnue + 403 sur la page modifier d'une miroir.
+
+**Menu « Importer » dans le header** (V0.9.7) — autre manque
+historique : `components/menu_importer.html` existait depuis V0.7+
+(dropdown listant `/import` et `/collections/nouvelle`) mais
+n'était inclus par aucune page. Inclus maintenant dans
+`components/header.html` (donc visible sur toutes les pages via
+`base.html`), masqué en lecture seule. `static/js/menu_importer.js`
+chargé globalement (inerte sans bouton à toggler).
+
+**État test suite sur le poste de dev (27/05/2026)** :
+- 16 suppression + 13 annotations β + 1136 autres = 1165 verts.
+- 8 échecs `tests/test_lecture_seule.py` pré-existants
+  (`OperationalError: no such table: fonds`), indépendants des
+  chantiers ci-dessus — fixture du test n'initialise pas la DB par
+  défaut. Reproductible sur `git stash`, donc dette antérieure.
+  À investiguer hors-chantier (probablement un seeding manquant
+  dans la fixture `config_lecture_seule`).
 
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
@@ -1851,11 +1924,12 @@ Claude Code).
   jalons : planifiés / numérisés / OCR / catalogués / validés) —
   voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
 - 🚧 **Module d'annotation d'image** (W3C Web Annotations sur
-  l'OpenSeadragon existant via Annotorious) — **alpha livré
+  l'OpenSeadragon existant via Annotorious) — **α + β livrés
   en V0.9.7** (modèle `AnnotationRegion` + migration Alembic +
-  service + 5 routes REST + 25 tests). Reste β (UI Annotorious),
-  γ (autocomplete vocabulaire + URI Wikidata), δ (export
-  Nakala). Voir
+  service + 5 routes REST + plugin Annotorious greffé sur OSD
+  via `annotations_osd.js` + bouton « Annoter » flottant sur la
+  page visionneuse + 34 tests). Reste γ (autocomplete
+  vocabulaire + URI Wikidata), δ (export Nakala). Voir
   [`docs/developpeurs/annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 - **Export site statique** (arbre Markdown + assets prêt pour
   Quarto en phase 1, Hugo en phase 3, autres SSG extensibles via

@@ -33,6 +33,13 @@
       <span>{{ utilisateur }}</span>
     </div>
 
+    {# Menu « Importer » : entrée principale vers /import + raccourci
+       « Nouvelle collection vide ». Masqué en lecture seule (le wizard
+       est de toute façon bloqué par le middleware en 423). #}
+    {% if not est_lecture_seule() %}
+      {% include "components/menu_importer.html" %}
+    {% endif %}
+
     {# Bouton contextuel « Mode consultation » — actif uniquement si la
        route a passé `consultation_url`. Sur la liseuse elle-même, la
        route passe `mode_consultation_actif=True` qui affiche un état

@@ -125,6 +125,63 @@ par le middleware lecture seule (423).
   incompatible avec le fonds)
 - `2` — saisie invalide (fonds inconnu, collection introuvable)
 
+## supprimer
+
+Supprime un item et toute sa descendance (fichiers + annotations +
+liaisons aux collections). L'opération est irréversible — par
+défaut, demande une confirmation interactive avec un récap des
+cascades attendues.
+
+```bash
+archives-tool items supprimer COTE --fonds COTE_FONDS [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Sens                       |
+| -------- | -------------------------- |
+| `COTE`   | Cote de l'item à supprimer. |
+
+### Options
+
+| Option              | Défaut             | Sens                                                                                  |
+| ------------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| `--fonds COTE`, `-f` | **requis**         | Cote du fonds (les cotes d'item ne sont uniques que par fonds).                       |
+| `--yes`, `-y`       | `False`            | Sauter la confirmation interactive.                                                   |
+| `--db-path PATH`    | `data/archives.db` | Chemin de la base SQLite.                                                             |
+
+### Exemples
+
+Avec confirmation interactive :
+
+```bash
+archives-tool items supprimer HK-001 --fonds HK
+```
+
+Affiche un récap puis demande `Confirmer ? [y/N]` :
+
+```
+Supprimer l'item HK-001 (fonds HK) — Numéro 1 ?
+  12 fichier(s) + leurs annotations seront supprimés en cascade.
+  L'item sera retiré de 3 collection(s).
+```
+
+Sans confirmation (pour scripts ou nettoyage en lot) :
+
+```bash
+archives-tool items supprimer HK-001 --fonds HK --yes
+```
+
+### Effets de la suppression
+
+- L'item est retiré de la base.
+- Ses **fichiers** disparaissent en cascade (FK ON DELETE CASCADE),
+  ainsi que leurs **annotations IIIF**.
+- Les liaisons `item_collection` sont supprimées : l'item disparaît
+  de toutes les collections où il était (miroir incluse).
+- Les **collections elles-mêmes restent** — il n'y a pas de
+  collection "qui possède" l'item, juste des appartenances.
+
 ## Voir aussi
 
 - [Création unitaire d'item](../interface-web.md) via l'interface web.

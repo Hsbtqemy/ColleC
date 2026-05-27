@@ -26,26 +26,16 @@
     return;
   }
 
-  /** Map `libellé normalisé` → `{libelle, uri, vocabulaire}`.
-   *  Préchargée au DOMContentLoaded via GET /api/vocabulaires/autocomplete.
-   *  Permet d'enrichir les bodies au save : si l'utilisateur tape un
-   *  libellé qui matche une ValeurControlee avec URI, on ajoute un
-   *  body `SpecificResource source=URI` à côté du TextualBody.
-   *  Pivot Wikidata/VIAF pour les exports Nakala (γ pivoté vers δ). */
-  const _vocabIndex = new Map();
-  /** Liste plate des libellés pour alimenter le widget TAG Annotorious
-   *  (qui accepte un tableau de strings). */
-  const _vocabLibelles = [];
-
-  /** Normalise un libellé pour le matching (insensible casse + accents). */
-  function normaliserLibelle(s) {
-    return (s || "")
-      .toString()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .trim();
-  }
+  /** Vocabulaire pour le widget TAG d'Annotorious 2.7.
+   *  Format natif Annotorious : array d'objets `{label, uri}`.
+   *  Quand `uri` est présent, Annotorious crée DIRECTEMENT un
+   *  body `SpecificResource purpose=tagging source={id, label}` au
+   *  save — pivot Wikidata/VIAF gratuit. Sinon TextualBody value=label.
+   *  Vérifié dans le bundle openseadragon-annotorious.min.js :
+   *  `onSubmit: function(e) { var n = e.uri ? { type: 'SpecificResource',
+   *   purpose: 'tagging', source: { id: e.uri, label: e.label } }
+   *   : { type: 'TextualBody', purpose: 'tagging', value: e.label || e } }` */
+  const _vocabEntrees = [];
 
   /** Précharge les valeurs vocabulaire pour l'autocomplete. Non-bloquant :
    *  si l'endpoint échoue, Annotorious démarre sans suggestions et
@@ -53,24 +43,26 @@
   async function chargerVocabulaires() {
     try {
       const r = await fetch("/api/vocabulaires/autocomplete");
-      if (!r.ok) return;
+      if (!r.ok) {
+        console.warn("[annotations] autocomplete HTTP", r.status);
+        return;
+      }
       const data = await r.json();
       for (const v of data.valeurs || []) {
-        // Le libellé est la clé de matching côté JS. On stocke l'URI
-        // associée pour le body SpecificResource au save.
-        const cle = normaliserLibelle(v.libelle);
-        if (!cle) continue;
-        _vocabIndex.set(cle, {
-          libelle: v.libelle,
-          uri: v.uri || null,
-          vocabulaire: v.vocabulaire,
-          vocabulaire_code: v.vocabulaire_code,
-          code: v.code,
-        });
-        if (!_vocabLibelles.includes(v.libelle)) {
-          _vocabLibelles.push(v.libelle);
+        if (!v.libelle) continue;
+        // Si URI présent : Annotorious crée un SpecificResource au save.
+        // Sinon : juste un libellé pour la suggestion (TextualBody).
+        if (v.uri) {
+          _vocabEntrees.push({ label: v.libelle, uri: v.uri });
+        } else {
+          _vocabEntrees.push(v.libelle);
         }
       }
+      console.info(
+        "[annotations] vocab préchargé :",
+        _vocabEntrees.length,
+        "entrées",
+      );
     } catch (e) {
       console.warn("[annotations] Précharge vocabulaires échouée :", e);
     }
@@ -113,77 +105,42 @@
     }
   }
 
-  /** Enrichit les bodies d'une annotation : pour chaque TextualBody
-   *  `purpose=tagging` (ou body sans purpose avec une `value`) qui
-   *  matche une ValeurControlee connue avec URI, ajoute un body
-   *  SpecificResource `source=<URI>` `purpose=identifying`. L'URI
-   *  devient alors le pivot pour l'export Nakala (δ) et pour les
-   *  requêtes cross-fonds (« toutes les annotations de Copi »).
-   *
-   *  Annotorious 2.x stocke les tags comme `TextualBody value=<libellé>
-   *  purpose=tagging`. Au save, on parcourt et enrichit. Idempotent :
-   *  si un SpecificResource avec la même URI existe déjà, on ne
-   *  duplique pas. */
-  function enrichirBodiesAvecUri(annotation) {
-    if (!annotation || !Array.isArray(annotation.body)) return annotation;
-    const urisExistantes = new Set(
-      annotation.body
-        .filter(function (b) {
-          return b.type === "SpecificResource" && b.source;
-        })
-        .map(function (b) {
-          return b.source;
-        }),
-    );
-    const ajouts = [];
-    for (const body of annotation.body) {
-      // Seuls les TextualBody (avec purpose tag ou sans purpose) sont
-      // candidats à l'enrichissement. On ne touche pas les bodies
-      // déjà SpecificResource.
-      if (body.type !== "TextualBody") continue;
-      const value = body.value;
-      if (!value) continue;
-      const match = _vocabIndex.get(normaliserLibelle(value));
-      if (!match || !match.uri) continue;
-      if (urisExistantes.has(match.uri)) continue;
-      ajouts.push({
-        type: "SpecificResource",
-        purpose: "identifying",
-        source: match.uri,
-      });
-      urisExistantes.add(match.uri);
-    }
-    if (ajouts.length > 0) {
-      annotation.body = annotation.body.concat(ajouts);
-    }
-    return annotation;
-  }
-
   /** Extrait un texte court de l'annotation pour l'affichage panneau.
-   *  Priorité : tag (TextualBody purpose=tagging), puis identifying
-   *  (libellé), puis commenting (extrait), puis fallback id. */
+   *  Annotorious 2.7 produit deux formes de body de tag :
+   *  - `{type: TextualBody, purpose: tagging, value: "Copi"}` (tag libre)
+   *  - `{type: SpecificResource, purpose: tagging, source: {id, label}}`
+   *    (tag avec URI Wikidata du vocabulaire). Le libellé est dans
+   *    `source.label`. Ordre de priorité : tag (n'importe lequel),
+   *    puis identifying, puis n'importe quel body avec un texte. */
   function libelleAnnotation(annotation) {
     const bodies = annotation.body || [];
-    // Cherche d'abord un tag
+    const labelDeBody = function (b) {
+      if (b.value) return b.value;
+      if (b.source) {
+        if (typeof b.source === "string") return b.source;
+        if (b.source.label) return b.source.label;
+        if (b.source.id) return b.source.id;
+      }
+      return null;
+    };
+    // 1. Cherche un tag (TextualBody value OU SpecificResource source.label)
     for (const b of bodies) {
-      if (b.purpose === "tagging" && b.value) {
-        return { texte: b.value, type: "tag" };
+      if (b.purpose === "tagging") {
+        const t = labelDeBody(b);
+        if (t) return { texte: t, type: "tag" };
       }
     }
-    // Puis une identification (URI ou valeur)
+    // 2. Puis une identification explicite
     for (const b of bodies) {
       if (b.purpose === "identifying") {
-        return {
-          texte: b.value || b.source || "(identifié)",
-          type: "ident",
-        };
+        const t = labelDeBody(b);
+        if (t) return { texte: t, type: "ident" };
       }
     }
-    // Puis n'importe quel body avec value
+    // 3. N'importe quel body avec texte
     for (const b of bodies) {
-      if (b.value) {
-        return { texte: b.value, type: "commentaire" };
-      }
+      const t = labelDeBody(b);
+      if (t) return { texte: t, type: "commentaire" };
     }
     return { texte: "(sans tag)", type: "vide" };
   }
@@ -315,14 +272,16 @@
       // accidentels qui créent des annotations 1x1 pixel.
       drawOnSingleClick: false,
       // Widgets du popup d'édition (Annotorious 2.x) :
-      //  - COMMENT : zone de texte libre (par défaut)
-      //  - TAG     : tags structurés ; avec `vocabulary` la frappe
-      //              propose les suggestions (autocomplete). On le
-      //              place AVANT COMMENT pour que le tag soit le
-      //              premier reflexe utilisateur. Le mapping libellé
-      //              → URI est fait au save (enrichirBodiesAvecUri).
+      //  - COMMENT : zone de texte libre
+      //  - TAG     : tags structurés. `vocabulary` accepte un array
+      //              d'objets `{label, uri}` (ou strings). Si l'entrée
+      //              choisie a une `uri`, Annotorious crée un body
+      //              `SpecificResource source={id, label}` directement
+      //              (pivot Wikidata/VIAF gratuit). Sinon TextualBody.
+      //              On place TAG en premier pour qu'il soit l'élément
+      //              de saisie naturellement focus.
       widgets: [
-        { widget: "TAG", vocabulary: _vocabLibelles },
+        { widget: "TAG", vocabulary: _vocabEntrees },
         "COMMENT",
       ],
     });
@@ -335,9 +294,10 @@
     // pointent au bon endroit.
     anno.on("createAnnotation", async function (annotation) {
       try {
-        // γ.3 : enrichit avec URI Wikidata/VIAF si le tag matche une
-        // ValeurControlee connue. Pivot autorité pour l'export Nakala.
-        enrichirBodiesAvecUri(annotation);
+        // γ.3 : si l'utilisateur a choisi un tag avec URI dans le
+        // vocabulary, Annotorious crée déjà un body SpecificResource
+        // natif (cf. config vocabulary={label,uri}). Pas besoin
+        // d'enrichir post-save.
         const sauvee = await creerAnnotation(annotation, fichierId);
         // Remplace l'annotation client (id temporaire) par celle du
         // serveur (id officiel).
@@ -354,7 +314,6 @@
     // Modification : géométrie ou body modifiés via le popup.
     anno.on("updateAnnotation", async function (annotation) {
       try {
-        enrichirBodiesAvecUri(annotation);
         await modifierAnnotation(annotation);
         rafraichirPanneau(anno, fichierId);
       } catch (e) {

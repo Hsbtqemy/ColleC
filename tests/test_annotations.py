@@ -506,6 +506,51 @@ def test_route_get_unitaire_succes(base_demo: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_route_post_accepte_specific_resource_annotorious_natif(
+    base_demo: Path,
+) -> None:
+    """Garde-fou format Annotorious 2.7 : quand l'utilisateur choisit
+    un tag avec URI dans le widget TAG, Annotorious sérialise le body
+    en `{type: SpecificResource, purpose: tagging, source: {id, label}}`
+    (objet imbriqué, pas chaîne URI). L'API doit l'accepter tel quel
+    et préserver le format au roundtrip — sinon le pivot URI est
+    perdu silencieusement à l'export Nakala (δ).
+    """
+    fid = _premier_fichier_id(base_demo)
+    client = TestClient(app)
+    r = client.post(
+        f"/api/fichiers/{fid}/annotations",
+        json={
+            "selecteur": "xywh=200,200,100,100",
+            "selecteur_type": "fragment",
+            "corps": [
+                {
+                    "type": "SpecificResource",
+                    "purpose": "tagging",
+                    "source": {
+                        "id": "https://www.wikidata.org/entity/Q733678",
+                        "label": "Copi",
+                    },
+                }
+            ],
+            "motivation": "tagging",
+        },
+    )
+    assert r.status_code == 201, r.text
+    annotation_id = int(r.json()["id"].rsplit("/", 1)[-1])
+
+    # Roundtrip : le format objet doit être préservé tel quel
+    r_get = client.get(f"/api/annotations/{annotation_id}")
+    assert r_get.status_code == 200
+    bodies = r_get.json()["body"]
+    sr = next(b for b in bodies if b.get("type") == "SpecificResource")
+    assert isinstance(sr["source"], dict), (
+        "Le source doit rester un objet imbriqué"
+    )
+    assert sr["source"]["id"] == "https://www.wikidata.org/entity/Q733678"
+    assert sr["source"]["label"] == "Copi"
+
+
 def test_route_post_accepte_specific_resource_uri_pivot(
     base_demo: Path,
 ) -> None:

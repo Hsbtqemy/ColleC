@@ -232,4 +232,29 @@
     {% endif %}
   </div>
 </form>
+
+{% if not est_lecture_seule() %}
+<section style="margin-top:48px;padding:20px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2;">
+  <h2 style="font-size:13px;font-weight:600;color:#991b1b;margin-bottom:8px;">
+    Zone de suppression
+  </h2>
+  <p style="font-size:13px;color:#7f1d1d;margin-bottom:14px;">
+    Supprimer cet item détruira définitivement <strong>tous ses fichiers et annotations</strong>,
+    et le retirera de toutes ses collections (y compris la miroir). Action irréversible.
+  </p>
+  <form method="post" action="/item/{{ item.cote }}/supprimer?fonds={{ fonds.cote }}"
+        data-cote-confirmer="{{ item.cote }}"
+        style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <label for="confirmer-item" style="font-size:13px;color:#7f1d1d;">
+      Pour confirmer, recopiez la cote <code style="font-family:monospace;background:#fee2e2;padding:1px 6px;border-radius:3px;">{{ item.cote }}</code> :
+    </label>
+    <input id="confirmer-item" type="text" name="confirmer" required autocomplete="off"
+           style="padding:5px 10px;font-size:13px;border:1px solid #fca5a5;border-radius:4px;background:white;font-family:monospace;">
+    <button type="submit"
+            style="padding:6px 14px;font-size:13px;background:#991b1b;color:white;border:1px solid #991b1b;border-radius:4px;cursor:pointer;">
+      Supprimer définitivement
+    </button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

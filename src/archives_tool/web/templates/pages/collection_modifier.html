@@ -121,4 +121,35 @@
     {% endif %}
   </div>
 </form>
+
+{# La page modifier n'est jamais rendue pour une collection miroir (le
+   route guard `_refuser_si_miroir` renvoie 403 en amont). Donc on ne
+   gère ici que les cas libre rattachée + transversale. La suppression
+   d'une miroir passe par la suppression de son fonds. #}
+{% if not est_lecture_seule() %}
+<section style="margin-top:48px;padding:20px;border:1px solid #fca5a5;border-radius:8px;background:#fef2f2;">
+  <h2 style="font-size:13px;font-weight:600;color:#991b1b;margin-bottom:8px;">
+    Zone de suppression
+  </h2>
+  <p style="font-size:13px;color:#7f1d1d;margin-bottom:14px;">
+    Supprimer cette collection retirera les liaisons avec ses items, mais
+    <strong>les items eux-mêmes restent dans leur fonds et leurs autres collections</strong>.
+    Action irréversible pour la collection (la rétablir nécessiterait une re-création + re-ajout des items).
+  </p>
+  <form method="post"
+        action="/collection/{{ collection.cote }}/supprimer{% if collection.fonds %}?fonds={{ collection.fonds.cote }}{% endif %}"
+        data-cote-confirmer="{{ collection.cote }}"
+        style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <label for="confirmer-collection" style="font-size:13px;color:#7f1d1d;">
+      Pour confirmer, recopiez la cote <code style="font-family:monospace;background:#fee2e2;padding:1px 6px;border-radius:3px;">{{ collection.cote }}</code> :
+    </label>
+    <input id="confirmer-collection" type="text" name="confirmer" required autocomplete="off"
+           style="padding:5px 10px;font-size:13px;border:1px solid #fca5a5;border-radius:4px;background:white;font-family:monospace;">
+    <button type="submit"
+            style="padding:6px 14px;font-size:13px;background:#991b1b;color:white;border:1px solid #991b1b;border-radius:4px;cursor:pointer;">
+      Supprimer définitivement
+    </button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

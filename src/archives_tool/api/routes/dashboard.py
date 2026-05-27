@@ -37,12 +37,14 @@ from archives_tool.api.services.collections import (
     CollectionIntrouvable,
     CollectionInvalide,
     FormulaireCollection,
+    OperationCollectionInterdite,
     ajouter_items_a_collection,
     formulaire_depuis_collection,
     items_disponibles_pour_collection,
     lire_collection_par_cote,
     modifier_collection,
     retirer_item_de_collection,
+    supprimer_collection_libre,
 )
 from archives_tool.api.routes._helpers import (
     charger_fonds_ou_404 as _charger_fonds_ou_404,
@@ -67,6 +69,7 @@ from archives_tool.api.services.fonds import (
     lire_fonds_par_cote,
     lister_fonds,
     modifier_fonds,
+    supprimer_fonds,
 )
 from archives_tool.api.services.conflits import ConflitVersion
 from archives_tool.api.services.items import (
@@ -78,6 +81,7 @@ from archives_tool.api.services.items import (
     lire_item_par_cote,
     lister_items_collection,
     modifier_item,
+    supprimer_item,
 )
 from archives_tool.api.services.champs_personnalises import (
     lister_champs_actifs_pour_item,
@@ -1501,3 +1505,96 @@ def supprimer_collaborateur_fonds_route(
     _collaborateur_fonds_appartenant(db, collaborateur_id, fonds.id)
     supprimer_collaborateur_fonds(db, collaborateur_id)
     return RedirectResponse(f"/fonds/{cote}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Suppression d'entités (V0.9.7) — fonds / collection libre / item
+#
+# Sécurité : double-confirmation par recopie de la cote (param `confirmer`).
+# Refus si `confirmer != cote` (clic accidentel, formulaire bookmark).
+# Mode lecture seule bloqué par le middleware en amont (423). Miroir refusée
+# par le service `supprimer_collection_libre`. Fichier individuel non géré
+# dans ce premier cut (dette V0.9.7).
+# ---------------------------------------------------------------------------
+
+
+@router.post("/fonds/{cote}/supprimer", response_class=HTMLResponse, response_model=None)
+def supprimer_fonds_route(
+    cote: str,
+    confirmer: Annotated[str, Form()],
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    fonds = _charger_fonds_ou_404(db, cote)
+    if confirmer != fonds.cote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Confirmation invalide : saisir exactement « {fonds.cote} » "
+                f"pour confirmer la suppression du fonds."
+            ),
+        )
+    supprimer_fonds(db, fonds.id)
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post(
+    "/collection/{cote}/supprimer", response_class=HTMLResponse, response_model=None
+)
+def supprimer_collection_route(
+    cote: str,
+    confirmer: Annotated[str, Form()],
+    fonds: str | None = None,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    fonds_id: int | None = None
+    if fonds is not None:
+        fonds_obj = _charger_fonds_ou_404(db, fonds)
+        fonds_id = fonds_obj.id
+    try:
+        col = lire_collection_par_cote(db, cote, fonds_id=fonds_id)
+    except CollectionIntrouvable as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except OperationCollectionInterdite as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if confirmer != col.cote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Confirmation invalide : saisir exactement « {col.cote} » "
+                f"pour confirmer la suppression de la collection."
+            ),
+        )
+    # Capture le fonds parent avant la suppression (la relation sera
+    # invalidée après commit).
+    fonds_parent_cote = col.fonds.cote if col.fonds is not None else None
+    try:
+        supprimer_collection_libre(db, col.id)
+    except OperationCollectionInterdite as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if fonds_parent_cote is not None:
+        return RedirectResponse(f"/fonds/{fonds_parent_cote}", status_code=303)
+    return RedirectResponse("/", status_code=303)
+
+
+@router.post("/item/{cote}/supprimer", response_class=HTMLResponse, response_model=None)
+def supprimer_item_route(
+    cote: str,
+    confirmer: Annotated[str, Form()],
+    fonds: Annotated[str, Query()],
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
+    try:
+        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    if confirmer != item.cote:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Confirmation invalide : saisir exactement « {item.cote} » "
+                f"pour confirmer la suppression de l'item."
+            ),
+        )
+    supprimer_item(db, item.id)
+    return RedirectResponse(f"/fonds/{fonds_obj.cote}", status_code=303)

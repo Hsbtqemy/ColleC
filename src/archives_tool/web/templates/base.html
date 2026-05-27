@@ -38,6 +38,10 @@
   {# Toggle du menu déroulant « Importer » dans le header (data-menu-*).
      Inerte si le menu n'est pas rendu (mode lecture seule). #}
   <script src="{{ url_for('static', path='js/menu_importer.js') }}"></script>
+  {# Désactive le bouton « Supprimer définitivement » des zones de
+     suppression tant que la cote n'est pas recopiée correctement.
+     Inerte (no-op) en l'absence de formulaire `[data-cote-confirmer]`. #}
+  <script src="{{ url_for('static', path='js/zone_suppression.js') }}"></script>
   {% if est_lecture_seule() %}
     {# Filet de sécurité : si un utilisateur appuie sur Entrée dans un
        input texte d'un form POST (les boutons submit sont masqués

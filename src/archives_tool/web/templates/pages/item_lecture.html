@@ -42,7 +42,7 @@
 {% set _f_prev = detail.fichiers[_pos - 2] if _pos > 1 else None %}
 {% set _f_next = detail.fichiers[_pos] if _pos < detail.fichiers|length else None %}
 <div class="flex items-center justify-between mb-3 gap-2" style="font-size:13px;">
-  <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+  <a href="{{ fiche_url }}"
      class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
      style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
     ← Notice

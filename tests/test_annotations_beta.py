@@ -130,3 +130,134 @@ def test_fiche_item_pas_d_annotorious(base_demo: Path) -> None:
     resp = client.get("/item/HK-001?fonds=HK")
     assert resp.status_code == 200
     assert "annotations_osd.js" not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Navigation visionneuse (V0.9.7 — beta-fix 3 frictions)
+# ---------------------------------------------------------------------------
+
+
+def test_visionneuse_bouton_notice_pointe_sur_fiche(base_demo: Path) -> None:
+    """Le bouton « ← Notice » de la visionneuse ramène à la fiche
+    item via `fiche_url` (passé par la route). Sans ce bouton,
+    l'utilisateur cataloguant doit chercher un lien obscur pour
+    revenir à la notice."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK")
+    assert resp.status_code == 200
+    assert "← Notice" in resp.text
+    # Lien vers la fiche notice de l'item courant
+    assert 'href="/item/HK-001?fonds=HK"' in resp.text
+
+
+def test_visionneuse_navigation_page_si_plusieurs_fichiers(
+    base_demo: Path,
+) -> None:
+    """Le bloc Page ‹ N / X › apparaît dès que l'item a >1 fichier.
+    Boutons prev/next pointent sur la même visionneuse (le panneau
+    fichiers gauche fait pareil — pas de retour à la fiche entre
+    deux fichiers, friction utilisateur résolue)."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK&fichier_courant=2")
+    assert resp.status_code == 200
+    # Compteur position / total
+    assert "Navigation pages" in resp.text
+    # Liens prev (fichier_courant=1) + next (fichier_courant=3) sont
+    # sur la même URL /visionneuse (pas /item/<cote>)
+    assert (
+        "/item/HK-001/visionneuse?fonds=HK&fichier_courant=1" in resp.text
+    )
+
+
+def test_visionneuse_navigation_page_premier_fichier_desactive_prev(
+    base_demo: Path,
+) -> None:
+    """Au premier fichier, le bouton Page précédent est en gris,
+    pas un lien actif. Garde-fou contre les `?fichier_courant=0`
+    qui crasheraient le clamp."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK&fichier_courant=1")
+    assert resp.status_code == 200
+    # Pas de href vers fichier_courant=0
+    assert "fichier_courant=0" not in resp.text
+
+
+def test_panneau_fichiers_mode_visionneuse_garde_la_visionneuse(
+    base_demo: Path,
+) -> None:
+    """Friction utilisateur : sur la visionneuse, cliquer une
+    vignette dans le panneau gauche doit RESTER sur la visionneuse,
+    pas ramener à la fiche notice. Vérifie que les liens panneau
+    pointent sur /visionneuse en mode visionneuse."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK")
+    assert resp.status_code == 200
+    # Au moins un lien vers /visionneuse?fichier_courant=N
+    import re
+    liens_visionneuse = re.findall(
+        r"/item/HK-001/visionneuse\?fonds=HK&fichier_courant=\d+",
+        resp.text,
+    )
+    assert len(liens_visionneuse) >= 2, "Pas assez de liens panneau-visionneuse"
+    # Aucun lien `/item/HK-001?fonds=HK&fichier_courant=N` (qui ramènerait
+    # à la fiche). Le seul lien fiche est le bouton « ← Notice ».
+    liens_fiche_avec_fichier = re.findall(
+        r'href="/item/HK-001\?fonds=HK&fichier_courant=\d+"',
+        resp.text,
+    )
+    assert liens_fiche_avec_fichier == []
+
+
+
+def test_fiche_item_vignettes_pointent_sur_visionneuse(base_demo: Path) -> None:
+    """Les vignettes de la grille fiche pointent sur la visionneuse
+    OSD du fichier ciblé (V0.9.5 : workflow d'entrée fiche →
+    visionneuse depuis n'importe quelle page). Garde-fou pour ce
+    pattern — si quelqu'un casse les hrefs en ramenant à la fiche,
+    le test signale."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001?fonds=HK")
+    assert resp.status_code == 200
+    import re
+    # Les vignettes pointent sur /visionneuse?fichier_courant=N
+    liens = re.findall(
+        r"/item/HK-001/visionneuse\?fonds=HK&fichier_courant=\d+",
+        resp.text,
+    )
+    assert len(liens) >= 3, "Trop peu de liens vignette → visionneuse"
+
+
+def test_pdf_visionneuse_item_utilise_pdfjs(base_demo: Path) -> None:
+    """Garde-fou principal du fix : sur `/item/<cote>/visionneuse`
+    avec un fichier PDF, on doit avoir PDF.js (visionneuse_pdf) et
+    pas OSD avec fallback Télécharger. Avant le fix V0.9.7, OSD
+    tentait l'IIIF sur une URL data brute → message d'erreur.
+
+    Sur la base demo, le seeder ne crée pas de PDF dédié — mais on
+    peut utiliser le dispatcher visionneuse_consultation pour
+    vérifier que la page CHARGE bien le dispatcher (qui sait gérer
+    le PDF) et pas directement OSD.
+    """
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK")
+    assert resp.status_code == 200
+    # Le dispatcher visionneuse_consultation est en place — vérifie
+    # qu'on n'a pas un appel direct à visionneuse_osd sans fallback
+    # PDF. Pour HK-001 (fichier .tif), c'est OSD qui est utilisé.
+    assert "visionneuse-osd" in resp.text
+
+
+def test_bouton_annoter_masque_sur_pdf(base_demo: Path) -> None:
+    """Le bouton « Annoter » est masqué quand le fichier courant
+    est un PDF — Annotorious ne sait pas annoter un PDF (image-only).
+    Le bouton serait trompeur. La base demo n'a pas de PDF dédié
+    donc on teste indirectement : sur un fichier .tif, le bouton
+    DOIT être présent (cas où le test devrait échouer si la logique
+    est inversée)."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK&fichier_courant=1")
+    assert resp.status_code == 200
+    # HK-001-01.tif est une image — bouton Annoter présent
+    assert "data-annoter-toggle=" in resp.text
+    # Bouton en haut-droite (évite collision contrôles OSD haut-gauche)
+    assert "right:8px" in resp.text

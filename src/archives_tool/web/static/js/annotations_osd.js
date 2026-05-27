@@ -48,9 +48,113 @@
       // setAnnotations remplace toutes les annotations actuelles
       // (vide ici à l'init) par celles fournies. Format W3C natif.
       anno.setAnnotations(items);
+      // Synchronise le panneau latéral après le chargement initial.
+      // Les events Annotorious (create/update/delete) le re-syncent
+      // automatiquement par la suite.
+      rafraichirPanneau(anno, fichierId);
     } catch (e) {
       console.warn("[annotations] GET erreur réseau :", e);
     }
+  }
+
+  /** Extrait un texte court de l'annotation pour l'affichage panneau.
+   *  Priorité : tag (TextualBody purpose=tagging), puis identifying
+   *  (libellé), puis commenting (extrait), puis fallback id. */
+  function libelleAnnotation(annotation) {
+    const bodies = annotation.body || [];
+    // Cherche d'abord un tag
+    for (const b of bodies) {
+      if (b.purpose === "tagging" && b.value) {
+        return { texte: b.value, type: "tag" };
+      }
+    }
+    // Puis une identification (URI ou valeur)
+    for (const b of bodies) {
+      if (b.purpose === "identifying") {
+        return {
+          texte: b.value || b.source || "(identifié)",
+          type: "ident",
+        };
+      }
+    }
+    // Puis n'importe quel body avec value
+    for (const b of bodies) {
+      if (b.value) {
+        return { texte: b.value, type: "commentaire" };
+      }
+    }
+    return { texte: "(sans tag)", type: "vide" };
+  }
+
+  /** Met à jour le panneau latéral à partir des annotations actuelles. */
+  function rafraichirPanneau(anno, fichierId) {
+    const panneau = document.querySelector(
+      `[data-panneau-annotations="visionneuse-${fichierId}"]`,
+    );
+    if (!panneau) return;
+    const liste = panneau.querySelector("[data-liste]");
+    const compteur = panneau.querySelector("[data-compteur]");
+    if (!liste || !compteur) return;
+
+    const annotations = anno.getAnnotations() || [];
+    compteur.textContent = String(annotations.length);
+
+    if (annotations.length === 0) {
+      // Masque le panneau quand vide pour ne pas occuper l'espace.
+      panneau.dataset.vide = "1";
+      panneau.style.display = "none";
+      liste.innerHTML = "";
+      return;
+    }
+    panneau.dataset.vide = "0";
+    panneau.style.display = "flex";
+
+    // Tri par création (l'ordre `getAnnotations` n'est pas garanti).
+    // On utilise `created` si présent, sinon l'ordre d'insertion.
+    const triees = annotations.slice().sort(function (a, b) {
+      if (a.created && b.created) {
+        return a.created < b.created ? -1 : 1;
+      }
+      return 0;
+    });
+
+    liste.innerHTML = "";
+    triees.forEach(function (annotation, idx) {
+      const item = document.createElement("li");
+      item.style.cssText =
+        "padding:6px 10px;border-bottom:1px solid rgba(0,0,0,0.05);cursor:pointer;line-height:1.4;";
+      item.dataset.annotationId = annotation.id || "";
+      const { texte, type } = libelleAnnotation(annotation);
+      const numero = document.createElement("span");
+      numero.style.cssText =
+        "color:#9ca3af;font-variant-numeric:tabular-nums;margin-right:6px;font-size:11px;";
+      numero.textContent = String(idx + 1).padStart(2, "0");
+      const lib = document.createElement("span");
+      lib.style.cssText = type === "vide" ? "color:#9ca3af;font-style:italic;" : "color:#374151;";
+      lib.textContent = texte;
+      item.appendChild(numero);
+      item.appendChild(lib);
+      item.addEventListener("mouseenter", function () {
+        item.style.background = "rgba(55, 138, 221, 0.06)";
+      });
+      item.addEventListener("mouseleave", function () {
+        item.style.background = "";
+      });
+      item.addEventListener("click", function () {
+        // Sélectionne l'annotation et zoome dessus. `selectAnnotation`
+        // ouvre aussi le popup d'édition (cf. spec Annotorious 2.x).
+        // `fitBounds` zoome le viewer OSD sur la région.
+        try {
+          anno.selectAnnotation(annotation.id);
+          if (typeof anno.fitBounds === "function") {
+            anno.fitBounds(annotation);
+          }
+        } catch (e) {
+          console.warn("[annotations] selectAnnotation a échoué :", e);
+        }
+      });
+      liste.appendChild(item);
+    });
   }
 
   /** POST une annotation nouvelle et reçoit l'`id` neuf en retour. */
@@ -123,6 +227,7 @@
         // serveur (id officiel).
         anno.removeAnnotation(annotation);
         anno.addAnnotation(sauvee);
+        rafraichirPanneau(anno, fichierId);
       } catch (e) {
         console.error("[annotations] Création échouée :", e);
         anno.removeAnnotation(annotation);
@@ -134,6 +239,7 @@
     anno.on("updateAnnotation", async function (annotation) {
       try {
         await modifierAnnotation(annotation);
+        rafraichirPanneau(anno, fichierId);
       } catch (e) {
         console.error("[annotations] Modification échouée :", e);
         alert("Modification d'annotation échouée. Voir console.");
@@ -144,6 +250,7 @@
     anno.on("deleteAnnotation", async function (annotation) {
       try {
         await supprimerAnnotation(annotation);
+        rafraichirPanneau(anno, fichierId);
       } catch (e) {
         console.error("[annotations] Suppression échouée :", e);
       }

@@ -261,3 +261,110 @@ def test_bouton_annoter_masque_sur_pdf(base_demo: Path) -> None:
     assert "data-annoter-toggle=" in resp.text
     # Bouton en haut-droite (évite collision contrôles OSD haut-gauche)
     assert "right:8px" in resp.text
+
+
+def test_panneau_annotations_rendu_sur_image(base_demo: Path) -> None:
+    """Le panneau latéral d'annotations est rendu HTML sur la
+    visionneuse d'une image (V0.9.7 γ.1). Démarre masqué
+    (`data-vide="1"`) — le JS `annotations_osd.js` l'affiche quand
+    il y a ≥1 annotation."""
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK&fichier_courant=1")
+    assert resp.status_code == 200
+    # Marqueur wrapper avec l'id visionneuse
+    assert 'data-panneau-annotations="visionneuse-' in resp.text
+    # Démarre vide → display:none côté style inline + data-vide="1"
+    assert 'data-vide="1"' in resp.text
+    # Structure interne attendue par le JS
+    assert "data-compteur" in resp.text
+    assert "data-liste" in resp.text
+
+
+def test_panneau_annotations_absent_sur_pdf(base_demo: Path) -> None:
+    """Cohérent avec le bouton Annoter : pas de panneau d'annotations
+    sur les PDFs / fichiers non-image. Annotorious ne s'active pas,
+    donc rien à lister."""
+    # On utilise un fichier non-image en bidouillant la requête :
+    # HK-001 n'a que des .tif sur la base demo, donc on teste juste
+    # que le panneau N'EST PAS rendu quand l'extension n'est pas
+    # image. Pour ça on crée un Fichier .pdf temporaire.
+    from sqlalchemy import select
+    from archives_tool.models import Fichier, Item
+    from archives_tool.db import creer_engine, creer_session_factory
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    fichier_pdf_id = None
+    try:
+        with factory() as s:
+            item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+            f = Fichier(
+                item_id=item.id,
+                racine="demo",
+                chemin_relatif="dummy.pdf",
+                nom_fichier="dummy.pdf",
+                ordre=99,
+            )
+            s.add(f)
+            s.commit()
+            fichier_pdf_id = f.id
+            position = (
+                s.execute(
+                    select(Fichier).where(Fichier.item_id == item.id)
+                    .order_by(Fichier.ordre)
+                ).all()
+            )
+            pdf_position = next(
+                i + 1 for i, row in enumerate(position) if row[0].id == fichier_pdf_id
+            )
+
+        client = TestClient(app)
+        resp = client.get(
+            f"/item/HK-001/visionneuse?fonds=HK&fichier_courant={pdf_position}"
+        )
+        assert resp.status_code == 200
+        # Pas de panneau pour le PDF
+        assert "data-panneau-annotations=" not in resp.text
+    finally:
+        if fichier_pdf_id is not None:
+            with factory() as s:
+                obj = s.get(Fichier, fichier_pdf_id)
+                if obj is not None:
+                    s.delete(obj)
+                    s.commit()
+        engine.dispose()
+
+
+def test_panneau_annotations_visible_meme_en_lecture_seule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En lecture seule, le bouton Annoter est masqué (cohérent : pas
+    d'édition possible) mais le panneau d'annotations RESTE rendu
+    en HTML — un futur lot pourra le peupler en consultation pure
+    pour permettre la lecture des annotations existantes sans JS
+    Annotorious (380 Ko).
+
+    Pour V0.9.7 γ.1 : on vérifie juste que le panneau HTML est là.
+    Le JS Annotorious n'est pas chargé en lecture seule (cf. test
+    `test_visionneuse_pas_d_annotorious_en_lecture_seule`), donc le
+    panneau reste vide visuellement — c'est OK pour cette beta."""
+    db = tmp_path / "demo.db"
+    peupler_base(db)
+    monkeypatch.setenv("ARCHIVES_DB", str(db))
+    racine = tmp_path / "miniatures"
+    racine.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  demo: {racine}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+
+    client = TestClient(app)
+    resp = client.get("/item/HK-001/visionneuse?fonds=HK&fichier_courant=1")
+    assert resp.status_code == 200
+    # Panneau présent — préparé pour un futur lot consultation
+    assert "data-panneau-annotations=" in resp.text
+    # En lecture seule, le bouton Annoter ne doit PAS être rendu
+    # (positionné top:48px sinon, top:8px ici car pas de bouton)
+    assert "data-annoter-toggle=" not in resp.text

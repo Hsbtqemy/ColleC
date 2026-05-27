@@ -106,7 +106,11 @@
        coin haut-DROITE car OSD met ses contrôles natifs (zoom, home,
        full page, rotation) en haut-gauche. Masqué en lecture seule. #}
     {% set _EXTENSIONS_IMAGE = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] %}
-    {% if f_courant and f_courant.extension in _EXTENSIONS_IMAGE and not est_lecture_seule() %}
+    {% if f_courant and f_courant.extension in _EXTENSIONS_IMAGE %}
+    {# Bouton Annoter en haut-droite, sous les contrôles OSD natifs
+       (qui sont en haut-gauche). Masqué en lecture seule mais on
+       laisse le panneau d'annotations visible (consultation). #}
+    {% if not est_lecture_seule() %}
     <div style="position:absolute;top:8px;right:8px;z-index:10;display:flex;gap:8px;align-items:center;font-size:12px;">
       <button type="button"
               data-annoter-toggle="visionneuse-{{ f_courant.id }}"
@@ -115,6 +119,29 @@
         Annoter
       </button>
     </div>
+    {% endif %}
+    {# Panneau latéral annotations : flottant à droite, sous le bouton
+       Annoter quand il est présent (top:48px sinon top:8px). Peuplé
+       côté client par annotations_osd.js après le GET initial. Auto-
+       masqué quand 0 annotations (data-vide="1"). Clic sur un item =
+       focus + édition. #}
+    <aside data-panneau-annotations="visionneuse-{{ f_courant.id }}"
+           data-vide="1"
+           style="position:absolute;{% if not est_lecture_seule() %}top:48px{% else %}top:8px{% endif %};right:8px;z-index:9;
+                  width:240px;max-height:calc(100% - 56px);
+                  background:rgba(255,255,255,0.94);backdrop-filter:blur(6px);
+                  border:1px solid rgba(0,0,0,0.12);border-radius:6px;
+                  font-size:12px;color:#374151;display:none;
+                  overflow:hidden;flex-direction:column;">
+      <header style="padding:6px 10px;border-bottom:1px solid rgba(0,0,0,0.08);background:rgba(0,0,0,0.02);">
+        <strong style="font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:#6b7280;">
+          Annotations <span data-compteur>0</span>
+        </strong>
+      </header>
+      <ul data-liste
+          style="margin:0;padding:0;list-style:none;overflow-y:auto;flex:1;">
+      </ul>
+    </aside>
     {% endif %}
   </div>
 </div>

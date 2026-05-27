@@ -1722,7 +1722,7 @@ Garde-fous SQL : synthese fonds ≤ 10 queries, synthese collection
 ≤ 7 queries. +85 tests au total (synthese collection 28, fonds 13,
 inline edit étendu 14, fiche item maintien 30+).
 
-### V0.9.7 — Création en série + annotations IIIF (en cours)
+### V0.9.7 — Création en série + annotations IIIF ✅ livrée
 
 Deux chantiers groupés sous V0.9.7 (tag stable après les deux) :
 

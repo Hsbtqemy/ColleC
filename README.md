@@ -12,11 +12,12 @@ Fonds / Collection / Item, interface web pour le travail
 quotidien, CLI pour l'automatisation, exports Dublin Core /
 Nakala / xlsx.
 
-**Statut** : V0.9.6 stable (1090 tests verts). Modèle stable,
-interface web complète (synthèse collection / fonds + édition inline
-sur 3 entités depuis V0.9.6, recherche FTS5, champs personnalisés,
-liseuse de consultation). La V1.0 ajoutera le déploiement VPS et
-l'auth multi-utilisateurs simples.
+**Statut** : V0.9.7 stable. Modèle stable, interface web complète
+(annotations IIIF W3C + Annotorious depuis V0.9.7, création en série
+d'items, synthèse collection / fonds + édition inline sur 3 entités
+depuis V0.9.6, recherche FTS5, champs personnalisés, liseuse de
+consultation). La V1.0 ajoutera le déploiement VPS et l'auth
+multi-utilisateurs simples.
 
 ## Démarrage rapide
 

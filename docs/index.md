@@ -35,8 +35,9 @@ sans contraindre la sémantique Nakala pour la publication.
 
 ## État du projet
 
-Version actuelle : **V0.9.6 stable**. Modèle stable, fonctionnalités
-complètes (CLI + interface web complète + synthèse collection / fonds
+Version actuelle : **V0.9.7 stable**. Modèle stable, fonctionnalités
+complètes (CLI + interface web complète + annotations IIIF W3C avec
+Annotorious + création en série d'items + synthèse collection / fonds
 + édition inline complète + recherche FTS5 + champs personnalisés +
 vocabulaires + liseuse de consultation). La V1.0 ajoutera le
 déploiement VPS et l'auth multi-utilisateurs simples.

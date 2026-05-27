@@ -23,17 +23,24 @@ L'exporter charge le contexte d'export complet via
 (une seule requête principale avec `selectinload(items.fichiers)` +
 JOIN fonds). Pas de N+1.
 
-## Les trois formats
+## Les formats
 
-| Format        | Cas d'usage                            | Sortie                  |
-| ------------- | -------------------------------------- | ----------------------- |
-| `dublin-core` | Archivage bibliothéconomique, OAI-PMH. | XML, un fichier agrégé. |
-| `nakala`      | Dépôt bulk Nakala.                     | CSV `;`, UTF-8 BOM.     |
-| `xlsx`        | Catalogage manuel, vérification.       | xlsx Excel/LibreOffice. |
+| Format        | Cas d'usage                            | Sortie                          |
+| ------------- | -------------------------------------- | ------------------------------- |
+| `dublin-core` | Archivage bibliothéconomique, OAI-PMH. | XML, un fichier agrégé.         |
+| `nakala`      | Dépôt bulk Nakala.                     | CSV `;`, UTF-8 BOM.             |
+| `xlsx`        | Catalogage manuel, vérification.       | xlsx Excel/LibreOffice.         |
+| `annotations` | Annotations IIIF W3C (V0.9.7).         | JSON-LD `AnnotationCollection`. |
 
-Tous incluent les **métadonnées de la collection en tête** : cote,
-titre, type, fonds parent (rattachée) ou fonds représentés
-(transversale), DOI Nakala si renseigné.
+Les trois premiers incluent les **métadonnées de la collection en
+tête** : cote, titre, type, fonds parent (rattachée) ou fonds
+représentés (transversale), DOI Nakala si renseigné.
+
+`annotations` est différent : il sérialise les régions annotées
+(`AnnotationRegion`) de tous les fichiers de la collection. Pivot URI
+Wikidata/VIAF préservé. À déposer à côté des images sur Nakala et à
+référencer dans le manifeste IIIF de l'item. Voir
+[Annotations IIIF](../annotations.md) pour le workflow complet.
 
 ## Modules
 

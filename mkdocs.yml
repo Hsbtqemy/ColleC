@@ -101,6 +101,7 @@ nav:
     - Concepts: guide/concepts.md
     - Interface web: guide/interface-web.md
     - Synthèse et édition inline: guide/synthese-edition-inline.md
+    - Annotations IIIF: guide/annotations.md
     - Recherche: guide/recherche.md
     - Liseuse de consultation: guide/liseuse.md
     - Assistant d'import (web): guide/import-assistant.md

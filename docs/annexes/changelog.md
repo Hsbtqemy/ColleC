@@ -121,6 +121,120 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.7 (stable, 2026-05-27)
+
+Deux chantiers livrés sous V0.9.7.
+
+### Création en série d'items
+
+Manquant identifié dans `plan-de-chantier.md` : préparer N fiches
+d'items placeholders avant numérisation, pour pouvoir rattacher les
+scans au fil. Service `creer_items_en_serie` + CLI `archives-tool
+items creer-serie` + bouton « + Créer une série » sur la page
+collection. Pattern Python `str.format` avec variable `{n}` (ex
+`PF-{n:03d}`), plage `de_n..a_n` (cap 1000), titre template
+optionnel, valeurs par défaut etat/type_coar/langue, transactionnel,
+`ignorer_existants` pour rejouabilité. Détection des doublons
+intra-série (pattern sans `{n}` produit la même cote) en amont
+plutôt qu'IntegrityError opaque. 27 tests.
+
+### Annotations IIIF W3C complet (α + β + γ + δ)
+
+Module d'annotation d'image conforme **W3C Web Annotation Data
+Model + IIIF Presentation API 3**. Indexation à la granularité
+région d'image (cas Por Favor : identifier les dessinateurs Copi /
+Forges / Reiser, marquer caricatures avec lien Wikidata).
+Réversible vers Mirador, Recogito, tout viewer standard.
+
+#### α — Modèle + 5 routes REST + migration
+
+- `AnnotationRegion` (FK CASCADE sur Fichier, `selecteur` text,
+  `selecteur_type` ∈ `{fragment, svg}`, `corps` JSON liste de
+  bodies W3C, `motivation` text). TracabiliteMixin standard (verrou
+  optimiste).
+- Migration Alembic `o3s4t5u6v7w8` idempotente.
+- Service `FormulaireAnnotation` (Pydantic) avec validators stricts
+  (`motivation` ∈ `MOTIVATIONS_W3C` 13 valeurs spec), CRUD avec
+  verrou optimiste, sérialisation W3C JSON-LD à la volée (jamais
+  stockée — toujours calculée depuis SQL plat). Omet les champs
+  optionnels (`creator`, `modified`) quand absents (W3C strict).
+- 5 routes REST sous `/api` : GET liste fichier (AnnotationPage),
+  POST création, GET unitaire, PUT modification (409 si conflit),
+  DELETE idempotent (204). POST/PUT acceptent forme simple OU forme
+  W3C native (target/body) — un client Annotorious peut envoyer son
+  JSON-LD natif sans conversion.
+- 25 tests service + routes.
+
+#### β — Annotorious sur OSD
+
+- Vendor `@recogito/annotorious-openseadragon@^2.7` copié via
+  `scripts/vendor.mjs` vers `static/js/vendor/annotorious/`.
+- `visionneuse_osd.js` émet `visionneuse:pret` (couplage faible
+  avec scripts tiers) après que OSD ait fini d'`open`.
+- `annotations_osd.js` écoute cet event, greffe Annotorious sur
+  l'instance OSD via `OpenSeadragon.Annotorious(osd, opts)`,
+  charge les annotations existantes au load via GET, sync les
+  create/update/delete via POST/PUT/DELETE.
+- Bouton « Annoter » flottant haut-droite du viewer (haut-gauche
+  occupé par les contrôles natifs OSD). Masqué sur PDF et en
+  lecture seule.
+- 9 tests intégration.
+
+#### γ — Panneau latéral + autocomplete vocabulaire + pivot URI
+
+- **Panneau latéral** `<aside data-panneau-annotations>` flottant
+  sous le bouton Annoter, liste numérotée des annotations du
+  fichier courant, sync via `rafraichirPanneau` à
+  create/update/delete. Clic = `anno.selectAnnotation(id)` +
+  `anno.fitBounds` → zoom OSD sur la région + popup d'édition.
+  Auto-masqué quand 0 annotations.
+- **Endpoint** `GET /api/vocabulaires/autocomplete` qui liste
+  toutes les `ValeurControlee` actives (libellé, code, URI,
+  vocabulaire racine) — 1 requête léger.
+- **Widget TAG Annotorious natif** configuré avec
+  `vocabulary: [{label, uri}, …]`. Quand l'utilisateur sélectionne
+  une entrée avec URI, Annotorious crée DIRECTEMENT un body
+  `SpecificResource source={id, label}` (pivot Wikidata/VIAF
+  gratuit — pas besoin d'enrichissement client). Race fix : la
+  précharge `_vocabReady` Promise est awaited avant init
+  Annotorious dans l'event handler `visionneuse:pret`.
+- **Tags agrégés sur fiche notice** (`pages/item_fiche.html`) :
+  remplace le placeholder « Annotations IIIF (V2) » par la liste
+  des tags agrégés depuis tous les fichiers de l'item, dédup par
+  (libellé, uri), tri fréquence desc + alpha, libellé cliquable
+  vers URI si présente. Vue d'ensemble du catalogage sur la
+  notice sans devoir ouvrir page par page.
+- 5 tests γ + 1 test γ-fiche.
+
+#### δ — Export Nakala JSON W3C
+
+- Service `serialiser_annotation_collection_w3c` empaquette les
+  annotations d'une collection dans un W3C `AnnotationCollection`
+  avec un seul `AnnotationPage`. Format conforme spec W3C Web
+  Annotation §6.3 + IIIF Presentation API 3 (`@context`, `id`,
+  `type=AnnotationCollection`, `label`, `total`, `first.{id, type,
+  partOf, items}`).
+- Le pivot URI Wikidata créé par γ.3 (`body.source.id` via
+  Annotorious natif) est préservé tel quel dans l'export —
+  utilisable directement par Mirador / Recogito / portail futur.
+- CLI `archives-tool exporter annotations <cote_collection>
+  [--fonds X] [--sortie path.json]`. URI canonique du
+  AnnotationCollection = DOI Nakala de la collection si publié,
+  sinon URI relative locale (à remplacer manuellement après dépôt
+  Nakala).
+- 4 tests δ.
+
+### Bilan
+
+63 tests annotations (α + β + γ + δ + γ-fiche) + 27 tests création
+série. Reste éventuellement, en bonus futur : pagination par canvas
+si volume > 5000 annotations, intégration du JSON exporté dans le
+manifeste IIIF principal au moment du dépôt Nakala (action manuelle
+pour l'instant). Le module d'annotation est utilisable bout en bout
+sur PF (créer vocabulaire avec URI Wikidata → annoter via widget
+TAG natif → voir sur fiche notice → exporter JSON pour Nakala).
+
+
 ## V0.9.6 (stable, 2026-05-26)
 
 Chantier UX dirigé par les tests d'usage sur le fonds Por Favor.

@@ -409,6 +409,13 @@ def test_liseuse_dispatcher_pdf_charge_pdfjs(
         assert "https://api.nakala.fr/data/10.1/x/abc" in response.text
         # On ne doit PAS voir le fallback "Aucun aperçu"
         assert "Aucun aperçu disponible" not in response.text
+        # Contrôles enrichis V0.9.7 : zoom +/-, input page, rotation
+        # (cf. demande utilisateur post-tests β). Le texte est dans
+        # l'attribut title pour les boutons sans label visible.
+        assert 'data-action="zoom-in"' in response.text
+        assert 'data-action="zoom-out"' in response.text
+        assert 'data-action="rotate"' in response.text
+        assert 'data-page-input' in response.text
     finally:
         with db_demo_factory() as db:
             obj = db.get(Fichier, fid)

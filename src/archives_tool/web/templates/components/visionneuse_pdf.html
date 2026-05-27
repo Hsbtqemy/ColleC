@@ -70,10 +70,12 @@
      style="width:100%;height:100%;display:flex;flex-direction:column;
             background:#525659;border-radius:6px;overflow:hidden;">
 
-  {# Barre de contrôles : compteur, navigation pages PDF, télécharger.
-     Le compteur "Page N / M" est mis à jour pendant le scroll via
-     un IntersectionObserver sur les wrappers. Boutons ‹/› scroll
-     vers la page précédente/suivante (smooth). #}
+  {# Barre de contrôles : navigation pages, zoom, rotation, télécharger.
+     Le compteur "N / M" devient un input pour aller à une page précise.
+     Les boutons ‹/› scrollent à la page précédente/suivante. Zoom +/-
+     multiplie le scale fit-to-width par 1.2. ⤢ revient au fit-to-width
+     pur (scale ×1). ⟲ tourne 90° à chaque clic (cycle 0→90→180→270).
+     Re-render toutes les pages à chaque changement zoom/rotation. #}
   <div class="visionneuse-pdf-controls"
        style="flex:0 0 auto;display:flex;align-items:center;gap:8px;
               padding:6px 12px;background:#3a3d40;color:#e5e7eb;
@@ -81,25 +83,52 @@
     <button type="button" data-action="prev" disabled
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Page précédente du PDF (scroll)">
+            title="Page précédente">
       ‹
     </button>
-    <span data-page-info style="min-width:80px;text-align:center;
-                                font-variant-numeric:tabular-nums;">
-      — / —
+    <input type="number" data-page-input min="1" value="1"
+           style="width:48px;padding:2px 4px;text-align:center;
+                  background:#525659;color:#e5e7eb;border:1px solid #6b7280;
+                  border-radius:3px;font-variant-numeric:tabular-nums;
+                  font-size:12px;"
+           title="Aller à une page (Entrée pour valider)">
+    <span data-page-total style="min-width:30px;font-variant-numeric:tabular-nums;">
+      / —
     </span>
     <button type="button" data-action="next" disabled
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Page suivante du PDF (scroll)">
+            title="Page suivante">
       ›
     </button>
     <span style="flex:1;"></span>
+    <button type="button" data-action="zoom-out"
+            style="padding:3px 8px;background:#525659;color:#e5e7eb;
+                   border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
+            title="Dézoomer">
+      −
+    </button>
+    <span data-zoom-info style="min-width:48px;text-align:center;
+                                font-variant-numeric:tabular-nums;">
+      100 %
+    </span>
+    <button type="button" data-action="zoom-in"
+            style="padding:3px 8px;background:#525659;color:#e5e7eb;
+                   border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
+            title="Zoomer">
+      +
+    </button>
     <button type="button" data-action="zoom-fit"
             style="padding:3px 8px;background:#525659;color:#e5e7eb;
                    border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
-            title="Réajuster la largeur (re-render toutes les pages)">
+            title="Ajuster à la largeur (zoom 100 %)">
       ⤢
+    </button>
+    <button type="button" data-action="rotate"
+            style="padding:3px 8px;background:#525659;color:#e5e7eb;
+                   border:1px solid #6b7280;border-radius:3px;cursor:pointer;"
+            title="Tourner 90° dans le sens horaire">
+      ⟲
     </button>
     <a href="{{ url }}" target="_blank" rel="noopener"
        style="padding:3px 10px;background:#fff;color:#1f1f1f;
@@ -148,18 +177,29 @@
     const nom = wrapper.dataset.pdfNom;
     const scrollEl = wrapper.querySelector(".visionneuse-pdf-scroll");
     const pagesContainer = wrapper.querySelector(".visionneuse-pdf-pages-container");
-    const pageInfo = wrapper.querySelector("[data-page-info]");
+    const pageInput = wrapper.querySelector("[data-page-input]");
+    const pageTotal = wrapper.querySelector("[data-page-total]");
+    const zoomInfo = wrapper.querySelector("[data-zoom-info]");
     const erreur = wrapper.querySelector(".visionneuse-pdf-erreur");
     const btnPrev = wrapper.querySelector("[data-action='prev']");
     const btnNext = wrapper.querySelector("[data-action='next']");
+    const btnZoomOut = wrapper.querySelector("[data-action='zoom-out']");
+    const btnZoomIn = wrapper.querySelector("[data-action='zoom-in']");
     const btnZoomFit = wrapper.querySelector("[data-action='zoom-fit']");
+    const btnRotate = wrapper.querySelector("[data-action='rotate']");
 
     let pdf = null;
     let nbPages = 0;
     let pageVisible = 1;        // Page actuellement centrée dans le viewport
-    let scaleCible = 1.0;       // Scale pour fit la largeur
+    let scaleCible = 1.0;       // Scale fit-to-width (recalculé sur resize / rotation)
+    let zoomMult = 1.0;         // Multiplicateur utilisateur (×0.25 à ×4)
+    let rotation = 0;           // Rotation 0 / 90 / 180 / 270 (PDF.js degrees)
     let renderObserver = null;  // IntersectionObserver lazy render
     let visibilityObserver = null;  // IntersectionObserver compteur actif
+
+    const ZOOM_STEP = 1.2;
+    const ZOOM_MIN = 0.25;
+    const ZOOM_MAX = 4.0;
 
     function afficherErreur(msg) {
       erreur.textContent = msg;
@@ -167,9 +207,17 @@
     }
 
     function maj_compteur() {
-      pageInfo.textContent = `${pageVisible} / ${nbPages}`;
+      // L'input est en focus par l'utilisateur ? Ne pas écraser sa saisie.
+      if (document.activeElement !== pageInput) {
+        pageInput.value = String(pageVisible);
+      }
+      pageTotal.textContent = `/ ${nbPages}`;
+      pageInput.max = String(nbPages);
       btnPrev.disabled = pageVisible <= 1;
       btnNext.disabled = pageVisible >= nbPages;
+      zoomInfo.textContent = `${Math.round(zoomMult * 100)} %`;
+      btnZoomOut.disabled = zoomMult <= ZOOM_MIN + 1e-6;
+      btnZoomIn.disabled = zoomMult >= ZOOM_MAX - 1e-6;
     }
 
     let hauteurEstimee = 600;  // mise à jour par calculerScaleCible
@@ -178,17 +226,21 @@
       // Largeur dispo dans le scroll (moins padding)
       const largeurDispo = scrollEl.clientWidth - 32;
       // Utilise la 1ère page comme référence (les fac-similés ont
-      // généralement des pages de même format).
+      // généralement des pages de même format). On applique la
+      // rotation au viewport pour calculer la largeur visible après
+      // rotation : à 90°/270°, la « largeur » est la hauteur native.
       const page1 = await pdf.getPage(1);
-      const viewportNatif = page1.getViewport({ scale: 1 });
-      scaleCible = Math.max(0.25, Math.min(3, largeurDispo / viewportNatif.width));
-      // Estimation de hauteur pour les wrappers pas encore rendus :
-      // évite le scroll qui saute quand les pages se rendent
-      // progressivement (la vraie hauteur remplace l'estimation au
-      // render réel). Approxime avec le format de la 1ère page —
-      // suffisant pour les fac-similés (toutes les pages du même
-      // format).
-      hauteurEstimee = Math.round(viewportNatif.height * scaleCible);
+      const viewportRot = page1.getViewport({ scale: 1, rotation: rotation });
+      scaleCible = Math.max(0.25, Math.min(3, largeurDispo / viewportRot.width));
+      // Estimation de hauteur (× zoom utilisateur) pour les wrappers
+      // pas encore rendus : évite le scroll qui saute quand les pages
+      // se rendent progressivement (la vraie hauteur remplace
+      // l'estimation au render réel).
+      hauteurEstimee = Math.round(viewportRot.height * scaleCible * zoomMult);
+    }
+
+    function scaleEffectif() {
+      return scaleCible * zoomMult;
     }
 
     async function rendrePage(pageWrapper) {
@@ -197,7 +249,10 @@
       const n = parseInt(pageWrapper.dataset.pageNum, 10);
       try {
         const page = await pdf.getPage(n);
-        const viewport = page.getViewport({ scale: scaleCible });
+        const viewport = page.getViewport({
+          scale: scaleEffectif(),
+          rotation: rotation,
+        });
         const dpr = window.devicePixelRatio || 1;
 
         // Création canvas + text layer dans le wrapper
@@ -348,7 +403,50 @@
     btnNext.addEventListener("click", function () {
       if (pageVisible < nbPages) scrollVersPage(pageVisible + 1);
     });
-    btnZoomFit.addEventListener("click", ajusterLargeur);
+
+    // Input page : Enter ou blur déclenche le scroll. Clamp 1..nbPages.
+    function allerAPageInput() {
+      const n = parseInt(pageInput.value, 10);
+      if (Number.isNaN(n)) {
+        pageInput.value = String(pageVisible);
+        return;
+      }
+      const clamp = Math.max(1, Math.min(nbPages, n));
+      pageInput.value = String(clamp);
+      scrollVersPage(clamp);
+    }
+    pageInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        allerAPageInput();
+        pageInput.blur();
+      }
+    });
+    pageInput.addEventListener("blur", allerAPageInput);
+
+    btnZoomOut.addEventListener("click", function () {
+      const nouveau = Math.max(ZOOM_MIN, zoomMult / ZOOM_STEP);
+      if (nouveau === zoomMult) return;
+      zoomMult = nouveau;
+      ajusterLargeur();
+    });
+    btnZoomIn.addEventListener("click", function () {
+      const nouveau = Math.min(ZOOM_MAX, zoomMult * ZOOM_STEP);
+      if (nouveau === zoomMult) return;
+      zoomMult = nouveau;
+      ajusterLargeur();
+    });
+    btnZoomFit.addEventListener("click", function () {
+      // Reset au zoom 100 % (fit-to-width pur).
+      zoomMult = 1.0;
+      ajusterLargeur();
+    });
+    btnRotate.addEventListener("click", function () {
+      rotation = (rotation + 90) % 360;
+      // Le scale fit-to-width change avec la rotation (largeur native
+      // ↔ hauteur native sur 90°/270°). ajusterLargeur recalcule.
+      ajusterLargeur();
+    });
 
     pdfjsLib.getDocument({
       url: url,

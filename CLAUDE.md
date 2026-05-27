@@ -2290,6 +2290,21 @@ dédiée avec URI + label, pas en dur dans le code.
 - [ ] Journal de bord : vue calculée pure à partir des tables
       existantes (`ModificationItem`, `OperationFichier`), ou table
       `NoteCollection` pour entrées libres additionnelles ?
+- [ ] **Verrou optimiste sur suppression d'entités** (fonds /
+      collection / item) — reporté à V1.0 (avec l'auth multi-
+      utilisateurs). En mono-utilisateur local, le scénario « deux
+      onglets concurrents, l'un édite l'autre supprime » est
+      quasi-théorique. Quand l'auth arrivera, ajouter `version`
+      en hidden input sur le form de suppression + comparaison
+      service (analogue à `ConflitVersion` sur modify).
+- [ ] **Journal des suppressions d'entités** (fonds / collection /
+      item) — reporté à un chantier dédié plus large. La dette
+      actuelle est globale : `OperationFichier` ne couvre que les
+      fichiers, pas les modifs d'item, pas les delete d'entités.
+      Un chantier `OperationEntite` unique couvrirait tout en
+      cohérence (snapshot JSON pour undo possible sur la cascade
+      la plus destructive). Pas urgent tant que la double-
+      confirmation par recopie de cote suffit en pratique.
 - [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
       **À concevoir après le premier import réel**, pour indexer ce
       qui s'avère utile en pratique — ne pas anticiper. SQL et

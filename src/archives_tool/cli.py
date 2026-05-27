@@ -37,7 +37,7 @@ from archives_tool.api.services.items import (
     lire_item_par_cote,
     supprimer_item,
 )
-from sqlalchemy import select as sa_select
+from sqlalchemy import func as sa_func, select as sa_select
 from sqlalchemy.orm import selectinload
 
 from archives_tool.api.services.collections import (
@@ -1632,9 +1632,11 @@ def cmd_items_supprimer(
 ) -> None:
     """Supprimer un item et tous ses fichiers + annotations en cascade."""
     with _ouvrir_session_existante(db_path) as session:
+        # `--fonds` est requis (Typer enforce ...) donc `_resoudre_fonds_ou_sortie`
+        # ne retourne jamais None ici — soit elle résout, soit elle a déjà
+        # appelé `typer.Exit(1)`.
         fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
-        if fonds_obj is None:
-            raise typer.Exit(1)
+        assert fonds_obj is not None
         try:
             item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
         except ItemIntrouvable as e:
@@ -1685,12 +1687,21 @@ def cmd_fonds_supprimer(
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
 
-        nb_items = len(fonds_obj.items)
+        # Compteurs pour le récap : un seul SELECT COUNT par dimension
+        # pour éviter le N+1 sur `fonds.items` × `item.fichiers` (visible
+        # sur les gros fonds : PF = 173 items × 38 fichiers = 174 requêtes).
+        nb_items = session.scalar(
+            sa_select(sa_func.count(Item.id)).where(Item.fonds_id == fonds_obj.id)
+        )
+        nb_fichiers = session.scalar(
+            sa_select(sa_func.count(Fichier.id))
+            .join(Item, Fichier.item_id == Item.id)
+            .where(Item.fonds_id == fonds_obj.id)
+        )
         # Collections : miroir + libres rattachées. Les libres deviendront
         # transversales, on les compte séparément pour le récap.
         miroir = fonds_obj.collection_miroir
         libres = [c for c in fonds_obj.collections if c is not miroir]
-        nb_fichiers = sum(len(it.fichiers) for it in fonds_obj.items)
 
         if not confirme:
             typer.echo(

@@ -34,7 +34,7 @@ from archives_tool.api.services.annotations import (
     supprimer_annotation,
 )
 from archives_tool.api.services.conflits import ConflitVersion
-from archives_tool.models import Fichier
+from archives_tool.models import Fichier, ValeurControlee, Vocabulaire
 
 router = APIRouter(prefix="/api", tags=["annotations"])
 
@@ -234,3 +234,52 @@ def get_annotation(
         raise HTTPException(status_code=404, detail=str(e))
     base_url = str(request.base_url).rstrip("/")
     return JSONResponse(serialiser_w3c(annotation, base_url=base_url))
+
+
+# ---------------------------------------------------------------------------
+# Autocomplete vocabulaires (V0.9.7 γ.3)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/vocabulaires/autocomplete")
+def get_autocomplete_vocabulaires(
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Liste toutes les ValeurControlee actives, tout vocabulaire
+    confondu, pour alimenter l'autocomplete d'Annotorious.
+
+    Charge léger (qq centaines de valeurs typiquement). Pas de
+    pagination — si un jour le volume explose, ajouter ?q= avec
+    filtrage SQL LIKE.
+
+    Sortie : liste d'objets `{vocabulaire, code, libelle, uri}`.
+    Le client construit un datalist HTML5 + au save, si l'utilisateur
+    a tapé un libellé qui matche, on ajoute le body SpecificResource
+    avec l'URI (pivot Wikidata/VIAF). Sinon TextualBody value=<tag>.
+    """
+    from sqlalchemy import select
+
+    rows = db.execute(
+        select(
+            Vocabulaire.code.label("vocab_code"),
+            Vocabulaire.libelle.label("vocab_libelle"),
+            ValeurControlee.code,
+            ValeurControlee.libelle,
+            ValeurControlee.uri,
+        )
+        .join(ValeurControlee, ValeurControlee.vocabulaire_id == Vocabulaire.id)
+        .where(ValeurControlee.actif.is_(True))
+        .order_by(Vocabulaire.libelle, ValeurControlee.libelle)
+    ).all()
+
+    valeurs = [
+        {
+            "vocabulaire": row.vocab_libelle,
+            "vocabulaire_code": row.vocab_code,
+            "code": row.code,
+            "libelle": row.libelle,
+            "uri": row.uri,
+        }
+        for row in rows
+    ]
+    return JSONResponse({"valeurs": valeurs})

@@ -501,6 +501,58 @@ def test_route_get_unitaire_succes(base_demo: Path) -> None:
     assert r_get.json()["type"] == "Annotation"
 
 
+# ---------------------------------------------------------------------------
+# Autocomplete vocabulaires (V0.9.7 γ.3)
+# ---------------------------------------------------------------------------
+
+
+def test_route_autocomplete_vocabulaires_liste_actives(base_demo: Path) -> None:
+    """L'endpoint autocomplete liste les ValeurControlee actives avec
+    leurs URIs (pour le pivot Wikidata/VIAF). Couvre tous les
+    vocabulaires en une requête — alimentation Annotorious."""
+    from archives_tool.models import ValeurControlee, Vocabulaire
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = Vocabulaire(
+            code="dessinateurs",
+            libelle="Dessinateurs",
+            uri_base="https://www.wikidata.org/entity/",
+        )
+        s.add(vocab)
+        s.flush()
+        s.add(ValeurControlee(
+            vocabulaire_id=vocab.id, code="copi", libelle="Copi",
+            uri="https://www.wikidata.org/entity/Q733678",
+        ))
+        s.add(ValeurControlee(
+            vocabulaire_id=vocab.id, code="reiser", libelle="Reiser",
+            uri=None,  # pas d'URI = pas de pivot, juste tag
+        ))
+        s.add(ValeurControlee(
+            vocabulaire_id=vocab.id, code="vieux", libelle="Ancien",
+            uri="https://x", actif=False,  # déprécié, exclu
+        ))
+        s.commit()
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get("/api/vocabulaires/autocomplete")
+    assert r.status_code == 200
+    data = r.json()
+    libelles = {v["libelle"]: v for v in data["valeurs"]}
+    assert "Copi" in libelles
+    assert "Reiser" in libelles
+    # Déprécié filtré
+    assert "Ancien" not in libelles
+    # URI préservée
+    assert libelles["Copi"]["uri"] == "https://www.wikidata.org/entity/Q733678"
+    assert libelles["Reiser"]["uri"] is None
+    # Vocabulaire racine présent dans la sortie pour groupement client
+    assert libelles["Copi"]["vocabulaire"] == "Dessinateurs"
+
+
 def test_route_cascade_suppression_fichier(base_demo: Path) -> None:
     """Si on supprime le Fichier, ses annotations sont aussi
     supprimées (cascade ondelete + relationship cascade)."""

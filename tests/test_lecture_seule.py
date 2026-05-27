@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 
 from archives_tool.api.deps import est_lecture_seule
 from archives_tool.api.main import app
+from archives_tool.db import assurer_tables_fts, creer_engine
+from archives_tool.models import Base
 
 
 def _ecrire_config(chemin: Path, lecture_seule: bool, racine_demo: Path) -> None:
@@ -30,6 +32,26 @@ def _ecrire_config(chemin: Path, lecture_seule: bool, racine_demo: Path) -> None
     )
 
 
+def _amorcer_base_vide(tmp_path: Path) -> Path:
+    """Crée une SQLite avec uniquement le schéma (tables vides + FTS),
+    sans peupler. Les tests qui GET le dashboard / l'accueil import ont
+    besoin que les tables existent, mais pas de données — un état
+    « première installation » suffit.
+
+    Pourquoi cette fonction et pas `peupler_base` : `peupler_base` crée
+    333 items + 1298 fichiers + dérivés JPEG (~plusieurs secondes par
+    appel × N tests). Ces tests rendent uniquement la coquille HTML +
+    bannière lecture seule + filets JS — un schéma vide est suffisant
+    et 100× plus rapide.
+    """
+    chemin = tmp_path / "test.db"
+    engine = creer_engine(chemin)
+    Base.metadata.create_all(engine)
+    assurer_tables_fts(engine)
+    engine.dispose()
+    return chemin
+
+
 @pytest.fixture
 def config_lecture_seule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     racine = tmp_path / "miniatures"
@@ -37,6 +59,11 @@ def config_lecture_seule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     cfg = tmp_path / "config.yaml"
     _ecrire_config(cfg, lecture_seule=True, racine_demo=racine)
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+    # Schéma seul — les tests ici ne consultent pas de données, ils
+    # vérifient la coquille HTML + middleware. Sans cette amorce, l'app
+    # tombe sur `data/archives.db` (défaut) qui n'existe pas sur un
+    # checkout propre → OperationalError au premier SELECT.
+    monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_base_vide(tmp_path)))
     return cfg
 
 
@@ -47,6 +74,7 @@ def config_normale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yaml"
     _ecrire_config(cfg, lecture_seule=False, racine_demo=racine)
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+    monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_base_vide(tmp_path)))
     return cfg
 
 

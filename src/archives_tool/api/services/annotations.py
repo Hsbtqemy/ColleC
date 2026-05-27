@@ -285,3 +285,86 @@ def supprimer_annotation(db: Session, annotation_id: int) -> None:
         return
     db.delete(annotation)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Export Nakala (V0.9.7 δ) — sérialisation AnnotationCollection W3C
+# pour dépôt à côté des images d'un item ou d'une collection.
+# ---------------------------------------------------------------------------
+
+
+def lister_annotations_item(
+    db: Session, item_id: int
+) -> tuple[AnnotationRegion, ...]:
+    """Toutes les annotations des fichiers d'un item, triées par
+    (fichier_id, cree_le). Pour l'export par item (granularité
+    typique Nakala : un AnnotationCollection par numéro de revue)."""
+    from archives_tool.models import Fichier
+
+    rows = db.scalars(
+        select(AnnotationRegion)
+        .join(Fichier, Fichier.id == AnnotationRegion.fichier_id)
+        .where(Fichier.item_id == item_id)
+        .order_by(AnnotationRegion.fichier_id, AnnotationRegion.cree_le)
+    ).all()
+    return tuple(rows)
+
+
+def lister_annotations_collection(
+    db: Session, collection_id: int
+) -> tuple[AnnotationRegion, ...]:
+    """Toutes les annotations de tous les items d'une collection.
+    Granularité par collection (= un seul AnnotationCollection JSON)
+    pour les corpus moyennement riches. Tri stable (fichier, cree_le)."""
+    from archives_tool.models import Fichier, Item, ItemCollection
+
+    rows = db.scalars(
+        select(AnnotationRegion)
+        .join(Fichier, Fichier.id == AnnotationRegion.fichier_id)
+        .join(Item, Item.id == Fichier.item_id)
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(ItemCollection.collection_id == collection_id)
+        .order_by(AnnotationRegion.fichier_id, AnnotationRegion.cree_le)
+    ).all()
+    return tuple(rows)
+
+
+def serialiser_annotation_collection_w3c(
+    annotations: list[AnnotationRegion],
+    *,
+    label: str,
+    collection_id_uri: str,
+    base_url: str = "",
+) -> dict[str, Any]:
+    """Sérialise un ensemble d'annotations en W3C `AnnotationCollection`.
+
+    Format pour dépôt à côté des images sur Nakala (référencé dans le
+    manifeste IIIF de l'item). Spec W3C Web Annotation §6.3
+    (https://www.w3.org/TR/annotation-model/#annotation-collection).
+
+    Un seul `AnnotationPage` pour la simplicité (acceptable jusqu'à
+    quelques milliers d'annotations dans un seul fichier ; au-delà,
+    paginer par canvas). Annotations triées dans l'ordre du listing
+    (par fichier puis par création).
+
+    ``label`` : libellé humain du corpus (« Annotations de Por Favor
+    n°2 »). ``collection_id_uri`` : identifiant URI canonique du
+    AnnotationCollection — typiquement le DOI Nakala de l'item /
+    collection une fois publiée.
+    """
+    items = [serialiser_w3c(a, base_url=base_url) for a in annotations]
+    page_id = f"{collection_id_uri}/page/1" if collection_id_uri else ""
+    return {
+        "@context": "http://www.w3.org/ns/anno.jsonld",
+        "id": collection_id_uri,
+        "type": "AnnotationCollection",
+        "label": label,
+        "total": len(items),
+        "first": {
+            "id": page_id,
+            "type": "AnnotationPage",
+            "partOf": collection_id_uri,
+            "next": None,
+            "items": items,
+        },
+    }

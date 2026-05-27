@@ -18,7 +18,7 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.6 stable livré** (1090/1090 tests verts, doc déployée
+**Statut :** **V0.9.7 stable livré** (1090/1090 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
 (synthèse collection + fonds avec cartographie cross-collection +
@@ -1760,7 +1760,7 @@ cotes.
 27 tests (15 service, 6 CLI, 9 UI dont 4 garde-fou : transversale,
 lecture seule pour le bouton + le POST).
 
-**Annotations IIIF ✅ α + β + γ livrés** —
+**Annotations IIIF ✅ α + β + γ + δ livrés** —
 [`annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 Module d'annotation d'image conforme W3C Web Annotation Data Model
 + IIIF Presentation API 3. Cible : chantier Por Favor (identifier
@@ -1841,8 +1841,31 @@ sur image, absent sur PDF, rendu en lecture seule) + 2 tests
 autocomplete avec filtrage actif=true). 43 tests annotations au
 total.
 
-Reste **δ** (export Nakala JSON W3C déposé à côté des images,
-référencé dans le manifeste IIIF de l'item).
+- **δ — Export Nakala JSON W3C** (commit en cours) :
+  `serialiser_annotation_collection_w3c` enveloppe la liste
+  `lister_annotations_collection` (ou `..._item`) dans un W3C
+  AnnotationCollection avec un seul AnnotationPage. Format conforme
+  à la spec W3C Web Annotation §6.3 + IIIF Presentation API 3 :
+  `@context`, `id`, `type=AnnotationCollection`, `label`, `total`,
+  `first.{id, type, partOf, items}`. Le pivot URI Wikidata présent
+  dans `body.source.id` (créé par γ.3 via Annotorious natif) est
+  préservé tel quel dans l'export — utilisable directement par
+  Mirador / Recogito / portail futur.
+  CLI : `archives-tool exporter annotations <cote_collection>
+  [--fonds X] [--sortie path.json]`. URI canonique du
+  AnnotationCollection : DOI Nakala de la collection si publié,
+  sinon URI relative locale (à remplacer manuellement après dépôt
+  Nakala).
+- **Bonus γ-fiche** (commit `83eb98f`) : remplace le placeholder
+  « Annotations IIIF (V2) » de la fiche notice `/item/<cote>` par
+  la liste des tags agrégés depuis tous les fichiers de l'item
+  (TagAnnotationAgrege libellé/uri/nb). Tri fréquence desc + alpha,
+  libellé clickable vers l'URI si présente (Wikidata/VIAF).
+  Dédup par (libellé, uri) pour distinguer un tag libre « Copi »
+  d'un tag Wikidata « Copi ». Vue d'ensemble du catalogage sur la
+  notice sans devoir ouvrir page par page.
+
+48 tests annotations au total (α + β + γ + δ + γ-fiche).
 
 **Suppression d'entités depuis l'UI** (suite du chantier V0.9.7) —
 manque historique comblé : le projet avait des CRUD complets partout
@@ -1962,11 +1985,12 @@ Claude Code).
 - Onglet « Avancement » consolidé sur la page Fonds (lecture par
   jalons : planifiés / numérisés / OCR / catalogués / validés) —
   voir [`docs/developpeurs/plan-de-chantier.md`](docs/developpeurs/plan-de-chantier.md).
-- 🚧 **Module d'annotation d'image** (W3C Web Annotations sur
-  l'OpenSeadragon existant via Annotorious) — **α + β + γ livrés
-  en V0.9.7** (modèle + 5 routes REST + Annotorious sur OSD +
-  panneau latéral + autocomplete vocabulaire avec pivot URI
-  Wikidata/VIAF, 43 tests). Reste δ (export Nakala). Voir
+- ✅ **Module d'annotation d'image** (W3C Web Annotations sur
+  l'OpenSeadragon existant via Annotorious) — **α + β + γ + δ
+  livrés en V0.9.7** (modèle + 5 routes REST + Annotorious sur
+  OSD + panneau latéral + autocomplete vocabulaire avec pivot URI
+  Wikidata/VIAF + export JSON W3C AnnotationCollection,
+  48 tests). Voir
   [`docs/developpeurs/annotations-image-future.md`](docs/developpeurs/annotations-image-future.md).
 - **Export site statique** (arbre Markdown + assets prêt pour
   Quarto en phase 1, Hugo en phase 3, autres SSG extensibles via

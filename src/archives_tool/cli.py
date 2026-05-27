@@ -488,6 +488,72 @@ def cmd_exporter_xlsx(
     _afficher_rapport_export(rapport, verbose)
 
 
+@exporter_app.command("annotations")
+def cmd_exporter_annotations(
+    cote: str = typer.Argument(..., help="Cote de la collection à exporter."),
+    fonds: str | None = typer.Option(
+        None,
+        "--fonds",
+        "-f",
+        help="Cote du fonds parent (pour désambiguïser une cote partagée).",
+    ),
+    sortie: Path | None = typer.Option(
+        None,
+        "--sortie",
+        "-o",
+        help=(
+            "Chemin du fichier JSON-LD W3C (défaut : "
+            "<cote>_annotations.json dans le cwd)."
+        ),
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Exporte les annotations IIIF d'une collection en W3C
+    AnnotationCollection JSON-LD (V0.9.7 δ).
+
+    Format conforme à la spec W3C Web Annotation Data Model et à
+    IIIF Presentation API 3. Fichier à déposer à côté des images
+    sur Nakala et à référencer dans le manifeste IIIF de l'item /
+    collection. Réversible vers Mirador, Recogito ou tout autre
+    viewer standard.
+
+    Un seul AnnotationPage (acceptable jusqu'à qq milliers
+    d'annotations). Au-delà, paginer par canvas (lot futur).
+    """
+    import json
+
+    from archives_tool.api.services.annotations import (
+        lister_annotations_collection,
+        serialiser_annotation_collection_w3c,
+    )
+
+    chemin = sortie or Path.cwd() / f"{cote}_annotations.json"
+    with _ouvrir_session_existante(db_path) as session:
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        annotations = lister_annotations_collection(session, collection.id)
+        # URI canonique : DOI Nakala si publié, sinon URI relative locale.
+        # Une fois Nakala dépôt fait, on peut re-générer le JSON avec
+        # le vrai DOI à la place — le fichier d'export reflète la
+        # réalité au moment de l'export.
+        collection_id_uri = (
+            collection.doi_nakala
+            if collection.doi_nakala
+            else f"/api/collections/{collection.cote}/annotations"
+        )
+        payload = serialiser_annotation_collection_w3c(
+            list(annotations),
+            label=f"Annotations de {collection.titre}",
+            collection_id_uri=collection_id_uri,
+        )
+    chemin.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    typer.echo(
+        f"✓ {len(annotations)} annotation(s) exportée(s) vers {chemin}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sous-groupe `montrer` : commandes de visualisation en lecture seule.
 # ---------------------------------------------------------------------------

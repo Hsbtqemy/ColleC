@@ -638,6 +638,113 @@ def test_route_autocomplete_vocabulaires_liste_actives(base_demo: Path) -> None:
     assert libelles["Copi"]["vocabulaire"] == "Dessinateurs"
 
 
+# ---------------------------------------------------------------------------
+# Export Nakala δ — sérialisation AnnotationCollection W3C
+# ---------------------------------------------------------------------------
+
+
+def test_serialiser_annotation_collection_w3c_format_complet(
+    base_demo: Path,
+) -> None:
+    """Garde-fou format W3C AnnotationCollection : @context, type,
+    label, total, first (AnnotationPage avec items). Spec W3C Web
+    Annotation §6.3."""
+    from archives_tool.api.services.annotations import (
+        serialiser_annotation_collection_w3c,
+    )
+    fid = _premier_fichier_id(base_demo)
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        a1 = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "x"}],
+            ),
+        )
+        a2 = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=20,20,10,10",
+                corps=[{"type": "TextualBody", "value": "y"}],
+            ),
+        )
+        payload = serialiser_annotation_collection_w3c(
+            [a1, a2],
+            label="Test collection",
+            collection_id_uri="https://example.org/coll/HK",
+        )
+    engine.dispose()
+
+    assert payload["@context"] == "http://www.w3.org/ns/anno.jsonld"
+    assert payload["type"] == "AnnotationCollection"
+    assert payload["label"] == "Test collection"
+    assert payload["total"] == 2
+    assert payload["id"] == "https://example.org/coll/HK"
+    assert payload["first"]["type"] == "AnnotationPage"
+    assert payload["first"]["partOf"] == "https://example.org/coll/HK"
+    assert len(payload["first"]["items"]) == 2
+    # Chaque item est une Annotation W3C valide
+    for item in payload["first"]["items"]:
+        assert item["type"] == "Annotation"
+        assert "target" in item
+
+
+def test_lister_annotations_collection_couvre_tous_les_items(
+    base_demo: Path,
+) -> None:
+    """Garde-fou : lister_annotations_collection charge bien les
+    annotations DE TOUS les items de la collection via la junction
+    ItemCollection — pas juste un item au hasard."""
+    from sqlalchemy import select
+    from archives_tool.api.services.annotations import (
+        lister_annotations_collection,
+    )
+    from archives_tool.models import Collection, Fichier, TypeCollection
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        # Récupère 2 fichiers de 2 items différents dans la miroir HK
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        fichiers = list(
+            s.scalars(select(Fichier).order_by(Fichier.item_id, Fichier.ordre).limit(10)).all()
+        )
+        # Prendre 1 fichier de 2 items distincts
+        item_ids_distincts = []
+        fichiers_distincts = []
+        for f in fichiers:
+            if f.item_id not in item_ids_distincts:
+                item_ids_distincts.append(f.item_id)
+                fichiers_distincts.append(f)
+            if len(fichiers_distincts) == 2:
+                break
+        assert len(fichiers_distincts) == 2
+
+        # Annote chaque fichier d'un tag distinct
+        creer_annotation(s, fichiers_distincts[0].id, FormulaireAnnotation(
+            selecteur="xywh=0,0,1,1",
+            corps=[{"type": "TextualBody", "value": "tag-a"}],
+        ))
+        creer_annotation(s, fichiers_distincts[1].id, FormulaireAnnotation(
+            selecteur="xywh=0,0,1,1",
+            corps=[{"type": "TextualBody", "value": "tag-b"}],
+        ))
+
+        # lister couvre les 2 annotations
+        annotations = lister_annotations_collection(s, miroir.id)
+        valeurs = {a.corps[0]["value"] for a in annotations}
+        assert "tag-a" in valeurs
+        assert "tag-b" in valeurs
+    engine.dispose()
+
+
 def test_route_cascade_suppression_fichier(base_demo: Path) -> None:
     """Si on supprime le Fichier, ses annotations sont aussi
     supprimées (cascade ondelete + relationship cascade)."""

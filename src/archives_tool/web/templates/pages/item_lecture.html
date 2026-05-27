@@ -30,6 +30,19 @@
 
 {{ bandeau_item(item, fonds, detail.nb_fichiers, detail.navigation, detail.collections, q_surligne=q_surligne) }}
 
+{# Bouton « ← Notice » : pendant inverse du « Visionneuse → » de la
+   fiche item. Sur la visionneuse l'utilisateur cataloguait page par
+   page, mais doit pouvoir revenir à la notice à tout moment sans
+   chercher un lien obscur. Même placement que « Visionneuse → »
+   sur la fiche pour cohérence visuelle (mirror). #}
+<div class="flex items-center justify-end mb-3 gap-2" style="font-size:13px;">
+  <a href="/item/{{ item.cote }}?fonds={{ fonds.cote }}"
+     class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+     style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+    ← Notice
+  </a>
+</div>
+
 <div class="layout-trois-zones flex gap-4"
      style="height:calc(100vh - 240px);min-height:520px;">
   {{ panneau_fichiers(detail.fichiers, detail.position_courante, item.cote, fonds_cote, mode_visionneuse=True) }}

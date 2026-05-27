@@ -127,7 +127,17 @@ def serialiser_w3c(annotation: AnnotationRegion, *, base_url: str = "") -> dict[
     if annotation.selecteur_type == "svg":
         selector = {"type": "SvgSelector", "value": annotation.selecteur}
     else:
-        selector = {"type": "FragmentSelector", "value": annotation.selecteur}
+        # `conformsTo` est exigé par Annotorious 2.7 qui appelle
+        # `selector.conformsTo.startsWith("http://www.w3.org/TR/media-frags")`
+        # quand il ré-ingère un FragmentSelector (cf. crash V0.9.7 β
+        # à la première création d'annotation). C'est aussi conforme
+        # au spec W3C qui le requiert pour désambiguïser la grammaire
+        # de fragment (W3C Web Annotation Data Model §4.2.4).
+        selector = {
+            "type": "FragmentSelector",
+            "conformsTo": "http://www.w3.org/TR/media-frags/",
+            "value": annotation.selecteur,
+        }
 
     # W3C spec : les champs optionnels DOIVENT être omis quand absents
     # (pas inclus en `null`). Les serializers stricts (Mirador, etc.)

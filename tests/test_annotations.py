@@ -272,6 +272,13 @@ def test_serialiser_w3c_format_canonique(base_demo: Path) -> None:
         assert w3c["motivation"] == "identifying"
         assert w3c["creator"] == "marie"
         assert w3c["target"]["selector"]["type"] == "FragmentSelector"
+        # `conformsTo` est requis : Annotorious 2.7 crash sans (cf.
+        # fix β V0.9.7) et le spec W3C l'exige pour désambiguïser la
+        # grammaire de fragment. Valeur canonique media-fragments.
+        assert (
+            w3c["target"]["selector"]["conformsTo"]
+            == "http://www.w3.org/TR/media-frags/"
+        )
         assert w3c["target"]["selector"]["value"] == "xywh=100,200,50,50"
         assert "/api/fichiers/" in w3c["target"]["source"]
         assert isinstance(w3c["body"], list)

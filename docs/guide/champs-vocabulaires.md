@@ -129,6 +129,36 @@ Suppression d'un vocabulaire : refusée tant qu'un
 `ChampPersonnalise` y fait référence. Le message d'erreur liste
 les champs en cause pour faciliter le détachage.
 
+### Restreindre un vocabulaire à certains fonds (portée)
+
+Par défaut, un vocabulaire est **global** : ses valeurs sont
+proposées dans l'autocomplete d'annotations de tous les fonds.
+Utile pour les vocabs transverses (langues, types iconographiques
+courants). Mais sur un vocab spécifique à un corpus (ex.
+« Dessinateurs Hara-Kiri »), proposer les noms sur un fonds
+Por Favor pollue les suggestions.
+
+La page détail d'un vocabulaire (`/vocabulaires/<id>`) propose
+une section **« Fonds rattachés »** avec une carte par fonds de
+la base. Clic sur une carte blanche « + » → le vocabulaire est
+restreint à ce fonds (carte devient bleue « ✓ »). Re-clic → on
+détache (retour blanc). Un vocab rattaché à plusieurs fonds est
+visible dans tous ; un vocab sans aucun rattachement reste global.
+
+La page liste (`/vocabulaires`) affiche un badge dans la colonne
+**« Portée »** : « global » (gris, aucun rattachement) ou
+« N fonds » (bleu, avec tooltip listant les cotes). Repère
+visuel pour identifier les vocabs qui « polluent » partout.
+
+**Effets immédiats** : l'autocomplete Annotorious du viewer
+catalogage récupère le filtrage à chaque ouverture de fichier.
+Les annotations déjà saisies en libre dans un fonds ne sont **pas**
+réécrites quand on rattache le vocab après coup — pour les
+enrichir (associer leur URI Wikidata par exemple), il faudra un
+service d'enrichissement rétroactif (T4 non encore livré). Pour
+l'instant, taper un libellé matchant une valeur du vocab **au
+moment de l'annotation** crée le pivot URI directement.
+
 ## Étape 4 — Éditer les valeurs sur un item
 
 Page `/item/<cote>/modifier?fonds=<f>` : section **« Champs

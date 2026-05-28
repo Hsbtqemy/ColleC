@@ -429,6 +429,29 @@ def test_detacher_via_route(
         assert v_relu.fonds_rattaches == []
 
 
+def test_attacher_idempotent_via_route(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """POST attacher sur un vocab DÉJÀ rattaché → 303 sans erreur ni
+    doublon (contrat idempotent du service, vérifié au niveau route)."""
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        attacher_vocabulaire_au_fonds(s, v.id, hk.id)
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/HK/attacher")
+    assert r.status_code == 303
+
+    with db_factory() as s:
+        v_relu = s.get(Vocabulaire, vid)
+        # Toujours rattaché une seule fois — pas de doublon.
+        assert [f.cote for f in v_relu.fonds_rattaches] == ["HK"]
+
+
 def test_attacher_fonds_inconnu_404(
     db_factory, monkeypatch, tmp_path: Path
 ) -> None:

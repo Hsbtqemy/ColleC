@@ -34,22 +34,28 @@
    *  Vérifié dans le bundle openseadragon-annotorious.min.js :
    *  `onSubmit: function(e) { var n = e.uri ? { type: 'SpecificResource',
    *   purpose: 'tagging', source: { id: e.uri, label: e.label } }
-   *   : { type: 'TextualBody', purpose: 'tagging', value: e.label || e } }` */
-  const _vocabEntrees = [];
+   *   : { type: 'TextualBody', purpose: 'tagging', value: e.label || e } }`
+   *
+   *  Le vocab n'est PAS un singleton global : chaque viewer reçoit
+   *  son propre array (récupéré par `chargerVocabulaires(fichierId)`).
+   *  Évite toute fuite quand deux viewers de fonds différents
+   *  coexistent (cas théorique aujourd'hui avec layout 3-zones, mais
+   *  garde-fou contre une régression UX si l'architecture change). */
 
-  /** Précharge les valeurs vocabulaire pour l'autocomplete. Non-bloquant :
-   *  si l'endpoint échoue, Annotorious démarre sans suggestions et
-   *  l'utilisateur peut quand même taper librement.
+  /** Charge les valeurs vocabulaire pour l'autocomplete d'un fichier.
+   *  Retourne un array FRESH (jamais partagé) — chaque viewer reçoit
+   *  son propre vocab, évitant toute fuite entre fonds.
    *
    *  Quand `fichierId` est fourni, l'endpoint résout fichier → item →
    *  fonds et filtre les vocabulaires selon le rattachement vocab ↔
    *  fonds (cf. `vocabulaire-scoping-future.md` T2). Sans fichier_id,
    *  l'endpoint retourne tout (mode global).
    *
-   *  Remplit `_vocabEntrees` en place (vidé d'abord pour éviter les
-   *  doublons quand on navigue entre fichiers de fonds différents). */
+   *  Non-bloquant : si l'endpoint échoue, retourne un array vide et
+   *  Annotorious démarre sans suggestions — l'utilisateur peut quand
+   *  même taper librement. */
   async function chargerVocabulaires(fichierId) {
-    _vocabEntrees.length = 0;
+    const entrees = [];
     const url = fichierId
       ? `/api/vocabulaires/autocomplete?fichier_id=${encodeURIComponent(fichierId)}`
       : "/api/vocabulaires/autocomplete";
@@ -57,7 +63,7 @@
       const r = await fetch(url);
       if (!r.ok) {
         console.warn("[annotations] autocomplete HTTP", r.status);
-        return;
+        return entrees;
       }
       const data = await r.json();
       for (const v of data.valeurs || []) {
@@ -65,19 +71,20 @@
         // Si URI présent : Annotorious crée un SpecificResource au save.
         // Sinon : juste un libellé pour la suggestion (TextualBody).
         if (v.uri) {
-          _vocabEntrees.push({ label: v.libelle, uri: v.uri });
+          entrees.push({ label: v.libelle, uri: v.uri });
         } else {
-          _vocabEntrees.push(v.libelle);
+          entrees.push(v.libelle);
         }
       }
       console.info(
         "[annotations] vocab préchargé (fichier=" + (fichierId || "global") + ") :",
-        _vocabEntrees.length,
+        entrees.length,
         "entrées",
       );
     } catch (e) {
       console.warn("[annotations] Précharge vocabulaires échouée :", e);
     }
+    return entrees;
   }
 
   /** Récupère l'ID local d'une annotation depuis son URI W3C. */
@@ -261,8 +268,14 @@
     await fetch(`/api/annotations/${id}`, { method: "DELETE" });
   }
 
-  /** Initialise Annotorious sur une instance OSD. */
-  function initialiserAnnotorious(osd, fichierId) {
+  /** Initialise Annotorious sur une instance OSD.
+   *
+   *  `vocabEntrees` est l'array de vocab spécifique à ce fichier
+   *  (récupéré par `chargerVocabulaires(fichierId)` côté caller).
+   *  On passe une COPIE (`.slice()`) au widget pour qu'Annotorious
+   *  ne capture pas la référence externe — défense en profondeur
+   *  contre toute mutation accidentelle ultérieure. */
+  function initialiserAnnotorious(osd, fichierId, vocabEntrees) {
     if (fichierId == null) {
       console.warn(
         "[annotations] fichier_id absent — annotations désactivées.",
@@ -287,7 +300,7 @@
       //              On place TAG en premier pour qu'il soit l'élément
       //              de saisie naturellement focus.
       widgets: [
-        { widget: "TAG", vocabulary: _vocabEntrees },
+        { widget: "TAG", vocabulary: (vocabEntrees || []).slice() },
         "COMMENT",
       ],
     });
@@ -355,11 +368,10 @@
     const { osd, fichier_id } = e.detail || {};
     if (!osd) return;
     // Charge le vocab filtré par le fichier courant — Annotorious démarre
-    // avec les suggestions adaptées au fonds (cf. T2 scoping). Le widget
-    // TAG capture la référence à `_vocabEntrees` à l'instanciation, donc
-    // le remplissage doit être terminé AVANT initialiserAnnotorious.
-    await chargerVocabulaires(fichier_id);
-    const anno = initialiserAnnotorious(osd, fichier_id);
+    // avec les suggestions adaptées au fonds (cf. T2 scoping). Chaque
+    // viewer reçoit son propre array (pas de singleton partagé).
+    const vocabEntrees = await chargerVocabulaires(fichier_id);
+    const anno = initialiserAnnotorious(osd, fichier_id, vocabEntrees);
     if (anno) {
       _annosParViseur.set(viz, anno);
     }

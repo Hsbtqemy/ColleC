@@ -355,19 +355,82 @@
     }
   });
 
+  /** Outils de dessin supportés. Annotorious 2.x accepte ces deux-là.
+   *  - `rect`    : rectangle aligné. Drag pour dessiner.
+   *  - `polygon` : polygone libre. Clic pour ajouter un point,
+   *                double-clic pour fermer la forme. */
+  const _OUTILS_VALIDES = new Set(["rect", "polygon"]);
+
+  /** Retrouve le viewer + anno associé à un bouton du groupe (toggle
+   *  Annoter ou sélecteur d'outil). Les boutons partagent un attribut
+   *  `data-annoter-cible="visionneuse-<id>"` qui pointe sur le viewer. */
+  function annoDepuisBouton(btn) {
+    const cibleId = btn.dataset.annoterToggle || btn.dataset.annoterCible;
+    if (!cibleId) return { viz: null, anno: null };
+    const viz = document.getElementById(cibleId);
+    if (!viz) return { viz: null, anno: null };
+    return { viz, anno: _annosParViseur.get(viz) || null };
+  }
+
+  /** Met à jour l'état visuel des boutons d'outil (actif = data-actif="1"). */
+  function rafraichirBoutonsOutil(cibleId, outilActif) {
+    const boutons = document.querySelectorAll(
+      `[data-annoter-outil][data-annoter-cible="${cibleId}"]`,
+    );
+    boutons.forEach(function (b) {
+      b.dataset.actif = b.dataset.annoterOutil === outilActif ? "1" : "0";
+    });
+  }
+
+  /** Affiche / masque le groupe d'outils selon que l'édition est active. */
+  function rafraichirVisibiliteOutils(cibleId, edition) {
+    const groupe = document.querySelector(
+      `[data-annoter-outils][data-annoter-cible="${cibleId}"]`,
+    );
+    if (groupe) {
+      groupe.dataset.edition = edition ? "1" : "0";
+    }
+  }
+
   // Bouton externe « Annoter » → bascule readOnly + setDrawingTool
   // sur le viewer cible. Le bouton porte `data-annoter-toggle` avec
   // la valeur = id du viewer (`visionneuse-<fichier_id>`).
+  // Boutons d'outil (`data-annoter-outil="rect|polygon"`) basculent
+  // l'outil actif sans toucher au mode lecture/édition.
   document.addEventListener("click", function (e) {
+    // Switch d'outil pendant l'édition.
+    const btnOutil = e.target.closest("[data-annoter-outil]");
+    if (btnOutil) {
+      e.preventDefault();
+      const { anno, viz } = annoDepuisBouton(btnOutil);
+      if (!anno || !viz) return;
+      const outil = btnOutil.dataset.annoterOutil;
+      if (!_OUTILS_VALIDES.has(outil)) return;
+      // Si on est encore en lecture, le clic sur un outil active aussi
+      // l'édition — geste plus naturel que de forcer deux clics.
+      if (anno.readOnly) {
+        anno.readOnly = false;
+        const btnToggle = document.querySelector(
+          `[data-annoter-toggle="${viz.id}"]`,
+        );
+        if (btnToggle) {
+          btnToggle.dataset.annoterActif = "1";
+          btnToggle.textContent = "Annoter (actif)";
+        }
+        rafraichirVisibiliteOutils(viz.id, true);
+      }
+      anno.setDrawingTool(outil);
+      rafraichirBoutonsOutil(viz.id, outil);
+      return;
+    }
+
+    // Toggle édition / lecture.
     const btn = e.target.closest("[data-annoter-toggle]");
     if (!btn) return;
     e.preventDefault();
-    const cibleId = btn.dataset.annoterToggle;
-    const viz = document.getElementById(cibleId);
-    if (!viz) return;
-    const anno = _annosParViseur.get(viz);
-    if (!anno) {
-      console.warn("[annotations] Pas d'instance Annotorious sur", cibleId);
+    const { anno, viz } = annoDepuisBouton(btn);
+    if (!anno || !viz) {
+      console.warn("[annotations] Pas d'instance Annotorious sur", btn.dataset.annoterToggle);
       return;
     }
     // Toggle readOnly. Annotorious 2.x : `setDrawingEnabled` est
@@ -376,13 +439,19 @@
     anno.readOnly = !enLecture;
     btn.dataset.annoterActif = enLecture ? "1" : "0";
     btn.textContent = enLecture ? "Annoter (actif)" : "Annoter";
+    rafraichirVisibiliteOutils(viz.id, enLecture);
     if (!enLecture) {
       // On bascule en lecture : neutraliser tout dessin en cours.
       try { anno.cancelSelected(); } catch (_) {}
     } else {
-      // Activation : outil rectangle par défaut. Annotorious 2.x
-      // accepte "rect" et "polygon".
-      anno.setDrawingTool("rect");
+      // Activation : on respecte un outil déjà sélectionné si présent,
+      // sinon rectangle par défaut.
+      const dejaActif = document.querySelector(
+        `[data-annoter-outil][data-annoter-cible="${viz.id}"][data-actif="1"]`,
+      );
+      const outil = dejaActif ? dejaActif.dataset.annoterOutil : "rect";
+      anno.setDrawingTool(outil);
+      rafraichirBoutonsOutil(viz.id, outil);
     }
   });
 })();

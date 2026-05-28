@@ -389,6 +389,47 @@ def test_route_post_creer_annotation_forme_w3c_native(base_demo: Path) -> None:
     )
 
 
+def test_route_post_creer_annotation_polygone_svg(base_demo: Path) -> None:
+    """POST avec forme W3C native + SvgSelector (polygone) — round-trip
+    complet : la sortie GET ré-émet bien SvgSelector et préserve le SVG.
+
+    Cas réel : Annotorious 2.7 avec `setDrawingTool("polygon")` envoie
+    un `target.selector.type = "SvgSelector"` avec `value = "<svg>...
+    <polygon points='..'/></svg>"`. La route doit le mapper en interne
+    sur `selecteur_type='svg'` et le ressortir tel quel.
+    """
+    fid = _premier_fichier_id(base_demo)
+    client = TestClient(app)
+    svg = (
+        '<svg><polygon points="120.5,80.2 350.1,90.0 '
+        '410.7,260.5 200.3,310.8 90.4,180.0"/></svg>'
+    )
+    r = client.post(
+        f"/api/fichiers/{fid}/annotations",
+        json={
+            "type": "Annotation",
+            "motivation": "tagging",
+            "target": {
+                "selector": {"type": "SvgSelector", "value": svg},
+            },
+            "body": [
+                {"type": "TextualBody", "purpose": "tagging", "value": "caricature"}
+            ],
+        },
+    )
+    assert r.status_code == 201, r.text
+    w3c = r.json()
+    # La sortie doit conserver SvgSelector + le SVG intact.
+    assert w3c["target"]["selector"]["type"] == "SvgSelector"
+    assert w3c["target"]["selector"]["value"] == svg
+    # Listing : GET ré-émet aussi SvgSelector (round-trip stable).
+    r_get = client.get(f"/api/fichiers/{fid}/annotations")
+    items = r_get.json()["items"]
+    assert len(items) == 1
+    assert items[0]["target"]["selector"]["type"] == "SvgSelector"
+    assert items[0]["target"]["selector"]["value"] == svg
+
+
 def test_route_post_payload_invalide_400(base_demo: Path) -> None:
     """POST avec corps vide → 400 + erreurs."""
     fid = _premier_fichier_id(base_demo)

@@ -118,6 +118,34 @@
               style="padding:4px 10px;border:1px solid rgba(0,0,0,0.20);border-radius:4px;background:rgba(255,255,255,0.92);cursor:pointer;color:#374151;backdrop-filter:blur(4px);">
         Annoter
       </button>
+      {# Sélecteur d'outil — visible uniquement en mode édition
+         (data-edition="1" posé par annotations_osd.js). Deux outils :
+         rectangle (drag) et polygone (clic + double-clic pour fermer).
+         Le bouton actif a data-actif="1" (fond bleu pâle). #}
+      <div data-annoter-outils
+           data-annoter-cible="visionneuse-{{ f_courant.id }}"
+           data-edition="0"
+           class="annoter-outils"
+           style="display:flex;gap:4px;align-items:center;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:rgba(255,255,255,0.92);padding:2px;backdrop-filter:blur(4px);">
+        <button type="button"
+                data-annoter-outil="rect"
+                data-annoter-cible="visionneuse-{{ f_courant.id }}"
+                data-actif="1"
+                title="Rectangle — glisser pour dessiner"
+                class="annoter-outil"
+                style="padding:2px 8px;border:0;background:transparent;cursor:pointer;color:#374151;border-radius:3px;font-size:12px;line-height:1.2;">
+          ▭ Rectangle
+        </button>
+        <button type="button"
+                data-annoter-outil="polygon"
+                data-annoter-cible="visionneuse-{{ f_courant.id }}"
+                data-actif="0"
+                title="Polygone — cliquer pour ajouter des points, double-cliquer pour fermer"
+                class="annoter-outil"
+                style="padding:2px 8px;border:0;background:transparent;cursor:pointer;color:#374151;border-radius:3px;font-size:12px;line-height:1.2;">
+          ⬠ Polygone
+        </button>
+      </div>
     </div>
     {% endif %}
     {# Panneau latéral annotations : flottant à droite, sous le bouton

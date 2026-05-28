@@ -25,3 +25,19 @@
     @apply bg-white rounded-lg border border-border-tertiary;
   }
 }
+
+/* Sélecteur d'outil d'annotation (Rectangle / Polygone). Visible
+   uniquement en mode édition ; outil actif surligné. */
+.annoter-outils[data-edition="0"] {
+  display: none !important;
+}
+.annoter-outil[data-actif="1"] {
+  background: rgba(55, 138, 221, 0.14);
+  color: #1e3a8a;
+}
+.annoter-outil:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.annoter-outil[data-actif="1"]:hover {
+  background: rgba(55, 138, 221, 0.20);
+}

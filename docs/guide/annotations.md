@@ -38,10 +38,23 @@ n'ont pas d'annotation).
 Cliquer le bouton **Annoter** en haut-droite du viewer (sous les
 contrôles OSD natifs) — il bascule entre mode lecture et mode édition.
 
-En mode édition :
+En mode édition, deux outils sont disponibles dans la barre en
+haut-droite du viewer :
 
-- **Drag** sur l'image pour dessiner un rectangle. Le popup d'édition
-  s'ouvre.
+- **▭ Rectangle** (par défaut) : drag sur l'image pour dessiner un
+  rectangle aligné.
+- **⬠ Polygone** : clic à chaque sommet, double-clic pour fermer la
+  forme. Utile pour les caricatures aux contours irréguliers, les
+  vignettes BD au cadre non rectangulaire, ou toute zone qu'un
+  rectangle englobant entoure trop largement.
+
+Cliquer sur un outil active automatiquement le mode édition (pas
+besoin de cliquer « Annoter » d'abord). L'outil sélectionné reste
+actif d'un tracé au suivant — pratique pour annoter plusieurs
+zones d'un coup.
+
+Après tracé, le popup d'édition s'ouvre :
+
 - **Champ TAG** : taper les premières lettres → suggestions du
   vocabulaire (préchargé). Sélectionner ou taper librement.
 - **Champ COMMENT** (en dessous) : note libre optionnelle.
@@ -112,6 +125,21 @@ Chaque annotation stockée en base produit un JSON-LD W3C minimal :
 
 Le `body` est une liste, on peut combiner tags + commentaires + URIs
 d'identification dans une même annotation.
+
+Pour les polygones, le `selector` devient un `SvgSelector` avec un
+SVG inline :
+
+```json
+"selector": {
+  "type": "SvgSelector",
+  "value": "<svg><polygon points='120,80 350,90 410,260 200,310 90,180'/></svg>"
+}
+```
+
+Les deux formes (`FragmentSelector` rectangle + `SvgSelector`
+polygone) cohabitent dans une même AnnotationCollection sans
+configuration supplémentaire — Mirador, Recogito et Annotorious les
+gèrent nativement.
 
 ## Bibliothèque côté navigateur
 

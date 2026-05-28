@@ -26,10 +26,16 @@
   }
 }
 
-/* Sélecteur d'outil d'annotation (Rectangle / Polygone). Visible
-   uniquement en mode édition ; outil actif surligné. */
+/* Sélecteur d'outil d'annotation (Rectangle / Polygone). Toujours
+   visible (meilleure découvrabilité de l'option polygone). En mode
+   lecture, légèrement dimmée — clic sur une pill active l'édition
+   automatiquement (cf. annotations_osd.js). En édition, l'outil
+   actif est surligné. */
 .annoter-outils[data-edition="0"] {
-  display: none !important;
+  opacity: 0.6;
+}
+.annoter-outils[data-edition="1"] {
+  opacity: 1;
 }
 .annoter-outil[data-actif="1"] {
   background: rgba(55, 138, 221, 0.14);

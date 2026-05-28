@@ -115,11 +115,15 @@ class FormulaireValeur(BaseModel):
 
 def lister_vocabulaires(db: Session) -> list[Vocabulaire]:
     """Tous les vocabulaires, triés par libellé. Eager loading des
-    valeurs pour la page liste (afficher le compteur sans N+1)."""
+    valeurs (compteur de valeurs) et des fonds rattachés (badge
+    `global` / `N fonds` sur la page liste — sans N+1)."""
     return list(
         db.scalars(
             select(Vocabulaire)
-            .options(selectinload(Vocabulaire.valeurs))
+            .options(
+                selectinload(Vocabulaire.valeurs),
+                selectinload(Vocabulaire.fonds_rattaches),
+            )
             .order_by(Vocabulaire.libelle)
         ).all()
     )
@@ -127,10 +131,14 @@ def lister_vocabulaires(db: Session) -> list[Vocabulaire]:
 
 def vocabulaire_par_id(db: Session, vocab_id: int) -> Vocabulaire:
     """Charge un vocabulaire par id ou lève :class:`VocabulaireIntrouvable`.
-    Eager loading des valeurs (la page détail itère dessus)."""
+    Eager loading des valeurs (la page détail itère dessus) et des
+    fonds rattachés (section rattachement T3)."""
     vocab = db.scalar(
         select(Vocabulaire)
-        .options(selectinload(Vocabulaire.valeurs))
+        .options(
+            selectinload(Vocabulaire.valeurs),
+            selectinload(Vocabulaire.fonds_rattaches),
+        )
         .where(Vocabulaire.id == vocab_id)
     )
     if vocab is None:

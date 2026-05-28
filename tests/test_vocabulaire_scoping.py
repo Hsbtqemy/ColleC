@@ -360,6 +360,143 @@ def test_autocomplete_valeur_inactive_exclue(
     assert "Deprecie" not in libelles
 
 
+# ---------------------------------------------------------------------------
+# T3 — UI rattachement (routes POST + badges sur la liste)
+# ---------------------------------------------------------------------------
+
+
+def test_page_vocabulaire_detail_affiche_section_fonds(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """La page détail d'un vocab montre la section « Fonds rattachés »
+    avec une case (form) par fonds de la base + état coché ou pas."""
+    with db_factory() as s:
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        pf = creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        attacher_vocabulaire_au_fonds(s, v.id, pf.id)
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}")
+    assert r.status_code == 200
+    assert "Fonds rattachés" in r.text
+    # Le fonds PF est coché (rattaché) → bouton détacher
+    assert f'/vocabulaires/{vid}/fonds/PF/detacher' in r.text
+    # Le fonds HK n'est pas coché → bouton attacher
+    assert f'/vocabulaires/{vid}/fonds/HK/attacher' in r.text
+
+
+def test_attacher_via_route(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/HK/attacher")
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/vocabulaires/{vid}"
+
+    with db_factory() as s:
+        v_relu = s.get(Vocabulaire, vid)
+        assert [f.cote for f in v_relu.fonds_rattaches] == ["HK"]
+
+
+def test_detacher_via_route(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        attacher_vocabulaire_au_fonds(s, v.id, hk.id)
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/HK/detacher")
+    assert r.status_code == 303
+
+    with db_factory() as s:
+        v_relu = s.get(Vocabulaire, vid)
+        assert v_relu.fonds_rattaches == []
+
+
+def test_attacher_fonds_inconnu_404(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    with db_factory() as s:
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/ZZ/attacher")
+    assert r.status_code == 404
+
+
+def test_page_liste_vocab_affiche_badges(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """La page `/vocabulaires` affiche un badge « global » pour les
+    vocabs sans rattachement, et « N fonds » pour les autres."""
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        pf = creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
+        v_global = _vocab_avec_valeurs(s, "global_vocab", ["A"])
+        v_scope = _vocab_avec_valeurs(s, "scope_vocab", ["B"])
+        attacher_vocabulaire_au_fonds(s, v_scope.id, hk.id)
+        attacher_vocabulaire_au_fonds(s, v_scope.id, pf.id)
+        s.commit()
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app)
+    r = client.get("/vocabulaires")
+    assert r.status_code == 200
+    # Le vocab global est marqué « global »
+    assert "global" in r.text
+    # Le vocab rattaché à HK + PF est marqué « 2 fonds »
+    assert "2 fonds" in r.text
+
+
+def test_routes_attacher_detacher_bloquees_en_lecture_seule(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Le middleware lecture_seule bloque POST en 423, donc les
+    routes attacher/detacher renvoient 423 sans toucher à la base."""
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        v = _vocab_avec_valeurs(s, "test", ["A"])
+        s.commit()
+        vid = v.id
+
+    racine = tmp_path / "miniatures"
+    racine.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  d: {racine}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/HK/attacher")
+    assert r.status_code == 423
+    # Vérifie en base que rien n'a bougé
+    with db_factory() as s:
+        v_relu = s.get(Vocabulaire, vid)
+        assert v_relu.fonds_rattaches == []
+
+
 def test_autocomplete_fichier_inconnu_retombe_sur_global(
     db_factory, monkeypatch, tmp_path: Path
 ) -> None:

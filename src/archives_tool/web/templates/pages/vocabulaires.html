@@ -42,17 +42,34 @@
           <th style="padding:8px 10px;">Code</th>
           <th style="padding:8px 10px;">Libellé</th>
           <th style="padding:8px 10px;text-align:right;">Valeurs</th>
+          <th style="padding:8px 10px;">Portée</th>
           <th style="padding:8px 10px;">Description</th>
           <th style="padding:8px 10px;text-align:right;">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for v in vocabulaires %}
+        {% set nb_fonds = v.fonds_rattaches | length %}
         <tr style="border-bottom:1px solid rgba(0,0,0,0.06);">
           <td style="padding:8px 10px;" class="font-mono">{{ v.code }}</td>
           <td style="padding:8px 10px;">{{ v.libelle }}</td>
           <td style="padding:8px 10px;text-align:right;color:#6b7280;">
             {{ v.valeurs | length }}
+          </td>
+          <td style="padding:8px 10px;">
+            {% if nb_fonds == 0 %}
+              <span style="display:inline-block;padding:1px 8px;font-size:11px;
+                           background:#f3f4f6;color:#6b7280;border-radius:10px;"
+                    title="Visible dans l'autocomplete de tous les fonds">
+                global
+              </span>
+            {% else %}
+              <span style="display:inline-block;padding:1px 8px;font-size:11px;
+                           background:#dbeafe;color:#1e40af;border-radius:10px;"
+                    title="{{ v.fonds_rattaches | map(attribute='cote') | join(', ') }}">
+                {{ nb_fonds }} fonds
+              </span>
+            {% endif %}
           </td>
           <td style="padding:8px 10px;color:#6b7280;">
             {{ v.description or '—' }}

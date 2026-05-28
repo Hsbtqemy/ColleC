@@ -37,13 +37,14 @@ lecture — plus simple à exporter, données stables, audit clair).
 
 ## État
 
-- **T1 + T2 livrés** (commit `5f2671d`, mai 2026) : table de
-  liaison, services attacher/détacher, autocomplete filtré par
-  `?fichier_id=<id>`, wiring JS, 13 tests. Le filtrage est en
-  place de bout en bout, l'admin se fait pour l'instant via SQL
-  direct ou via le service Python.
-- **T3** (UI rattachement) et **T4** (enrichissement rétroactif)
-  restent ouverts. Cf. recommandations d'ordre plus bas.
+- **T1 + T2 + T3 livrés** (mai 2026) : table de liaison, services
+  attacher/détacher, autocomplete filtré par `?fichier_id=<id>`,
+  wiring JS, UI rattachement (cases à cocher sur la page détail +
+  badges « global » / « N fonds » sur la liste). Le filtrage est
+  en place de bout en bout et utilisable directement depuis
+  l'interface web.
+- **T4** (enrichissement rétroactif des annotations) reste ouvert
+  — attendre un cas concret de réattribution avant.
 
 ## Tickets
 
@@ -82,7 +83,7 @@ vf.fonds_id IS NULL OR vf.fonds_id = :fonds_courant ».
 C'est la pièce qui livre le **gain UX principal** — à coupler
 avec T1 dans un même lot.
 
-### Ticket 3 — UI rattachement
+### Ticket 3 — UI rattachement  ✅ livré
 
 **Cible** : `/vocabulaires/<id>` gagne une section « Fonds » avec
 cases à cocher pour chaque fonds existant. Page liste des vocabs

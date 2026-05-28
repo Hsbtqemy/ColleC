@@ -22,6 +22,8 @@ from archives_tool.api.deps import (
     get_utilisateur_courant,
 )
 from archives_tool.api.routes._helpers import contexte_base as _contexte_base
+from archives_tool.api.services._erreurs import EntiteIntrouvable
+from archives_tool.api.services.fonds import lister_fonds
 from archives_tool.api.services.vocabulaires_db import (
     FormulaireValeur,
     FormulaireVocabulaire,
@@ -29,8 +31,10 @@ from archives_tool.api.services.vocabulaires_db import (
     VocabulaireInvalide,
     VocabulaireReference,
     ajouter_valeur,
+    attacher_vocabulaire_au_fonds,
     creer_vocabulaire,
     deprecier_valeur,
+    detacher_vocabulaire_du_fonds,
     lister_vocabulaires,
     modifier_valeur,
     modifier_vocabulaire,
@@ -57,6 +61,30 @@ def _valider_appartenance_valeur(
             status_code=404,
             detail=f"Valeur {valeur.id} introuvable dans ce vocabulaire.",
         )
+
+
+def _contexte_detail_vocab(
+    db: Session,
+    vocab,
+    *,
+    nom_base: str,
+    utilisateur: str,
+    **overrides,
+) -> dict:
+    """Construit le contexte de rendu de `vocabulaire_detail.html`.
+
+    Centralise les variables communes (vocab + tous les fonds pour les
+    cases à cocher de rattachement T3 + IDs cochés) pour ne pas
+    dupliquer cette logique dans les 5 routes qui rendent ce template
+    (page principale + 4 re-render après erreur de validation)."""
+    return _contexte_base(
+        nom_base,
+        utilisateur,
+        vocabulaire=vocab,
+        tous_les_fonds=lister_fonds(db),
+        ids_fonds_rattaches={f.id for f in vocab.fonds_rattaches},
+        **overrides,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -139,10 +167,11 @@ def page_vocabulaire(
     return templates.TemplateResponse(
         request,
         "pages/vocabulaire_detail.html",
-        _contexte_base(
-            nom_base,
-            utilisateur,
-            vocabulaire=vocab,
+        _contexte_detail_vocab(
+            db,
+            vocab,
+            nom_base=nom_base,
+            utilisateur=utilisateur,
             formulaire_vocab=FormulaireVocabulaire(
                 code=vocab.code,
                 libelle=vocab.libelle,
@@ -177,10 +206,11 @@ def soumettre_modifier_vocabulaire(
         return templates.TemplateResponse(
             request,
             "pages/vocabulaire_detail.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                vocabulaire=vocab,
+            _contexte_detail_vocab(
+                db,
+                vocab,
+                nom_base=nom_base,
+                utilisateur=utilisateur,
                 formulaire_vocab=formulaire,
                 formulaire_valeur=FormulaireValeur(),
                 erreurs_vocab=e.erreurs,
@@ -210,10 +240,11 @@ def soumettre_supprimer_vocabulaire(
         return templates.TemplateResponse(
             request,
             "pages/vocabulaire_detail.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                vocabulaire=vocab,
+            _contexte_detail_vocab(
+                db,
+                vocab,
+                nom_base=nom_base,
+                utilisateur=utilisateur,
                 formulaire_vocab=FormulaireVocabulaire(
                     code=vocab.code,
                     libelle=vocab.libelle,
@@ -262,10 +293,11 @@ def soumettre_ajouter_valeur(
         return templates.TemplateResponse(
             request,
             "pages/vocabulaire_detail.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                vocabulaire=vocab,
+            _contexte_detail_vocab(
+                db,
+                vocab,
+                nom_base=nom_base,
+                utilisateur=utilisateur,
                 formulaire_vocab=FormulaireVocabulaire(
                     code=vocab.code,
                     libelle=vocab.libelle,
@@ -305,10 +337,11 @@ def soumettre_modifier_valeur(
         return templates.TemplateResponse(
             request,
             "pages/vocabulaire_detail.html",
-            _contexte_base(
-                nom_base,
-                utilisateur,
-                vocabulaire=vocab,
+            _contexte_detail_vocab(
+                db,
+                vocab,
+                nom_base=nom_base,
+                utilisateur=utilisateur,
                 formulaire_vocab=FormulaireVocabulaire(
                     code=vocab.code,
                     libelle=vocab.libelle,
@@ -371,4 +404,65 @@ def soumettre_supprimer_valeur(
     valeur = valeur_par_id(db, valeur_id)
     _valider_appartenance_valeur(valeur, vocab_id)
     supprimer_valeur(db, valeur_id)
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Rattachement vocab ↔ fonds (T3 du chantier scoping)
+# ---------------------------------------------------------------------------
+
+
+def _fonds_par_cote_ou_404(db: Session, cote: str):
+    """Lookup fonds + 404 si inconnu (cote vient d'un form/URL utilisateur)."""
+    from sqlalchemy import select as sa_select
+
+    from archives_tool.models import Fonds
+
+    fonds = db.scalar(sa_select(Fonds).where(Fonds.cote == cote))
+    if fonds is None:
+        raise HTTPException(
+            status_code=404, detail=f"Fonds « {cote} » introuvable."
+        )
+    return fonds
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/fonds/{cote}/attacher",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_attacher_fonds(
+    vocab_id: int,
+    cote: str,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Rattache un vocabulaire à un fonds. Idempotent côté service."""
+    # Garde-fou que le vocab existe (sinon service lèvera plus tard).
+    vocabulaire_par_id(db, vocab_id)
+    fonds = _fonds_par_cote_ou_404(db, cote)
+    try:
+        attacher_vocabulaire_au_fonds(db, vocab_id, fonds.id)
+    except EntiteIntrouvable as e:
+        # Course rare : fonds supprimé entre la lecture et le service.
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/fonds/{cote}/detacher",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_detacher_fonds(
+    vocab_id: int,
+    cote: str,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Détache un vocabulaire d'un fonds. Idempotent côté service."""
+    vocabulaire_par_id(db, vocab_id)
+    fonds = _fonds_par_cote_ou_404(db, cote)
+    try:
+        detacher_vocabulaire_du_fonds(db, vocab_id, fonds.id)
+    except EntiteIntrouvable as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)

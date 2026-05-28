@@ -71,6 +71,68 @@
   </form>
 </section>
 
+{# ---- Bloc 1.5 : Fonds rattachés (T3 scoping) ---- #}
+{% if tous_les_fonds is defined %}
+<section style="margin-bottom:36px;max-width:680px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;">
+    Fonds rattachés
+    {% if ids_fonds_rattaches %}
+      ({{ ids_fonds_rattaches | length }})
+    {% else %}
+      <span style="text-transform:none;letter-spacing:0;font-size:11px;color:#6b7280;font-style:italic;">
+        — global (visible sur tous les fonds)
+      </span>
+    {% endif %}
+  </h2>
+  <p class="text-sm text-gray-500" style="margin-bottom:12px;font-size:12px;">
+    Restreindre ce vocabulaire à certains fonds. Sans aucune coche,
+    il reste visible dans l'autocomplete d'annotations de tous les
+    fonds (défaut). Coché : visible uniquement dans les fonds
+    sélectionnés.
+  </p>
+  {% if not tous_les_fonds %}
+    <p class="text-sm text-gray-500 italic"
+       style="padding:16px;border:1px dashed rgba(0,0,0,0.10);border-radius:4px;">
+      Aucun fonds dans cette base. Créez d'abord un fonds via l'import
+      ou l'UI pour pouvoir le rattacher ici.
+    </p>
+  {% else %}
+    <ul style="list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;">
+      {% for f in tous_les_fonds %}
+      {% set rattache = f.id in ids_fonds_rattaches %}
+      <li>
+        {% if est_lecture_seule() %}
+          <span style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+                       border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                       background:{% if rattache %}#eef6ff{% else %}white{% endif %};">
+            <span style="font-family:monospace;font-size:11px;color:#6b7280;min-width:50px;">{{ f.cote }}</span>
+            <span style="flex:1;font-size:12px;color:#374151;">{{ f.titre }}</span>
+            {% if rattache %}<span style="color:#1e40af;font-size:11px;">✓</span>{% endif %}
+          </span>
+        {% else %}
+          <form method="post"
+                action="/vocabulaires/{{ vocabulaire.id }}/fonds/{{ f.cote }}/{% if rattache %}detacher{% else %}attacher{% endif %}"
+                style="margin:0;">
+            <button type="submit"
+                    title="{% if rattache %}Détacher du fonds {{ f.cote }}{% else %}Rattacher au fonds {{ f.cote }}{% endif %}"
+                    style="width:100%;display:flex;align-items:center;gap:8px;padding:6px 10px;
+                           border:1px solid {% if rattache %}#93c5fd{% else %}rgba(0,0,0,0.10){% endif %};border-radius:4px;
+                           background:{% if rattache %}#dbeafe{% else %}white{% endif %};cursor:pointer;text-align:left;">
+              <span style="font-family:monospace;font-size:11px;color:#6b7280;min-width:50px;">{{ f.cote }}</span>
+              <span style="flex:1;font-size:12px;color:#374151;">{{ f.titre }}</span>
+              <span style="font-size:11px;color:{% if rattache %}#1e40af{% else %}#9ca3af{% endif %};">
+                {% if rattache %}✓{% else %}+{% endif %}
+              </span>
+            </button>
+          </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endif %}
+
 {# ---- Bloc 2 : Valeurs ---- #}
 <section style="margin-bottom:36px;">
   <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">

@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -22,6 +24,30 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .collection import Collection
+    from .fonds import Fonds
+
+
+#: Junction many-to-many `vocabulaire ↔ fonds`. Permet de restreindre
+#: un vocabulaire à un sous-ensemble de fonds (filtrage de
+#: l'autocomplete d'annotations selon le contexte courant). Un vocab
+#: sans aucun rattachement = visible globalement (défaut). Voir
+#: `docs/developpeurs/vocabulaire-scoping-future.md` T1.
+vocabulaire_fonds = Table(
+    "vocabulaire_fonds",
+    Base.metadata,
+    Column(
+        "vocabulaire_id",
+        Integer,
+        ForeignKey("vocabulaire.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "fonds_id",
+        Integer,
+        ForeignKey("fonds.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
 
 
 class ProfilImport(Base):
@@ -50,6 +76,14 @@ class Vocabulaire(Base):
 
     valeurs: Mapped[list[ValeurControlee]] = relationship(
         back_populates="vocabulaire", cascade="all, delete-orphan"
+    )
+
+    #: Fonds auxquels ce vocabulaire est rattaché. Liste vide =
+    #: vocabulaire global (visible dans tous les fonds). Cf.
+    #: `vocabulaire-scoping-future.md` T1.
+    fonds_rattaches: Mapped[list[Fonds]] = relationship(
+        secondary=vocabulaire_fonds,
+        back_populates="vocabulaires_rattaches",
     )
 
 

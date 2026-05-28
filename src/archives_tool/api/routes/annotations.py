@@ -243,23 +243,46 @@ def get_annotation(
 
 @router.get("/vocabulaires/autocomplete")
 def get_autocomplete_vocabulaires(
+    fichier_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> JSONResponse:
-    """Liste toutes les ValeurControlee actives, tout vocabulaire
-    confondu, pour alimenter l'autocomplete d'Annotorious.
+    """Liste les ValeurControlee actives pour l'autocomplete Annotorious.
 
-    Charge léger (qq centaines de valeurs typiquement). Pas de
-    pagination — si un jour le volume explose, ajouter ?q= avec
-    filtrage SQL LIKE.
+    Sans `fichier_id` : retourne tout (cas d'usage hors annotation,
+    ex. édition d'un champ personnalisé sur la fiche item — voir
+    `vocabulaire-scoping-future.md` T2 paragraphe « Sans fichier_id »).
 
-    Sortie : liste d'objets `{vocabulaire, code, libelle, uri}`.
-    Le client construit un datalist HTML5 + au save, si l'utilisateur
-    a tapé un libellé qui matche, on ajoute le body SpecificResource
-    avec l'URI (pivot Wikidata/VIAF). Sinon TextualBody value=<tag>.
+    Avec `fichier_id` : résout fichier → item → fonds, et filtre les
+    valeurs selon le rattachement vocab ↔ fonds (cf.
+    `vocabulaire-scoping-future.md` T2) :
+      - vocab sans rattachement → visible partout (global)
+      - vocab rattaché à au moins un fonds → visible uniquement sur
+        les fichiers des fonds rattachés
+    Si le fichier est introuvable, on retombe sur le comportement
+    sans filtre (pas de crash, pas d'info utilisateur).
+
+    Sortie : `{valeurs: [{vocabulaire, vocabulaire_code, code, libelle, uri}]}`.
+    Le client construit un datalist HTML5 + au save, si le libellé
+    matche, ajoute un body SpecificResource avec l'URI (pivot
+    Wikidata/VIAF).
     """
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
-    rows = db.execute(
+    from archives_tool.models import Item
+    from archives_tool.models.profil import vocabulaire_fonds
+
+    # Résolution fichier → fonds quand possible. Si le fichier n'existe
+    # pas, on bascule en mode « tout retourné » (défaut le plus permissif,
+    # cohérent avec la stratégie « global = visible partout »).
+    fonds_courant_id: int | None = None
+    if fichier_id is not None:
+        fonds_courant_id = db.scalar(
+            select(Item.fonds_id)
+            .join(Fichier, Fichier.item_id == Item.id)
+            .where(Fichier.id == fichier_id)
+        )
+
+    stmt = (
         select(
             Vocabulaire.code.label("vocab_code"),
             Vocabulaire.libelle.label("vocab_libelle"),
@@ -269,8 +292,36 @@ def get_autocomplete_vocabulaires(
         )
         .join(ValeurControlee, ValeurControlee.vocabulaire_id == Vocabulaire.id)
         .where(ValeurControlee.actif.is_(True))
-        .order_by(Vocabulaire.libelle, ValeurControlee.libelle)
-    ).all()
+    )
+
+    if fonds_courant_id is not None:
+        # Convention : un vocab sans aucune ligne dans `vocabulaire_fonds`
+        # est global. Un vocab avec ≥1 ligne est visible uniquement sur
+        # ses fonds rattachés.
+        #
+        # Sous-requêtes :
+        # - `vocab_a_rattachement` : vocabs qui ont au moins un fonds.
+        # - `vocab_rattache_au_fonds` : vocabs rattachés au fonds courant.
+        sub_a_rattachement = (
+            select(vocabulaire_fonds.c.vocabulaire_id).distinct().subquery()
+        )
+        sub_rattache_au_fonds = (
+            select(vocabulaire_fonds.c.vocabulaire_id)
+            .where(vocabulaire_fonds.c.fonds_id == fonds_courant_id)
+            .subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                # Vocab global (pas dans la junction du tout)
+                Vocabulaire.id.notin_(select(sub_a_rattachement.c.vocabulaire_id)),
+                # OU vocab rattaché au fonds courant
+                Vocabulaire.id.in_(select(sub_rattache_au_fonds.c.vocabulaire_id)),
+            )
+        )
+
+    stmt = stmt.order_by(Vocabulaire.libelle, ValeurControlee.libelle)
+
+    rows = db.execute(stmt).all()
 
     valeurs = [
         {

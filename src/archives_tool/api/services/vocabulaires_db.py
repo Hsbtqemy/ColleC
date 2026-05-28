@@ -358,6 +358,58 @@ def supprimer_valeur(db: Session, valeur_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scoping vocabulaire ↔ fonds (V0.9.x — T1 ticket scoping)
+#
+# Permet de restreindre un vocabulaire à un sous-ensemble de fonds.
+# Un vocab sans aucun rattachement reste visible globalement (défaut).
+# Voir `docs/developpeurs/vocabulaire-scoping-future.md`.
+# ---------------------------------------------------------------------------
+
+
+def attacher_vocabulaire_au_fonds(
+    db: Session, vocab_id: int, fonds_id: int
+) -> Vocabulaire:
+    """Rattache un vocabulaire à un fonds. Idempotent : si le lien
+    existe déjà, no-op silencieux. Lève `VocabulaireIntrouvable` ou
+    `EntiteIntrouvable` (sur Fonds) si l'une des deux entités manque.
+    """
+    from archives_tool.models import Fonds
+
+    vocab = vocabulaire_par_id(db, vocab_id)
+    fonds = db.get(Fonds, fonds_id)
+    if fonds is None:
+        raise EntiteIntrouvable(f"Fonds {fonds_id} introuvable.")
+    if fonds not in vocab.fonds_rattaches:
+        vocab.fonds_rattaches.append(fonds)
+        db.commit()
+        db.refresh(vocab)
+    return vocab
+
+
+def detacher_vocabulaire_du_fonds(
+    db: Session, vocab_id: int, fonds_id: int
+) -> Vocabulaire:
+    """Retire le rattachement vocab ↔ fonds. Idempotent : si le lien
+    n'existe pas, no-op. Lève `VocabulaireIntrouvable` /
+    `EntiteIntrouvable` si l'une des deux entités manque.
+
+    Note : le vocabulaire n'est pas supprimé — seul le lien disparait.
+    Si on détache du seul fonds rattaché, le vocab redevient global.
+    """
+    from archives_tool.models import Fonds
+
+    vocab = vocabulaire_par_id(db, vocab_id)
+    fonds = db.get(Fonds, fonds_id)
+    if fonds is None:
+        raise EntiteIntrouvable(f"Fonds {fonds_id} introuvable.")
+    if fonds in vocab.fonds_rattaches:
+        vocab.fonds_rattaches.remove(fonds)
+        db.commit()
+        db.refresh(vocab)
+    return vocab
+
+
+# ---------------------------------------------------------------------------
 # Helpers d'usage côté composer / cartouche
 # ---------------------------------------------------------------------------
 

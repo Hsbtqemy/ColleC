@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .collaborateur_fonds import CollaborateurFonds
     from .collection import Collection
     from .item import Item
+    from .profil import Vocabulaire
 
 
 class Fonds(Base, TracabiliteMixin):
@@ -75,6 +76,14 @@ class Fonds(Base, TracabiliteMixin):
         back_populates="fonds",
         cascade="all, delete-orphan",
         order_by="CollaborateurFonds.cree_le",
+    )
+
+    #: Vocabulaires rattachés à ce fonds. Côté symétrique de
+    #: `Vocabulaire.fonds_rattaches`. Cf.
+    #: `vocabulaire-scoping-future.md` T1.
+    vocabulaires_rattaches: Mapped[list[Vocabulaire]] = relationship(
+        secondary="vocabulaire_fonds",
+        back_populates="fonds_rattaches",
     )
 
     __table_args__ = (

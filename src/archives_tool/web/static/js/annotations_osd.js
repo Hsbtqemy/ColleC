@@ -39,10 +39,22 @@
 
   /** Précharge les valeurs vocabulaire pour l'autocomplete. Non-bloquant :
    *  si l'endpoint échoue, Annotorious démarre sans suggestions et
-   *  l'utilisateur peut quand même taper librement. */
-  async function chargerVocabulaires() {
+   *  l'utilisateur peut quand même taper librement.
+   *
+   *  Quand `fichierId` est fourni, l'endpoint résout fichier → item →
+   *  fonds et filtre les vocabulaires selon le rattachement vocab ↔
+   *  fonds (cf. `vocabulaire-scoping-future.md` T2). Sans fichier_id,
+   *  l'endpoint retourne tout (mode global).
+   *
+   *  Remplit `_vocabEntrees` en place (vidé d'abord pour éviter les
+   *  doublons quand on navigue entre fichiers de fonds différents). */
+  async function chargerVocabulaires(fichierId) {
+    _vocabEntrees.length = 0;
+    const url = fichierId
+      ? `/api/vocabulaires/autocomplete?fichier_id=${encodeURIComponent(fichierId)}`
+      : "/api/vocabulaires/autocomplete";
     try {
-      const r = await fetch("/api/vocabulaires/autocomplete");
+      const r = await fetch(url);
       if (!r.ok) {
         console.warn("[annotations] autocomplete HTTP", r.status);
         return;
@@ -59,7 +71,7 @@
         }
       }
       console.info(
-        "[annotations] vocab préchargé :",
+        "[annotations] vocab préchargé (fichier=" + (fichierId || "global") + ") :",
         _vocabEntrees.length,
         "entrées",
       );
@@ -67,12 +79,6 @@
       console.warn("[annotations] Précharge vocabulaires échouée :", e);
     }
   }
-  // Lance la précharge dès le script chargé. L'event `visionneuse:pret`
-  // (déclenché APRÈS OSD.open) await cette promise avant d'initialiser
-  // Annotorious — sinon le widget TAG démarre avec une liste vide et
-  // l'utilisateur n'a pas de suggestions tant qu'il ne recharge pas.
-  // Race fix V0.9.7 γ.3-revue.
-  const _vocabReady = chargerVocabulaires();
 
   /** Récupère l'ID local d'une annotation depuis son URI W3C. */
   function extraireIdAnnotation(annotation) {
@@ -348,7 +354,11 @@
     if (_annosParViseur.has(viz)) return; // déjà greffé (re-open)
     const { osd, fichier_id } = e.detail || {};
     if (!osd) return;
-    await _vocabReady;
+    // Charge le vocab filtré par le fichier courant — Annotorious démarre
+    // avec les suggestions adaptées au fonds (cf. T2 scoping). Le widget
+    // TAG capture la référence à `_vocabEntrees` à l'instanciation, donc
+    // le remplissage doit être terminé AVANT initialiserAnnotorious.
+    await chargerVocabulaires(fichier_id);
     const anno = initialiserAnnotorious(osd, fichier_id);
     if (anno) {
       _annosParViseur.set(viz, anno);

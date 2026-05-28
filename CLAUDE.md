@@ -91,11 +91,15 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
 - [`vocabulaire-scoping-future.md`](docs/developpeurs/vocabulaire-scoping-future.md)
   — rattachement many-to-many **vocabulaire ↔ fonds** pour
   filtrer l'autocomplete d'annotations selon le fonds courant.
-  Défaut global (vocab non rattaché = visible partout). Quatre
-  tickets : modèle+migration, autocomplete filtré, UI
-  rattachement, enrichissement rétroactif des annotations libres
-  (figé en base, pas résolu à la lecture). Sortir T1+T2 en un
-  lot, T3 ensuite, T4 quand un cas concret se présente.
+  Défaut global (vocab non rattaché = visible partout). **T1+T2
+  livrés** (commit `5f2671d` — table `vocabulaire_fonds`,
+  services attacher/détacher, autocomplete `?fichier_id=<id>`
+  filtré, wiring JS). **T3** (UI rattachement avec cases à
+  cocher + badges sur la page liste) et **T4** (enrichissement
+  rétroactif `TextualBody.value` → `SpecificResource source=URI`)
+  restent ouverts. Admin actuelle via SQL direct ou service
+  Python — T3 quand ça deviendra gênant, T4 quand un cas
+  concret de réattribution se présentera.
 
 ---
 

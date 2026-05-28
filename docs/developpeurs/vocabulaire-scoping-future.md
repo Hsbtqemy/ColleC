@@ -35,9 +35,19 @@ jointure live. **On fige** via un service d'enrichissement
 rétroactif idempotent (et non pas via résolution à la volée à la
 lecture — plus simple à exporter, données stables, audit clair).
 
+## État
+
+- **T1 + T2 livrés** (commit `5f2671d`, mai 2026) : table de
+  liaison, services attacher/détacher, autocomplete filtré par
+  `?fichier_id=<id>`, wiring JS, 13 tests. Le filtrage est en
+  place de bout en bout, l'admin se fait pour l'instant via SQL
+  direct ou via le service Python.
+- **T3** (UI rattachement) et **T4** (enrichissement rétroactif)
+  restent ouverts. Cf. recommandations d'ordre plus bas.
+
 ## Tickets
 
-### Ticket 1 — Modèle + migration
+### Ticket 1 — Modèle + migration  ✅ livré
 
 **Cible** : table `vocabulaire_fonds(vocabulaire_id, fonds_id)`,
 PK composite, FK CASCADE des deux côtés.
@@ -51,7 +61,7 @@ PK composite, FK CASCADE des deux côtés.
 
 Petit, autonome. Pré-requis aux tickets suivants.
 
-### Ticket 2 — Autocomplete filtré
+### Ticket 2 — Autocomplete filtré  ✅ livré
 
 **Cible** : `/api/vocabulaires/autocomplete?fichier_id=<id>`
 résout `fichier → item → fonds` et filtre les `ValeurControlee`

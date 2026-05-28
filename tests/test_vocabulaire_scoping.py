@@ -276,6 +276,90 @@ def test_autocomplete_avec_fichier_id_filtre_par_fonds(
     assert "Cabu" not in libelles_pf
 
 
+def test_autocomplete_vocab_rattache_a_plusieurs_fonds(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Cas réel : un vocab partagé entre 2 fonds (ex. « Onomatopées BD »
+    sur PF + HK). Doit apparaître dans l'autocomplete des deux, mais
+    pas dans celle d'un troisième fonds non rattaché."""
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        pf = creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
+        fa = creer_fonds(s, FormulaireFonds(cote="FA", titre="Fonds A"))
+        item_hk = creer_item(
+            s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id)
+        )
+        item_fa = creer_item(
+            s, FormulaireItem(cote="FA-001", titre="N°1", fonds_id=fa.id)
+        )
+        f_hk = Fichier(
+            item_id=item_hk.id, racine="x", chemin_relatif="hk/01.tif",
+            nom_fichier="hk-01.tif", ordre=1,
+        )
+        f_fa = Fichier(
+            item_id=item_fa.id, racine="x", chemin_relatif="fa/01.tif",
+            nom_fichier="fa-01.tif", ordre=1,
+        )
+        s.add_all([f_hk, f_fa])
+        s.flush()
+        partage = _vocab_avec_valeurs(s, "onomatopees_bd", ["Bang", "Crash"])
+        attacher_vocabulaire_au_fonds(s, partage.id, hk.id)
+        attacher_vocabulaire_au_fonds(s, partage.id, pf.id)
+        s.commit()
+        fid_hk, fid_fa = f_hk.id, f_fa.id
+
+    db_path = tmp_path / "test.db"
+    monkeypatch.setenv("ARCHIVES_DB", str(db_path))
+    client = TestClient(app)
+
+    # Sur HK : visible (rattaché)
+    r_hk = client.get(f"/api/vocabulaires/autocomplete?fichier_id={fid_hk}")
+    libelles_hk = {v["libelle"] for v in r_hk.json()["valeurs"]}
+    assert "Bang" in libelles_hk
+    assert "Crash" in libelles_hk
+
+    # Sur FA : invisible (vocab rattaché à HK+PF mais pas FA)
+    r_fa = client.get(f"/api/vocabulaires/autocomplete?fichier_id={fid_fa}")
+    libelles_fa = {v["libelle"] for v in r_fa.json()["valeurs"]}
+    assert "Bang" not in libelles_fa
+    assert "Crash" not in libelles_fa
+
+
+def test_autocomplete_valeur_inactive_exclue(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Une `ValeurControlee.actif=False` doit être absente du résultat,
+    qu'on filtre par fonds ou pas. Garde-fou pour le `deprecier_valeur`
+    qui peut être appelé via l'UI."""
+    from archives_tool.api.services.vocabulaires_db import deprecier_valeur
+
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        item = creer_item(
+            s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id)
+        )
+        f = Fichier(
+            item_id=item.id, racine="x", chemin_relatif="x.tif",
+            nom_fichier="x.tif", ordre=1,
+        )
+        s.add(f)
+        s.flush()
+        v = _vocab_avec_valeurs(s, "v", ["Actif", "Deprecie"])
+        # Récupère la valeur « Deprecie » et la déprécie.
+        depreciee = next(val for val in v.valeurs if val.libelle == "Deprecie")
+        deprecier_valeur(s, depreciee.id)
+        s.commit()
+        fid = f.id
+
+    db_path = tmp_path / "test.db"
+    monkeypatch.setenv("ARCHIVES_DB", str(db_path))
+    client = TestClient(app)
+    r = client.get(f"/api/vocabulaires/autocomplete?fichier_id={fid}")
+    libelles = {v["libelle"] for v in r.json()["valeurs"]}
+    assert "Actif" in libelles
+    assert "Deprecie" not in libelles
+
+
 def test_autocomplete_fichier_inconnu_retombe_sur_global(
     db_factory, monkeypatch, tmp_path: Path
 ) -> None:

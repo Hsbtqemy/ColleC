@@ -296,26 +296,22 @@ def get_autocomplete_vocabulaires(
 
     if fonds_courant_id is not None:
         # Convention : un vocab sans aucune ligne dans `vocabulaire_fonds`
-        # est global. Un vocab avec ≥1 ligne est visible uniquement sur
-        # ses fonds rattachés.
+        # est global (visible partout). Un vocab avec ≥1 ligne est
+        # visible uniquement sur ses fonds rattachés.
         #
-        # Sous-requêtes :
-        # - `vocab_a_rattachement` : vocabs qui ont au moins un fonds.
-        # - `vocab_rattache_au_fonds` : vocabs rattachés au fonds courant.
-        sub_a_rattachement = (
-            select(vocabulaire_fonds.c.vocabulaire_id).distinct().subquery()
-        )
-        sub_rattache_au_fonds = (
-            select(vocabulaire_fonds.c.vocabulaire_id)
-            .where(vocabulaire_fonds.c.fonds_id == fonds_courant_id)
-            .subquery()
-        )
+        # Pas de DISTINCT nécessaire dans le NOT IN — la sémantique de
+        # IN n'est pas affectée par les doublons. SA 2.x accepte un
+        # `select()` directement dans `in_()/notin_()`.
         stmt = stmt.where(
             or_(
-                # Vocab global (pas dans la junction du tout)
-                Vocabulaire.id.notin_(select(sub_a_rattachement.c.vocabulaire_id)),
+                # Vocab global (aucune ligne dans la junction)
+                Vocabulaire.id.notin_(select(vocabulaire_fonds.c.vocabulaire_id)),
                 # OU vocab rattaché au fonds courant
-                Vocabulaire.id.in_(select(sub_rattache_au_fonds.c.vocabulaire_id)),
+                Vocabulaire.id.in_(
+                    select(vocabulaire_fonds.c.vocabulaire_id).where(
+                        vocabulaire_fonds.c.fonds_id == fonds_courant_id
+                    )
+                ),
             )
         )
 

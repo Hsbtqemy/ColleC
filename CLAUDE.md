@@ -88,6 +88,14 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   static generation, aucun moteur XML séparé), pattern hybride
   avec eXist+TEI Publisher / BaseX+MaX / EVT uniquement si
   l'usage TEI le justifie réellement. Décision agnostique.
+- [`vocabulaire-scoping-future.md`](docs/developpeurs/vocabulaire-scoping-future.md)
+  — rattachement many-to-many **vocabulaire ↔ fonds** pour
+  filtrer l'autocomplete d'annotations selon le fonds courant.
+  Défaut global (vocab non rattaché = visible partout). Quatre
+  tickets : modèle+migration, autocomplete filtré, UI
+  rattachement, enrichissement rétroactif des annotations libres
+  (figé en base, pas résolu à la lecture). Sortir T1+T2 en un
+  lot, T3 ensuite, T4 quand un cas concret se présente.
 
 ---
 

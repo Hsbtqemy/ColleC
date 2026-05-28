@@ -65,6 +65,7 @@ exclude_docs: |
   developpeurs/idees-ui-vrac.md
   developpeurs/ocr-module-future.md
   developpeurs/contribution-fichiers-structures-future.md
+  developpeurs/vocabulaire-scoping-future.md
 
 markdown_extensions:
   - admonition

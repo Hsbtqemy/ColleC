@@ -1227,6 +1227,113 @@ def test_enrichir_fonds_introuvable(base_demo: Path) -> None:
     engine.dispose()
 
 
+def test_enrichir_annotation_avec_plusieurs_tags_libres(
+    base_demo: Path,
+) -> None:
+    """Une seule annotation porte 2 TextualBody distincts qui matchent
+    chacun une valeur différente du vocab. Les deux doivent être
+    transformés en SpecificResource indépendamment. Cas réel : une
+    caricature signée Copi + représentant Franco → annotateur tape
+    deux tags libres dans le même popup."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "personnages",
+        [
+            ("copi", "Copi", "https://www.wikidata.org/entity/Q733678"),
+            ("franco", "Franco", "https://www.wikidata.org/entity/Q57112"),
+        ],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        ann = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,100,100",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"},
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Franco"},
+                ],
+            ),
+        )
+        ann_id = ann.id
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=False,
+        )
+    # 2 matches sur 1 annotation
+    assert rapport.nb_matches == 2
+    assert rapport.annotations_modifiees == 1
+    # body_index distincts (0 et 1)
+    assert {m.body_index for m in rapport.matches} == {0, 1}
+
+    with factory() as s2:
+        ann2 = s2.get(AnnotationRegion, ann_id)
+        assert ann2 is not None
+        assert len(ann2.corps) == 2
+        assert ann2.corps[0]["type"] == "SpecificResource"
+        assert ann2.corps[1]["type"] == "SpecificResource"
+        assert ann2.corps[0]["source"]["id"].endswith("Q733678")
+        assert ann2.corps[1]["source"]["id"].endswith("Q57112")
+    engine.dispose()
+
+
+def test_enrichir_annotation_avec_tag_libre_ET_uri_dont_un_match(
+    base_demo: Path,
+) -> None:
+    """Annotation avec 2 bodies : un TextualBody matchant le vocab +
+    un SpecificResource déjà rempli pointant sur une URI du vocab
+    (résultat d'un enrichissement partiel précédent ou d'un client qui
+    a fait moitié-libre, moitié-pivot). Le TextualBody doit être
+    transformé, le SpecificResource doit compter dans deja_enrichies."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "personnages",
+        [
+            ("copi", "Copi", "https://www.wikidata.org/entity/Q733678"),
+            ("franco", "Franco", "https://www.wikidata.org/entity/Q57112"),
+        ],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,100,100",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"},
+                    {
+                        "type": "SpecificResource",
+                        "purpose": "tagging",
+                        "source": {
+                            "id": "https://www.wikidata.org/entity/Q57112",
+                            "label": "Franco",
+                        },
+                    },
+                ],
+            ),
+        )
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=False,
+        )
+    assert rapport.nb_matches == 1
+    assert rapport.deja_enrichies == 1
+    assert rapport.annotations_modifiees == 1
+    engine.dispose()
+
+
 def test_enrichir_scope_fonds_isole_autres_fonds(base_demo: Path) -> None:
     """L'enrichissement n'affecte que les annotations du fonds cible.
     Une annotation sur un fichier d'un AUTRE fonds n'est pas touchée

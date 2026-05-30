@@ -441,23 +441,6 @@ class RapportEnrichissement:
         return len(self.matches)
 
 
-def _est_specific_resource_avec_uri(body: dict[str, Any], uri: str) -> bool:
-    """Le body est-il déjà un SpecificResource pointant sur cette URI ?
-
-    Accepte les deux formes que produit Annotorious 2.7 :
-    - ``source: "<uri>"`` (string directe)
-    - ``source: {"id": "<uri>", "label": "..."}`` (objet avec label).
-    """
-    if body.get("type") != "SpecificResource":
-        return False
-    source = body.get("source")
-    if isinstance(source, str):
-        return source == uri
-    if isinstance(source, dict):
-        return source.get("id") == uri
-    return False
-
-
 def _lister_annotations_fonds(
     db: Session, fonds_id: int
 ) -> tuple[AnnotationRegion, ...]:
@@ -508,7 +491,7 @@ def enrichir_annotations_par_vocab(
     Lève ``EntiteIntrouvable`` si le vocab ou le fonds n'existent pas.
     """
     from archives_tool.models import Fonds
-    from archives_tool.models.profil import ValeurControlee, Vocabulaire
+    from archives_tool.models.profil import Vocabulaire
 
     vocab = db.get(
         Vocabulaire, vocabulaire_id,
@@ -536,6 +519,10 @@ def enrichir_annotations_par_vocab(
         # n'a pas de doublons.
         index.setdefault(cle, (v.id, v.libelle, v.uri))
 
+    # Set des URIs cibles pour O(1) sur le test « déjà enrichi par une
+    # passe précédente » (cf. inner loop, body SpecificResource).
+    uris_vocab: frozenset[str] = frozenset(u for _, _, u in index.values())
+
     matches: list[MatchEnrichissement] = []
     deja_enrichies = 0
     annotations_a_modifier: list[AnnotationRegion] = []
@@ -558,17 +545,13 @@ def enrichir_annotations_par_vocab(
             # pointe sur une URI connue du vocab (sinon c'est un body
             # qu'on n'aurait jamais touché).
             if body.get("type") != "TextualBody":
-                # Cas « déjà enrichi par un passage précédent » :
-                # SpecificResource avec une URI qu'on aurait produite.
                 if body.get("type") == "SpecificResource":
                     source = body.get("source")
                     uri_courante = (
                         source if isinstance(source, str)
                         else (source.get("id") if isinstance(source, dict) else None)
                     )
-                    if uri_courante and any(
-                        u == uri_courante for _, _, u in index.values()
-                    ):
+                    if uri_courante and uri_courante in uris_vocab:
                         deja_enrichies += 1
                 nouveau_corps.append(body)
                 continue
@@ -585,13 +568,6 @@ def enrichir_annotations_par_vocab(
                 continue
 
             vid, vlibelle, vuri = cible
-            # Si malgré le type TextualBody le body référence déjà la
-            # bonne URI (cas hybride bizarre), skip.
-            if _est_specific_resource_avec_uri(body, vuri):
-                deja_enrichies += 1
-                nouveau_corps.append(body)
-                continue
-
             matches.append(MatchEnrichissement(
                 annotation_id=ann.id,
                 fichier_id=ann.fichier_id,

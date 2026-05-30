@@ -302,6 +302,14 @@ def page_fonds(
             "via le filtre `surligner_q`."
         ),
     ),
+    modifier_collab: int | None = Query(
+        None,
+        description=(
+            "Si fourni et appartient à ce fonds, bascule la ligne du "
+            "collaborateur en mode édition inline (pattern identique au "
+            "?modifier=<vid> de la page vocabulaire détail)."
+        ),
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -331,6 +339,28 @@ def page_fonds(
         if premier_item_cote
         else None
     )
+
+    # Mode édition inline d'un collaborateur (cf. ?modifier_collab=<id>).
+    # Pré-remplit le formulaire depuis les valeurs en base. Si l'id ne
+    # pointe pas sur un collaborateur de ce fonds, on ignore silencieusement
+    # (anti-confused-deputy léger — pas de 404 brutal pour un id taquiné
+    # via URL).
+    collaborateur_en_modification: int | None = None
+    formulaire_collab = None
+    if modifier_collab is not None:
+        cible = next(
+            (c for c in detail.collaborateurs if c.id == modifier_collab),
+            None,
+        )
+        if cible is not None:
+            collaborateur_en_modification = cible.id
+            formulaire_collab = FormulaireCollaborateurFonds(
+                nom=cible.nom,
+                roles=[r.value for r in cible.roles],
+                periode=cible.periode or "",
+                notes=cible.notes or "",
+            )
+
     return templates.TemplateResponse(
         request,
         "pages/fonds_lecture.html",
@@ -343,6 +373,8 @@ def page_fonds(
             libelles_roles=LIBELLES_ROLE,
             consultation_url=consultation_url,
             q_surligne=q,
+            collaborateur_en_modification=collaborateur_en_modification,
+            formulaire_collab=formulaire_collab,
         ),
     )
 

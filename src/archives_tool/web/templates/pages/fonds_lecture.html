@@ -133,6 +133,72 @@
   {% if detail.collaborateurs %}
     <ul class="text-sm">
       {% for c in detail.collaborateurs %}
+        {% set en_edit_collab = (not est_lecture_seule()
+                                 and collaborateur_en_modification is defined
+                                 and collaborateur_en_modification == c.id) %}
+        {% if en_edit_collab %}
+          {# Mode édition inline : la ligne devient un formulaire posté
+             sur la route existante /fonds/<cote>/collaborateurs/<id>.
+             Mêmes champs que l'ajout (nom, rôles, période, notes).
+             Erreurs Pydantic ré-affichées sous le form. Pattern
+             identique à l'édition d'une valeur vocab. #}
+          <li class="py-2 border-b border-gray-100"
+              style="background:#f0f9ff;border-left:3px solid #93c5fd;padding-left:12px;">
+            <form method="post"
+                  action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}"
+                  class="space-y-2 text-sm">
+              <div>
+                <label for="collab-edit-nom" class="block text-xs text-gray-500">Nom</label>
+                <input id="collab-edit-nom" type="text" name="nom" required
+                       value="{{ formulaire_collab.nom }}"
+                       class="w-full px-2 py-1 border border-gray-300 rounded">
+                {% if erreurs_collab and erreurs_collab.nom %}
+                  <p class="text-xs text-red-600">{{ erreurs_collab.nom }}</p>
+                {% endif %}
+              </div>
+              <div>
+                <span class="block text-xs text-gray-500">Rôles</span>
+                <div class="flex flex-wrap gap-3 mt-1">
+                  {% set roles_actifs = formulaire_collab.roles %}
+                  {% for r in roles_options %}
+                    <label class="inline-flex items-center gap-1">
+                      <input type="checkbox" name="roles" value="{{ r }}"
+                             {% if r in roles_actifs %}checked{% endif %}>
+                      <span>{{ libelles_roles[r] }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+                {% if erreurs_collab and erreurs_collab.roles %}
+                  <p class="text-xs text-red-600">{{ erreurs_collab.roles }}</p>
+                {% endif %}
+              </div>
+              <div>
+                <label for="collab-edit-periode" class="block text-xs text-gray-500">
+                  Période d'intervention
+                </label>
+                <input id="collab-edit-periode" type="text" name="periode"
+                       value="{{ formulaire_collab.periode }}"
+                       placeholder="2022, 2022-2023…"
+                       class="w-full px-2 py-1 border border-gray-300 rounded">
+              </div>
+              <div>
+                <label for="collab-edit-notes" class="block text-xs text-gray-500">Notes</label>
+                <textarea id="collab-edit-notes" name="notes" rows="2"
+                          class="w-full px-2 py-1 border border-gray-300 rounded">{{ formulaire_collab.notes }}</textarea>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="submit"
+                        class="px-3 py-1 text-sm bg-gray-800 text-white rounded hover:bg-gray-700">
+                  Enregistrer
+                </button>
+                <a href="/fonds/{{ detail.fonds.cote }}"
+                   class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+                  Annuler
+                </a>
+              </div>
+            </form>
+          </li>
+        {% else %}
         <li class="flex items-baseline justify-between py-2 border-b border-gray-100 gap-3">
           <div class="flex items-baseline gap-2 flex-wrap">
             <span class="font-medium">{{ c.nom }}</span>
@@ -147,16 +213,24 @@
             {% endif %}
           </div>
           {% if not est_lecture_seule() %}
-            <form method="post"
-                  action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
-                  onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
-                  class="inline shrink-0">
-              <button type="submit" class="text-xs text-red-600 hover:underline">
-                Supprimer
-              </button>
-            </form>
+            <div class="inline-flex items-center gap-2 shrink-0">
+              <a href="/fonds/{{ detail.fonds.cote }}?modifier_collab={{ c.id }}"
+                 title="Modifier le nom, les rôles, la période ou les notes."
+                 class="text-xs text-gray-600 hover:underline">
+                Modifier
+              </a>
+              <form method="post"
+                    action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
+                    onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
+                    class="inline">
+                <button type="submit" class="text-xs text-red-600 hover:underline">
+                  Supprimer
+                </button>
+              </form>
+            </div>
           {% endif %}
         </li>
+        {% endif %}
       {% endfor %}
     </ul>
   {% else %}

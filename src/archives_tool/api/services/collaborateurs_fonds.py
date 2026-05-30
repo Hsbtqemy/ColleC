@@ -52,7 +52,6 @@ class FormulaireCollaborateurFonds(BaseModel):
 
 
 _ROLES_VALIDES: frozenset[str] = frozenset(r.value for r in RoleCollaborateur)
-_ORDRE_ROLES: list[RoleCollaborateur] = list(RoleCollaborateur)
 
 
 def valider_formulaire(formulaire: FormulaireCollaborateurFonds) -> dict[str, str]:
@@ -89,21 +88,6 @@ def lister_collaborateurs_fonds(
         .order_by(CollaborateurFonds.cree_le, CollaborateurFonds.id)
     ).all()
     return [_depuis_modele(c) for c in rows]
-
-
-def lister_collaborateurs_fonds_par_role(
-    db: Session, fonds_id: int
-) -> dict[RoleCollaborateur, list[CollaborateurFondsResume]]:
-    """Groupe par rôle. Une personne multi-rôles apparaît dans
-    plusieurs groupes. Ordre des rôles fixé par l'enum ; les rôles
-    sans collaborateur ne sont pas inclus."""
-    tous = lister_collaborateurs_fonds(db, fonds_id)
-    groupes: dict[RoleCollaborateur, list[CollaborateurFondsResume]] = {}
-    for role in _ORDRE_ROLES:
-        membres = [c for c in tous if role in c.roles]
-        if membres:
-            groupes[role] = membres
-    return groupes
 
 
 def _lire_modele(db: Session, collaborateur_id: int) -> CollaborateurFonds:

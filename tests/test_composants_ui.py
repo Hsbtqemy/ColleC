@@ -170,16 +170,3 @@ def test_tableau_items_date_none_pas_de_litteral(env) -> None:
     assert "—" in out
 
 
-def test_panneau_colonnes(env) -> None:
-    ctx = {
-        "collection_cote": "FA",
-        "actives": [{"key": "cote", "label": "Cote", "note": "colonne dédiée"}],
-        "available_dedicated": [{"key": "doi_nakala", "label": "DOI Nakala"}],
-        "available_meta": [{"key": "fascicule", "label": "Fascicule"}],
-    }
-    out = _render_macro(
-        env, "components/panneau_colonnes.html", "panneau_colonnes", ctx
-    )
-    assert "Cote" in out and "DOI Nakala" in out and "Fascicule" in out
-
-

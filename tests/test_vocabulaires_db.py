@@ -403,3 +403,212 @@ def test_route_supprimer_vocabulaire_refuse_si_reference(base_demo: Path) -> Non
     )
     assert resp.status_code == 409
     assert "référencé" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Edit inline d'une valeur depuis la page vocab détail
+# ---------------------------------------------------------------------------
+
+
+def test_page_vocab_modifier_query_param_active_edit_mode(
+    base_demo: Path,
+) -> None:
+    """GET /vocabulaires/<id>?modifier=<vid> rend la page avec la ligne
+    de la valeur ciblée transformée en formulaire pré-rempli."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+        )
+        val = ajouter_valeur(
+            s, vocab.id,
+            FormulaireValeur(
+                code="copi", libelle="Copi",
+                uri="https://www.wikidata.org/entity/Q733678",
+                ordre=5,
+            ),
+        )
+        vid, valeur_id = vocab.id, val.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}?modifier={valeur_id}")
+    assert r.status_code == 200
+    # La forme inline est rendue : action POST sur la route existante
+    assert f'action="/vocabulaires/{vid}/valeurs/{valeur_id}/modifier"' in r.text
+    # Inputs pré-remplis avec les valeurs de la base
+    assert 'name="code"' in r.text and 'value="copi"' in r.text
+    assert 'name="libelle"' in r.text and 'value="Copi"' in r.text
+    assert 'value="https://www.wikidata.org/entity/Q733678"' in r.text
+    # Bouton enregistrer + lien annuler
+    assert "Enregistrer" in r.text
+    assert f'href="/vocabulaires/{vid}"' in r.text
+
+
+def test_page_vocab_sans_modifier_pas_de_form_inline(base_demo: Path) -> None:
+    """Sans ?modifier=, la page liste les valeurs normalement (lien
+    « Modifier » dans les actions) sans forme inline ouverte."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+        )
+        val = ajouter_valeur(
+            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+        )
+        vid, valeur_id = vocab.id, val.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}")
+    assert r.status_code == 200
+    # Lien Modifier vers ?modifier=<vid> présent
+    assert f'/vocabulaires/{vid}?modifier={valeur_id}' in r.text
+    # Pas de form action vers /modifier sur le POST de modification
+    # de cette valeur — la ligne reste en lecture
+    assert f'action="/vocabulaires/{vid}/valeurs/{valeur_id}/modifier"' not in r.text
+
+
+def test_route_modifier_valeur_persiste_changements(base_demo: Path) -> None:
+    """POST /vocabulaires/<id>/valeurs/<vid>/modifier avec form valide
+    redirige et persiste les changements en base."""
+    from archives_tool.models import ValeurControlee
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+        )
+        val = ajouter_valeur(
+            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+        )
+        vid, valeur_id = vocab.id, val.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.post(
+        f"/vocabulaires/{vid}/valeurs/{valeur_id}/modifier",
+        data={
+            "code": "copi",
+            "libelle": "Copi (Raúl Damonte)",
+            "uri": "https://www.wikidata.org/entity/Q733678",
+            "description_interne": "Auteur argentin, BD satirique.",
+            "ordre": "3",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/vocabulaires/{vid}"
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = s.get(ValeurControlee, valeur_id)
+        assert v is not None
+        assert v.libelle == "Copi (Raúl Damonte)"
+        assert v.uri == "https://www.wikidata.org/entity/Q733678"
+        assert v.description_interne == "Auteur argentin, BD satirique."
+        assert v.ordre == 3
+    engine.dispose()
+
+
+def test_route_modifier_valeur_libelle_vide_reaffiche_form_avec_erreurs(
+    base_demo: Path,
+) -> None:
+    """POST avec libellé vide → 400 + page re-rendue avec la ligne en
+    mode form, valeurs soumises préservées, message d'erreur visible."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+        )
+        val = ajouter_valeur(
+            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+        )
+        vid, valeur_id = vocab.id, val.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.post(
+        f"/vocabulaires/{vid}/valeurs/{valeur_id}/modifier",
+        data={
+            "code": "copi",
+            "libelle": "",  # invalide
+            "uri": "",
+            "description_interne": "",
+            "ordre": "0",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    # Le formulaire est rouvert sur la même ligne
+    assert f'action="/vocabulaires/{vid}/valeurs/{valeur_id}/modifier"' in r.text
+    # Le code soumis est préservé (et pas écrasé par la valeur DB)
+    assert 'name="code"' in r.text and 'value="copi"' in r.text
+    # Message d'erreur sur le libellé
+    assert "libelle" in r.text.lower()
+
+
+def test_modifier_query_param_pour_valeur_d_un_autre_vocab_ignore(
+    base_demo: Path,
+) -> None:
+    """`?modifier=<vid>` où vid pointe sur une valeur d'un autre vocab :
+    la page rend normalement, sans bascule edit (anti-confused-deputy
+    léger : on ignore silencieusement plutôt que de 404)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v1 = creer_vocabulaire(s, FormulaireVocabulaire(code="v1", libelle="V1"))
+        v2 = creer_vocabulaire(s, FormulaireVocabulaire(code="v2", libelle="V2"))
+        val_v2 = ajouter_valeur(
+            s, v2.id, FormulaireValeur(code="x", libelle="X"),
+        )
+        v1_id, val_v2_id = v1.id, val_v2.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{v1_id}?modifier={val_v2_id}")
+    assert r.status_code == 200
+    # Aucun form de modification n'est rendu (la valeur n'existe pas
+    # dans ce vocab)
+    assert f'action="/vocabulaires/{v1_id}/valeurs/{val_v2_id}/modifier"' not in r.text
+
+
+def test_bouton_modifier_absent_en_lecture_seule(
+    base_demo: Path, monkeypatch, tmp_path: Path
+) -> None:
+    """Mode lecture seule : la colonne actions est masquée, donc pas
+    de lien « Modifier » ni de form inline accessible."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = creer_vocabulaire(
+            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+        )
+        val = ajouter_valeur(
+            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+        )
+        vid, valeur_id = vocab.id, val.id
+    engine.dispose()
+
+    racine = tmp_path / "miniatures"
+    racine.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  d: {racine}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+
+    client = TestClient(app)
+    # Même avec ?modifier, en lecture seule la bascule est inactive.
+    r = client.get(f"/vocabulaires/{vid}?modifier={valeur_id}")
+    assert r.status_code == 200
+    # Pas de lien Modifier dans la colonne actions
+    assert f'/vocabulaires/{vid}?modifier=' not in r.text
+    # Pas de form action vers /modifier non plus
+    assert f'/vocabulaires/{vid}/valeurs/{valeur_id}/modifier' not in r.text

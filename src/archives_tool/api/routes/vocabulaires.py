@@ -157,13 +157,45 @@ def soumettre_creer_vocabulaire(
 def page_vocabulaire(
     vocab_id: int,
     request: Request,
+    modifier: int | None = None,
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse:
     """Page détail : métadonnées du vocabulaire + tableau des valeurs
-    + formulaire d'ajout d'une nouvelle valeur."""
+    + formulaire d'ajout d'une nouvelle valeur.
+
+    Quand `?modifier=<vid>` est passé, la ligne de la valeur ciblée
+    est rendue en mode édition (formulaire inline pré-rempli depuis
+    la base). L'action POST de ce formulaire est la route existante
+    `/vocabulaires/<id>/valeurs/<vid>/modifier` ; en cas d'erreur
+    Pydantic, cette route ré-injecte aussi `valeur_en_modification`
+    pour ré-afficher le form avec les erreurs.
+    """
     vocab = vocabulaire_par_id(db, vocab_id)
+
+    # Mode édition : si `?modifier=<vid>` pointe sur une valeur du
+    # vocab, on pré-remplit le formulaire valeur depuis la base et on
+    # active la bascule inline-edit dans le template.
+    valeur_en_modification: int | None = None
+    formulaire_valeur = FormulaireValeur()
+    if modifier is not None:
+        valeur = next(
+            (v for v in vocab.valeurs if v.id == modifier), None
+        )
+        if valeur is not None:
+            valeur_en_modification = valeur.id
+            formulaire_valeur = FormulaireValeur(
+                code=valeur.code,
+                libelle=valeur.libelle,
+                uri=valeur.uri or "",
+                description_interne=valeur.description_interne or "",
+                ordre=valeur.ordre or 0,
+            )
+        # `?modifier=999` pour une valeur d'un autre vocab : on ignore
+        # silencieusement (pas la peine de 404 — le user voit la page
+        # vocab sans bascule edit). Anti-confused-deputy léger.
+
     return templates.TemplateResponse(
         request,
         "pages/vocabulaire_detail.html",
@@ -179,9 +211,10 @@ def page_vocabulaire(
                 description_interne=vocab.description_interne or "",
                 uri_base=vocab.uri_base or "",
             ),
-            formulaire_valeur=FormulaireValeur(),
+            formulaire_valeur=formulaire_valeur,
             erreurs_vocab={},
             erreurs_valeur={},
+            valeur_en_modification=valeur_en_modification,
         ),
     )
 

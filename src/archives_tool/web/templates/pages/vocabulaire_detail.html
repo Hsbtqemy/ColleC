@@ -175,6 +175,57 @@
       </thead>
       <tbody>
         {% for v in vocabulaire.valeurs | sort(attribute='ordre') %}
+        {% set en_edit = (not est_lecture_seule()
+                          and valeur_en_modification is defined
+                          and valeur_en_modification == v.id) %}
+        {% if en_edit %}
+        {# Mode édition inline : la ligne devient un formulaire posté
+           sur la route existante /vocabulaires/<id>/valeurs/<vid>/modifier.
+           Mêmes 5 champs que le formulaire d'ajout, mis en grille pour
+           tenir sur 1-2 lignes. Erreurs Pydantic ré-affichées sous le
+           form. #}
+        <tr style="background:#f0f9ff;border-bottom:1px solid #bfdbfe;">
+          <td colspan="6" style="padding:10px;">
+            <form method="post"
+                  action="/vocabulaires/{{ vocabulaire.id }}/valeurs/{{ v.id }}/modifier"
+                  style="display:grid;grid-template-columns:140px 1fr 1.4fr 70px auto;gap:8px;align-items:center;">
+              <input type="text" name="code" value="{{ formulaire_valeur.code }}"
+                     placeholder="Code" required
+                     style="font-family:monospace;font-size:13px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;">
+              <input type="text" name="libelle" value="{{ formulaire_valeur.libelle }}"
+                     placeholder="Libellé" required
+                     style="font-size:13px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;">
+              <input type="text" name="uri" value="{{ formulaire_valeur.uri }}"
+                     placeholder="URI canonique (optionnel)"
+                     style="font-family:monospace;font-size:12px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;">
+              <input type="number" name="ordre" value="{{ formulaire_valeur.ordre }}"
+                     style="font-size:13px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;text-align:right;">
+              <div style="display:flex;gap:6px;align-items:center;">
+                <button type="submit"
+                        style="padding:5px 12px;font-size:12px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;border-radius:3px;cursor:pointer;">
+                  Enregistrer
+                </button>
+                <a href="/vocabulaires/{{ vocabulaire.id }}"
+                   style="padding:5px 10px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#374151;border-radius:3px;text-decoration:none;background:white;">
+                  Annuler
+                </a>
+              </div>
+              {# description_interne sur sa propre ligne — rarement édité
+                 mais on le préserve quand l'utilisateur sauvegarde. #}
+              <textarea name="description_interne" rows="1"
+                        placeholder="Description interne (optionnelle)"
+                        style="grid-column:1 / -1;font-size:12px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;font-family:inherit;resize:vertical;">{{ formulaire_valeur.description_interne }}</textarea>
+            </form>
+            {% if erreurs_valeur %}
+              <p style="font-size:12px;color:#E24B4A;margin:8px 0 0 0;">
+                {% for champ, msg in erreurs_valeur.items() %}
+                  <strong>{{ champ }}</strong> : {{ msg }}{% if not loop.last %} · {% endif %}
+                {% endfor %}
+              </p>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
         <tr style="border-bottom:1px solid rgba(0,0,0,0.06);
                    {% if not v.actif %}opacity:0.55;{% endif %}">
           <td style="padding:8px 10px;" class="font-mono">{{ v.code }}</td>
@@ -193,6 +244,12 @@
           {% if not est_lecture_seule() %}
           <td style="padding:8px 10px;text-align:right;">
             <div class="inline-flex items-center gap-1">
+              <a href="/vocabulaires/{{ vocabulaire.id }}?modifier={{ v.id }}"
+                 title="Modifier le code, libellé, URI, ordre ou description de cette valeur."
+                 class="rounded hover:bg-gray-50"
+                 style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#374151;text-decoration:none;">
+                Modifier
+              </a>
               {% if v.actif %}
                 <form method="post"
                       action="/vocabulaires/{{ vocabulaire.id }}/valeurs/{{ v.id }}/deprecier"
@@ -228,6 +285,7 @@
           </td>
           {% endif %}
         </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>

@@ -60,7 +60,12 @@
 </div>
 {% else %}
 
-<form method="post" action="/collections/nouvelle"
+{# Mode locked (avec fonds_locked) : on POST sur /collections/nouvelle?fonds=<cote>
+   pour que le re-render d'erreur reproduise le mode locked. Mode
+   sélecteur : on POST sur /collections/nouvelle nu, et le re-render
+   ré-affiche le sélecteur. #}
+<form method="post"
+      action="/collections/nouvelle{{ fonds_q }}"
       style="max-width:680px;">
 
   <section style="margin-bottom:28px;">

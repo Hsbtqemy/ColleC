@@ -160,6 +160,59 @@ def test_post_cote_collision_meme_fonds_reaffiche_erreurs(
     assert r.status_code == 400
 
 
+def test_post_erreur_en_mode_selecteur_garde_selecteur(
+    base_demo: Path,
+) -> None:
+    """Bug évité : un utilisateur venu en mode sélecteur (sans ?fonds=)
+    qui choisit fonds X puis se trompe de cote ne doit PAS être bloqué
+    sur X au re-render — il doit pouvoir re-choisir un autre fonds.
+    Mécanisme : POST sans `?fonds=` → mode sélecteur préservé."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_id = s.scalar(
+            select(Collection.fonds_id).where(Collection.cote == "HK")
+        )
+    engine.dispose()
+
+    client = TestClient(app)
+    # POST nu (mode sélecteur), cote vide → erreur
+    r = client.post(
+        "/collections/nouvelle",
+        data={
+            "fonds_id": str(fonds_id),
+            "cote": "",
+            "titre": "X",
+            "phase": "catalogage",
+        },
+    )
+    assert r.status_code == 400
+    # Le re-render doit afficher le sélecteur (pas le mode locked)
+    assert '<select id="fonds_id" name="fonds_id" required' in r.text
+    # Pas de hidden field unique (mode locked)
+    assert 'name="fonds_id"\n             value="' not in r.text
+
+
+def test_post_erreur_en_mode_locked_garde_locked(base_demo: Path) -> None:
+    """Symétrique : un utilisateur venu avec ?fonds=HK qui se trompe
+    reste sur HK au re-render (pas de sélecteur pour changer)."""
+    client = TestClient(app)
+    r = client.post(
+        "/collections/nouvelle?fonds=HK",
+        data={
+            "fonds_id": "1",  # arbitraire, écrasé par le service
+            "cote": "",
+            "titre": "X",
+            "phase": "catalogage",
+        },
+    )
+    assert r.status_code == 400
+    # Pas de sélecteur (mode locked)
+    assert '<select id="fonds_id" name="fonds_id"' not in r.text
+    # Hidden input présent
+    assert 'type="hidden"' in r.text
+
+
 def test_post_lecture_seule_bloque(
     base_demo: Path, monkeypatch, tmp_path: Path
 ) -> None:

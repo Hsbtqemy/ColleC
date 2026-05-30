@@ -558,6 +558,15 @@ def page_collection_nouvelle(
 def soumettre_collection_nouvelle(
     request: Request,
     formulaire: Annotated[FormulaireCollection, Form()],
+    fonds: str | None = Query(
+        None,
+        description=(
+            "Cote du fonds locked depuis l'arrivée GET. Sert à reproduire "
+            "le mode (locked vs sélecteur) en cas d'erreur de validation. "
+            "Absent = mode sélecteur (l'utilisateur peut re-choisir le "
+            "fonds au prochain submit)."
+        ),
+    ),
     db: Session = Depends(get_db),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
@@ -565,16 +574,25 @@ def soumettre_collection_nouvelle(
     """Crée la collection libre et redirige vers sa page lecture.
 
     Erreurs de validation (cote / titre vide, cote en collision) : 400
-    avec le formulaire ré-affiché et les erreurs surlignées.
+    avec le formulaire ré-affiché et les erreurs surlignées. Le mode
+    (locked vs sélecteur) est porté par `?fonds=<cote>` sur l'URL de
+    soumission — sans ça, un utilisateur venu en mode sélecteur qui se
+    trompe de cote se retrouverait bloqué sur le fonds qu'il a choisi.
     """
     try:
         col = creer_collection_libre(db, formulaire, cree_par=utilisateur)
     except CollectionInvalide as e:
-        # Reconstitue le contexte pour le re-render (fonds_locked si
-        # fonds_id était posé, sinon sélecteur).
+        # Mode locked (?fonds=X) → on relit X depuis la base. Mode
+        # sélecteur (pas de query) → on liste tous les fonds, l'utilisateur
+        # peut changer son rattachement avant de resoumettre.
         fonds_locked = None
-        if formulaire.fonds_id is not None:
-            fonds_locked = db.get(Fonds, formulaire.fonds_id)
+        if fonds is not None:
+            try:
+                fonds_locked = lire_fonds_par_cote(db, fonds)
+            except FondsIntrouvable:
+                # Mode locked sur un fonds qui aurait disparu entre-temps :
+                # on retombe en mode sélecteur plutôt que 404 brutal.
+                fonds_locked = None
         tous_fonds = lister_fonds(db) if fonds_locked is None else []
         return templates.TemplateResponse(
             request,

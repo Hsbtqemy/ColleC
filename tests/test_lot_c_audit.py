@@ -89,6 +89,86 @@ def test_post_supprimer_champ_via_bouton(base_demo: Path) -> None:
     engine.dispose()
 
 
+def test_supprimer_champ_avec_valeurs_existantes_les_preserve(
+    base_demo: Path,
+) -> None:
+    """Garde-fou critique : la dialog promet que les valeurs en
+    metadonnees SURVIVENT au supprimer_champ (fallback clé libre).
+    Si quelqu'un refacto le composer et casse le fallback, la dialog
+    ment. Ce test verrouille la sémantique."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from archives_tool.api.services.dashboard import composer_page_item
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.models import Item, ItemCollection, TypeCollection
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.cote == "HK",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        # Pose une valeur sur un item de la miroir
+        item = s.scalar(
+            select(Item)
+            .join(ItemCollection, ItemCollection.item_id == Item.id)
+            .where(ItemCollection.collection_id == miroir.id)
+            .limit(1)
+        )
+        meta = dict(item.metadonnees or {})
+        meta["auteur_test"] = "Topor"
+        item.metadonnees = meta
+        flag_modified(item, "metadonnees")
+        s.commit()
+        cote_item = item.cote
+
+        # Crée le champ formel et vérifie qu'il est rendu en formel
+        c = creer_champ(
+            s, miroir.id,
+            FormulaireChamp(cle="auteur_test", libelle="Auteur (test)"),
+        )
+        cid = c.id
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        detail_avant = composer_page_item(s, cote_item, fonds)
+        champs_avant = detail_avant.metadonnees_par_section["Champs personnalisés"]
+        champ_formel = next(
+            (ch for ch in champs_avant if ch.cle == "auteur_test"), None
+        )
+        assert champ_formel is not None
+        assert champ_formel.libelle == "Auteur (test)"
+
+    # Maintenant POST supprimer via la route web (déclenchée par le
+    # bouton du Lot C)
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(
+        f"/collection/{miroir.cote}/champs/{cid}/supprimer?fonds={fonds.cote}"
+    )
+    assert r.status_code == 303
+
+    # Re-vérifie : la valeur Topor doit toujours apparaître sur l'item,
+    # cette fois en fallback clé libre (libellé synthétisé).
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item_apres = s.scalar(select(Item).where(Item.cote == cote_item))
+        # Valeur préservée en base
+        assert item_apres.metadonnees.get("auteur_test") == "Topor"
+        # Et rendue par le composer en clé libre
+        fonds_apres = lire_fonds_par_cote(s, "HK")
+        detail_apres = composer_page_item(s, cote_item, fonds_apres)
+        champs_apres = detail_apres.metadonnees_par_section["Champs personnalisés"]
+        cles_apres = {ch.cle for ch in champs_apres}
+        assert "auteur_test" in cles_apres
+        # Le libellé est synthétisé depuis la cle (pas "Auteur (test)")
+        champ_libre = next(ch for ch in champs_apres if ch.cle == "auteur_test")
+        assert champ_libre.libelle != "Auteur (test)"
+    engine.dispose()
+
+
 def test_bouton_supprimer_champ_absent_en_lecture_seule(
     base_demo: Path, monkeypatch, tmp_path: Path
 ) -> None:

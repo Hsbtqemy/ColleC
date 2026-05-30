@@ -104,6 +104,22 @@
                     </button>
                   </form>
                 {% endif %}
+                {# Suppression dure : retire la ligne ChampPersonnalise.
+                   Les valeurs portees par les items en metadonnees
+                   SURVIVENT — elles retomberont en cle libre dans le
+                   cartouche (cf. composer_metadonnees_par_section
+                   V0.9.4). Reversible en re-creant un champ avec la
+                   meme cle (libelle/type a redefinir). #}
+                <form method="post"
+                      action="/collection/{{ collection.cote }}/champs/{{ c.id }}/supprimer{{ fonds_q }}"
+                      style="display:inline;"
+                      onsubmit="return confirm('Supprimer definitivement le champ « {{ c.libelle | e }} » (cle « {{ c.cle | e }} ») ?\n\nLes valeurs deja saisies sur les items SURVIVENT — elles retomberont en cle libre dans le cartouche. Reversible en recreant un champ avec la meme cle.\n\nPreferer Deprecier dans la majorite des cas.');">
+                  <button type="submit"
+                          class="rounded hover:bg-red-50"
+                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+                    Supprimer
+                  </button>
+                </form>
               {% endif %}
             </div>
           </td>

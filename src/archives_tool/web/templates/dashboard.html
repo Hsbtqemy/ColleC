@@ -14,15 +14,24 @@
 <section class="mb-8">
   <div class="flex items-start justify-between mb-1 gap-4">
     <h1 class="text-2xl font-medium">Tableau de bord</h1>
-    {# Lien discret vers la gestion des vocabulaires (V0.9.4 lot 3a) :
-       admin-style, pas une opération quotidienne, donc en haut à
-       droite plutôt que dans le flux principal. #}
-    <a href="/vocabulaires"
-       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
-       style="padding:4px 12px;font-size:12px;color:#374151;
-              border:1px solid rgba(0,0,0,0.10);white-space:nowrap;">
-      Vocabulaires
-    </a>
+    {# Liens discrets vers les pages admin-style. Pas des opérations
+       quotidiennes, donc en haut à droite plutôt que dans le flux
+       principal du dashboard. #}
+    <div class="inline-flex items-center gap-2 shrink-0">
+      <a href="/fonds"
+         title="Vue liste sobre de tous les fonds (alternative au dashboard arborescent)"
+         class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+         style="padding:4px 12px;font-size:12px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);white-space:nowrap;">
+        Liste des fonds
+      </a>
+      <a href="/vocabulaires"
+         class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+         style="padding:4px 12px;font-size:12px;color:#374151;
+                border:1px solid rgba(0,0,0,0.10);white-space:nowrap;">
+        Vocabulaires
+      </a>
+    </div>
   </div>
   <p class="text-sm text-gray-500">
     <span class="font-mono">{{ nom_base }}</span>

@@ -1357,7 +1357,18 @@ def servir_fichier_item(
     Vérifie l'appartenance fichier→item→fonds (anti-confused-deputy)
     avant toute résolution disque. Pour la base de démo où les
     chemins sont fictifs, retourne 404 propre.
+
+    Defense en profondeur path traversal (audit V0.9.x) : valide
+    `chemin_relatif` contre `..` / chemin absolu, puis verifie apres
+    resolution que la cible reste dans la racine. `racine_path /
+    "/etc/passwd"` en pathlib pur reinitialise au root (documente),
+    donc une valeur DB malformee (par ex. ecrite via une faille
+    ailleurs ou edition manuelle) pourrait sortir de la racine sans
+    ces deux gardes. Pattern identique au router `derives` qui les
+    a depuis V0.6.
     """
+    from archives_tool.files.paths import valider_chemin_relatif
+
     fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
         item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
@@ -1380,8 +1391,30 @@ def servir_fichier_item(
             status_code=404,
             detail=f"Racine {fichier.racine!r} non configurée.",
         )
-    chemin_local = racine_path / fichier.chemin_relatif
-    if not chemin_local.exists():
+
+    # Garde 1 : rejette chemin absolu ou contenant `..`. Detecte les
+    # `chemin_relatif` malformes en base avant qu'ils ne sortent de
+    # leur racine via `pathlib.Path.__truediv__`.
+    try:
+        rel = str(valider_chemin_relatif(fichier.chemin_relatif))
+    except ValueError as e:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Chemin relatif invalide en base : {e}",
+        ) from None
+
+    base = racine_path.resolve()
+    chemin_local = (base / rel).resolve()
+
+    # Garde 2 : verifie apres resolution que la cible reste dans la
+    # racine. Couvre les symlinks pointant hors racine et un
+    # eventuel contournement de valider_chemin_relatif.
+    if not chemin_local.is_relative_to(base):
+        raise HTTPException(
+            status_code=403,
+            detail="Cible hors de la racine declaree.",
+        )
+    if not chemin_local.is_file():
         raise HTTPException(
             status_code=404,
             detail=f"Fichier absent du disque : {fichier.chemin_relatif}",

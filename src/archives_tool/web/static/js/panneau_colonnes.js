@@ -54,6 +54,27 @@
       if (cnt) cnt.textContent = String(listeActive.querySelectorAll("[data-col]").length);
     }
 
+    // Helpers DOM safe : evitent l'injection XSS via template literal
+    // dans innerHTML. Les labels des colonnes metadonnees viennent des
+    // cles d'Item.metadonnees (import tableur, free text), donc peuvent
+    // contenir n'importe quel caractere HTML — un nom de colonne
+    // « <img src=x onerror=alert(1)> » declencherait une XSS au clic
+    // sur Retirer/Ajouter si on interpole via innerHTML.
+    function spanTexte(texte, style, className) {
+      const s = document.createElement("span");
+      if (style) s.style.cssText = style;
+      if (className) s.className = className;
+      s.textContent = texte;
+      return s;
+    }
+    function svgRaw(svgHtml) {
+      // SVG statique (constant code, jamais user data) : on peut utiliser
+      // un container avec innerHTML sans risque.
+      const span = document.createElement("span");
+      span.innerHTML = svgHtml;
+      return span;
+    }
+
     // Retirer une colonne active : la déplacer vers la liste
     // disponibles correspondante (selon catégorie).
     listeActive.addEventListener("click", function (e) {
@@ -71,11 +92,13 @@
       dispo.dataset.colCategorie = cat;
       dispo.dataset.colLabel = li.dataset.colLabel;
       dispo.dataset.ajouter = "";
-      dispo.innerHTML = `
-        <span class="inline-block bg-white" style="width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,0.16);"></span>
-        <span style="font-size:13px;color:#6b7280;">${li.dataset.colLabel}</span>
-        ${cat === "metadonnee" ? '<span style="font-size:11px;color:#9ca3af;margin-left:auto;">métadonnée</span>' : ''}
-      `;
+      // Construction via DOM safe (textContent, pas innerHTML avec
+      // template literal — sinon XSS via colLabel).
+      dispo.appendChild(spanTexte("", "width:14px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,0.16);", "inline-block bg-white"));
+      dispo.appendChild(spanTexte(li.dataset.colLabel, "font-size:13px;color:#6b7280;"));
+      if (cat === "metadonnee") {
+        dispo.appendChild(spanTexte("métadonnée", "font-size:11px;color:#9ca3af;margin-left:auto;"));
+      }
       cible.appendChild(dispo);
       li.remove();
       actualiserCompteur();
@@ -97,26 +120,58 @@
       active.dataset.colKey = key;
       active.dataset.colCategorie = cat;
       active.dataset.colLabel = label;
-      active.innerHTML = `
-        <input type="hidden" name="colonnes" value="${key}">
-        <span class="cursor-grab opacity-60 hover:opacity-100" data-handle aria-label="Réordonner">
-          <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">
-            <circle cx="2.5" cy="2"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="2"  r="1" fill="#9ca3af"/>
-            <circle cx="2.5" cy="7"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="7"  r="1" fill="#9ca3af"/>
-            <circle cx="2.5" cy="12" r="1" fill="#9ca3af"/><circle cx="7.5" cy="12" r="1" fill="#9ca3af"/>
-          </svg>
-        </span>
-        <span class="inline-flex items-center justify-center"
-              style="width:14px;height:14px;border-radius:3px;background:#378ADD;">
-          <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
-            <path d="M1.5 4.5 L3.5 6.5 L7.5 2" fill="none" stroke="white"
-                  stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </span>
-        <span class="flex-1" style="font-size:13px;color:#1f1f1f;">${label}</span>
-        ${cat === "metadonnee" ? '<span style="font-size:11px;color:#9ca3af;">métadonnée</span>' : ''}
-        ${!obligatoire ? '<button type="button" data-retirer aria-label="Retirer" class="opacity-40 hover:opacity-100 hover:text-gray-800" style="font-size:14px;line-height:1;color:#9ca3af;padding:0 4px;">−</button>' : ''}
-      `;
+
+      // Input hidden : `value` set via property (DOM API), evite l'injection
+      // dans value="..." si key contient `"`.
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "colonnes";
+      hidden.value = key;
+      active.appendChild(hidden);
+
+      // Handle drag (SVG statique).
+      const handle = document.createElement("span");
+      handle.className = "cursor-grab opacity-60 hover:opacity-100";
+      handle.dataset.handle = "";
+      handle.setAttribute("aria-label", "Réordonner");
+      handle.appendChild(svgRaw(
+        '<svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">' +
+        '<circle cx="2.5" cy="2"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="2"  r="1" fill="#9ca3af"/>' +
+        '<circle cx="2.5" cy="7"  r="1" fill="#9ca3af"/><circle cx="7.5" cy="7"  r="1" fill="#9ca3af"/>' +
+        '<circle cx="2.5" cy="12" r="1" fill="#9ca3af"/><circle cx="7.5" cy="12" r="1" fill="#9ca3af"/>' +
+        '</svg>'
+      ).firstChild);
+      active.appendChild(handle);
+
+      // Coche bleue (SVG statique).
+      const coche = document.createElement("span");
+      coche.className = "inline-flex items-center justify-center";
+      coche.style.cssText = "width:14px;height:14px;border-radius:3px;background:#378ADD;";
+      coche.appendChild(svgRaw(
+        '<svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">' +
+        '<path d="M1.5 4.5 L3.5 6.5 L7.5 2" fill="none" stroke="white" ' +
+        'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg>'
+      ).firstChild);
+      active.appendChild(coche);
+
+      // Label : textContent (pas innerHTML — sinon XSS via label).
+      active.appendChild(spanTexte(label, "font-size:13px;color:#1f1f1f;", "flex-1"));
+
+      if (cat === "metadonnee") {
+        active.appendChild(spanTexte("métadonnée", "font-size:11px;color:#9ca3af;"));
+      }
+      if (!obligatoire) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.retirer = "";
+        btn.setAttribute("aria-label", "Retirer");
+        btn.className = "opacity-40 hover:opacity-100 hover:text-gray-800";
+        btn.style.cssText = "font-size:14px;line-height:1;color:#9ca3af;padding:0 4px;";
+        btn.textContent = "−";
+        active.appendChild(btn);
+      }
+
       listeActive.appendChild(active);
       li.remove();
       actualiserCompteur();

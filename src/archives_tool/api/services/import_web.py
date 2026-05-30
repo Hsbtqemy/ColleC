@@ -117,10 +117,35 @@ def lister_sessions_en_cours(db: Session) -> list[SessionImport]:
 
 def _chemin_tableur_absolu(session: SessionImport) -> Path | None:
     """Résout le chemin disque du tableur uploadé, ou None s'il n'y en
-    a pas. `chemin_tableur` est stocké relatif à `RACINE_IMPORT_TMP`."""
+    a pas. `chemin_tableur` est stocké relatif à `RACINE_IMPORT_TMP`.
+
+    Defense en profondeur (audit V0.9.x) : `chemin_tableur` est ecrit
+    par `attacher_tableur` sous la forme `session_<id>.<ext>` — toujours
+    relatif et sans `..`. Mais ce helper est consomme par
+    `abandonner_session_import` qui fait `unlink()` et par
+    `composer_profil` qui passe le chemin a pandas. Si la valeur DB est
+    malformee (faille ailleurs, edition manuelle admin), un chemin
+    absolu ou contenant `..` pourrait sortir de RACINE_IMPORT_TMP →
+    suppression d'un fichier systeme, ou parsing de contenu hors
+    racine. On valide ici par symetrie avec les autres routes
+    filesystem du projet (cf. `derives.py`, `servir_fichier_item`).
+    """
+    from archives_tool.files.paths import valider_chemin_relatif
+
     if not session.chemin_tableur:
         return None
-    return RACINE_IMPORT_TMP / session.chemin_tableur
+    try:
+        rel = str(valider_chemin_relatif(session.chemin_tableur))
+    except ValueError:
+        # Chemin malforme : on retourne None (comme si le tableur etait
+        # absent). Couvre le cas DB compromise sans laisser sortir de
+        # RACINE_IMPORT_TMP.
+        return None
+    base = RACINE_IMPORT_TMP.resolve()
+    candidat = (base / rel).resolve()
+    if not candidat.is_relative_to(base):
+        return None
+    return candidat
 
 
 def _index_etape(etape: str) -> int:
@@ -623,8 +648,11 @@ def construire_mapping_depuis_simple(
         None,
     )
     if cote_auto != colonne_cote and session.chemin_tableur:
-        chemin = RACINE_IMPORT_TMP / session.chemin_tableur
-        if chemin.is_file():
+        # Passe par le helper securise plutot que reconstruire le path
+        # ici — sinon bypass de la garde path traversal posee sur
+        # `_chemin_tableur_absolu` (audit V0.9.x).
+        chemin = _chemin_tableur_absolu(session)
+        if chemin is not None and chemin.is_file():
             try:
                 echantillons = analyser_colonnes_tableur(
                     chemin, session.feuille, cote_col_force=colonne_cote

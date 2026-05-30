@@ -94,42 +94,70 @@ def test_servir_fichier_chemin_valide_marche(
     assert r.content == b"fake jpg content"
 
 
+def test_servir_fichier_chemin_avec_sous_dossier(
+    base_demo_avec_racine: tuple[Path, Path],
+) -> None:
+    """Cas reel : chemin avec sous-dossier (`images/page-1.jpg`)
+    est legitime et doit etre servi normalement."""
+    db, racine = base_demo_avec_racine
+    sous_dossier = racine / "images"
+    sous_dossier.mkdir()
+    (sous_dossier / "page-1.jpg").write_bytes(b"page 1 binaire")
+    cote_fonds, cote_item = _ids_pour_servir(db)
+    fid = _patch_fichier_chemin(db, cote_item, "images/page-1.jpg")
+
+    client = TestClient(app)
+    r = client.get(f"/item/{cote_item}/fichiers/{fid}?fonds={cote_fonds}")
+    assert r.status_code == 200
+    assert r.content == b"page 1 binaire"
+
+
 def test_servir_fichier_refuse_chemin_absolu(
     base_demo_avec_racine: tuple[Path, Path], tmp_path: Path
 ) -> None:
     """`chemin_relatif = '/etc/passwd'` (absolu) → 403, pas 200.
 
     Sans la garde, `racine / '/etc/passwd'` = `/etc/passwd` en pathlib,
-    et le serveur exposerait n'importe quel fichier lisible."""
+    et le serveur exposerait n'importe quel fichier lisible.
+
+    Verification de contenu (pas de chemin) : sur Linux/Mac le detail
+    403 « Chemin relatif invalide en base » ne contient pas le chemin
+    soumis (defense-in-depth). Sur Windows, c'est is_relative_to qui
+    catch (path POSIX validation n'attrape pas un chemin Windows).
+    Quel que soit le chemin, on verifie que le contenu MARQUEUR_SECRET
+    du fichier hors-racine ne se retrouve PAS dans la reponse."""
     db, _ = base_demo_avec_racine
     cote_fonds, cote_item = _ids_pour_servir(db)
-    # On utilise un fichier qu'on sait qui existe pour eviter un
-    # 404 qui maskerait le bug. Cree un fichier hors racine.
-    hors_racine = tmp_path / "hors_racine_secret.txt"
-    hors_racine.write_text("SECRET", encoding="utf-8")
+    # Cree un fichier hors racine avec un marqueur improbable dans
+    # le chemin lui-meme — pour separer leak du chemin vs leak du
+    # contenu si l'assertion casse.
+    hors_racine = tmp_path / "fichier_hors_racine.txt"
+    hors_racine.write_bytes(b"MARQUEUR_CONTENU_PRIVE_42")
     fid = _patch_fichier_chemin(db, cote_item, str(hors_racine))
 
     client = TestClient(app)
     r = client.get(f"/item/{cote_item}/fichiers/{fid}?fonds={cote_fonds}")
     assert r.status_code == 403
-    assert "secret" not in r.text.lower()
+    # Verifie sur le content (bytes) — couvre le cas
+    # FileResponse qui aurait expose le binaire ainsi que les details
+    # d'erreur JSON qui auraient pu inclure le contenu.
+    assert b"MARQUEUR_CONTENU_PRIVE_42" not in r.content
 
 
 def test_servir_fichier_refuse_dotdot(
     base_demo_avec_racine: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    """`chemin_relatif = '../hors_racine_secret.txt'` → 403."""
+    """`chemin_relatif = '../fichier_hors.txt'` → 403."""
     db, racine = base_demo_avec_racine
     cote_fonds, cote_item = _ids_pour_servir(db)
-    # Cree un fichier dans le parent de la racine
-    cible = racine.parent / "hors_racine_secret.txt"
-    cible.write_text("SECRET", encoding="utf-8")
-    fid = _patch_fichier_chemin(db, cote_item, "../hors_racine_secret.txt")
+    cible = racine.parent / "fichier_hors.txt"
+    cible.write_bytes(b"MARQUEUR_DOTDOT_43")
+    fid = _patch_fichier_chemin(db, cote_item, "../fichier_hors.txt")
 
     client = TestClient(app)
     r = client.get(f"/item/{cote_item}/fichiers/{fid}?fonds={cote_fonds}")
     assert r.status_code == 403
-    assert "SECRET" not in r.text
+    assert b"MARQUEUR_DOTDOT_43" not in r.content
 
 
 def test_servir_fichier_refuse_symlink_sortant_de_racine(
@@ -140,8 +168,8 @@ def test_servir_fichier_refuse_symlink_sortant_de_racine(
     db, racine = base_demo_avec_racine
     cote_fonds, cote_item = _ids_pour_servir(db)
 
-    cible_secret = tmp_path / "vrai_secret.txt"
-    cible_secret.write_text("SECRET SYMLINK", encoding="utf-8")
+    cible_secret = tmp_path / "vrai_fichier_hors.txt"
+    cible_secret.write_bytes(b"MARQUEUR_SYMLINK_44")
     lien = racine / "lien.jpg"
     try:
         lien.symlink_to(cible_secret)
@@ -152,7 +180,7 @@ def test_servir_fichier_refuse_symlink_sortant_de_racine(
     client = TestClient(app)
     r = client.get(f"/item/{cote_item}/fichiers/{fid}?fonds={cote_fonds}")
     assert r.status_code == 403
-    assert "SECRET SYMLINK" not in r.text
+    assert b"MARQUEUR_SYMLINK_44" not in r.content
 
 
 def test_servir_fichier_404_si_absent_avec_chemin_valide(

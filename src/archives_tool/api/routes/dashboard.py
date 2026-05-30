@@ -1394,13 +1394,16 @@ def servir_fichier_item(
 
     # Garde 1 : rejette chemin absolu ou contenant `..`. Detecte les
     # `chemin_relatif` malformes en base avant qu'ils ne sortent de
-    # leur racine via `pathlib.Path.__truediv__`.
+    # leur racine via `pathlib.Path.__truediv__`. Detail neutre — pas
+    # de leak du chemin soumis pour ne pas confirmer une tentative
+    # de path traversal (l'attaquant connait deja sa propre saisie
+    # mais defense-in-depth = ne pas confirmer).
     try:
         rel = str(valider_chemin_relatif(fichier.chemin_relatif))
-    except ValueError as e:
+    except ValueError:
         raise HTTPException(
             status_code=403,
-            detail=f"Chemin relatif invalide en base : {e}",
+            detail="Chemin relatif invalide en base.",
         ) from None
 
     base = racine_path.resolve()
@@ -1415,6 +1418,9 @@ def servir_fichier_item(
             detail="Cible hors de la racine declaree.",
         )
     if not chemin_local.is_file():
+        # 404 detail conserve le chemin — c'est un cas legitime de
+        # debug (fichier supprime du disque). Pas un vecteur d'attaque
+        # car le chemin a deja passe la garde 1.
         raise HTTPException(
             status_code=404,
             detail=f"Fichier absent du disque : {fichier.chemin_relatif}",

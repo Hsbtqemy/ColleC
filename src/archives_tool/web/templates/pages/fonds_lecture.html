@@ -219,9 +219,12 @@
                  class="text-xs text-gray-600 hover:underline">
                 Modifier
               </a>
+              {# Attribut delimite par `'` + `| tojson` : robuste contre
+                 toute apostrophe dans c.nom (free text, pas de pattern).
+                 Sans ca, un nom « L'auteur » casserait le JS string. #}
               <form method="post"
                     action="/fonds/{{ detail.fonds.cote }}/collaborateurs/{{ c.id }}/supprimer"
-                    onsubmit="return confirm('Retirer {{ c.nom | e }} de ce fonds ?');"
+                    onsubmit='return confirm({{ ("Retirer " + c.nom + " de ce fonds ?") | tojson }});'
                     class="inline">
                 <button type="submit" class="text-xs text-red-600 hover:underline">
                   Supprimer

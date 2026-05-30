@@ -337,9 +337,11 @@
   <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
     Suppression du vocabulaire
   </h2>
+  {# Attribut delimite par `'` + `| tojson` : robuste contre toute
+     apostrophe dans vocabulaire.libelle (free text, pas de pattern). #}
   <form method="post"
         action="/vocabulaires/{{ vocabulaire.id }}/supprimer"
-        onsubmit="return confirm('Supprimer définitivement le vocabulaire « {{ vocabulaire.libelle }} » et toutes ses valeurs ? Refusé si encore référencé par un champ personnalisé.');">
+        onsubmit='return confirm({{ ("Supprimer définitivement le vocabulaire « " + vocabulaire.libelle + " » et toutes ses valeurs ? Refusé si encore référencé par un champ personnalisé.") | tojson }});'>
     <button type="submit"
             class="inline-flex items-center gap-1.5 rounded hover:bg-red-50"
             style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">

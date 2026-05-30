@@ -130,7 +130,9 @@
             title="Tourner 90° dans le sens horaire">
       ⟲
     </button>
-    <a href="{{ url }}" target="_blank" rel="noopener"
+    {# url_safe : protege contre `iiif_url_nakala = "javascript:..."`
+       qui pourrait venir d'un import malicieux. #}
+    <a href="{{ url | url_safe }}" target="_blank" rel="noopener"
        style="padding:3px 10px;background:#fff;color:#1f1f1f;
               border-radius:3px;text-decoration:none;font-weight:500;"
        title="Télécharger le PDF">

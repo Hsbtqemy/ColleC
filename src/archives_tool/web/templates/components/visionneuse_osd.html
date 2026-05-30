@@ -34,7 +34,8 @@
         pour générer les aperçus.
       </span>
     </p>
-    <a href="{{ src_brut }}"
+    {# url_safe : iiif_url_nakala peut venir d'un import malicieux. #}
+    <a href="{{ src_brut | url_safe }}"
        class="inline-flex items-center gap-1.5 rounded mt-3"
        style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;
               border:1px solid #1f1f1f;">

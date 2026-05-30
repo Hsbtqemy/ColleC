@@ -166,7 +166,7 @@
             {% for tag in fiche.tags_annotations %}
               <li style="display:flex;align-items:baseline;gap:6px;">
                 {% if tag.uri %}
-                  <a href="{{ tag.uri }}" target="_blank" rel="noopener noreferrer"
+                  <a href="{{ tag.uri | url_safe }}" target="_blank" rel="noopener noreferrer"
                      style="color:#374151;text-decoration:none;border-bottom:1px dotted #9ca3af;"
                      title="Ouvrir l'autorité externe ({{ tag.uri }})">
                     {{ tag.libelle }}

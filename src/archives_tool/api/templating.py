@@ -176,7 +176,45 @@ def _surligner_q(text: object, q: str | None) -> str:
     return Markup(pattern.sub(r"<mark>\1</mark>", escaped))
 
 
+def _url_safe(value: object) -> str:
+    """Filtre Jinja qui rend un href safe contre l'injection
+    `javascript:` / `data:` exécutable.
+
+    Cas d'usage : `ValeurControlee.uri` et `AnnotationRegion` body URIs
+    sont saisis librement (Wikidata, VIAF, COAR, DOI…). Pas de pattern
+    Pydantic — un utilisateur peut poser `uri = "javascript:alert(1)"`
+    et un visiteur qui clique le lien depuis la page enrichissement
+    preview ou la fiche item se ferait exécuter le JS. `rel="noopener"`
+    ne bloque pas ce vecteur.
+
+    Whitelist conservatrice :
+    - URLs absolues http:// / https://
+    - URLs absolues mailto: (cas legit pour les autorités)
+
+    Tout autre scheme (javascript:, data:, file:, vbscript:, etc.)
+    retourne `"#"` — le lien reste visible mais ne navigue nulle part.
+    Les URLs relatives sans scheme sont aussi acceptees (par exemple
+    `/fonds/HK`) car elles sont confinees au site.
+    """
+    if value is None:
+        return "#"
+    s = str(value).strip()
+    if not s:
+        return "#"
+    # URLs relatives (sans scheme) : autorisees, restent sous notre
+    # origin.
+    if s.startswith("/") or s.startswith("./") or s.startswith("../"):
+        return s
+    # URLs absolues : whitelist explicite.
+    bas = s.lower()
+    for prefixe in ("http://", "https://", "mailto:"):
+        if bas.startswith(prefixe):
+            return s
+    return "#"
+
+
 templates = Jinja2Templates(directory=RACINE_TEMPLATES)
+templates.env.filters["url_safe"] = _url_safe
 templates.env.filters["libelle_phase"] = lambda p: (
     p.libelle if isinstance(p, PhaseChantier) else "—"
 )

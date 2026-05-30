@@ -5,11 +5,10 @@
      list[ColonneDisponible]
    - par_defaut : bool (info "rien en base, on tombe sur les défauts")
 
-   Le contenu interne reproduit la structure du composant
-   `panneau_colonnes.html` du bundle Claude Design (header,
-   sections, footer) en l'enveloppant dans une modale latérale
-   droite. Le form submet en POST HTMX sur /preferences/colonnes/items/<id>
-   et reçoit le tableau d'items à swapper sur #tableau-items.
+   Structure : header, sections (actives + disponibles), footer,
+   le tout enveloppé dans une modale latérale droite. Le form
+   submet en POST HTMX sur /preferences/colonnes/items/<id> et
+   reçoit le tableau d'items à swapper sur #tableau-items.
 
    Le serveur émet `HX-Trigger: panneau-colonnes-ferme` après
    sauvegarde — `panneau_colonnes.js` écoute pour fermer la modale. #}

@@ -48,8 +48,7 @@ l'existant.
 | Macro                       | Fichier                                | Rôle                                                |
 | --------------------------- | -------------------------------------- | --------------------------------------------------- |
 | `panneau_filtres`           | `panneau_filtres.html`                 | Drawer latéral (filtre/recherche).                  |
-| `panneau_colonnes`          | `panneau_colonnes.html`                | Drawer config colonnes (drag-drop Sortable.js).     |
-| `panneau_colonnes_modale`   | `panneau_colonnes_modale.html`         | Variante modale du panneau colonnes.                |
+| `panneau_colonnes_modale`   | `panneau_colonnes_modale.html`         | Modale config colonnes (drag-drop Sortable.js).     |
 | `_ligne_colonne_active`     | `_ligne_colonne_active.html`           | Ligne d'une colonne sélectionnée (drag-drop).       |
 | `_ligne_colonne_dispo`      | `_ligne_colonne_dispo.html`            | Ligne d'une colonne disponible (drag-drop).         |
 

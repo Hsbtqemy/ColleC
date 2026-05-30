@@ -1582,8 +1582,28 @@ def _re_rendre_fonds_avec_erreurs_collab(
 ) -> HTMLResponse:
     """Ré-affiche la page fonds avec les erreurs de validation et le
     formulaire pré-rempli pour que l'utilisateur corrige. Pattern
-    PRG-friendly : status 400 ; pas de redirect."""
+    PRG-friendly : status 400 ; pas de redirect.
+
+    Propage `synthese` + `consultation_url` + `q_surligne` pour que
+    le re-render ait le même rendu que le GET nominal (sans, la page
+    perd son bloc synthèse et le bouton mode consultation — UX
+    incohérente vis-à-vis du GET). Pre-existing gap rattrapé en Lot B.
+    """
+    from archives_tool.models import Item
+
     detail = composer_page_fonds(db, cote)
+    synthese = composer_synthese_fonds(db, detail.fonds)
+    premier_item_cote = db.scalar(
+        select(Item.cote)
+        .where(Item.fonds_id == detail.fonds.id)
+        .order_by(Item.cote)
+        .limit(1)
+    )
+    consultation_url = (
+        f"/lire/{detail.fonds.cote}/{premier_item_cote}"
+        if premier_item_cote
+        else None
+    )
     return templates.TemplateResponse(
         request,
         "pages/fonds_lecture.html",
@@ -1591,8 +1611,11 @@ def _re_rendre_fonds_avec_erreurs_collab(
             nom_base,
             utilisateur,
             detail=detail,
+            synthese=synthese,
             roles_options=ROLES_OPTIONS,
             libelles_roles=LIBELLES_ROLE,
+            consultation_url=consultation_url,
+            q_surligne="",
             erreurs_collab=erreurs,
             formulaire_collab=formulaire,
             collaborateur_en_modification=collaborateur_en_modification,

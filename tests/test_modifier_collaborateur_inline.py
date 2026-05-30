@@ -139,6 +139,35 @@ def test_post_modifier_collab_nom_vide_reaffiche_erreurs(
     assert "Le nom est obligatoire." in r.text
 
 
+def test_post_erreur_rerender_garde_synthese_et_consultation(
+    base_demo: Path,
+) -> None:
+    """Le re-render d'erreur passe `synthese` + `consultation_url` au
+    template — sinon le bandeau synthèse et le bouton « Mode
+    consultation » disparaissent au moment d'une erreur de validation,
+    UX incohérente avec le GET nominal. Pré-existant rattrapé Lot B."""
+    cote, cid = _amorcer_collab(base_demo)
+    client = TestClient(app)
+
+    # GET nominal : vérifie qu'il y a bien un bloc synthèse + lien consultation
+    r_get = client.get(f"/fonds/{cote}")
+    assert r_get.status_code == 200
+    a_synthese = "Synthèse" in r_get.text or "synthese-fonds" in r_get.text
+    a_consultation = "/lire/" in r_get.text
+
+    # POST avec erreur → page rerender avec 400 ; doit conserver
+    # les mêmes blocs (synthèse + consultation) que le GET.
+    r_post = client.post(
+        f"/fonds/{cote}/collaborateurs/{cid}",
+        data={"nom": "", "roles": ["numerisation"], "periode": "", "notes": ""},
+    )
+    assert r_post.status_code == 400
+    if a_synthese:
+        assert "Synthèse" in r_post.text or "synthese-fonds" in r_post.text
+    if a_consultation:
+        assert "/lire/" in r_post.text
+
+
 def test_modifier_collab_id_d_un_autre_fonds_ignore(base_demo: Path) -> None:
     """`?modifier_collab=<id>` où id pointe sur un collab d'un autre fonds :
     la page rend normalement, sans bascule edit (anti-confused-deputy

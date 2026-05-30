@@ -43,8 +43,12 @@ lecture — plus simple à exporter, données stables, audit clair).
   badges « global » / « N fonds » sur la liste). Le filtrage est
   en place de bout en bout et utilisable directement depuis
   l'interface web.
-- **T4** (enrichissement rétroactif des annotations) reste ouvert
-  — attendre un cas concret de réattribution avant.
+- **T4 livré** (mai 2026) : enrichissement rétroactif des
+  annotations existantes (TextualBody libre → SpecificResource avec
+  URI canonique). Service backend idempotent, CLI
+  `archives-tool annotations enrichir`, page web preview/confirmer
+  accessible depuis chaque fonds rattaché de la page vocab. Le
+  scoping vocabulaires ↔ fonds est désormais complet bout-en-bout.
 
 ## Tickets
 
@@ -102,7 +106,7 @@ visuellement les vocabs qui polluent partout.
 Suit naturellement T1+T2. Sans T3, l'admin se fait via CLI ou
 SQL — viable pour les premiers tests mais inconfortable.
 
-### Ticket 4 — Enrichissement rétroactif
+### Ticket 4 — Enrichissement rétroactif  ✅ livré
 
 **Cible** : opération idempotente qui, pour un `(vocabulaire, fonds)`
 donné, parcourt les annotations du fonds, matche les
@@ -111,33 +115,62 @@ donné, parcourt les annotations du fonds, matche les
 par un `SpecificResource source={id, label}` avec URI Wikidata.
 
 - Service
-  `enrichir_annotations_par_vocab(db, vocab_id, fonds_id, *, dry_run=True)`
-  → `RapportEnrichissement(matches: list[Match], deja_enrichies: int)`.
-  Chaque `Match` contient `annotation_id`, `libelle_libre`,
-  `valeur_controlee_cible`, `uri_cible`.
-- Idempotence : si le `body` est déjà SpecificResource avec
-  cette URI, skip silencieusement.
-- **Remplacer** (pas ajouter) le TextualBody → SpecificResource.
-  Cohérent avec ce qu'Annotorious crée nativement (un body par
-  tag, jamais deux). Audit assuré par `TracabiliteMixin` qui
-  bump `modifie_par`/`modifie_le`/`version`.
+  `enrichir_annotations_par_vocab(db, vocab_id, fonds_id, *, dry_run=True, modifie_par=None)`
+  dans `api/services/annotations.py`. Retourne `RapportEnrichissement`
+  (`matches: tuple[MatchEnrichissement, ...]`, `deja_enrichies: int`,
+  `annotations_modifiees: int`, `dry_run: bool`). Chaque `Match`
+  contient `annotation_id`, `fichier_id`, `body_index`,
+  `libelle_libre`, `valeur_id`, `valeur_libelle`, `valeur_uri`.
+- Idempotence : si le `body` est déjà `SpecificResource` avec une
+  URI connue du vocab (`source: str` direct ou `source.id`), il est
+  compté dans `deja_enrichies` et n'est pas re-touché.
+- **Remplacer** (pas ajouter) le `TextualBody` → `SpecificResource
+  source={id, label}`. Cohérent avec ce qu'Annotorious crée
+  nativement (un body par tag, jamais deux). La `purpose` du body
+  initial est préservée (ne force pas `tagging` si le body était
+  marqué `describing` par ex).
+- Audit : `TracabiliteMixin` est bumpé à la main (le modèle
+  `AnnotationRegion` n'a pas de `version_id_col` — verrou cross-
+  process réservé à Fonds/Collection/Item). `modifie_par`,
+  `modifie_le`, `version += 1` quand `dry_run=False`.
 - CLI : `archives-tool annotations enrichir --vocabulaire X
-  --fonds Y [--dry-run|--appliquer]`. Dry-run par défaut.
-- UI : bouton « Enrichir rétroactivement » sur la page vocab
-  après ajout d'un fonds. Modale avec preview : « 12
-  annotations matchent → liste cliquable → confirmer ».
-- Tests : dry-run produit la liste sans modif ; appliquer
-  modifie le corps ; rejouer = no-op (déjà enrichi) ; matching
-  insensible accents/casse (« Copi » match « COPI » match
-  « Côpi ») ; pas de match si le tag est déjà SpecificResource.
+  --fonds Y [--appliquer] [--utilisateur U]`. Dry-run par défaut.
+  Le code vocab et la cote fonds sont des identifiants humains
+  (résolus côté CLI vers les ids du service).
+- UI : lien « ⤴ Enrichir » sur chaque fonds **rattaché** de la
+  section « Fonds rattachés » de la page vocab détail. Ouvre une
+  page `/vocabulaires/<id>/fonds/<cote>/enrichir` qui rend le
+  rapport dry-run (tableau des matches avec libellé libre →
+  libellé canonique → URI cliquable). Bouton « Confirmer
+  l'enrichissement » → POST sur la même URL → applique + redirige
+  vers la page vocab avec query string `?enrichi=N&fonds=COTE`.
+- Tests :
+  - 9 tests service (`test_annotations.py::test_enrichir_*`) :
+    dry-run, appliquer, replay no-op, normalisation accents/casse,
+    skip valeur sans URI / dépréciée, vocab/fonds introuvables,
+    scope fonds isolé.
+  - 5 tests CLI (`test_cli_annotations.py`) : dry-run par défaut,
+    `--appliquer`, vocab/fonds introuvables, no-match.
+  - 5 tests route + page (`test_vocabulaire_scoping.py`) :
+    preview avec matches, POST applique + redirige, bouton présent
+    uniquement sur fonds rattachés, lecture seule bloque (423),
+    aucun match → message « Aucune annotation ».
 
 **Pourquoi pas auto-enrichissement au moment du rattachement** :
 un tag libre « Copi » dans le fonds B peut désigner la mauvaise
 personne (homonyme, alias). Le diff explicite laisse l'utilisateur
 arbitrer.
 
-(4) peut attendre — tant que (1+2+3) sont en place, le premier
-vrai cas de réattribution déclenchera la demande.
+**Limites connues, reportées si un cas se présente** :
+- Pas de pagination du rapport (un fonds avec 1000+ matches
+  rendrait la page lourde ; en pratique on tape sur qq dizaines).
+- Pas de filtre « enrichir uniquement les annotations de N à M » ;
+  l'utilisateur arbitre via le rejet ciblé (non implémenté — il
+  faudrait alors une UI de coches sur la preview).
+- Pas de rollback automatique d'un enrichissement passé (la
+  conversion `SpecificResource → TextualBody` est manuelle via la
+  fiche annotation, et le bump de version ne supporte pas l'undo
+  groupé). Reporté à un chantier dédié si besoin.
 
 ## Ordre de livraison recommandé
 

@@ -78,7 +78,49 @@ Après tracé, le popup d'édition s'ouvre :
   renseignée. Permet de voir d'un coup d'œil « qui dessine » dans un
   numéro entier sans ouvrir page par page.
 
-### 4. Exporter
+### 4. Enrichir rétroactivement (vocab rattaché après coup)
+
+Cas typique : un fonds a été annoté en tags libres (Annotorious ne
+proposait pas encore le vocab parce qu'il n'était pas rattaché). Puis
+on rattache le vocab au fonds. Les nouvelles annotations bénéficient
+de l'autocomplete + URI Wikidata, mais les annotations existantes
+restent en `TextualBody value="Copi"` sans URI.
+
+L'**enrichissement rétroactif** propage les URIs canoniques du vocab
+vers les tags libres existants qui matchent (insensible aux accents
+et à la casse).
+
+Depuis l'UI :
+
+1. Aller sur `/vocabulaires/<id>` du vocab concerné.
+2. Dans la section « Fonds rattachés », cliquer **⤴ Enrichir** sur la
+   ligne du fonds.
+3. La page de preview liste les matches (annotation #N — tag libre →
+   libellé canonique → URI Wikidata cliquable). **Aucune modification
+   en base à ce stade.**
+4. Relire la liste, puis cliquer **Confirmer l'enrichissement**. Les
+   `TextualBody` matchés sont remplacés par des
+   `SpecificResource source={id, label}` portant l'URI.
+
+Depuis la CLI :
+
+```bash
+# Dry-run par défaut — affiche le rapport, ne touche pas la base.
+uv run archives-tool annotations enrichir \
+    --vocabulaire dessinateurs --fonds PF
+
+# Appliquer
+uv run archives-tool annotations enrichir \
+    --vocabulaire dessinateurs --fonds PF \
+    --appliquer --utilisateur marie
+```
+
+Idempotent : rejouer = no-op (les bodies déjà enrichis sont skippés).
+Pourquoi pas une opération automatique au moment du rattachement ? Un
+même tag libre peut désigner la mauvaise personne (homonyme, alias)
+selon le fonds. Le diff explicite laisse l'utilisateur arbitrer.
+
+### 5. Exporter
 
 ```bash
 uv run archives-tool exporter annotations <cote_collection> \

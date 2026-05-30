@@ -19,6 +19,10 @@ D'autres sous-commandes (non détaillées dans cette section) :
 - `archives-tool demo init` — peuple une base de démonstration.
 - `archives-tool profil {init,analyser}` — assistants de création
   de profils d'import (référence : [Profils](../../reference/profils.md)).
+- `archives-tool annotations enrichir --vocabulaire X --fonds Y
+  [--appliquer]` — enrichit rétroactivement les annotations d'un
+  fonds avec les URIs Wikidata/VIAF du vocabulaire rattaché.
+  Documenté dans [Annotations IIIF](../annotations.md#4-enrichir-rétroactivement-vocab-rattaché-après-coup).
 
 L'aide complète est toujours disponible via `--help` :
 

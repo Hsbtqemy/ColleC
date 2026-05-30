@@ -466,3 +466,86 @@ def soumettre_detacher_fonds(
     except EntiteIntrouvable as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return RedirectResponse(f"/vocabulaires/{vocab_id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Enrichissement rétroactif (T4 scoping)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/vocabulaires/{vocab_id}/fonds/{cote}/enrichir",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def page_enrichissement_preview(
+    vocab_id: int,
+    cote: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+):
+    """Preview (dry-run) de l'enrichissement rétroactif des annotations
+    du fonds avec les URIs du vocabulaire.
+
+    Affiche la liste des matches candidats AVANT toute modification.
+    L'utilisateur confirme via le POST de cette même URL pour appliquer.
+    """
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    vocab = vocabulaire_par_id(db, vocab_id)
+    fonds = _fonds_par_cote_ou_404(db, cote)
+    rapport = enrichir_annotations_par_vocab(
+        db, vocab_id, fonds.id, dry_run=True,
+    )
+    contexte = _contexte_base(
+        nom_base, utilisateur,
+        vocabulaire=vocab,
+        fonds=fonds,
+        rapport=rapport,
+    )
+    return templates.TemplateResponse(
+        request, "pages/enrichissement_preview.html", contexte,
+    )
+
+
+@router.post(
+    "/vocabulaires/{vocab_id}/fonds/{cote}/enrichir",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_enrichissement(
+    vocab_id: int,
+    cote: str,
+    db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    """Applique l'enrichissement rétroactif (sortie du dry-run).
+
+    Idempotent (replay = no-op grâce au service). Redirige vers la page
+    du vocabulaire avec un flash de comptage via query string.
+    """
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    vocabulaire_par_id(db, vocab_id)
+    fonds = _fonds_par_cote_ou_404(db, cote)
+    rapport = enrichir_annotations_par_vocab(
+        db, vocab_id, fonds.id,
+        dry_run=False,
+        modifie_par=utilisateur,
+    )
+    # Flash léger via query string (pas de session storage). La page
+    # vocab pourrait l'afficher en bandeau dans un futur lot ; pour
+    # l'instant la redirection suffit (l'utilisateur voit que l'action
+    # est terminée).
+    return RedirectResponse(
+        f"/vocabulaires/{vocab_id}"
+        f"?enrichi={rapport.annotations_modifiees}"
+        f"&fonds={cote}",
+        status_code=303,
+    )

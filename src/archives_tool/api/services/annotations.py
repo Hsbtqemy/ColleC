@@ -9,12 +9,14 @@ Voir `docs/developpeurs/annotations-image-future.md`.
 
 from __future__ import annotations
 
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
@@ -368,3 +370,269 @@ def serialiser_annotation_collection_w3c(
             "items": items,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Enrichissement rétroactif (V0.9.8 — T4 du scoping vocabulaires)
+# ---------------------------------------------------------------------------
+#
+# Scénario : un vocab a été rattaché à un fonds APRÈS que ce fonds a été
+# annoté. Les annotations existantes sont restées en `TextualBody value=
+# "Copi"` parce que l'autocomplete ne proposait pas encore les entrées
+# vocab. On veut maintenant propager les URIs Wikidata/VIAF du vocab vers
+# ces annotations « pauvres » → les transformer en `SpecificResource
+# source={id, label}` qui transportent le pivot d'autorité.
+#
+# Voir `docs/developpeurs/vocabulaire-scoping-future.md` T4 pour les
+# choix de design (figé en base plutôt que résolu à la lecture, replace
+# plutôt qu'ajouter, idempotent, dry-run par défaut).
+
+
+def _normaliser_pour_match(s: str) -> str:
+    """NFD + suppression diacritiques + lowercase + strip.
+
+    Permet de matcher « Copi » == « COPI » == « Côpi » (un même libellé
+    peut être saisi à la main avec une faute d'accent ou de casse). On
+    préserve les non-ASCII non-diacritiques (CJK, arabe, hébreu…) en
+    filtrant uniquement la catégorie Unicode « Mn » (Mark, Nonspacing).
+    """
+    nfd = unicodedata.normalize("NFD", s)
+    sans_accents = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return sans_accents.lower().strip()
+
+
+@dataclass(frozen=True)
+class MatchEnrichissement:
+    """Un body candidat à l'enrichissement (TextualBody → SpecificResource).
+
+    Préview du diff sans modification de la base. Sert au dry-run + à
+    la modale UI qui montre l'avant/après.
+    """
+
+    annotation_id: int
+    fichier_id: int
+    body_index: int  # position du body dans `corps`
+    libelle_libre: str  # tel que tapé dans l'annotation (TextualBody.value)
+    valeur_id: int  # ValeurControlee.id qui matche
+    valeur_libelle: str  # libellé canonique du vocab (peut différer en casse/accents)
+    valeur_uri: str  # URI à injecter (Wikidata Q…, VIAF, etc.)
+
+
+@dataclass(frozen=True)
+class RapportEnrichissement:
+    """Résumé d'une passe d'enrichissement (dry-run ou appliqué).
+
+    - ``matches`` : liste des transformations candidates / effectuées.
+    - ``deja_enrichies`` : nb de bodies qui étaient déjà SpecificResource
+      avec une URI cible du vocab (skip silencieux, idempotence).
+    - ``annotations_modifiees`` : nb d'annotations distinctes qui ont
+      ≥1 body transformé. Différent de ``len(matches)`` quand une même
+      annotation a plusieurs tags qui matchent.
+    - ``dry_run`` : True = aucune écriture en base, False = appliqué.
+    """
+
+    matches: tuple[MatchEnrichissement, ...]
+    deja_enrichies: int
+    annotations_modifiees: int
+    dry_run: bool
+
+    @property
+    def nb_matches(self) -> int:
+        return len(self.matches)
+
+
+def _est_specific_resource_avec_uri(body: dict[str, Any], uri: str) -> bool:
+    """Le body est-il déjà un SpecificResource pointant sur cette URI ?
+
+    Accepte les deux formes que produit Annotorious 2.7 :
+    - ``source: "<uri>"`` (string directe)
+    - ``source: {"id": "<uri>", "label": "..."}`` (objet avec label).
+    """
+    if body.get("type") != "SpecificResource":
+        return False
+    source = body.get("source")
+    if isinstance(source, str):
+        return source == uri
+    if isinstance(source, dict):
+        return source.get("id") == uri
+    return False
+
+
+def _lister_annotations_fonds(
+    db: Session, fonds_id: int
+) -> tuple[AnnotationRegion, ...]:
+    """Toutes les annotations des fichiers des items du fonds.
+
+    Pas dans l'API publique des « listers par périmètre » (item /
+    collection) parce que l'enrichissement est l'unique usage pour
+    l'instant. Si un autre besoin émerge, le promouvoir.
+    """
+    from archives_tool.models import Item
+
+    rows = db.scalars(
+        select(AnnotationRegion)
+        .join(Fichier, Fichier.id == AnnotationRegion.fichier_id)
+        .join(Item, Item.id == Fichier.item_id)
+        .where(Item.fonds_id == fonds_id)
+        .order_by(AnnotationRegion.fichier_id, AnnotationRegion.cree_le)
+    ).all()
+    return tuple(rows)
+
+
+def enrichir_annotations_par_vocab(
+    db: Session,
+    vocabulaire_id: int,
+    fonds_id: int,
+    *,
+    dry_run: bool = True,
+    modifie_par: str | None = None,
+) -> RapportEnrichissement:
+    """Enrichit les annotations d'un fonds avec les URIs d'un vocabulaire.
+
+    Parcourt les ``AnnotationRegion`` des fichiers du fonds, matche les
+    bodies ``TextualBody`` (purpose=tagging par défaut, sinon n'importe)
+    contre les ``ValeurControlee`` actives du vocabulaire ayant une URI,
+    et remplace chaque match par un ``SpecificResource purpose=tagging
+    source={id, label}``.
+
+    Matching : normalisation NFD + suppression diacritiques + lowercase
+    + strip. « Copi » == « COPI » == « Côpi » → match.
+
+    Idempotent : si un body est déjà ``SpecificResource`` avec l'URI
+    cible, il est compté dans ``deja_enrichies`` et pas re-touché.
+
+    ``dry_run=True`` : aucune écriture, juste le rapport (preview).
+    ``dry_run=False`` : applique en base, bump version + traçabilité
+    via ``TracabiliteMixin``.
+
+    Lève ``EntiteIntrouvable`` si le vocab ou le fonds n'existent pas.
+    """
+    from archives_tool.models import Fonds
+    from archives_tool.models.profil import ValeurControlee, Vocabulaire
+
+    vocab = db.get(
+        Vocabulaire, vocabulaire_id,
+        options=[selectinload(Vocabulaire.valeurs)],
+    )
+    if vocab is None:
+        raise EntiteIntrouvable(f"vocabulaire id={vocabulaire_id}")
+    fonds = db.get(Fonds, fonds_id)
+    if fonds is None:
+        raise EntiteIntrouvable(f"fonds id={fonds_id}")
+
+    # Construit l'index libellé_normalisé → (id, libellé canonique, URI).
+    # On ne considère que les valeurs actives ET ayant une URI (sans URI,
+    # il n'y a rien à propager — le matching libre resterait un libellé
+    # libre).
+    index: dict[str, tuple[int, str, str]] = {}
+    for v in vocab.valeurs:
+        if not v.actif or not v.uri:
+            continue
+        cle = _normaliser_pour_match(v.libelle)
+        if not cle:
+            continue
+        # En cas de collision (deux valeurs avec libellé normalisé
+        # identique), première gagne. Cas marginal — un vocab bien tenu
+        # n'a pas de doublons.
+        index.setdefault(cle, (v.id, v.libelle, v.uri))
+
+    matches: list[MatchEnrichissement] = []
+    deja_enrichies = 0
+    annotations_a_modifier: list[AnnotationRegion] = []
+
+    if not index:
+        # Vocab sans valeur exploitable : rapport vide, pas de scan.
+        return RapportEnrichissement(
+            matches=(), deja_enrichies=0,
+            annotations_modifiees=0, dry_run=dry_run,
+        )
+
+    annotations = _lister_annotations_fonds(db, fonds_id)
+
+    for ann in annotations:
+        nouveau_corps: list[dict[str, Any]] = []
+        ann_a_change = False
+        for idx, body in enumerate(ann.corps or []):
+            # Skip rapide : pas un TextualBody → on garde tel quel, on
+            # compte le « déjà enrichi » seulement si SpecificResource
+            # pointe sur une URI connue du vocab (sinon c'est un body
+            # qu'on n'aurait jamais touché).
+            if body.get("type") != "TextualBody":
+                # Cas « déjà enrichi par un passage précédent » :
+                # SpecificResource avec une URI qu'on aurait produite.
+                if body.get("type") == "SpecificResource":
+                    source = body.get("source")
+                    uri_courante = (
+                        source if isinstance(source, str)
+                        else (source.get("id") if isinstance(source, dict) else None)
+                    )
+                    if uri_courante and any(
+                        u == uri_courante for _, _, u in index.values()
+                    ):
+                        deja_enrichies += 1
+                nouveau_corps.append(body)
+                continue
+
+            valeur = body.get("value")
+            if not isinstance(valeur, str) or not valeur.strip():
+                nouveau_corps.append(body)
+                continue
+
+            cle = _normaliser_pour_match(valeur)
+            cible = index.get(cle)
+            if cible is None:
+                nouveau_corps.append(body)
+                continue
+
+            vid, vlibelle, vuri = cible
+            # Si malgré le type TextualBody le body référence déjà la
+            # bonne URI (cas hybride bizarre), skip.
+            if _est_specific_resource_avec_uri(body, vuri):
+                deja_enrichies += 1
+                nouveau_corps.append(body)
+                continue
+
+            matches.append(MatchEnrichissement(
+                annotation_id=ann.id,
+                fichier_id=ann.fichier_id,
+                body_index=idx,
+                libelle_libre=valeur,
+                valeur_id=vid,
+                valeur_libelle=vlibelle,
+                valeur_uri=vuri,
+            ))
+            # On préserve la purpose initiale (tagging par défaut, mais
+            # un body peut avoir purpose=describing par ex).
+            purpose = body.get("purpose", "tagging")
+            nouveau_corps.append({
+                "type": "SpecificResource",
+                "purpose": purpose,
+                "source": {"id": vuri, "label": vlibelle},
+            })
+            ann_a_change = True
+
+        if ann_a_change:
+            if not dry_run:
+                ann.corps = nouveau_corps
+                ann.modifie_par = modifie_par
+                ann.modifie_le = datetime.now()
+                # AnnotationRegion n'a pas de `version_id_col` (le verrou
+                # optimiste cross-process est sur Fonds/Collection/Item).
+                # On bump quand même `version` à la main pour signaler à
+                # un éventuel consommateur qu'un événement de
+                # modification a eu lieu, et pour rester cohérent avec
+                # `modifier_annotation` qui bump aussi.
+                ann.version = (ann.version or 1) + 1
+            annotations_a_modifier.append(ann)
+
+    if not dry_run and annotations_a_modifier:
+        db.commit()
+        for ann in annotations_a_modifier:
+            db.refresh(ann)
+
+    return RapportEnrichissement(
+        matches=tuple(matches),
+        deja_enrichies=deja_enrichies,
+        annotations_modifiees=len(annotations_a_modifier),
+        dry_run=dry_run,
+    )

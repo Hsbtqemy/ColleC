@@ -537,3 +537,175 @@ def test_autocomplete_fichier_inconnu_retombe_sur_global(
     # Comportement global (tout retourné)
     libelles = {v["libelle"] for v in r.json()["valeurs"]}
     assert len(libelles) == 6
+
+
+# ---------------------------------------------------------------------------
+# T4 — Enrichissement rétroactif (routes UI)
+# ---------------------------------------------------------------------------
+
+
+def _amorcer_pour_enrichissement(s: Session) -> tuple[int, str, int, int]:
+    """Crée un fonds HK avec un item + un fichier + une annotation
+    libre « Copi » + un vocab « dessinateurs » avec valeur « Copi »
+    portant l'URI Wikidata, rattaché à HK.
+
+    Retourne `(vocab_id, fonds_cote, fichier_id, annotation_id)`.
+    """
+    from archives_tool.api.services.annotations import (
+        FormulaireAnnotation, creer_annotation,
+    )
+    from archives_tool.models import ValeurControlee
+    hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+    item = creer_item(
+        s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id),
+    )
+    fichier = Fichier(
+        item_id=item.id, racine="x",
+        chemin_relatif="hk/01.tif", nom_fichier="hk-01.tif", ordre=1,
+    )
+    s.add(fichier)
+    s.flush()
+    vocab = creer_vocabulaire(
+        s, FormulaireVocabulaire(code="dessinateurs", libelle="Dessinateurs"),
+    )
+    s.flush()
+    # Ajoute directement la ValeurControlee avec URI (le FormulaireValeur
+    # standard la prend en charge, mais on évite la dépendance pour
+    # rester local au helper).
+    s.add(ValeurControlee(
+        vocabulaire_id=vocab.id,
+        code="copi",
+        libelle="Copi",
+        uri="https://www.wikidata.org/entity/Q733678",
+        actif=True,
+    ))
+    attacher_vocabulaire_au_fonds(s, vocab.id, hk.id)
+    ann = creer_annotation(
+        s, fichier.id,
+        FormulaireAnnotation(
+            selecteur="xywh=0,0,100,100",
+            corps=[
+                {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
+            ],
+        ),
+    )
+    s.commit()
+    return vocab.id, hk.cote, fichier.id, ann.id
+
+
+def test_page_enrichissement_preview_affiche_matches(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """GET /vocabulaires/<id>/fonds/<cote>/enrichir rend la page
+    preview avec le match Copi dans le tableau."""
+    with db_factory() as s:
+        vid, cote, _, ann_id = _amorcer_pour_enrichissement(s)
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}/fonds/{cote}/enrichir")
+    assert r.status_code == 200
+    # Présence des éléments clés du rapport
+    assert "1 match" in r.text or "1 match(es)" in r.text
+    assert f"#{ann_id}" in r.text
+    assert "Q733678" in r.text
+    assert "Confirmer l'enrichissement" in r.text
+
+
+def test_post_enrichissement_applique_et_redirige(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """POST /vocabulaires/<id>/fonds/<cote>/enrichir applique en base
+    et redirige (303) vers la page vocab avec compteur en query string."""
+    from archives_tool.models import AnnotationRegion
+
+    with db_factory() as s:
+        vid, cote, _, ann_id = _amorcer_pour_enrichissement(s)
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/{cote}/enrichir")
+    assert r.status_code == 303
+    assert f"/vocabulaires/{vid}" in r.headers["location"]
+    assert "enrichi=1" in r.headers["location"]
+
+    # Vérifie en base que le body est devenu SpecificResource
+    with db_factory() as s:
+        ann = s.get(AnnotationRegion, ann_id)
+        assert ann is not None
+        assert ann.corps[0]["type"] == "SpecificResource"
+        assert (
+            ann.corps[0]["source"]["id"]
+            == "https://www.wikidata.org/entity/Q733678"
+        )
+
+
+def test_page_vocab_montre_bouton_enrichir_sur_fonds_rattache(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Sur la page vocab détail, chaque fonds rattaché expose un lien
+    « ⤴ Enrichir ». Les fonds non rattachés n'ont pas ce lien."""
+    with db_factory() as s:
+        vid, cote, _, _ = _amorcer_pour_enrichissement(s)
+        # 2e fonds non rattaché
+        creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
+        s.commit()
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}")
+    assert r.status_code == 200
+    # Lien enrichir sur HK (rattaché)
+    assert f"/vocabulaires/{vid}/fonds/HK/enrichir" in r.text
+    # Pas de lien enrichir pour PF (non rattaché)
+    assert f"/vocabulaires/{vid}/fonds/PF/enrichir" not in r.text
+
+
+def test_post_enrichissement_bloque_en_lecture_seule(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Middleware lecture seule → 423 sur le POST, base inchangée."""
+    from archives_tool.models import AnnotationRegion
+
+    with db_factory() as s:
+        vid, cote, _, ann_id = _amorcer_pour_enrichissement(s)
+
+    racine = tmp_path / "miniatures"
+    racine.mkdir()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  d: {racine}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+
+    client = TestClient(app, follow_redirects=False)
+    r = client.post(f"/vocabulaires/{vid}/fonds/{cote}/enrichir")
+    assert r.status_code == 423
+
+    with db_factory() as s:
+        ann = s.get(AnnotationRegion, ann_id)
+        assert ann is not None
+        assert ann.corps[0]["type"] == "TextualBody"  # toujours libre
+
+
+def test_page_enrichissement_preview_aucun_match(
+    db_factory, monkeypatch, tmp_path: Path
+) -> None:
+    """Aucun tag libre dans le fonds → la page affiche un message
+    « Aucune annotation à enrichir » sans bouton confirmer."""
+    with db_factory() as s:
+        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        v = _vocab_avec_valeurs(s, "vide", ["Untagged"])
+        attacher_vocabulaire_au_fonds(s, v.id, hk.id)
+        s.commit()
+        vid = v.id
+
+    monkeypatch.setenv("ARCHIVES_DB", str(tmp_path / "test.db"))
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}/fonds/HK/enrichir")
+    assert r.status_code == 200
+    assert "Aucune annotation" in r.text
+    # Pas de bouton Confirmer (rien à appliquer)
+    assert "Confirmer l'enrichissement" not in r.text

@@ -1793,6 +1793,122 @@ def cmd_fonds_supprimer(
         typer.echo(f"✓ Fonds {cote} supprimé.")
 
 
+annotations_app = typer.Typer(
+    help="Opérations groupées sur les annotations IIIF (enrichissement…).",
+    no_args_is_help=True,
+)
+app.add_typer(annotations_app, name="annotations")
+
+
+@annotations_app.command("enrichir")
+def cmd_annotations_enrichir(
+    vocabulaire_code: str = typer.Option(
+        ..., "--vocabulaire", "-v",
+        help="Code du vocabulaire dont on propage les URIs.",
+    ),
+    fonds_cote: str = typer.Option(
+        ..., "--fonds", "-f",
+        help="Cote du fonds dont les annotations seront enrichies.",
+    ),
+    appliquer: bool = typer.Option(
+        False, "--appliquer",
+        help=(
+            "Appliquer les modifications. Par défaut, dry-run (preview "
+            "des matches sans toucher à la base)."
+        ),
+    ),
+    utilisateur: str | None = typer.Option(
+        None, "--utilisateur", "-u",
+        help="Nom à poser dans `modifie_par` (défaut : config locale).",
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Enrichir rétroactivement les annotations d'un fonds avec les URIs
+    d'un vocabulaire (T4 du scoping vocabulaires).
+
+    Parcourt les annotations W3C du fonds, matche les `TextualBody` de
+    tag (insensible accents/casse) contre les `ValeurControlee` actives
+    du vocabulaire ayant une URI, et les remplace par des
+    `SpecificResource source={id, label}` qui transportent le pivot
+    Wikidata/VIAF.
+
+    Cas d'usage : un vocab a été rattaché à un fonds APRÈS que ce fonds
+    a été annoté. Les annotations existantes sont restées en tag libre.
+    On veut maintenant propager les URIs sans les ré-éditer une à une.
+
+    Idempotent — replay = no-op. Dry-run par défaut, `--appliquer` pour
+    écrire en base.
+    """
+    from sqlalchemy import select as sa_select_
+
+    from archives_tool.api.services._erreurs import EntiteIntrouvable
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+    from archives_tool.models.profil import Vocabulaire
+
+    # Résolution du vocab par code (le service prend des ids, pas des
+    # codes — plus pratique en CLI de passer un code humain).
+    with _ouvrir_session_existante(db_path) as session:
+        vocab = session.scalar(
+            sa_select_(Vocabulaire).where(Vocabulaire.code == vocabulaire_code)
+        )
+        if vocab is None:
+            typer.echo(
+                f"Erreur : vocabulaire {vocabulaire_code!r} introuvable.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        try:
+            fonds_obj = lire_fonds_par_cote(session, fonds_cote)
+        except FondsIntrouvable as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+
+        # `utilisateur` est libre : si pas fourni, modifie_par reste
+        # `None`. La traçabilité explicite (« qui a lancé l'enrichissement »)
+        # passe par `--utilisateur` — pas de fallback auto sur la config
+        # locale (qui peut ne pas exister dans les contextes batch/CI).
+        modifie_par = utilisateur
+
+        try:
+            rapport = enrichir_annotations_par_vocab(
+                session, vocab.id, fonds_obj.id,
+                dry_run=not appliquer,
+                modifie_par=modifie_par if appliquer else None,
+            )
+        except EntiteIntrouvable as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+
+        mode = "APPLIQUÉ" if appliquer else "DRY-RUN (aucune écriture)"
+        typer.echo(
+            f"Enrichissement {mode} — vocab {vocab.code!r} sur fonds "
+            f"{fonds_obj.cote!r}"
+        )
+        typer.echo(
+            f"  {rapport.nb_matches} match(es) "
+            f"sur {rapport.annotations_modifiees} annotation(s)"
+        )
+        if rapport.deja_enrichies:
+            typer.echo(
+                f"  {rapport.deja_enrichies} body(s) déjà enrichi(s) "
+                "(idempotence)"
+            )
+        if rapport.matches:
+            typer.echo("\nMatches :")
+            for m in rapport.matches:
+                typer.echo(
+                    f"  annotation #{m.annotation_id} (fichier #{m.fichier_id})"
+                    f" : « {m.libelle_libre} » → {m.valeur_uri}"
+                )
+        if not appliquer and rapport.matches:
+            typer.echo(
+                "\nRelancez avec --appliquer pour figer en base.",
+            )
+
+
 def main() -> None:
     _forcer_utf8_stdout()
     app()

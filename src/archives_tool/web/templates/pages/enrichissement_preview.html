@@ -1,0 +1,134 @@
+{# Preview (dry-run) de l'enrichissement rétroactif des annotations.
+   T4 du scoping vocabulaires.
+   Variables :
+   - vocabulaire : Vocabulaire (eager valeurs déjà chargées)
+   - fonds : Fonds cible
+   - rapport : RapportEnrichissement (matches, deja_enrichies,
+               annotations_modifiees, dry_run=True)
+#}
+{% extends "base.html" %}
+
+{% block title %}
+  Enrichir « {{ vocabulaire.libelle }} » sur fonds {{ fonds.cote }}
+{% endblock %}
+
+{% block content %}
+
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    <a href="/vocabulaires" class="hover:underline">Vocabulaires</a> ›
+    <a href="/vocabulaires/{{ vocabulaire.id }}" class="hover:underline">{{ vocabulaire.code }}</a> ›
+    <span>Enrichir sur {{ fonds.cote }}</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Enrichir rétroactivement
+    <span class="text-base text-gray-500 font-normal" style="margin-left:8px;">
+      vocab <span class="font-mono">{{ vocabulaire.code }}</span> ·
+      fonds <span class="font-mono">{{ fonds.cote }}</span>
+    </span>
+  </h1>
+  <p class="text-sm text-gray-600 mt-2" style="max-width:680px;">
+    Parcourt les annotations existantes du fonds <strong>{{ fonds.titre or fonds.cote }}</strong>
+    et remplace les tags libres (TextualBody) qui matchent une valeur
+    du vocabulaire par un body <em>SpecificResource</em> portant
+    l'URI canonique (Wikidata, VIAF, etc.). Matching insensible aux
+    accents et à la casse.
+  </p>
+</header>
+
+<section style="max-width:920px;margin-bottom:32px;">
+  <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+    Aperçu
+  </h2>
+
+  {% if rapport.nb_matches == 0 and rapport.deja_enrichies == 0 %}
+    <div style="padding:16px 20px;background:#f9fafb;border:1px solid rgba(0,0,0,0.06);border-radius:6px;">
+      <p style="font-size:14px;color:#374151;margin:0;">
+        Aucune annotation à enrichir dans ce fonds avec ce vocabulaire.
+      </p>
+      <p style="font-size:12px;color:#6b7280;margin:6px 0 0 0;">
+        Soit aucun tag libre du fonds ne correspond à une valeur
+        contrôlée du vocab, soit les valeurs candidates n'ont pas d'URI
+        canonique à propager.
+      </p>
+    </div>
+  {% elif rapport.nb_matches == 0 %}
+    <div style="padding:16px 20px;background:#f9fafb;border:1px solid rgba(0,0,0,0.06);border-radius:6px;">
+      <p style="font-size:14px;color:#374151;margin:0;">
+        Aucun nouveau match. {{ rapport.deja_enrichies }} body(s)
+        déjà enrichi(s) par une passe précédente (idempotence).
+      </p>
+    </div>
+  {% else %}
+    <p style="font-size:14px;color:#1e40af;margin-bottom:16px;">
+      <strong>{{ rapport.nb_matches }}</strong> match(es) sur
+      <strong>{{ rapport.annotations_modifiees }}</strong> annotation(s).
+      {% if rapport.deja_enrichies %}
+        ({{ rapport.deja_enrichies }} body(s) déjà enrichi(s), conservés
+        tels quels.)
+      {% endif %}
+    </p>
+
+    <table class="w-full" style="font-size:13px;border-collapse:collapse;border:1px solid rgba(0,0,0,0.10);border-radius:4px;overflow:hidden;">
+      <thead>
+        <tr style="background:#f9fafb;border-bottom:1px solid rgba(0,0,0,0.10);text-align:left;color:#6b7280;font-weight:500;">
+          <th style="padding:8px 12px;">Annotation</th>
+          <th style="padding:8px 12px;">Tag libre</th>
+          <th style="padding:8px 12px;">Valeur canonique</th>
+          <th style="padding:8px 12px;">URI</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in rapport.matches %}
+        <tr style="border-bottom:1px solid rgba(0,0,0,0.05);">
+          <td style="padding:8px 12px;color:#6b7280;" class="font-mono">
+            #{{ m.annotation_id }}
+            <span style="color:#9ca3af;">/ f#{{ m.fichier_id }}</span>
+          </td>
+          <td style="padding:8px 12px;">
+            <span style="color:#92400e;font-style:italic;">{{ m.libelle_libre }}</span>
+          </td>
+          <td style="padding:8px 12px;">{{ m.valeur_libelle }}</td>
+          <td style="padding:8px 12px;font-family:monospace;font-size:12px;color:#1e40af;">
+            <a href="{{ m.valeur_uri }}" target="_blank" rel="noopener" class="hover:underline">
+              {{ m.valeur_uri }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+<section style="max-width:920px;border-top:1px solid rgba(0,0,0,0.08);padding-top:20px;display:flex;gap:12px;align-items:center;">
+  <a href="/vocabulaires/{{ vocabulaire.id }}"
+     class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+     style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#374151;">
+    Annuler
+  </a>
+
+  {% if rapport.nb_matches > 0 %}
+    {% if est_lecture_seule() %}
+      <span style="padding:6px 14px;font-size:13px;color:#92400e;font-style:italic;">
+        Confirmation désactivée (mode lecture seule)
+      </span>
+    {% else %}
+      <form method="post"
+            action="/vocabulaires/{{ vocabulaire.id }}/fonds/{{ fonds.cote }}/enrichir"
+            style="margin:0;">
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 rounded"
+                style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+          Confirmer l'enrichissement ({{ rapport.nb_matches }} match{% if rapport.nb_matches > 1 %}es{% endif %})
+        </button>
+      </form>
+      <span style="font-size:12px;color:#6b7280;">
+        Irréversible — préférable d'avoir relu la liste ci-dessus.
+      </span>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% endblock %}

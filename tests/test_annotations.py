@@ -890,6 +890,404 @@ def test_cascade_item_supprime_aussi_annotations(base_demo: Path) -> None:
     engine.dispose()
 
 
+# ---------------------------------------------------------------------------
+# Enrichissement rétroactif (T4 du scoping vocabulaires)
+# ---------------------------------------------------------------------------
+
+
+def _fonds_id_du_fichier(db_path: Path, fichier_id: int) -> int:
+    """Helper : remonte fichier → item → fonds_id pour les tests
+    d'enrichissement (qui scope au fonds)."""
+    from archives_tool.models import Item
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        fonds_id = s.scalar(
+            select(Item.fonds_id)
+            .join(Fichier, Fichier.item_id == Item.id)
+            .where(Fichier.id == fichier_id)
+        )
+    engine.dispose()
+    assert fonds_id is not None
+    return fonds_id
+
+
+def _creer_vocab_avec_valeurs(
+    db_path: Path,
+    code: str,
+    valeurs: list[tuple[str, str, str | None]],  # (code, libelle, uri)
+) -> int:
+    """Crée un vocabulaire avec ses valeurs contrôlées. Retourne l'id."""
+    from archives_tool.models.profil import ValeurControlee, Vocabulaire
+
+    engine = creer_engine(db_path)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = Vocabulaire(code=code, libelle=code)
+        s.add(vocab)
+        s.flush()
+        for vcode, vlibelle, vuri in valeurs:
+            s.add(ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code=vcode,
+                libelle=vlibelle,
+                uri=vuri,
+                actif=True,
+            ))
+        s.commit()
+        vid = vocab.id
+    engine.dispose()
+    return vid
+
+
+def test_enrichir_dry_run_match_libelle_exact(base_demo: Path) -> None:
+    """Dry-run : un TextualBody value="Copi" matche une ValeurControlee
+    de libellé « Copi » avec URI Wikidata. Le rapport contient le match,
+    la base reste inchangée."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        ann = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
+                ],
+            ),
+        )
+        ann_id = ann.id
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=True,
+        )
+
+    # 1 match, 0 déjà enrichi
+    assert rapport.nb_matches == 1
+    assert rapport.deja_enrichies == 0
+    assert rapport.annotations_modifiees == 1
+    assert rapport.dry_run is True
+    m = rapport.matches[0]
+    assert m.annotation_id == ann_id
+    assert m.libelle_libre == "Copi"
+    assert m.valeur_libelle == "Copi"
+    assert m.valeur_uri == "https://www.wikidata.org/entity/Q733678"
+
+    # Base inchangée : le body reste TextualBody
+    with factory() as s2:
+        ann2 = s2.get(AnnotationRegion, ann_id)
+        assert ann2 is not None
+        assert ann2.corps[0]["type"] == "TextualBody"
+        assert ann2.corps[0]["value"] == "Copi"
+    engine.dispose()
+
+
+def test_enrichir_appliquer_remplace_textualbody_par_specificresource(
+    base_demo: Path,
+) -> None:
+    """Appliquer : le TextualBody devient SpecificResource avec source
+    objet {id, label}. La motivation/purpose du body est préservée."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        ann = creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
+                ],
+            ),
+        )
+        ann_id = ann.id
+        version_avant = ann.version
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=False, modifie_par="marie",
+        )
+
+    assert rapport.nb_matches == 1
+    assert rapport.dry_run is False
+    assert rapport.annotations_modifiees == 1
+
+    with factory() as s2:
+        ann2 = s2.get(AnnotationRegion, ann_id)
+        assert ann2 is not None
+        body = ann2.corps[0]
+        assert body["type"] == "SpecificResource"
+        assert body["purpose"] == "tagging"
+        assert body["source"] == {
+            "id": "https://www.wikidata.org/entity/Q733678",
+            "label": "Copi",
+        }
+        # Traçabilité : modifie_par posé, version bumpée
+        assert ann2.modifie_par == "marie"
+        assert ann2.version > version_avant
+    engine.dispose()
+
+
+def test_enrichir_replay_no_op(base_demo: Path) -> None:
+    """Rejouer l'enrichissement sur un fonds déjà enrichi = no-op. Le
+    SpecificResource existant compte dans deja_enrichies, pas de nouveau
+    match, pas de modification."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "Copi"}],
+            ),
+        )
+        # Première passe : applique
+        enrichir_annotations_par_vocab(s, vid, fonds_id, dry_run=False)
+        # Deuxième passe : doit être no-op
+        rapport2 = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=False,
+        )
+    assert rapport2.nb_matches == 0
+    assert rapport2.deja_enrichies == 1
+    assert rapport2.annotations_modifiees == 0
+    engine.dispose()
+
+
+def test_enrichir_normalisation_accents_et_casse(base_demo: Path) -> None:
+    """Le matching ignore accents et casse : 'COPI', 'côpi', 'Copi'
+    matchent tous la valeur canonique 'Copi'."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        for valeur in ("COPI", "côpi", "  Copi  "):
+            creer_annotation(
+                s, fid,
+                FormulaireAnnotation(
+                    selecteur=f"xywh=0,0,{len(valeur)},10",
+                    corps=[{"type": "TextualBody", "value": valeur}],
+                ),
+            )
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=True,
+        )
+    assert rapport.nb_matches == 3
+    libelles = {m.libelle_libre for m in rapport.matches}
+    assert libelles == {"COPI", "côpi", "  Copi  "}
+    engine.dispose()
+
+
+def test_enrichir_skip_valeur_sans_uri(base_demo: Path) -> None:
+    """ValeurControlee sans URI = pas d'enrichissement possible (rien à
+    propager). Le tag libre reste tel quel."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", None)],  # pas d'URI
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "Copi"}],
+            ),
+        )
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=True,
+        )
+    assert rapport.nb_matches == 0
+    assert rapport.deja_enrichies == 0
+    engine.dispose()
+
+
+def test_enrichir_skip_valeur_depreciee(base_demo: Path) -> None:
+    """ValeurControlee actif=False est ignorée. Permet de retirer une
+    entrée du vocab sans toucher aux annotations existantes."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+    from archives_tool.models.profil import ValeurControlee, Vocabulaire
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        vocab = Vocabulaire(code="dessinateurs", libelle="Dessinateurs")
+        s.add(vocab)
+        s.flush()
+        s.add(ValeurControlee(
+            vocabulaire_id=vocab.id, code="copi", libelle="Copi",
+            uri="https://www.wikidata.org/entity/Q733678",
+            actif=False,  # déprécié
+        ))
+        s.commit()
+        vid = vocab.id
+
+        creer_annotation(
+            s, fid,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[{"type": "TextualBody", "value": "Copi"}],
+            ),
+        )
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_id, dry_run=True,
+        )
+    assert rapport.nb_matches == 0
+    engine.dispose()
+
+
+def test_enrichir_vocab_introuvable(base_demo: Path) -> None:
+    """Vocab id inconnu → EntiteIntrouvable."""
+    from archives_tool.api.services._erreurs import EntiteIntrouvable
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    fid = _premier_fichier_id(base_demo)
+    fonds_id = _fonds_id_du_fichier(base_demo, fid)
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        with pytest.raises(EntiteIntrouvable):
+            enrichir_annotations_par_vocab(s, 99999, fonds_id, dry_run=True)
+    engine.dispose()
+
+
+def test_enrichir_fonds_introuvable(base_demo: Path) -> None:
+    """Fonds id inconnu → EntiteIntrouvable."""
+    from archives_tool.api.services._erreurs import EntiteIntrouvable
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        with pytest.raises(EntiteIntrouvable):
+            enrichir_annotations_par_vocab(s, vid, 99999, dry_run=True)
+    engine.dispose()
+
+
+def test_enrichir_scope_fonds_isole_autres_fonds(base_demo: Path) -> None:
+    """L'enrichissement n'affecte que les annotations du fonds cible.
+    Une annotation sur un fichier d'un AUTRE fonds n'est pas touchée
+    même si elle aurait matché."""
+    from archives_tool.api.services.annotations import (
+        enrichir_annotations_par_vocab,
+    )
+    from archives_tool.models import Item
+
+    # Trouve deux fichiers dans des fonds distincts.
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        couples = s.execute(
+            select(Fichier.id, Item.fonds_id)
+            .join(Item, Item.id == Fichier.item_id)
+            .order_by(Fichier.id)
+        ).all()
+    engine.dispose()
+    # Premier fichier du premier fonds rencontré
+    fid_a, fonds_a = couples[0]
+    # Premier fichier d'un autre fonds
+    fid_b, fonds_b = next(
+        (c for c in couples if c[1] != fonds_a),
+        (None, None),
+    )
+    assert fid_b is not None, "Demo doit avoir au moins 2 fonds"
+
+    vid = _creer_vocab_avec_valeurs(
+        base_demo, "dessinateurs",
+        [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
+    )
+
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        for fid in (fid_a, fid_b):
+            creer_annotation(
+                s, fid,
+                FormulaireAnnotation(
+                    selecteur="xywh=0,0,10,10",
+                    corps=[{"type": "TextualBody", "value": "Copi"}],
+                ),
+            )
+        # Enrichir uniquement fonds_a
+        rapport = enrichir_annotations_par_vocab(
+            s, vid, fonds_a, dry_run=False,
+        )
+    assert rapport.nb_matches == 1  # uniquement le fid_a
+
+    # Vérifie que fid_b est intacte
+    with factory() as s2:
+        ann_b = s2.scalar(
+            select(AnnotationRegion).where(AnnotationRegion.fichier_id == fid_b)
+        )
+        assert ann_b is not None
+        assert ann_b.corps[0]["type"] == "TextualBody"
+        assert ann_b.corps[0]["value"] == "Copi"
+    engine.dispose()
+
+
 def test_serialiser_w3c_omet_champs_null(base_demo: Path) -> None:
     """W3C spec : champs optionnels (creator, modified) doivent être
     OMIS quand absents, pas inclus en `null`. Garantit la

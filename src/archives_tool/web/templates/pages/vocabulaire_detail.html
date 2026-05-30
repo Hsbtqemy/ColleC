@@ -110,21 +110,36 @@
             {% if rattache %}<span style="color:#1e40af;font-size:11px;">✓</span>{% endif %}
           </span>
         {% else %}
-          <form method="post"
-                action="/vocabulaires/{{ vocabulaire.id }}/fonds/{{ f.cote }}/{% if rattache %}detacher{% else %}attacher{% endif %}"
-                style="margin:0;">
-            <button type="submit"
-                    title="{% if rattache %}Détacher du fonds {{ f.cote }}{% else %}Rattacher au fonds {{ f.cote }}{% endif %}"
-                    style="width:100%;display:flex;align-items:center;gap:8px;padding:6px 10px;
-                           border:1px solid {% if rattache %}#93c5fd{% else %}rgba(0,0,0,0.10){% endif %};border-radius:4px;
-                           background:{% if rattache %}#dbeafe{% else %}white{% endif %};cursor:pointer;text-align:left;">
-              <span style="font-family:monospace;font-size:11px;color:#6b7280;min-width:50px;">{{ f.cote }}</span>
-              <span style="flex:1;font-size:12px;color:#374151;">{{ f.titre }}</span>
-              <span style="font-size:11px;color:{% if rattache %}#1e40af{% else %}#9ca3af{% endif %};">
-                {% if rattache %}✓{% else %}+{% endif %}
-              </span>
-            </button>
-          </form>
+          <div style="display:flex;gap:4px;">
+            <form method="post"
+                  action="/vocabulaires/{{ vocabulaire.id }}/fonds/{{ f.cote }}/{% if rattache %}detacher{% else %}attacher{% endif %}"
+                  style="margin:0;flex:1;">
+              <button type="submit"
+                      title="{% if rattache %}Détacher du fonds {{ f.cote }}{% else %}Rattacher au fonds {{ f.cote }}{% endif %}"
+                      style="width:100%;display:flex;align-items:center;gap:8px;padding:6px 10px;
+                             border:1px solid {% if rattache %}#93c5fd{% else %}rgba(0,0,0,0.10){% endif %};border-radius:4px;
+                             background:{% if rattache %}#dbeafe{% else %}white{% endif %};cursor:pointer;text-align:left;">
+                <span style="font-family:monospace;font-size:11px;color:#6b7280;min-width:50px;">{{ f.cote }}</span>
+                <span style="flex:1;font-size:12px;color:#374151;">{{ f.titre }}</span>
+                <span style="font-size:11px;color:{% if rattache %}#1e40af{% else %}#9ca3af{% endif %};">
+                  {% if rattache %}✓{% else %}+{% endif %}
+                </span>
+              </button>
+            </form>
+            {% if rattache %}
+              {# T4 : action « enrichir » disponible uniquement sur les
+                 fonds rattachés (sémantique : on a déjà décidé que ce
+                 vocab s'applique ici, on propage maintenant les URIs
+                 aux annotations existantes). #}
+              <a href="/vocabulaires/{{ vocabulaire.id }}/fonds/{{ f.cote }}/enrichir"
+                 title="Enrichir rétroactivement les annotations existantes du fonds {{ f.cote }} avec les URIs de ce vocabulaire."
+                 style="display:flex;align-items:center;padding:6px 10px;
+                        border:1px solid rgba(0,0,0,0.10);border-radius:4px;
+                        background:white;color:#374151;font-size:11px;text-decoration:none;">
+                ⤴ Enrichir
+              </a>
+            {% endif %}
+          </div>
         {% endif %}
       </li>
       {% endfor %}

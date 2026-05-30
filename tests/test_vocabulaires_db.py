@@ -549,8 +549,30 @@ def test_route_modifier_valeur_libelle_vide_reaffiche_form_avec_erreurs(
     assert f'action="/vocabulaires/{vid}/valeurs/{valeur_id}/modifier"' in r.text
     # Le code soumis est préservé (et pas écrasé par la valeur DB)
     assert 'name="code"' in r.text and 'value="copi"' in r.text
-    # Message d'erreur sur le libellé
-    assert "libelle" in r.text.lower()
+    # Message d'erreur exact rendu sous le form (pas juste un faux
+    # positif sur `name="libelle"` qui est toujours là).
+    assert "Le libellé est obligatoire." in r.text
+
+
+def test_modifier_query_param_pour_vid_inexistant_ignore(
+    base_demo: Path,
+) -> None:
+    """`?modifier=99999` (vid totalement inconnu en base) : la page rend
+    normalement sans bascule edit ni 404. Cohérent avec le cas cross-
+    vocab : on préfère l'ignore silencieux à un 404 brutal."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="Tags"))
+        ajouter_valeur(s, v.id, FormulaireValeur(code="x", libelle="X"))
+        vid = v.id
+    engine.dispose()
+
+    client = TestClient(app)
+    r = client.get(f"/vocabulaires/{vid}?modifier=99999")
+    assert r.status_code == 200
+    # Aucun form inline rendu
+    assert "/valeurs/99999/modifier" not in r.text
 
 
 def test_modifier_query_param_pour_valeur_d_un_autre_vocab_ignore(

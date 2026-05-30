@@ -174,13 +174,37 @@
               </span>
             </th>
           {%- endfor %}
+          {%- if ctx.url_retirer_template %}
+          <th class="border-b" style="border-color:rgba(0,0,0,0.08);padding:8px 8px;width:36px;" aria-label="Retirer"></th>
+          {%- endif %}
         </tr>
       </thead>
       <tbody>
       {%- for it in ctx['items'] %}{# bracket : `dict.items` shadowerait l'accès attribut #}
-        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors"
+        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group"
             style="border-color:rgba(0,0,0,0.08);">
           {%- for k in ctx.colonnes %}{{ _cell(k, it) }}{% endfor %}
+          {%- if ctx.url_retirer_template %}
+          {# Bouton « − Retirer » discret, visible au hover de la ligne.
+             Form POST sur la route /collection/<cote>/items/<id>/retirer.
+             Idempotent (cf. service). Confirme avant pour éviter le clic
+             accidentel — sur miroir, retirer = enlever de la vue
+             principale du fonds donc plus impactant. #}
+          <td style="padding:8px 8px;vertical-align:top;text-align:right;">
+            <form method="post"
+                  action="{{ ctx.url_retirer_template | replace('{item_id}', it.id|string) }}"
+                  onsubmit="return confirm('Retirer {{ it.cote }} de cette collection ? L\'item reste dans son fonds et ses autres collections.');"
+                  class="opacity-40 group-hover:opacity-100 transition-opacity"
+                  style="margin:0;">
+              <button type="submit"
+                      title="Retirer cet item de la collection (l'item reste dans son fonds)"
+                      aria-label="Retirer {{ it.cote }} de la collection"
+                      style="padding:2px 8px;font-size:13px;color:#9ca3af;background:transparent;border:1px solid transparent;border-radius:3px;cursor:pointer;line-height:1;">
+                &minus;
+              </button>
+            </form>
+          </td>
+          {%- endif %}
         </tr>
       {%- endfor %}
       </tbody>

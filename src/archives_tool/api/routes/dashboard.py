@@ -39,6 +39,7 @@ from archives_tool.api.services.collections import (
     FormulaireCollection,
     OperationCollectionInterdite,
     ajouter_items_a_collection,
+    creer_collection_libre,
     formulaire_depuis_collection,
     items_disponibles_pour_collection,
     lire_collection_par_cote,
@@ -482,6 +483,120 @@ def _resoudre_collection_mutable(db: Session, cote: str, fonds: str | None):
 
 def _url_collection(cote: str, fonds: str | None) -> str:
     return f"/collection/{cote}" + (f"?fonds={fonds}" if fonds else "")
+
+
+# ---------------------------------------------------------------------------
+# Création d'une collection libre depuis l'UI
+#
+# L'URL `/collections/nouvelle` (pluriel) est référencée depuis le menu
+# Importer global (`menu_importer.html`) et le bouton « + Créer une
+# collection libre » sur la page fonds. Le service `creer_collection_libre`
+# existait depuis V0.7-alpha (UI livrée) mais la route web a disparu lors
+# du refactor V0.9.0-alpha — les deux liens menaient à un 404 pendant
+# longtemps. Restauration ici.
+#
+# Pour les transversales (collection sans fonds parent), passer par la CLI
+# `archives-tool collections creer-libre` — la valeur d'usage côté UI est
+# limitée et l'ajout d'une option « Aucun fonds » au selector compliquerait
+# le formulaire pour un cas marginal.
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/collections/nouvelle",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def page_collection_nouvelle(
+    request: Request,
+    fonds: str | None = Query(
+        None,
+        description=(
+            "Cote du fonds parent. Si fournie, la libre sera rattachée à "
+            "ce fonds et le champ sera verrouillé dans le formulaire. "
+            "Sinon, un sélecteur listera tous les fonds existants."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Formulaire de création d'une collection libre."""
+    fonds_locked = None
+    if fonds is not None:
+        try:
+            fonds_locked = lire_fonds_par_cote(db, fonds)
+        except FondsIntrouvable as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+
+    # Liste tous les fonds pour le sélecteur si pas de fonds pré-imposé.
+    tous_fonds = lister_fonds(db) if fonds_locked is None else []
+
+    formulaire = FormulaireCollection(
+        fonds_id=fonds_locked.id if fonds_locked else None,
+    )
+    return templates.TemplateResponse(
+        request,
+        "pages/collection_nouvelle.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            fonds_locked=fonds_locked,
+            tous_fonds=tous_fonds,
+            formulaire=formulaire,
+            erreurs={},
+            phases=list(PhaseChantier),
+        ),
+    )
+
+
+@router.post(
+    "/collections/nouvelle",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def soumettre_collection_nouvelle(
+    request: Request,
+    formulaire: Annotated[FormulaireCollection, Form()],
+    db: Session = Depends(get_db),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Crée la collection libre et redirige vers sa page lecture.
+
+    Erreurs de validation (cote / titre vide, cote en collision) : 400
+    avec le formulaire ré-affiché et les erreurs surlignées.
+    """
+    try:
+        col = creer_collection_libre(db, formulaire, cree_par=utilisateur)
+    except CollectionInvalide as e:
+        # Reconstitue le contexte pour le re-render (fonds_locked si
+        # fonds_id était posé, sinon sélecteur).
+        fonds_locked = None
+        if formulaire.fonds_id is not None:
+            fonds_locked = db.get(Fonds, formulaire.fonds_id)
+        tous_fonds = lister_fonds(db) if fonds_locked is None else []
+        return templates.TemplateResponse(
+            request,
+            "pages/collection_nouvelle.html",
+            _contexte_base(
+                nom_base,
+                utilisateur,
+                fonds_locked=fonds_locked,
+                tous_fonds=tous_fonds,
+                formulaire=formulaire,
+                erreurs=e.erreurs,
+                phases=list(PhaseChantier),
+            ),
+            status_code=400,
+        )
+
+    # Redirige vers la lecture de la collection créée. ?fonds=... pour
+    # désambiguïser si la cote pourrait coïncider avec d'autres.
+    fonds_query = col.fonds.cote if col.fonds else None
+    return RedirectResponse(
+        _url_collection(col.cote, fonds_query), status_code=303
+    )
 
 
 @router.get("/collection/{cote}", response_class=HTMLResponse, response_model=None)

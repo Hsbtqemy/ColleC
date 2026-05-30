@@ -29,6 +29,18 @@
 ) ~ qs_filtres -%}
 {%- set cible = '/collection/' ~ cote ~ (('?' ~ qs_complet) if qs_complet else '') -%}
 
+{# URL template du bouton « − Retirer » sur chaque ligne. `{item_id}` est
+   remplacé par la macro avec l'id de l'item de la ligne. Masqué en
+   lecture seule (le middleware POST bloque déjà mais on évite le bouton
+   trompeur). Permis même sur les miroirs : retirer un item de sa miroir
+   le laisse exister dans le fonds (invariant 7). #}
+{%- if est_lecture_seule() -%}
+  {%- set url_retirer = None -%}
+{%- else -%}
+  {%- set qs_fonds = ('?fonds=' ~ fonds_query) if fonds_query else '' -%}
+  {%- set url_retirer = '/collection/' ~ cote ~ '/items/{item_id}/retirer' ~ qs_fonds -%}
+{%- endif -%}
+
 {% if items.items or nb_f > 0 %}
   {{ tableau_items({
     'colonnes': noms_cols,
@@ -44,6 +56,7 @@
     'compteur_filtres': (nb_f|string ~ (' actif' if nb_f == 1 else ' actifs')) if nb_f > 0 else 'aucun',
     'nb_colonnes_actives': noms_cols|length,
     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
+    'url_retirer_template': url_retirer,
   }) }}
 {% else %}
   {# Collection vide : empty state proactif (V0.9.0 — pas de sous-collections,

@@ -1,0 +1,159 @@
+{# Création d'une collection libre. Variables :
+   - `fonds_locked` : objet Fonds si le rattachement est imposé par
+     `?fonds=<cote>` (champ verrouillé). None si l'utilisateur doit
+     choisir parmi `tous_fonds`.
+   - `tous_fonds` : liste des fonds existants (vide si fonds_locked
+     est posé, ou si la base est vide).
+   - `formulaire` (FormulaireCollection) — pré-rempli en cas d'erreur.
+   - `erreurs` (dict champ→message).
+   - `phases` (list[PhaseChantier]).
+#}
+{% extends "base.html" %}
+{% from "components/_champ_form.html" import champ, textarea, selecteur with context %}
+
+{% block title %}Nouvelle collection libre — archives-tool{% endblock %}
+
+{% block content %}
+{% set fonds_q = "?fonds=" ~ fonds_locked.cote if fonds_locked else "" %}
+
+<header class="mb-6">
+  <p class="text-sm text-gray-500">
+    <a href="/" class="hover:underline">Tableau de bord</a> ›
+    {% if fonds_locked %}
+      <a href="/fonds/{{ fonds_locked.cote }}"
+         class="hover:underline font-mono">{{ fonds_locked.cote }}</a> ›
+    {% endif %}
+    <span>Nouvelle collection libre</span>
+  </p>
+  <h1 class="text-2xl font-medium mt-2">
+    Créer une collection libre
+    {% if fonds_locked %}
+      <span class="text-base text-gray-500 font-normal" style="margin-left:8px;">
+        rattachée au fonds <span class="font-mono">{{ fonds_locked.cote }}</span>
+      </span>
+    {% endif %}
+  </h1>
+  <p class="text-sm text-gray-500 mt-1" style="max-width:680px;">
+    Une collection libre regroupe une sélection d'items au sein d'un
+    fonds (sous-thème, série favorite, vue éditoriale).
+    Pour créer une collection transversale (cross-fonds), utiliser la
+    CLI <code>archives-tool collections creer-libre</code>.
+  </p>
+</header>
+
+{% if not fonds_locked and not tous_fonds %}
+{# Cas spécial : aucun fonds en base → impossible de créer une libre
+   rattachée. Empty state plutôt qu'un formulaire qu'on ne peut pas
+   soumettre. #}
+<div class="bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);padding:36px 24px;max-width:680px;">
+  <div class="text-center">
+    <p style="font-size:14px;color:#374151;margin-bottom:14px;">
+      Aucun fonds en base — créez d'abord un fonds avant de lui
+      rattacher des collections libres.
+    </p>
+    <a href="/import"
+       class="inline-flex items-center gap-2 rounded"
+       style="padding:8px 16px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+      Importer un fonds depuis un tableur
+    </a>
+  </div>
+</div>
+{% else %}
+
+<form method="post" action="/collections/nouvelle"
+      style="max-width:680px;">
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Rattachement
+    </h2>
+    {% if fonds_locked %}
+      {# Mode imposé : fonds_id en hidden, libellé read-only. #}
+      <input type="hidden" name="fonds_id" value="{{ fonds_locked.id }}">
+      <div style="padding:8px 12px;background:#f9fafb;border:1px solid rgba(0,0,0,0.08);border-radius:4px;font-size:13px;color:#374151;">
+        <span class="font-mono" style="color:#6b7280;">{{ fonds_locked.cote }}</span>
+        — {{ fonds_locked.titre or "(sans titre)" }}
+      </div>
+      <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+        Le rattachement est verrouillé (passé en query string).
+      </p>
+    {% else %}
+      {# Mode libre : sélecteur. fonds_id est obligatoire. #}
+      <label for="fonds_id" style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+        Fonds parent
+        <span style="color:#E24B4A;">*</span>
+      </label>
+      <select id="fonds_id" name="fonds_id" required
+              class="w-full"
+              style="padding:6px 10px;font-size:13px;border:1px solid rgba(0,0,0,0.20);border-radius:4px;background:white;">
+        {% for f in tous_fonds %}
+          <option value="{{ f.id }}"
+                  {% if formulaire.fonds_id == f.id %}selected{% endif %}>
+            {{ f.cote }} — {{ f.titre or "(sans titre)" }}
+          </option>
+        {% endfor %}
+      </select>
+      {% if erreurs and erreurs.fonds_id %}
+        <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs.fonds_id }}</p>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Identification
+    </h2>
+    {{ champ('cote', 'Cote', formulaire.cote, mono=true, obligatoire=true,
+             help_text='Identifiant court, unique au sein du fonds (ex. HK-FAVORIS).') }}
+    {{ champ('titre', 'Titre', formulaire.titre, obligatoire=true) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Description
+    </h2>
+    {{ textarea('description', 'Description courte', formulaire.description) }}
+    {{ textarea('description_publique', 'Description publique',
+                formulaire.description_publique,
+                help_text='Destinée aux exports Dublin Core / Nakala.',
+                lignes=6) }}
+    {{ textarea('description_interne', 'Description interne',
+                formulaire.description_interne,
+                help_text='Pour l’équipe — non exportée.',
+                lignes=4) }}
+  </section>
+
+  <section style="margin-bottom:28px;">
+    <h2 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px;">
+      Phase de chantier
+    </h2>
+    {% set libelles_phases = {} %}
+    {% for p in phases %}{% set _ = libelles_phases.update({p.value: (p | libelle_phase)}) %}{% endfor %}
+    {{ selecteur('phase', 'Phase',
+                 formulaire.phase,
+                 phases | map(attribute='value') | list,
+                 libelles=libelles_phases) }}
+  </section>
+
+  <div class="flex items-center justify-end gap-2"
+       style="border-top:1px solid rgba(0,0,0,0.08);padding-top:16px;">
+    <a href="{% if fonds_locked %}/fonds/{{ fonds_locked.cote }}{% else %}/{% endif %}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:6px 14px;font-size:13px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
+      {% if est_lecture_seule() %}Retour{% else %}Annuler{% endif %}
+    </a>
+    {% if est_lecture_seule() %}
+      <span style="padding:6px 14px;font-size:13px;color:#92400e;font-style:italic;">
+        Création désactivée (mode lecture seule)
+      </span>
+    {% else %}
+      <button type="submit"
+              class="inline-flex items-center gap-1.5 rounded"
+              style="padding:6px 14px;font-size:13px;background:#1f1f1f;color:white;border:1px solid #1f1f1f;">
+        Créer la collection
+      </button>
+    {% endif %}
+  </div>
+</form>
+{% endif %}
+{% endblock %}

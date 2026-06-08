@@ -121,6 +121,36 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.10 (2026-06-08)
+
+### Vocabulaires Nakala vendorisés + résolution de langue (Tier A)
+
+Premier pas du chantier **dépôt/round-trip Nakala** (voir
+`docs/developpeurs/nakala-depot-future.md`). Reprend les *données* d'un
+dépôt annexe de plugins Nakala (`plugins-madbot`, MSHS Poitiers) sans
+coupler ColleC à madbot.
+
+- Vendoring sous `archives_tool/reference/vocabulaires_nakala/` : types
+  COAR acceptés par Nakala (29), langues (~8043), licences SPDX (~620),
+  avec `PROVENANCE.md` (source + révision amont + mises en garde).
+- `reference/loaders.py` : chargeurs cachés (`langues_iso639`,
+  `types_coar_nakala`, `licences_spdx`).
+- `libelle_langue` : résolution du libellé sur la table complète (un
+  code 639-3 de longue traîne s'affiche correctement, plus seulement
+  les ~17 langues curées). Impédance documentée : ColleC stocke en
+  639-3, le snapshot Nakala est 639-1 pour les majeurs → pont reporté.
+
+**Décision actée** (voir doc) : ColleC possèdera son propre chemin de
+dépôt Nakala (lecture + écriture, round-trip via `PUT /datas/{id}` +
+versioning), **sans couplage madbot**.
+
+**Trouvaille** : 9 des 15 types COAR de ColleC sont hors du set accepté
+par Nakala (dont `c_12cd` mal étiqueté « Vidéo » = en fait « carte »).
+Correction en attente d'une décision produit (Périodique/Numéro de
+périodique n'ont pas d'équivalent Nakala).
+
+6 tests (`test_vocabulaires_nakala.py`).
+
 ## V0.9.9 (stable, 2026-06-08)
 
 ### Journal des suppressions d'entités

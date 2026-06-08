@@ -11,6 +11,8 @@ libellé est ce que voit l'utilisateur dans le dropdown.
 
 from __future__ import annotations
 
+from archives_tool.reference.loaders import langues_iso639
+
 # ISO 639-3 — langues fréquentes en contextes d'archives francophones.
 # Source : https://iso639-3.sil.org/
 LANGUES_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -210,6 +212,32 @@ def libelle_pour_valeur(
     return valeur_str
 
 
+def libelle_langue(code: object) -> str | None:
+    """Résout un code langue vers son libellé humain.
+
+    Cascade : liste curée :data:`LANGUES_OPTIONS` (libellés FR du
+    dropdown) → table snapshotée Nakala (~8043 langues) → code brut si
+    inconnu. Strict sur-ensemble du comportement antérieur : résout plus
+    de codes, n'en casse aucun.
+
+    ⚠️ **Impédance de schéma** : le snapshot Nakala est en ISO 639-1
+    pour les langues majeures (`fr`, `en`, `es`…) + ISO 639-3 pour la
+    longue traîne, alors que ColleC stocke en ISO 639-3 (`fra`, `eng`,
+    `spa`). Conséquence : les codes 639-3 de la longue traîne (`cmn`,
+    `und`, `mul`…) résolvent ; les majeurs 639-3 hors liste curée ne
+    résolvent PAS via le snapshot (retour code brut). Un pont
+    639-1↔639-3 est reporté au chantier round-trip Nakala (voir
+    `docs/developpeurs/nakala-depot-future.md`).
+    """
+    if code is None:
+        return None
+    s = str(code)
+    for v, libelle in LANGUES_OPTIONS:
+        if v == s:
+            return libelle
+    return langues_iso639().get(s, s)
+
+
 def resoudre_vocabulaire(
     field: str, valeur: object
 ) -> tuple[tuple[tuple[str, str], ...] | None, str | None]:
@@ -218,6 +246,13 @@ def resoudre_vocabulaire(
     Évite la duplication composer/route : un seul lookup, deux
     informations renvoyées. Retourne `(None, valeur)` si le champ
     n'a pas de vocabulaire enregistré.
+
+    Cas `langue` : les options restent la liste curée (dropdown
+    raisonnable), mais le libellé est résolu sur la table ISO 639-3
+    complète — un code hors liste s'affiche correctement au lieu du
+    code brut.
     """
     options = OPTIONS_PAR_CHAMP.get(field)
+    if field == "langue":
+        return options, libelle_langue(valeur)
     return options, libelle_pour_valeur(valeur, options)

@@ -18,7 +18,7 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.9 stable livré** (1324/1324 tests verts, doc déployée
+**Statut :** **V0.9.10 livré** (1330/1330 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
 (synthèse collection + fonds avec cartographie cross-collection +
@@ -67,6 +67,15 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   — intégration Zotero (export BibTeX/RIS en V2/V3, import
   différé sur demande). Mapping centralisé, pas de sync
   bidirectionnel.
+- [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
+  — **dépôt + round-trip Nakala** (ColleC possède le chemin
+  lecture/écriture, sans couplage madbot). Architecture pull /
+  create / update (`PUT /datas/{id}` + versioning), 4 difficultés
+  (conflit, publié/pending, fidélité, identité fichiers), inventaire
+  COAR (9/15 types hors set Nakala — bug à corriger), assets de
+  portage depuis `plugins-madbot`. Tier A livré (vocabulaires
+  vendorisés + résolution langue) ; correction COAR + P1/P2/P3 à
+  venir. Décision produit en suspens : Périodique/Numéro ↔ set Nakala.
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

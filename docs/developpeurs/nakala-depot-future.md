@@ -1,0 +1,187 @@
+# Dépôt & round-trip Nakala (chantier futur)
+
+> Document interne, exclu du build MkDocs. Décision structurante prise
+> en session 2026-06-08, à implémenter en V2/V3. Préserve la décision
+> et l'architecture avant de coder (cf. règle projet « proposer les
+> décisions structurantes avant de coder »).
+
+## Décision
+
+**ColleC possède son propre chemin Nakala — lecture *et* écriture — sans
+couplage à madbot.**
+
+Le contexte : l'utilisateur a écrit en annexe un monorepo de plugins
+**madbot** (`plugins-madbot`, MSHS Poitiers / FoReLLIS) couvrant Nakala
+(`data` / `metadata` / `submission`) et WebDAV. Évalué comme **source
+d'architecture et de données**, pas comme dépendance : ces plugins sont
+liés au framework madbot (`plugins-api`, interfaces `DataPlugin` /
+`SubmissionPlugin`) et ne sont pas branchables dans ColleC. Mais leur
+**savoir Nakala** (mapping 57 champs, vocabulaires, logique HTTP de
+dépôt) est largement découplable et sert de base de portage.
+
+Pointeur amont (provenance, révision `46b45a6`) :
+`https://gitlab.huma-num.fr/mshs-poitiers/forellis/plugins-madbot.git`
+— voir la mémoire `plugins-madbot-nakala-assets`.
+
+### Pourquoi pas madbot
+
+- L'auth/scoping madbot et son modèle de broker recoupent partiellement
+  ColleC ; déléguer le dépôt à madbot imposerait de maintenir le mapping
+  en double et un point d'intégration externe.
+- ColleC traite déjà l'export comme un livrable de premier ordre
+  (principe n°2) et les DOI Nakala comme première classe (colonnes
+  dédiées). Le dépôt est l'aboutissement naturel de ce chemin, pas une
+  capacité à externaliser.
+
+## Ce que le code anticipe déjà
+
+- `Item.doi_nakala` / `Collection.doi_nakala` (UNIQUE) /
+  `Item.doi_collection_nakala` — colonnes de première classe (décision
+  « Nakala comme première classe »). Base de la réconciliation
+  item ↔ dépôt.
+- Entités `SourceExterne` / `RessourceExterne` / `LienExterneItem`
+  (V2+) — dessinées pour référencer/cacher des ressources d'entrepôts
+  externes.
+- Roadmap : « Consultation Nakala (API REST + IIIF) » en V2, « Dépôt
+  vers Nakala » en V3.
+- `files/nakala.py` — helpers IIIF (`vers_iiif_info_json`, `vers_data`,
+  `vers_thumb`) déjà utilisés pour l'affichage.
+- `exporters/nakala.py` — export CSV bulk (point de départ, mapping
+  partiel à remplacer par le mapping 57 champs).
+
+## Faisabilité du round-trip
+
+Confirmée contre l'API Nakala (release notes + re3data, 2026-06) :
+`PUT /datas/{identifier}` modifie les métadonnées d'un dépôt existant,
+et Nakala supporte le **versioning de fichiers**. Le « create-only » du
+plugin `madbot_nakala_submission` était un choix de design madbot, pas
+une limite Nakala. Le round-trip *récupérer → modifier → re-pousser* est
+donc techniquement ouvert.
+
+## Architecture cible (round-trip)
+
+```
+Nakala ──(pull, lecture)──► Items ColleC (lien DOI, fetched_at)
+                               │
+                               ▼  travail local = source de vérité (principe n°1)
+                               │
+ColleC ──(create POST /datas, pending)──► nouveau dépôt → DOI
+ColleC ──(update PUT /datas/{id} + versioning fichiers)──► dépôt existant
+```
+
+Invariant directeur : **Nakala est source + puits, jamais la vérité
+courante** (principe n°1). Le pull importe/rafraîchit, le push publie ;
+entre les deux, la base locale fait foi.
+
+## Les 4 difficultés (et parades)
+
+1. **Conflit / fraîcheur.** Nakala n'expose pas de verrou optimiste.
+   Pull → modif locale → si le dépôt a changé entre-temps, le `PUT`
+   écrase. *Parade* : stocker `fetched_at` (+ etag/`modifiedDate` Nakala
+   si dispo) sur le lien, et **diff + confirmation avant overwrite** ;
+   à défaut, last-writer-wins explicite et tracé.
+2. **Publié vs pending.** Sur dépôt publié (DOI minté DataCite), les
+   métadonnées restent éditables et les fichiers passent par versioning,
+   mais pas de dé-publication. *Parade* : modéliser le statut et adapter
+   la sémantique du push (refus de delete sur publié, versioning sinon).
+3. **Fidélité du round-trip.** pull → modèle ColleC → push doit être
+   sans perte. ColleC a déjà saigné là-dessus (« Trou #9 » singulier/
+   pluriel à l'export). *Parade* : **une carte de vérité unique
+   lecture+écriture** — porter `SLUG_TO_NAKALA` (mapping 57 champs +
+   `typeUri`) du plugin, et la valider par round-trip de test
+   (`apitest.nakala.fr`).
+4. **Identité fichiers.** item ↔ DOI est couvert ; fichier ColleC ↔
+   fichier Nakala doit l'être pour le versioning. *Parade* : réconcilier
+   par **SHA-1** (Nakala expose le sha1 par fichier ; `Fichier.hash_sha256`
+   existe côté ColleC — attention, SHA-1 vs SHA-256, prévoir un champ
+   `sha1_nakala` sur le lien ou recalcul).
+
+## Inventaire COAR — bug de données à corriger (prérequis)
+
+Validation des 15 `TYPES_COAR_OPTIONS` de ColleC contre le set de
+**types de dépôt acceptés par Nakala** (snapshot `coar_resource_types.json`,
+29 entrées) : **9 sur 15 ne sont pas dans le set Nakala** → rejet ou
+coercition au dépôt, et URIs non résolvables à l'export DC.
+
+| Label ColleC | URI actuelle | Statut |
+|---|---|---|
+| Texte | `c_18cf` | ✅ accepté Nakala |
+| Article de revue | `c_6501` | ✅ |
+| Livre | `c_2f33` | ✅ |
+| Image | `c_c513` | ✅ |
+| Partition musicale | `c_18cw` | ✅ |
+| Enregistrement sonore | `c_18cc` | ✅ |
+| **Vidéo** | `c_12cd` | ⛔ **mal étiqueté** : `c_12cd` = « carte géographique ». Vidéo = `c_12ce` |
+| Carte | `c_ecc8` | ⛔ hors set Nakala (la carte Nakala = `c_12cd`) |
+| Manuscrit | `c_8a7e` | ⛔ hors set (manuscrit Nakala = `c_0040`) |
+| Document d'archives | `c_18co` | ⛔ hors set (fonds d'archives Nakala = `YC9F-HGCF`) |
+| Périodique | `c_3e5a` | ⛔ hors set (proche : `c_2fe3` « journal ») |
+| Numéro de périodique | `c_0640` | ⛔ hors set (**aucun équivalent Nakala**) |
+| Chapitre de livre | `c_3248` | ⛔ hors set |
+| Document de travail | `c_8042` | ⛔ hors set |
+| Photographie | `c_18cd` | ⛔ hors set (proche : `c_c513` image) |
+
+### Décision produit en suspens : Périodique / Numéro de périodique
+
+ColleC est fondamentalement un outil de **périodiques** — mais Nakala
+n'accepte ni « périodique » ni « numéro de périodique » comme type de
+dépôt. Deux options :
+
+- **(a) Aligner le type interne sur le set Nakala** : remplacer
+  Périodique→`c_2fe3` (journal), supprimer Numéro (→ `c_2fe3` ou
+  `c_18cf` texte). Simple, garantit le dépôt, mais perd la granularité
+  catalographique.
+- **(b) Deux vocabulaires** : garder un type *interne* riche (avec
+  Périodique/Numéro, URIs COAR valides) + une **carte interne→Nakala**
+  appliquée au seul moment du dépôt/export. Préserve la finesse, coûte
+  une table de correspondance.
+
+Recommandation : **(b)** — cohérent avec le positionnement « espace de
+travail » (le catalogage interne ne doit pas être bridé par le format de
+sortie ; la projection vers Nakala est une étape d'export). À trancher
+avec l'utilisateur avant d'implémenter la correction COAR.
+
+## Vocabulaires : impédances de schéma relevées
+
+- **Langues** : ColleC stocke en **ISO 639-3** (`fra`/`eng`/`spa`) ;
+  le snapshot Nakala est **ISO 639-1 pour les majeurs** (`fr`/`en`/`es`)
+  + 639-3 pour la longue traîne. Le pull/push devra **ponter 639-1↔639-3**
+  sur les ~185 majeurs (la longue traîne 639-3 coïncide). La résolution
+  de libellé actuelle (`libelle_langue`) résout déjà la longue traîne ;
+  le pont des majeurs est à ajouter en P1.
+- **Licences** : `licenses.json` vendorisé ressemble à la liste **SPDX
+  complète** (620), pas forcément au sous-ensemble accepté par Nakala.
+  À confirmer avant d'en faire un vocabulaire d'export contraint.
+
+## Phasage
+
+| Phase | Contenu | Roadmap | Risque |
+|---|---|---|---|
+| **Tier A (fait 2026-06-08)** | Vendoring des 3 vocab snapshots + loaders + résolution libellé langue (longue traîne) | livré | faible |
+| **Tier A bis** | Correction COAR (après décision (a)/(b)) + alias mis à jour | prochain | moyen (données) |
+| **P1 — Pull** | Client lecture Nakala (porté de `madbot_nakala_data/client.py`) → rapatrier/rafraîchir items, lien DOI + `fetched_at`, pont langues | V2 | moyen |
+| **P2 — Create** | Dépôt (`POST /datas` pending → DOI), porté de `madbot_nakala_submission/{client,mapper,preflight}.py` | V3 | moyen |
+| **P3 — Round-trip** | `PUT /datas/{id}` + versioning, diff anti-conflit, statut publié/pending | V3+ | élevé |
+
+## Assets de portage (plugin → ColleC)
+
+| Plugin (fichier) | Réutilisable comme |
+|---|---|
+| `madbot_nakala_metadata/static/json/vocabularies/*` | **vendorisé** sous `reference/vocabulaires_nakala/` |
+| `madbot_nakala_metadata/static/json/schema/v1/*` (57 schémas) | règles de validation pré-export (`exporters/rapport.py`) |
+| `madbot_nakala_submission/mapper.py::SLUG_TO_NAKALA` | carte de vérité mapping 57 champs (P2/P3) |
+| `madbot_nakala_submission/client.py::NakalaWriteClient` | client httpx de dépôt (P2/P3) — découpler des exceptions `plugins_api` |
+| `madbot_nakala_submission/preflight.py` | cascade `dcterms→nkl`, sentinels |
+| `madbot_nakala_data/client.py` | client de lecture (P1) |
+
+Couplage madbot à retirer au portage : types d'exception `plugins_api`
+et le DTO `MetadataObject` (remplacer par les métadonnées item ColleC).
+
+## Hors scope
+
+- WebDAV : les plugins `madbot_webdav*` restent hors périmètre. La V1.0
+  prévoit un montage **davfs2 OS-level** (ShareDocs), pas un client
+  WebDAV in-app.
+- Auto-publication Nakala (`status/published`) : laissée à l'UI Nakala
+  (relecture humaine avant mint DataCite).
+- Création de collections Nakala : la collection cible doit préexister.

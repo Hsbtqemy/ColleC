@@ -33,6 +33,24 @@
     if (label) label.textContent = m.label;
   }
 
+  // V0.9.8 : `annee` est dérivée de `date` côté serveur et affichée en
+  // lecture seule dans le cartouche. Après une édition inline de la
+  // date, on repeint cette cellule avec l'année recalculée (transportée
+  // par le fragment via `data-annee-derivee`) — sinon elle reste figée
+  // sur l'ancienne valeur jusqu'au reload. Valeur vide = date imprécise
+  // / hors plage → on rend le même « non renseigné » que le macro Jinja.
+  function rafraichirAnneeDerivee(valeur) {
+    const cell = document.querySelector('[data-edit-field="annee"] [data-value]');
+    if (!cell) return;
+    const v = (valeur || "").trim();
+    if (v !== "") {
+      cell.textContent = v;
+    } else {
+      cell.innerHTML =
+        '<span style="font-style:italic;color:#9ca3af;">non renseigné</span>';
+    }
+  }
+
   function chercherContextItem() {
     // Item ou Collection : la page expose cote/fonds/version via
     // <meta name="entity-context"> (V0.9.6+). Pour compat ascendante,
@@ -175,6 +193,12 @@
           // l'ancienne valeur jusqu'au reload — UX trompeur).
           if (field === "etat_catalogage") {
             rafraichirBadgeEtatItem(input.value);
+          }
+          // Si on vient de sauver `date`, repeindre l'année dérivée
+          // (cellule lecture seule) avec la valeur autoritaire serveur.
+          if (field === "date") {
+            const hint = zoneValeur.querySelector("[data-annee-derivee]");
+            rafraichirAnneeDerivee(hint ? hint.getAttribute("data-annee-derivee") : "");
           }
         }
       } catch (e) {

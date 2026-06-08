@@ -149,16 +149,23 @@ def soumettre_edition_inline(
                 if code == valeur_brute:
                     valeur_affichee = libelle
                     break
+    contexte: dict[str, object] = {
+        "entity": item_modifie,
+        "field": field,
+        "valeur_brute": valeur_brute,
+        "valeur_affichee": valeur_affichee,
+        "vocabulaire": options is not None,
+    }
+    # V0.9.8 : `annee` est dérivée de `date` à l'enregistrement (champ
+    # lecture seule dans le cartouche). Quand on édite la date inline,
+    # on renvoie l'année recalculée pour qu'`inline_edit.js` repeigne la
+    # cellule sans reload — sinon l'affichage reste figé sur l'ancienne.
+    if field == "date" and champ_perso is None:
+        contexte["annee_apres"] = item_modifie.annee
     return templates.TemplateResponse(
         request,
         "partials/inline_edit_valeur.html",
-        {
-            "entity": item_modifie,
-            "field": field,
-            "valeur_brute": valeur_brute,
-            "valeur_affichee": valeur_affichee,
-            "vocabulaire": options is not None,
-        },
+        contexte,
     )
 
 

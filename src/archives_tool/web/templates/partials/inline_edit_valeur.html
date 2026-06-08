@@ -18,3 +18,9 @@
     {{ valeur_brute }}
   {%- endif -%}
 </span>
+{%- if annee_apres is defined -%}
+  {# V0.9.8 : édition inline de `date` → l'année indexée (lecture seule,
+     dérivée serveur) est repeinte par inline_edit.js. Valeur autoritaire
+     transportée ici, vide si la date est imprécise / hors plage. #}
+  <span data-annee-derivee="{{ annee_apres if annee_apres is not none else '' }}" hidden></span>
+{%- endif -%}

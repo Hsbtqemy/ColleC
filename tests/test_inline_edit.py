@@ -111,6 +111,71 @@ def test_inline_edit_etat_catalogage_valeur_invalide_400(base_demo: Path) -> Non
     assert resp.status_code == 400
 
 
+def test_inline_edit_date_renvoie_annee_derivee(base_demo: Path) -> None:
+    """V0.9.8 : éditer `date` inline renvoie l'année recalculée dans
+    `data-annee-derivee` (le JS repeint la cellule lecture seule) et
+    synchronise `Item.annee` en base."""
+    client = TestClient(app)
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/date?fonds=HK",
+        data={"version": str(v), "valeur": "1969-09"},
+    )
+    assert resp.status_code == 200
+    assert 'data-annee-derivee="1969"' in resp.text
+    # La base est bien synchronisée.
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert item.annee == 1969
+        assert item.date == "1969-09"
+    engine.dispose()
+
+
+def test_inline_edit_date_imprecise_preserve_annee_et_reflete_hint(
+    base_demo: Path,
+) -> None:
+    """Date imprécise → l'année existante est préservée (pas écrasée), et
+    le hint `data-annee-derivee` reflète la valeur réelle stockée (le JS
+    repeint la cellule avec la vérité base, pas une chaîne parasite)."""
+    client = TestClient(app)
+    # Garantir une année connue : on pose d'abord une date précise.
+    v = _version_courante(base_demo, "HK-001")
+    client.post(
+        "/item/HK-001/champ/date?fonds=HK",
+        data={"version": str(v), "valeur": "1962-04"},
+    )
+    # Puis on passe à une date imprécise : 1962 doit être conservé.
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/date?fonds=HK",
+        data={"version": str(v), "valeur": "vers 1980"},
+    )
+    assert resp.status_code == 200
+    assert 'data-annee-derivee="1962"' in resp.text
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        assert item.annee == 1962  # préservé, pas effacé
+        assert item.date == "vers 1980"
+    engine.dispose()
+
+
+def test_inline_edit_champ_non_date_sans_annee_derivee(base_demo: Path) -> None:
+    """Éditer un autre champ ne déclenche pas le hint année — pas de
+    repeinte parasite de la cellule année."""
+    client = TestClient(app)
+    v = _version_courante(base_demo, "HK-001")
+    resp = client.post(
+        "/item/HK-001/champ/titre?fonds=HK",
+        data={"version": str(v), "valeur": "Titre X"},
+    )
+    assert resp.status_code == 200
+    assert "data-annee-derivee" not in resp.text
+
+
 def test_inline_edit_item_inexistant_404(base_demo: Path) -> None:
     client = TestClient(app)
     resp = client.post(
@@ -204,6 +269,39 @@ def test_whitelist_inline_aligne_sur_cartouche(base_demo: Path) -> None:
         f"Champs rendus éditables hors whitelist : "
         f"{editables_rendues - CHAMPS_ITEM_EDITABLES_INLINE}"
     )
+
+
+def test_cartouche_rend_cible_annee_non_editable(base_demo: Path) -> None:
+    """Contrat V0.9.8 du repeint inline : la cellule `annee` doit être
+    rendue dans le cartouche (cible du `rafraichirAnneeDerivee` JS après
+    édition de `date`) ET marquée non-éditable (dérivée, pas saisie). Si
+    quelqu'un retire `annee` du cartouche, le repeint no-op en silence —
+    ce test casse à la place."""
+    from archives_tool.api.services.dashboard import (
+        composer_metadonnees_par_section,
+    )
+
+    # Cible présente dans le HTML rendu (sélecteur JS
+    # `[data-edit-field="annee"] [data-value]`).
+    client = TestClient(app)
+    resp = client.get("/item/HK-001?fonds=HK")
+    assert resp.status_code == 200
+    assert 'data-edit-field="annee"' in resp.text
+
+    # `annee` est non-éditable côté composer (lecture seule, dérivée).
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        sections = composer_metadonnees_par_section(item, [])
+    engine.dispose()
+    champ_annee = next(
+        champ
+        for champs in sections.values()
+        for champ in champs
+        if champ.cle == "annee"
+    )
+    assert champ_annee.editable is False
 
 
 def test_script_inline_edit_a_un_suffixe_cache_bust(base_demo: Path) -> None:

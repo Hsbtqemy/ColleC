@@ -25,8 +25,10 @@ from archives_tool.api.services.items import (
     ItemIntrouvable,
     ItemInvalide,
     OperationItemInterdite,
+    annee_depuis_date_edtf,
     collections_de_item,
     creer_item,
+    formulaire_depuis_item,
     lire_item,
     lire_item_par_cote,
     lister_items_collection,
@@ -334,6 +336,123 @@ def test_modifier_item_inexistant(session: Session, fonds_hk: Fonds) -> None:
             99999,
             FormulaireItem(cote="X", titre="X", fonds_id=fonds_hk.id),
         )
+
+
+# ---------------------------------------------------------------------------
+# Dérivation automatique de l'année depuis la date EDTF (V0.9.8)
+# ---------------------------------------------------------------------------
+
+
+def test_annee_helper_extrait_annee_edtf() -> None:
+    """Le helper isolé couvre les cas EDTF tolérants."""
+    assert annee_depuis_date_edtf("1974") == 1974
+    assert annee_depuis_date_edtf("1974-03") == 1974
+    assert annee_depuis_date_edtf("1974-03-11") == 1974
+    assert annee_depuis_date_edtf("  1974-03  ") == 1974  # strip
+    # Imprécis / vide → None (l'incertitude est préservée).
+    assert annee_depuis_date_edtf(None) is None
+    assert annee_depuis_date_edtf("") is None
+    assert annee_depuis_date_edtf("vers 1974") is None
+    assert annee_depuis_date_edtf("19XX") is None
+    assert annee_depuis_date_edtf("s.d.") is None
+    # Hors plage plausible → None : aligné sur le validateur
+    # `_annee_borne`, sinon la valeur dérivée casse le round-trip
+    # `formulaire_depuis_item` (BCE négatif, année aberrante > 3000).
+    assert annee_depuis_date_edtf("-0044") is None  # BCE hors plage
+    assert annee_depuis_date_edtf("9999") is None  # > 3000
+
+
+def test_annee_derivee_jamais_hors_borne_validateur(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Régression : une date BCE/aberrante ne doit pas écrire une annee
+    que le validateur rejette — sinon `formulaire_depuis_item` plante
+    au prochain chargement. La date garde son texte, annee reste None."""
+    item = creer_item(
+        session,
+        FormulaireItem(cote="HK-001", titre="X", fonds_id=fonds_hk.id, date="-0044"),
+    )
+    assert item.date == "-0044"  # texte préservé
+    assert item.annee is None  # index non pollué
+    # Le round-trip ne lève pas.
+    formulaire = formulaire_depuis_item(item)
+    assert formulaire.annee is None
+
+
+def test_creer_item_annee_derivee_de_date(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Date parsable → année dérivée à la création, sans saisie."""
+    item = creer_item(
+        session,
+        FormulaireItem(cote="HK-001", titre="X", fonds_id=fonds_hk.id, date="1974-03"),
+    )
+    assert item.annee == 1974
+
+
+def test_modifier_item_date_fait_autorite_sur_annee(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Branche 1 : date parsable → l'année dérivée écrase l'annee fournie."""
+    item = creer_item(session, _form(fonds_hk))
+    nouv = modifier_item(
+        session,
+        item.id,
+        FormulaireItem(
+            cote="HK-001",
+            titre="X",
+            fonds_id=fonds_hk.id,
+            date="1969-09",
+            annee=1900,  # contredit la date — la date gagne
+        ),
+    )
+    assert nouv.annee == 1969
+
+
+def test_modifier_item_date_imprecise_utilise_annee_fournie(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Branche 2 : date non parsable + annee fournie (CLI/API/import) → use it."""
+    item = creer_item(session, _form(fonds_hk))
+    nouv = modifier_item(
+        session,
+        item.id,
+        FormulaireItem(
+            cote="HK-001",
+            titre="X",
+            fonds_id=fonds_hk.id,
+            date="vers 1960",
+            annee=1960,
+        ),
+    )
+    assert nouv.annee == 1960
+
+
+def test_modifier_item_date_imprecise_sans_annee_preserve_existant(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Branche 3 : date non parsable + pas d'annee → conserve l'existant.
+
+    Couvre les imports legacy où seule `annee` était peuplée : une
+    modif ultérieure sur une date incertaine ne doit pas l'effacer.
+    """
+    item = creer_item(
+        session,
+        FormulaireItem(cote="HK-001", titre="X", fonds_id=fonds_hk.id, date="1974"),
+    )
+    assert item.annee == 1974
+    nouv = modifier_item(
+        session,
+        item.id,
+        FormulaireItem(
+            cote="HK-001",
+            titre="X",
+            fonds_id=fonds_hk.id,
+            date="vers 1980",
+            annee=None,
+        ),
+    )
+    assert nouv.annee == 1974  # préservé, pas effacé
 
 
 # ---------------------------------------------------------------------------

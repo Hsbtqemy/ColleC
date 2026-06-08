@@ -1962,6 +1962,66 @@ rapide que `peupler_base`, suffit pour ces tests qui ne consultent
 pas de données). **1180/1180 verts** sur ce poste pour la première
 fois.
 
+### V0.9.8 — Année dérivée de la date EDTF
+
+Friction relevée au catalogage : `Item.annee` (colonne numérique
+indexée, utilisée par les filtres de période, la timeline de
+synthèse et `META-ANNEE-IMPLAUSIBLE`) était un champ saisi à la
+main *en plus* de `Item.date` (EDTF). Double saisie source de
+désynchronisation silencieuse (date `1969-09` mais année oubliée à
+`1968`).
+
+Décision : **`annee` devient entièrement dérivée de `date`** à
+chaque enregistrement. Plus de saisie directe dans l'UI.
+
+- **Helper** `annee_depuis_date_edtf` (`services/items.py`) :
+  déplacé depuis `dashboard.py` (qui le ré-importe désormais sous
+  l'alias `_annee_depuis_date_edtf` — les call sites timeline /
+  synthèse inchangés). Extrait l'année d'une date EDTF tolérante
+  (`1974`, `1974-03`, `1974-03-11`). Retourne `None` sur l'imprécis
+  (`vers 1974`, `19XX`, `s.d.`) **et hors plage plausible**
+  (`[ANNEE_MIN=0, ANNEE_MAX=3000]`) — BCE `-0044` ou aberrante
+  `9999` : la date garde son texte, l'index reste vide, QA signale.
+  **Borne partagée avec le validateur** `FormulaireItem._annee_borne`
+  (constantes `ANNEE_MIN`/`ANNEE_MAX`) : `annee` étant dérivée
+  *après* la validation Pydantic, une valeur hors plage écrite ici
+  casserait le round-trip `formulaire_depuis_item` au prochain
+  chargement (ValidationError → édition impossible). L'ancienne
+  implémentation renvoyait par ailleurs `None` sur `-0044`
+  (`split("-")[0]` → `""` → `ValueError`) — bug latent jamais
+  déclenché car l'année n'était alors pas écrite.
+- **`_appliquer_formulaire`** (3 branches, dans l'ordre) :
+  1. date parse en année → `item.annee` synchronisée (la date fait
+     autorité, écrase une `annee` de formulaire contradictoire) ;
+  2. date imprécise/vide + `formulaire.annee` fourni (CLI, API,
+     import) → on l'utilise ;
+  3. date imprécise/vide + rien → on conserve `item.annee`
+     existant (préserve les imports legacy où seule `annee` était
+     peuplée — une modif sur date incertaine ne l'efface pas).
+- **UI** `item_modifier.html` : l'input Année devient `disabled`
+  (lecture seule, fond grisé, libellé « Année (indexée, auto) » +
+  aide « Dérivée de la date à l'enregistrement »). `annee` retirée
+  de `CHAMPS_ITEM_EDITABLES_INLINE` (plus d'édition inline du
+  cartouche) ; libellé `_LIBELLES_IDENTIFICATION` passé à
+  « Année (auto) ».
+- **Rafraîchissement inline de l'année** : `date` reste éditable
+  inline dans le cartouche ; comme `annee` en dépend, la route POST
+  `/item/<cote>/champ/date` renvoie l'année recalculée dans
+  `data-annee-derivee` (attribut caché du fragment) et `inline_edit.js`
+  repeint la cellule lecture seule `[data-edit-field="annee"]` sans
+  reload (même pattern que `rafraichirBadgeEtatItem` pour l'état). La
+  valeur transportée est la vérité base après save (préservée si la
+  date est imprécise), vide → rendu « non renseigné ». Le hint n'est
+  émis que pour `field == "date"` côté item.
+
+7 tests dans `test_items.py` (helper EDTF : imprécis + hors-plage
+BCE/aberrante → None, dérivation à la création, 3 branches de
+`_appliquer_formulaire`, régression round-trip hors-borne) + 4 dans
+`test_inline_edit.py` (date → hint année dérivée + sync base, date
+imprécise → année préservée + hint reflète la base, champ non-date →
+pas de hint, contrat cartouche : cible `data-edit-field="annee"`
+rendue + champ non-éditable).
+
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
 Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si

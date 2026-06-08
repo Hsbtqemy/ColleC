@@ -16,7 +16,6 @@ Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import Counter
@@ -35,7 +34,11 @@ from archives_tool.api.services.collaborateurs_fonds import (
     lister_collaborateurs_fonds,
 )
 from archives_tool.api.services.fonds import FondsIntrouvable
-from archives_tool.api.services.items import ItemIntrouvable, ItemResume
+from archives_tool.api.services.items import (
+    ItemIntrouvable,
+    ItemResume,
+    annee_depuis_date_edtf as _annee_depuis_date_edtf,
+)
 from archives_tool.api.services.vocabulaires import (
     LANGUES_OPTIONS,
     TYPES_COAR_OPTIONS,
@@ -1568,26 +1571,6 @@ def _resoudre_libelle_langue(code: str) -> str:
     return code
 
 
-_REGEX_ANNEE_EDTF = re.compile(r"^-?(\d{4})")
-
-
-def _annee_depuis_date_edtf(date: str | None) -> int | None:
-    """Extrait l'année (entier) d'une chaîne de date EDTF tolérante.
-
-    Couvre `1974`, `1974-03`, `1974-03-11`, `vers 1974` (échoue), `19XX`
-    (échoue), `-0044` (BCE, retourne -44). Sert de fallback quand
-    `Item.annee` n'a pas été peuplé à l'import — la timeline doit
-    quand même fonctionner.
-    """
-    if not date:
-        return None
-    m = _REGEX_ANNEE_EDTF.match(date.strip())
-    if not m:
-        return None
-    try:
-        return int(date.strip().split("-")[0] if date.strip().startswith("-") else m.group(1))
-    except ValueError:
-        return None
 
 
 @dataclass(frozen=True)
@@ -2403,7 +2386,7 @@ _LIBELLES_IDENTIFICATION: tuple[tuple[str, str, str], ...] = (
     ("titre", "Titre", "texte"),
     ("type_coar", "Type COAR", "texte"),
     ("date", "Date", "date"),
-    ("annee", "Année", "texte"),
+    ("annee", "Année (auto)", "texte"),
     ("langue", "Langue", "texte"),
     ("numero", "Numéro", "texte"),
 )
@@ -2429,7 +2412,9 @@ CHAMPS_ITEM_EDITABLES_INLINE: frozenset[str] = frozenset(
         "titre",
         "type_coar",
         "date",
-        "annee",
+        # `annee` retirée V0.9.8 : dérivée auto de `date` via
+        # `annee_depuis_date_edtf` dans `_appliquer_formulaire`.
+        # Ne plus exposer en édition (le cartouche affiche en lecture).
         "langue",
         "numero",
         "description",

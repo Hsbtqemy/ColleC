@@ -12,6 +12,7 @@ Le `fonds_id` d'un item est immuable : déplacer un item d'un fonds
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -53,6 +54,13 @@ from archives_tool.models import (
 
 
 _ETATS_VALIDES: frozenset[str] = frozenset(e.value for e in EtatCatalogage)
+
+#: Plage plausible pour `Item.annee` (index numérique). Partagée par le
+#: validateur `FormulaireItem._annee_borne` et la dérivation
+#: `annee_depuis_date_edtf` — les deux DOIVENT s'accorder, sinon une
+#: année dérivée hors plage casse le round-trip du formulaire.
+ANNEE_MIN: int = 0
+ANNEE_MAX: int = 3000
 
 
 class ItemIntrouvable(EntiteIntrouvable):
@@ -102,7 +110,7 @@ class FormulaireItem(BaseModel):
     def _annee_borne(cls, v: int | None) -> int | None:
         if v is None:
             return None
-        if v < 0 or v > 3000:
+        if v < ANNEE_MIN or v > ANNEE_MAX:
             raise ValueError(f"Année invraisemblable : {v}")
         return v
 
@@ -207,13 +215,60 @@ _OPTIONNELS_NULLABLES: tuple[str, ...] = (
 )
 
 
+_REGEX_ANNEE_EDTF = re.compile(r"^-?(\d{4})")
+
+
+def annee_depuis_date_edtf(date: str | None) -> int | None:
+    """Extrait l'année (entier) d'une chaîne de date EDTF tolérante.
+
+    Couvre `1974`, `1974-03`, `1974-03-11`. Retourne `None` sur
+    l'imprécis (`vers 1974`, `19XX`, `s.d.`) et sur toute année hors
+    de la plage plausible `[ANNEE_MIN, ANNEE_MAX]` — BCE (`-0044`) ou
+    aberrante (`9999`) : la date garde son info textuelle, mais l'index
+    numérique reste vide et le filtre temporel skip l'item.
+
+    La borne est volontairement la même que le validateur
+    :meth:`FormulaireItem._annee_borne` : `annee` étant dérivée *après*
+    la validation Pydantic, une valeur hors plage stockée ici casserait
+    le round-trip `formulaire_depuis_item` au prochain chargement.
+
+    `annee` est entièrement dérivée de `date` depuis V0.9.8 : ce helper
+    est appelé par `_appliquer_formulaire` à chaque save, et l'UI n'expose
+    plus `annee` en édition directe.
+    """
+    if not date:
+        return None
+    texte = date.strip()
+    m = _REGEX_ANNEE_EDTF.match(texte)
+    if not m:
+        return None
+    annee = (-1 if texte.startswith("-") else 1) * int(m.group(1))
+    if annee < ANNEE_MIN or annee > ANNEE_MAX:
+        return None
+    return annee
+
+
 def _appliquer_formulaire(item: Item, formulaire: FormulaireItem) -> None:
     """Copie le formulaire sur le modèle. `fonds_id` traité séparément
-    par les appelants (immuable à la modification)."""
+    par les appelants (immuable à la modification).
+
+    `annee` est dérivée automatiquement de `date` (EDTF) — l'utilisateur
+    ne la saisit plus directement (input UI disabled, donc absent du
+    POST). Règles :
+    - date parse en année → sync `item.annee` (autorité)
+    - date imprécise / vide + `formulaire.annee` fourni (CLI, API, import) → use it
+    - date imprécise / vide + rien → conserve `item.annee` existant
+      (préserve les imports legacy où seule `annee` était peuplée)
+    """
     item.cote = formulaire.cote.strip()
     item.titre = formulaire.titre.strip()
     item.etat_catalogage = formulaire.etat_catalogage or EtatCatalogage.BROUILLON.value
-    item.annee = formulaire.annee
+    annee_derivee = annee_depuis_date_edtf(formulaire.date)
+    if annee_derivee is not None:
+        item.annee = annee_derivee
+    elif formulaire.annee is not None:
+        item.annee = formulaire.annee
+    # sinon : on laisse item.annee tel quel (legacy preserved)
     item.numero_tri = formulaire.numero_tri
     item.metadonnees = formulaire.metadonnees or None
     for nom in _OPTIONNELS_NULLABLES:

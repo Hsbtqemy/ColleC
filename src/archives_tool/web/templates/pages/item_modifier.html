@@ -99,10 +99,20 @@
     <div class="grid grid-cols-2 gap-3">
       {{ champ('date', 'Date (EDTF)', formulaire.date,
                placeholder='1969-09, vers 1960, s.d.…',
-               help_text='Format libre — EDTF accepté.') }}
-      {{ champ('annee', 'Année (numérique)',
-               formulaire.annee if formulaire.annee else '',
-               type='number') }}
+               help_text='Format libre — EDTF accepté. L’année indexée est dérivée automatiquement.') }}
+      <div>
+        <label style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
+          Année (indexée, auto)
+        </label>
+        <input type="text" value="{{ formulaire.annee if formulaire.annee else '—' }}" disabled
+               class="w-full"
+               style="padding:6px 10px;font-size:13px;
+                      border:1px solid rgba(0,0,0,0.08);border-radius:4px;
+                      background:#f9fafb;color:#6b7280;">
+        <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          Dérivée de la date à l’enregistrement (filtres de période, timeline).
+        </p>
+      </div>
     </div>
     <div class="grid grid-cols-2 gap-3">
       {{ champ('numero', 'Numéro', formulaire.numero) }}

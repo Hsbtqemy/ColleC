@@ -18,7 +18,7 @@ catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.8 stable livré** (1316/1316 tests verts, doc déployée
+**Statut :** **V0.9.9 stable livré** (1324/1324 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
 (synthèse collection + fonds avec cartographie cross-collection +
@@ -2022,6 +2022,42 @@ imprécise → année préservée + hint reflète la base, champ non-date →
 pas de hint, contrat cartouche : cible `data-edit-field="annee"`
 rendue + champ non-éditable).
 
+### V0.9.9 — Journal des suppressions d'entités
+
+Comble le principe directeur n°4 (« journaliser toutes les opérations
+destructives ») pour les suppressions, jusque-là non tracées :
+`OperationFichier` ne couvrait que les fichiers, `ModificationItem`
+que les métadonnées d'item.
+
+- **Modèle** `OperationEntite` (`models/journal.py`) : `type_entite`
+  (fonds/collection/item), `entite_id` (ancien id, informatif — pas
+  de FK car la cible n'existe plus), `cote`, `fonds_cote`, `titre`,
+  `snapshot_json` (colonnes propres de l'entité), `cascade_resume`
+  (JSON : compteurs + ids/cotes des enfants affectés), `execute_le`,
+  `execute_par`. Migration `q5u6v7w8x9y0` idempotente.
+- **Service** `services/operations_entite.py` : `journaliser_suppression_*`
+  (item / collection / fonds) insère la ligne **avant** le delete, dans
+  la même session — le service de suppression fait un commit unique →
+  journal et cascade atomiques (les deux, ou rien). Snapshot des
+  colonnes via introspection SQLAlchemy. `lister_suppressions`
+  (filtre type, ordre récent, limite).
+- **Câblage** : les 3 services `supprimer_*` prennent `execute_par`,
+  journalisent puis suppriment ; routes web (ajout
+  `Depends(get_utilisateur_courant)` aux 3 routes `/supprimer`) ;
+  commandes CLI delete (`--utilisateur`).
+- **Surfaçage** : `archives-tool montrer suppressions [--type ...]
+  [--format text|json]` (lecture seule).
+- **Undo : hors scope** (réversibilité asymétrique). Le snapshot +
+  les listes d'ids bornées rendent un restore futur possible sans
+  perte d'information, mais l'exécution (surtout la cascade fonds à
+  l'échelle PF : 7000+ fichiers) reste un chantier dédié. Pas
+  d'unification avec `ModificationItem` / `OperationFichier` (migration
+  risquée, zéro gain immédiat — principe n°6).
+
+8 tests (`test_operations_entite.py`) : journalisation + cascade par
+entité, atomicité, snapshot, listing/filtre/ordre, route web
+(`execute_par` capté), CLI (delete + `montrer suppressions`).
+
 ### V1.0 — Déploiement VPS + multi-utilisateurs
 
 Cible : 2 sessions ~12h, après le test d'usage de V0.9.1. Si
@@ -2476,14 +2512,18 @@ dédiée avec URI + label, pas en dur dans le code.
       quasi-théorique. Quand l'auth arrivera, ajouter `version`
       en hidden input sur le form de suppression + comparaison
       service (analogue à `ConflitVersion` sur modify).
-- [ ] **Journal des suppressions d'entités** (fonds / collection /
-      item) — reporté à un chantier dédié plus large. La dette
-      actuelle est globale : `OperationFichier` ne couvre que les
-      fichiers, pas les modifs d'item, pas les delete d'entités.
-      Un chantier `OperationEntite` unique couvrirait tout en
-      cohérence (snapshot JSON pour undo possible sur la cascade
-      la plus destructive). Pas urgent tant que la double-
-      confirmation par recopie de cote suffit en pratique.
+- [x] **Journal des suppressions d'entités** (fonds / collection /
+      item) — **résolu Phase 1 en V0.9.9** : table `OperationEntite`
+      qui journalise chaque suppression (snapshot des colonnes +
+      compteurs de cascade + ids/cotes des enfants affectés) dans la
+      même transaction que le delete. Câblé dans les 3 services
+      `supprimer_*`, les routes web et les commandes CLI ; listing
+      via `archives-tool montrer suppressions`. **Undo non implémenté**
+      (réversibilité asymétrique : le snapshot rend un restore futur
+      possible sans perte d'info, mais l'exécution — surtout la
+      cascade fonds — reste un chantier dédié). `ModificationItem`
+      et `OperationFichier` restent séparés (pas d'unification :
+      hors scope, migration risquée pour zéro gain immédiat).
 - [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
       **À concevoir après le premier import réel**, pour indexer ce
       qui s'avère utile en pratique — ne pas anticiper. SQL et

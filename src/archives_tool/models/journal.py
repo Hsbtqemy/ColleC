@@ -80,6 +80,52 @@ class OperationImport(Base):
     )
 
 
+class OperationEntite(Base):
+    """Journal des suppressions d'entités (fonds / collection / item).
+
+    Comble le trou du principe directeur n°4 (« journaliser toutes les
+    opérations destructives ») : `OperationFichier` ne couvre que les
+    fichiers, `ModificationItem` que les métadonnées d'item — les
+    suppressions d'entités n'étaient tracées nulle part.
+
+    Pas de FK : l'entité référencée n'existe plus après la suppression.
+    On conserve donc `entite_id` (l'ancien id, purement informatif),
+    `cote` et `fonds_cote` (contexte de désambiguïsation) en clair.
+
+    `snapshot_json` : colonnes propres de l'entité supprimée, sérialisées
+    au moment de la suppression. `cascade_resume` : compteurs JSON de ce
+    que la cascade a détruit (items, fichiers, collaborateurs, collections
+    détachées, annotations, junctions) + listes d'ids/cotes des enfants
+    directement affectés. Ces listes sont bornées (ids, pas de dump de
+    rows complètes — tient même pour un fonds à 7000+ fichiers) et rendent
+    un undo futur possible sans perte d'information (réversibilité
+    asymétrique : la donnée est préservée, l'exécution du restore est
+    reportée à un chantier dédié).
+    """
+
+    __tablename__ = "operation_entite"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type_entite: Mapped[str] = mapped_column(String(20), nullable=False)
+    entite_id: Mapped[int | None] = mapped_column()
+    cote: Mapped[str | None] = mapped_column(Text)
+    fonds_cote: Mapped[str | None] = mapped_column(Text)
+    titre: Mapped[str | None] = mapped_column(Text)
+
+    snapshot_json: Mapped[str | None] = mapped_column(Text)
+    cascade_resume: Mapped[str | None] = mapped_column(Text)
+
+    execute_le: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    execute_par: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_op_entite_type", "type_entite"),
+        Index("ix_op_entite_date", "execute_le"),
+    )
+
+
 class ModificationItem(Base):
     __tablename__ = "modification_item"
 

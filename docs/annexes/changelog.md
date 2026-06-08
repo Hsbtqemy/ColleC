@@ -121,6 +121,36 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.9 (stable, 2026-06-08)
+
+### Journal des suppressions d'entités
+
+Comble le principe directeur n°4 (« journaliser toutes les opérations
+destructives ») pour les suppressions de fonds / collection / item,
+jusque-là non tracées (`OperationFichier` ne couvrait que les fichiers,
+`ModificationItem` que les métadonnées d'item).
+
+Nouvelle table `OperationEntite` : à chaque suppression, une ligne est
+écrite **dans la même transaction** que le delete (atomicité : les deux,
+ou rien) avec le type d'entité, la cote, le fonds de contexte, un
+snapshot JSON des colonnes propres, et un résumé de cascade (compteurs
+items / fichiers / annotations / collaborateurs / collections détachées
++ listes d'ids/cotes des enfants affectés).
+
+- Service `services/operations_entite.py` (`journaliser_suppression_*`
+  + `lister_suppressions`), câblé dans les 3 services `supprimer_*`.
+- Routes web `/…/supprimer` : journalisent avec l'utilisateur courant.
+- Commandes CLI delete : option `--utilisateur` pour l'attribution.
+- Listing : `archives-tool montrer suppressions [--type fonds|
+  collection|item] [--format text|json]` (lecture seule).
+- **Undo hors scope** : le snapshot + les listes d'ids (bornées, même
+  pour un fonds à 7000+ fichiers) rendent un restore futur possible
+  sans perte d'information, mais son exécution reste un chantier dédié.
+  Pas d'unification avec les journaux existants (migration risquée,
+  gain nul à court terme).
+
+Migration Alembic `q5u6v7w8x9y0` idempotente. 8 tests.
+
 ## V0.9.8 (stable, 2026-06-08)
 
 ### Année dérivée de la date EDTF

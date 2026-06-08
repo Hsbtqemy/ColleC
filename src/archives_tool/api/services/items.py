@@ -37,6 +37,9 @@ from archives_tool.api.services._erreurs import (
     garde_cote_unique,
     valider_cote_titre,
 )
+from archives_tool.api.services.operations_entite import (
+    journaliser_suppression_item,
+)
 from archives_tool.api.services.tri import (
     Listage,
     Ordre,
@@ -894,10 +897,17 @@ def modifier_item(
     return item
 
 
-def supprimer_item(db: Session, item_id: int) -> None:
-    """Supprime un item ; ses fichiers et liaisons disparaissent en
-    cascade. L'item est retiré de toutes ses collections (y compris
-    la miroir)."""
+def supprimer_item(
+    db: Session, item_id: int, *, execute_par: str | None = None
+) -> None:
+    """Supprime un item ; ses fichiers, annotations et liaisons
+    disparaissent en cascade. L'item est retiré de toutes ses
+    collections (y compris la miroir).
+
+    Journalisé dans `OperationEntite` (principe directeur n°4) dans la
+    même transaction que la suppression.
+    """
     item = lire_item(db, item_id)
+    journaliser_suppression_item(db, item, execute_par=execute_par)
     db.delete(item)
     db.commit()

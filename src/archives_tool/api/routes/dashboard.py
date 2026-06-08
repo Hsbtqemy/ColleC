@@ -1750,6 +1750,7 @@ def supprimer_fonds_route(
     cote: str,
     confirmer: Annotated[str, Form()],
     db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
     fonds = _charger_fonds_ou_404(db, cote)
     if confirmer != fonds.cote:
@@ -1760,7 +1761,7 @@ def supprimer_fonds_route(
                 f"pour confirmer la suppression du fonds."
             ),
         )
-    supprimer_fonds(db, fonds.id)
+    supprimer_fonds(db, fonds.id, execute_par=utilisateur)
     return RedirectResponse("/", status_code=303)
 
 
@@ -1772,6 +1773,7 @@ def supprimer_collection_route(
     confirmer: Annotated[str, Form()],
     fonds: str | None = None,
     db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
     fonds_id: int | None = None
     if fonds is not None:
@@ -1795,7 +1797,7 @@ def supprimer_collection_route(
     # invalidée après commit).
     fonds_parent_cote = col.fonds.cote if col.fonds is not None else None
     try:
-        supprimer_collection_libre(db, col.id)
+        supprimer_collection_libre(db, col.id, execute_par=utilisateur)
     except OperationCollectionInterdite as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if fonds_parent_cote is not None:
@@ -1809,6 +1811,7 @@ def supprimer_item_route(
     confirmer: Annotated[str, Form()],
     fonds: Annotated[str, Query()],
     db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
     fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
@@ -1823,5 +1826,5 @@ def supprimer_item_route(
                 f"pour confirmer la suppression de l'item."
             ),
         )
-    supprimer_item(db, item.id)
+    supprimer_item(db, item.id, execute_par=utilisateur)
     return RedirectResponse(f"/fonds/{fonds_obj.cote}", status_code=303)

@@ -55,6 +55,7 @@ from archives_tool.api.services.fonds import (
     lire_fonds_par_cote,
     supprimer_fonds,
 )
+from archives_tool.api.services.operations_entite import lister_suppressions
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dublin_core
@@ -695,6 +696,96 @@ def cmd_montrer_fichier(
             else rendu_text_fichier_detail(fichier)
         )
     typer.echo(sortie)
+
+
+def _resume_cascade_court(type_entite: str, cascade: dict) -> str:
+    """Résumé d'une ligne pour la colonne Cascade du tableau text."""
+    if type_entite == "fonds":
+        return (
+            f"{cascade.get('items', 0)} items, "
+            f"{cascade.get('fichiers', 0)} fic., "
+            f"{cascade.get('collections_detachees', 0)} libre(s) détachée(s)"
+        )
+    if type_entite == "collection":
+        return f"{cascade.get('junctions', 0)} lien(s)"
+    if type_entite == "item":
+        return (
+            f"{cascade.get('fichiers', 0)} fic., "
+            f"{cascade.get('annotations', 0)} annot."
+        )
+    return ""
+
+
+@montrer.command("suppressions")
+def cmd_montrer_suppressions(
+    type_entite: str | None = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filtrer : fonds | collection | item (sinon : tout).",
+    ),
+    limite: int = typer.Option(
+        100, "--limite", "-n", help="Nombre maximum de lignes."
+    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Lister les suppressions d'entités journalisées (les plus récentes
+    d'abord). Lecture seule."""
+    import json
+
+    valides = {"fonds", "collection", "item"}
+    if type_entite is not None and type_entite not in valides:
+        typer.echo(
+            f"Erreur : --type doit valoir {', '.join(sorted(valides))}.", err=True
+        )
+        raise typer.Exit(2)
+
+    with _ouvrir_session_existante(db_path) as session:
+        ops = lister_suppressions(session, type_entite=type_entite, limite=limite)
+
+        if format_sortie is _FormatRapport.JSON:
+            charge = [
+                {
+                    "id": o.id,
+                    "type_entite": o.type_entite,
+                    "entite_id": o.entite_id,
+                    "cote": o.cote,
+                    "fonds_cote": o.fonds_cote,
+                    "titre": o.titre,
+                    "execute_le": o.execute_le.isoformat() if o.execute_le else None,
+                    "execute_par": o.execute_par,
+                    "cascade": json.loads(o.cascade_resume)
+                    if o.cascade_resume
+                    else None,
+                }
+                for o in ops
+            ]
+            typer.echo(json.dumps(charge, ensure_ascii=False, indent=2))
+            return
+
+        if not ops:
+            typer.echo("Aucune suppression journalisée.")
+            return
+
+        table = Table(title="Suppressions journalisées")
+        table.add_column("Date")
+        table.add_column("Type")
+        table.add_column("Cote")
+        table.add_column("Fonds")
+        table.add_column("Par")
+        table.add_column("Cascade")
+        for o in ops:
+            cascade = json.loads(o.cascade_resume) if o.cascade_resume else {}
+            table.add_row(
+                o.execute_le.strftime("%Y-%m-%d %H:%M") if o.execute_le else "—",
+                o.type_entite,
+                o.cote or "—",
+                o.fonds_cote or "—",
+                o.execute_par or "—",
+                _resume_cascade_court(o.type_entite, cascade),
+            )
+        console_mod.console.print(table)
 
 
 # ---------------------------------------------------------------------------
@@ -1469,6 +1560,9 @@ def cmd_collections_supprimer(
     confirme: bool = typer.Option(
         False, "--yes", "-y", help="Sauter la confirmation interactive."
     ),
+    utilisateur: str | None = typer.Option(
+        None, "--utilisateur", "-u", help="Nom journalisé dans la traçabilité."
+    ),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Supprimer une collection libre. Refuse les miroirs (gérées par
@@ -1497,7 +1591,7 @@ def cmd_collections_supprimer(
                 raise typer.Abort()
 
         try:
-            supprimer_collection_libre(session, col.id)
+            supprimer_collection_libre(session, col.id, execute_par=utilisateur)
         except OperationCollectionInterdite as e:
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
@@ -1694,6 +1788,9 @@ def cmd_items_supprimer(
     confirme: bool = typer.Option(
         False, "--yes", "-y", help="Sauter la confirmation interactive."
     ),
+    utilisateur: str | None = typer.Option(
+        None, "--utilisateur", "-u", help="Nom journalisé dans la traçabilité."
+    ),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Supprimer un item et tous ses fichiers + annotations en cascade."""
@@ -1724,7 +1821,7 @@ def cmd_items_supprimer(
             if not typer.confirm("Confirmer ?", default=False):
                 raise typer.Abort()
 
-        supprimer_item(session, item.id)
+        supprimer_item(session, item.id, execute_par=utilisateur)
         typer.echo(f"✓ Item {item.cote} supprimé.")
 
 
@@ -1740,6 +1837,9 @@ def cmd_fonds_supprimer(
     cote: str = typer.Argument(..., help="Cote du fonds à supprimer."),
     confirme: bool = typer.Option(
         False, "--yes", "-y", help="Sauter la confirmation interactive."
+    ),
+    utilisateur: str | None = typer.Option(
+        None, "--utilisateur", "-u", help="Nom journalisé dans la traçabilité."
     ),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -1789,7 +1889,7 @@ def cmd_fonds_supprimer(
             if not typer.confirm("Confirmer ?", default=False):
                 raise typer.Abort()
 
-        supprimer_fonds(session, fonds_obj.id)
+        supprimer_fonds(session, fonds_obj.id, execute_par=utilisateur)
         typer.echo(f"✓ Fonds {cote} supprimé.")
 
 

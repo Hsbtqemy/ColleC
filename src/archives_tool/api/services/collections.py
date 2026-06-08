@@ -29,6 +29,9 @@ from archives_tool.api.services._erreurs import (
     garde_cote_unique,
     valider_cote_titre,
 )
+from archives_tool.api.services.operations_entite import (
+    journaliser_suppression_collection,
+)
 from archives_tool.api.services.tri import Listage
 from archives_tool.models import (
     Collection,
@@ -274,17 +277,23 @@ def modifier_collection(
     return col
 
 
-def supprimer_collection_libre(db: Session, collection_id: int) -> None:
+def supprimer_collection_libre(
+    db: Session, collection_id: int, *, execute_par: str | None = None
+) -> None:
     """Supprime une collection libre. Refuse les miroirs (gérées par le
     service Fonds). Les liaisons `item_collection` sont supprimées en
     cascade ; les items eux-mêmes restent dans leur fonds et leurs
     autres collections.
+
+    Journalisé dans `OperationEntite` (principe directeur n°4) dans la
+    même transaction que la suppression.
     """
     col = lire_collection(db, collection_id)
     if col.type_collection == TypeCollection.MIROIR.value:
         raise OperationCollectionInterdite(
             "Une collection miroir ne peut pas être supprimée indépendamment du fonds."
         )
+    journaliser_suppression_collection(db, col, execute_par=execute_par)
     db.delete(col)
     db.commit()
 

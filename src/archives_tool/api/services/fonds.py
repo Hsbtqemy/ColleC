@@ -26,6 +26,9 @@ from archives_tool.api.services.conflits import (
     convertir_stale_data,
     verifier_et_incrementer_version,
 )
+from archives_tool.api.services.operations_entite import (
+    journaliser_suppression_fonds,
+)
 from archives_tool.api.services._erreurs import (
     EntiteIntrouvable,
     FormulaireInvalide,
@@ -261,7 +264,9 @@ def modifier_fonds(
     return fonds
 
 
-def supprimer_fonds(db: Session, fonds_id: int) -> None:
+def supprimer_fonds(
+    db: Session, fonds_id: int, *, execute_par: str | None = None
+) -> None:
     """Supprime un fonds et toute sa descendance (items + miroir +
     collaborateurs).
 
@@ -275,8 +280,13 @@ def supprimer_fonds(db: Session, fonds_id: int) -> None:
 
     Les items du fonds disparaissent en cascade (FK CASCADE +
     relation ORM avec `delete-orphan`).
+
+    La suppression est journalisée dans `OperationEntite` (principe
+    directeur n°4) dans la même transaction : le commit unique en fin
+    garantit que le journal et la cascade committent ensemble, ou rien.
     """
     fonds = lire_fonds(db, fonds_id)
+    journaliser_suppression_fonds(db, fonds, execute_par=execute_par)
     miroir = fonds.collection_miroir
     if miroir is not None:
         db.delete(miroir)

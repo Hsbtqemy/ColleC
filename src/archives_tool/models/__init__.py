@@ -30,7 +30,12 @@ from .fichier import Fichier
 from .fonds import Fonds
 from .item import Item
 from .item_collection import ItemCollection
-from .journal import ModificationItem, OperationFichier, OperationImport
+from .journal import (
+    ModificationItem,
+    OperationEntite,
+    OperationFichier,
+    OperationImport,
+)
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
 from .session_import import ETAPES_IMPORT, SessionImport
@@ -51,6 +56,7 @@ __all__ = [
     "Vocabulaire",
     "ValeurControlee",
     "OperationFichier",
+    "OperationEntite",
     "ModificationItem",
     "OperationImport",
     "PreferencesAffichage",

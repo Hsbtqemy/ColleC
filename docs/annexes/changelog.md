@@ -121,6 +121,42 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.8 (stable, 2026-06-08)
+
+### Année dérivée de la date EDTF
+
+Friction relevée au catalogage Por Favor : `Item.annee` (colonne
+numérique indexée, utilisée par les filtres de période, la timeline
+de synthèse et le contrôle qa `META-ANNEE-IMPLAUSIBLE`) était un champ
+saisi à la main *en plus* de `Item.date` (EDTF). Double saisie, donc
+désynchronisation silencieuse (date `1969-09` mais année oubliée à
+`1968`).
+
+`annee` est désormais **entièrement dérivée de `date`** à chaque
+enregistrement, via tous les chemins d'écriture (création, modification,
+édition inline, import — tous passent par `_appliquer_formulaire`). Plus
+de saisie directe.
+
+- Helper `annee_depuis_date_edtf` centralisé dans `services/items.py`
+  (le module `dashboard` le ré-importe pour la timeline / synthèse).
+  Extrait l'année d'une date EDTF tolérante (`1974`, `1974-03`,
+  `1974-03-11`) ; retourne `None` sur l'imprécis (`vers 1974`, `19XX`,
+  `s.d.`) **et hors plage plausible** `[0, 3000]`.
+- La borne de dérivation est partagée avec le validateur Pydantic
+  (`ANNEE_MIN` / `ANNEE_MAX`) : `annee` étant dérivée *après* la
+  validation, une valeur hors plage (BCE, année aberrante) écrite en
+  base casserait le round-trip du formulaire au chargement suivant.
+- `_appliquer_formulaire` : date parse → autorité ; sinon `annee`
+  fournie (CLI / API / import) ; sinon conserve l'existant (préserve
+  les imports legacy où seule `annee` était peuplée).
+- UI : champ Année passe en lecture seule (page Modifier + cartouche
+  inline). En édition inline, modifier `date` repeint la cellule
+  Année sans reload (valeur recalculée renvoyée par la route, peinte
+  par `inline_edit.js`).
+
+11 tests (7 service, 4 route inline dont un test de contrat
+template ↔ JS).
+
 ## V0.9.7 (stable, 2026-05-27)
 
 Deux chantiers livrés sous V0.9.7.

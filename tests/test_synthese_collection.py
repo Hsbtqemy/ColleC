@@ -271,7 +271,7 @@ def test_synthese_agregats_langue_et_type_avec_libelles_humains(
         items = list(s.scalars(select(Item).limit(5)).all())
         for i, it in enumerate(items):
             it.langue = "fra"
-            it.type_coar = "http://purl.org/coar/resource_type/c_3e5a"  # Périodique
+            it.type_coar = "http://purl.org/coar/resource_type/c_2fe3"  # Périodique
         s.commit()
 
         synthese = composer_synthese_collection(s, col, fonds_query="HK")

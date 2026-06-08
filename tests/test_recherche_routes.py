@@ -365,7 +365,7 @@ def test_route_recherche_libelles_humains_coar_et_langue(
                 cote="VOCAB-T-001",
                 titre="Item test vocab humain",
                 fonds_id=fonds.id,
-                type_coar="http://purl.org/coar/resource_type/c_3e5a",  # Périodique
+                type_coar="http://purl.org/coar/resource_type/c_2fe3",  # Périodique
                 langue="fra",
             ),
         )
@@ -381,7 +381,7 @@ def test_route_recherche_libelles_humains_coar_et_langue(
     # Avec filtre actif : la pastille affiche le libellé humain (pas l'URI/code)
     response2 = client_demo.get(
         "/recherche?q=vocab"
-        "&type_coar=http%3A%2F%2Fpurl.org%2Fcoar%2Fresource_type%2Fc_3e5a"
+        "&type_coar=http%3A%2F%2Fpurl.org%2Fcoar%2Fresource_type%2Fc_2fe3"
         "&langue=fra"
     )
     assert response2.status_code == 200

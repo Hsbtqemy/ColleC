@@ -34,7 +34,7 @@ Racine `<collection cote="…">` avec :
     <dc:identifier>HK-001</dc:identifier>
     <dc:title>Hara-Kiri n°1</dc:title>
     <dc:date>1960-09</dc:date>
-    <dc:type>http://purl.org/coar/resource_type/c_2659</dc:type>
+    <dc:type>http://purl.org/coar/resource_type/c_2fe3</dc:type>
     <dc:language>fra</dc:language>
   </notice>
   <!-- … -->

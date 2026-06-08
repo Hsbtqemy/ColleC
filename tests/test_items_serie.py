@@ -154,7 +154,7 @@ def test_creer_serie_avec_metadonnees_par_defaut(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZB", titre="Test"))
-        type_uri = "http://purl.org/coar/resource_type/c_3e5a"
+        type_uri = "http://purl.org/coar/resource_type/c_2fe3"
         rapport = creer_items_en_serie(
             s,
             fonds_id=fonds.id,

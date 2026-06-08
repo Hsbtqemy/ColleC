@@ -121,25 +121,40 @@ coercition au dépôt, et URIs non résolvables à l'export DC.
 | Document de travail | `c_8042` | ⛔ hors set |
 | Photographie | `c_18cd` | ⛔ hors set (proche : `c_c513` image) |
 
-### Décision produit en suspens : Périodique / Numéro de périodique
+### Décision (2026-06-08) : vocabulaire généraliste + projection
 
-ColleC est fondamentalement un outil de **périodiques** — mais Nakala
-n'accepte ni « périodique » ni « numéro de périodique » comme type de
-dépôt. Deux options :
+**ColleC est un outil de collections numérisées tous types** (textes,
+périodiques, manuscrits, correspondance, images, son, vidéo, cartes,
+œuvres, données…) — pas un outil de périodiques. L'emphase « périodique »
+des versions précédentes venait du cas de test Por Favor, pas du design.
+Le vocabulaire de types doit donc être large.
 
-- **(a) Aligner le type interne sur le set Nakala** : remplacer
-  Périodique→`c_2fe3` (journal), supprimer Numéro (→ `c_2fe3` ou
-  `c_18cf` texte). Simple, garantit le dépôt, mais perd la granularité
-  catalographique.
-- **(b) Deux vocabulaires** : garder un type *interne* riche (avec
-  Périodique/Numéro, URIs COAR valides) + une **carte interne→Nakala**
-  appliquée au seul moment du dépôt/export. Préserve la finesse, coûte
-  une table de correspondance.
+Option retenue : **deux vocabulaires** (design (b)) avec un vocabulaire
+interne **= le set Nakala complet (29 types) + 3 extras**. Implémenté en
+V0.9.10 :
 
-Recommandation : **(b)** — cohérent avec le positionnement « espace de
-travail » (le catalogage interne ne doit pas être bridé par le format de
-sortie ; la projection vers Nakala est une étape d'export). À trancher
-avec l'utilisateur avant d'implémenter la correction COAR.
+- `TYPES_COAR_OPTIONS` = **32 types** : les 29 types acceptés par Nakala
+  (libellés FR), plus 3 genres COAR valides que Nakala n'accepte pas mais
+  utiles au catalogage : **Chapitre de livre** (`c_3248`), **Document de
+  travail** (`c_8042`), **Photographie** (`c_ecc8`). URIs vérifiées
+  contre le vocabulaire COAR autoritatif (corrige les 9 URIs fausses/mal
+  étiquetées d'avant — dont `c_12cd` « Vidéo » = en fait « carte »).
+  « Numéro de périodique » non repris (un numéro = Item dans un Fonds
+  périodique, pas un type COAR ; COAR n'a pas de « journal issue »).
+- `COAR_INTERNE_VERS_NAKALA` + `type_coar_pour_nakala()` : projection
+  des **3 extras** vers une cible Nakala (Chapitre→texte, Doc travail→
+  prépublication, Photo→image) ; les 29 autres = identité. Appliquée à
+  l'export Nakala sur `nkl:type` ; `dc:type` garde l'URI COAR interne
+  (valide). Invariant testé : **chaque type interne projette vers le set
+  Nakala**.
+- `normaliser_type_coar` (alias d'import) couvre tous les genres
+  (lettre/correspondance, rapport, thèse, œuvre, jeu de données,
+  logiciel, site web…).
+- Migration `r6v7w8x9y0z1` : remap des `item.type_coar` existants
+  (anciennes URIs → corrigées : Périodique `c_3e5a`→`c_2fe3`, Vidéo
+  `c_12cd`→`c_12ce`, Carte `c_ecc8`→`c_12cd`, etc.). Séquence d'UPDATE
+  ordonnée pour la chaîne de réaffectations qui se recouvrent. Non
+  bijective, pas de downgrade.
 
 ## Vocabulaires : impédances de schéma relevées
 

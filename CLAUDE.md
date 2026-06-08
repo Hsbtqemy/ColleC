@@ -10,15 +10,19 @@ structurantes.
 
 **Nom provisoire :** archives-tool (à renommer)
 
-**Objet :** outil interne de gestion de collections numérisées (revues
-anciennes, périodiques, textes). Pas un outil de valorisation publique :
-l'usage est la constitution, le suivi, la correction et le contrôle de
-catalogues d'archives scannées.
+**Objet :** outil interne de gestion de collections numérisées **tous
+types de documents** — textes, périodiques, manuscrits, correspondance,
+images, photographies, cartes, partitions, son, vidéo, œuvres, données,
+etc. (le modèle Fonds/Collection/Item/Fichier est générique, rien n'y
+restreint le type). Les périodiques (cas de test Por Favor) ne sont
+qu'un exemple parmi d'autres, pas le cœur de cible. Pas un outil de
+valorisation publique : l'usage est la constitution, le suivi, la
+correction et le contrôle de catalogues d'archives scannées.
 
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.10 livré** (1330/1330 tests verts, doc déployée
+**Statut :** **V0.9.10 livré** (1335/1335 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
 (synthèse collection + fonds avec cartographie cross-collection +
@@ -72,10 +76,12 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   lecture/écriture, sans couplage madbot). Architecture pull /
   create / update (`PUT /datas/{id}` + versioning), 4 difficultés
   (conflit, publié/pending, fidélité, identité fichiers), inventaire
-  COAR (9/15 types hors set Nakala — bug à corriger), assets de
-  portage depuis `plugins-madbot`. Tier A livré (vocabulaires
-  vendorisés + résolution langue) ; correction COAR + P1/P2/P3 à
-  venir. Décision produit en suspens : Périodique/Numéro ↔ set Nakala.
+  COAR (9/15 types hors set Nakala — corrigé V0.9.10), assets de
+  portage depuis `plugins-madbot`. **Tier A + A bis livrés** :
+  vocabulaires vendorisés, résolution langue, vocabulaire COAR corrigé
+  + projection interne→Nakala + migration de remap. Décision actée :
+  deux vocabulaires (interne riche + projection export). Reste P1/P2/P3
+  (pull / create / round-trip) en V2/V3.
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,
@@ -464,8 +470,10 @@ Application au moment de l'écriture dans
 brute est convertie via `normaliser_type_coar` ; si pas dans la
 table d'alias, la valeur originale est conservée (l'utilisateur
 édite via inline). Sur PF : `Type=journal` → `type_coar =
-http://purl.org/coar/resource_type/c_3e5a` (Périodique) sur les
-173 items.
+http://purl.org/coar/resource_type/c_2659` (Périodique) sur les
+173 items. (Note V0.9.10 : l'URI Périodique était `c_3e5a`, fausse,
+corrigée en `c_2659` ; cf. `nakala-depot-future.md` et la migration
+`r6v7w8x9y0z1`.)
 
 **DOI collection auto-promu + propagation Collection (2026-05-24)** —
 deux fixes complémentaires sur le DOI Nakala collection.

@@ -11,7 +11,7 @@ libellé est ce que voit l'utilisateur dans le dropdown.
 
 from __future__ import annotations
 
-from archives_tool.reference.loaders import langues_iso639
+from archives_tool.reference.loaders import langues_iso639, types_coar_nakala
 
 # ISO 639-3 — langues fréquentes en contextes d'archives francophones.
 # Source : https://iso639-3.sil.org/
@@ -36,25 +36,69 @@ LANGUES_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 
 
-# URIs COAR Resource Types fréquemment utilisés.
-# Source : https://vocabularies.coar-repositories.org/resource_types/
+#: Préfixe COAR commun (source de vérité unique, réutilisé partout).
+_C = "http://purl.org/coar/resource_type"
+
+# Vocabulaire COAR Resource Types **interne** à ColleC (catalogage).
+# ColleC est un outil de collections numérisées **tous types** (textes,
+# périodiques, manuscrits, correspondance, images, son, vidéo, cartes,
+# œuvres…). Le vocabulaire couvre donc l'intégralité du set de types
+# accepté par Nakala (snapshot, 29 entrées), PLUS 3 genres COAR valides
+# que Nakala n'accepte pas au dépôt mais utiles au catalogage
+# (Chapitre de livre, Document de travail, Photographie). Ces 3 extras
+# sont projetés vers une cible Nakala à l'export via
+# `COAR_INTERNE_VERS_NAKALA` (design « deux vocabulaires », cf.
+# `nakala-depot-future.md`). URIs vérifiées contre le vocabulaire COAR
+# autoritatif. Libellés FR adaptés au contexte archives.
 TYPES_COAR_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("http://purl.org/coar/resource_type/c_18cf", "Texte"),
-    ("http://purl.org/coar/resource_type/c_3e5a", "Périodique"),
-    ("http://purl.org/coar/resource_type/c_0640", "Numéro de périodique"),
-    ("http://purl.org/coar/resource_type/c_6501", "Article de revue"),
-    ("http://purl.org/coar/resource_type/c_2f33", "Livre"),
-    ("http://purl.org/coar/resource_type/c_3248", "Chapitre de livre"),
-    ("http://purl.org/coar/resource_type/c_8042", "Document de travail"),
-    ("http://purl.org/coar/resource_type/c_18co", "Document d'archives"),
-    ("http://purl.org/coar/resource_type/c_c513", "Image"),
-    ("http://purl.org/coar/resource_type/c_ecc8", "Carte"),
-    ("http://purl.org/coar/resource_type/c_8a7e", "Manuscrit"),
-    ("http://purl.org/coar/resource_type/c_18cd", "Photographie"),
-    ("http://purl.org/coar/resource_type/c_18cw", "Partition musicale"),
-    ("http://purl.org/coar/resource_type/c_12cd", "Vidéo"),
-    ("http://purl.org/coar/resource_type/c_18cc", "Enregistrement sonore"),
+    # — Texte & édition —
+    (f"{_C}/c_18cf", "Texte"),
+    (f"{_C}/c_2fe3", "Périodique"),
+    (f"{_C}/c_6501", "Article"),
+    (f"{_C}/c_2f33", "Ouvrage"),
+    (f"{_C}/c_3248", "Chapitre de livre"),          # extra (hors set Nakala)
+    (f"{_C}/c_0040", "Manuscrit"),
+    (f"{_C}/c_0857", "Lettre / Correspondance"),
+    (f"{_C}/YC9F-HGCF", "Fonds d'archives"),
+    (f"{_C}/c_93fc", "Rapport"),
+    (f"{_C}/c_46ec", "Thèse"),
+    (f"{_C}/c_816b", "Prépublication"),
+    (f"{_C}/c_8042", "Document de travail"),         # extra (hors set Nakala)
+    (f"{_C}/c_efa0", "Synthèse"),
+    (f"{_C}/c_86bc", "Bibliographie"),
+    (f"{_C}/c_ba08", "Note de lecture"),
+    # — Image & multimédia —
+    (f"{_C}/c_c513", "Image"),
+    (f"{_C}/c_ecc8", "Photographie"),                # extra (hors set Nakala)
+    (f"{_C}/c_12cd", "Carte"),
+    (f"{_C}/c_18cw", "Partition"),
+    (f"{_C}/c_12ce", "Vidéo"),
+    (f"{_C}/c_18cc", "Enregistrement sonore"),
+    (f"{_C}/F8RT-TJK0", "Œuvre artistique"),
+    # — Données & ressources —
+    (f"{_C}/c_ddb1", "Jeu de données"),
+    (f"{_C}/NHD0-W6SY", "Donnée d'enquête"),
+    (f"{_C}/c_beb9", "Article de données"),
+    (f"{_C}/c_5ce6", "Logiciel"),
+    (f"{_C}/c_7ad9", "Site web"),
+    (f"{_C}/c_e9a0", "Ressource interactive"),
+    (f"{_C}/c_e059", "Objet d'apprentissage"),
+    (f"{_C}/c_6670", "Poster de conférence"),
+    (f"{_C}/c_c94f", "Objet de conférence"),
+    (f"{_C}/c_1843", "Autre"),
 )
+
+
+#: Projection **type interne → type accepté par Nakala** au dépôt.
+#: N'inclut QUE les 3 genres COAR valides que Nakala n'accepte pas (les
+#: 29 autres sont déjà dans le set Nakala → identité, voir
+#: `type_coar_pour_nakala`). Cibles conservatrices, ajustables selon la
+#: modération Nakala.
+COAR_INTERNE_VERS_NAKALA: dict[str, str] = {
+    f"{_C}/c_3248": f"{_C}/c_18cf",   # Chapitre de livre → texte
+    f"{_C}/c_8042": f"{_C}/c_816b",   # Document de travail → prépublication
+    f"{_C}/c_ecc8": f"{_C}/c_c513",   # Photographie (image fixe) → image
+}
 
 
 # Workflow d'état du catalogage : les 5 états « actifs » du cycle de
@@ -104,28 +148,29 @@ OPTIONS_PAR_CHAMP: dict[str, tuple[tuple[str, str], ...]] = {
 #:
 #: Les clés sont normalisées (lower + strip + sans accents) avant
 #: lookup dans `_normaliser_type_coar`.
-_C = "http://purl.org/coar/resource_type"
+#: Cibles alignées sur :data:`TYPES_COAR_OPTIONS` (URIs COAR valides,
+#: corrigées V0.9.10). Les numéros/issues sont repliés sur Périodique
+#: (un numéro est un Item dans un Fonds périodique, pas un type distinct).
+#: Préfixe `_C` défini plus haut (avec COAR_INTERNE_VERS_NAKALA).
 _ALIAS_VERS_COAR: dict[str, str] = {
-    # Périodique (c_3e5a) et numéro de périodique (c_0640) — alias
-    # fr / en / variants. `journal` est ambigu (français : quotidien
-    # OU livre de bord ; anglais : revue scientifique) mais la
-    # dénomination la plus fréquente sur Nakala = périodique.
-    "journal": f"{_C}/c_3e5a",
-    "periodique": f"{_C}/c_3e5a",
-    "revue": f"{_C}/c_3e5a",
-    "magazine": f"{_C}/c_3e5a",
-    "periodical": f"{_C}/c_3e5a",
-    "newspaper": f"{_C}/c_3e5a",
-    "quotidien": f"{_C}/c_3e5a",
-    "numero": f"{_C}/c_0640",
-    "numero de periodique": f"{_C}/c_0640",
-    "issue": f"{_C}/c_0640",
-    "journal issue": f"{_C}/c_0640",
+    # Périodique (c_2fe3, « journal » Nakala). Numéro / issue repliés
+    # sur périodique (un numéro est un Item dans un Fonds, pas un type).
+    "journal": f"{_C}/c_2fe3",
+    "periodique": f"{_C}/c_2fe3",
+    "revue": f"{_C}/c_2fe3",
+    "magazine": f"{_C}/c_2fe3",
+    "periodical": f"{_C}/c_2fe3",
+    "newspaper": f"{_C}/c_2fe3",
+    "quotidien": f"{_C}/c_2fe3",
+    "numero": f"{_C}/c_2fe3",
+    "numero de periodique": f"{_C}/c_2fe3",
+    "issue": f"{_C}/c_2fe3",
+    "journal issue": f"{_C}/c_2fe3",
     # Article (c_6501)
     "article": f"{_C}/c_6501",
     "article de revue": f"{_C}/c_6501",
     "journal article": f"{_C}/c_6501",
-    # Livre (c_2f33) / chapitre (c_3248)
+    # Ouvrage (c_2f33) / chapitre = book part (c_3248, extra)
     "livre": f"{_C}/c_2f33",
     "book": f"{_C}/c_2f33",
     "ouvrage": f"{_C}/c_2f33",
@@ -137,20 +182,43 @@ _ALIAS_VERS_COAR: dict[str, str] = {
     # Texte générique (c_18cf)
     "texte": f"{_C}/c_18cf",
     "text": f"{_C}/c_18cf",
-    # Manuscrit / archives / photo / carte
-    "manuscrit": f"{_C}/c_8a7e",
-    "manuscript": f"{_C}/c_8a7e",
-    "archives": f"{_C}/c_18co",
-    "document d'archives": f"{_C}/c_18co",
-    "archival material": f"{_C}/c_18co",
+    # Manuscrit (c_0040) / correspondance (c_0857)
+    "manuscrit": f"{_C}/c_0040",
+    "manuscript": f"{_C}/c_0040",
+    "lettre": f"{_C}/c_0857",
+    "correspondance": f"{_C}/c_0857",
+    "letter": f"{_C}/c_0857",
+    "correspondence": f"{_C}/c_0857",
+    # Archives (fonds YC9F-HGCF)
+    "archives": f"{_C}/YC9F-HGCF",
+    "document d'archives": f"{_C}/YC9F-HGCF",
+    "fonds d'archives": f"{_C}/YC9F-HGCF",
+    "archival material": f"{_C}/YC9F-HGCF",
+    # Littérature grise : rapport (c_93fc), thèse (c_46ec),
+    # prépublication (c_816b), doc de travail (c_8042, extra),
+    # synthèse (c_efa0), bibliographie (c_86bc)
+    "rapport": f"{_C}/c_93fc",
+    "report": f"{_C}/c_93fc",
+    "these": f"{_C}/c_46ec",
+    "thesis": f"{_C}/c_46ec",
+    "prepublication": f"{_C}/c_816b",
+    "preprint": f"{_C}/c_816b",
+    "document de travail": f"{_C}/c_8042",
+    "working paper": f"{_C}/c_8042",
+    "synthese": f"{_C}/c_efa0",
+    "review": f"{_C}/c_efa0",
+    "bibliographie": f"{_C}/c_86bc",
+    "bibliography": f"{_C}/c_86bc",
+    # Image (c_c513) / photographie = image fixe (c_ecc8, extra) /
+    # carte (c_12cd)
     "image": f"{_C}/c_c513",
-    "photographie": f"{_C}/c_18cd",
-    "photo": f"{_C}/c_18cd",
-    "photograph": f"{_C}/c_18cd",
-    "carte": f"{_C}/c_ecc8",
-    "map": f"{_C}/c_ecc8",
-    # Multimedia
-    "video": f"{_C}/c_12cd",
+    "photographie": f"{_C}/c_ecc8",
+    "photo": f"{_C}/c_ecc8",
+    "photograph": f"{_C}/c_ecc8",
+    "carte": f"{_C}/c_12cd",
+    "map": f"{_C}/c_12cd",
+    # Multimédia : vidéo (c_12ce), son (c_18cc), partition (c_18cw)
+    "video": f"{_C}/c_12ce",
     "son": f"{_C}/c_18cc",
     "audio": f"{_C}/c_18cc",
     "enregistrement sonore": f"{_C}/c_18cc",
@@ -158,6 +226,16 @@ _ALIAS_VERS_COAR: dict[str, str] = {
     "partition": f"{_C}/c_18cw",
     "partition musicale": f"{_C}/c_18cw",
     "musical score": f"{_C}/c_18cw",
+    # Œuvre / données / ressources
+    "oeuvre": f"{_C}/F8RT-TJK0",
+    "oeuvre artistique": f"{_C}/F8RT-TJK0",
+    "artwork": f"{_C}/F8RT-TJK0",
+    "jeu de donnees": f"{_C}/c_ddb1",
+    "dataset": f"{_C}/c_ddb1",
+    "logiciel": f"{_C}/c_5ce6",
+    "software": f"{_C}/c_5ce6",
+    "site web": f"{_C}/c_7ad9",
+    "website": f"{_C}/c_7ad9",
 }
 
 
@@ -190,6 +268,27 @@ def normaliser_type_coar(valeur: object) -> str | None:
     if brut.startswith("http://purl.org/coar/"):
         return None  # déjà canonique
     return _ALIAS_VERS_COAR.get(_normaliser_texte(brut))
+
+
+def type_coar_pour_nakala(uri: object) -> str | None:
+    """Projette un type COAR **interne** vers un type **accepté par
+    Nakala** au dépôt (design « deux vocabulaires »).
+
+    - non-str / vide → None ;
+    - URI dans :data:`COAR_INTERNE_VERS_NAKALA` → sa cible Nakala ;
+    - URI déjà dans le set Nakala → inchangée ;
+    - sinon → None (l'appelant décide du repli : omettre le type, ou
+      `c_1843` « autre »). Un None signale un type interne sans
+      projection — à enrichir dans la table si le cas se présente.
+    """
+    if not isinstance(uri, str) or not uri.strip():
+        return None
+    u = uri.strip()
+    if u in COAR_INTERNE_VERS_NAKALA:
+        return COAR_INTERNE_VERS_NAKALA[u]
+    if u in types_coar_nakala():
+        return u
+    return None
 
 
 def libelle_pour_valeur(

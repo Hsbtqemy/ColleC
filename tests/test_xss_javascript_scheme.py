@@ -31,7 +31,7 @@ from archives_tool.api.templating import _url_safe
 
 @pytest.mark.parametrize("url", [
     "https://www.wikidata.org/entity/Q733678",
-    "http://purl.org/coar/resource_type/c_3e5a",
+    "http://purl.org/coar/resource_type/c_2fe3",
     "https://doi.org/10.34847/nkl.abc",
     "mailto:archiviste@univ-poitiers.fr",
 ])

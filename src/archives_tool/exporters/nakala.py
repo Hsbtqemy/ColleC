@@ -23,6 +23,7 @@ from archives_tool.exporters.mapping_dc import (
     extraire_valeur,
     valeur_en_liste,
 )
+from archives_tool.api.services.vocabulaires import type_coar_pour_nakala
 from archives_tool.exporters.rapport import RapportExport, verifier_pre_export
 from archives_tool.models import Collection, Item
 
@@ -89,6 +90,12 @@ def _ligne_nakala(
     )
     date = item.date or ""
     type_coar = item.type_coar or ""
+    # `nkl:type` doit appartenir au set accepté par Nakala : on projette
+    # le type COAR interne (potentiellement plus riche) vers sa cible
+    # Nakala. Repli sur la valeur d'origine si non projetable (le rapport
+    # pré-export signale alors le type non canonique). `dc:type` garde
+    # l'URI COAR interne (DC est permissif).
+    type_nakala = type_coar_pour_nakala(type_coar) or type_coar
     licence = meta.get("licence") or meta.get("rights") or licence_defaut
     statut = meta.get("statut_nakala") or statut_defaut
 
@@ -102,7 +109,7 @@ def _ligne_nakala(
         "langTitle": item.langue or "",
         f"{NS_NAKALA}creator": createur,
         f"{NS_NAKALA}created": date,
-        f"{NS_NAKALA}type": type_coar,
+        f"{NS_NAKALA}type": type_nakala,
         f"{NS_NAKALA}license": licence,
         "Embargoed": "",
         f"{DC}identifier": item.cote,

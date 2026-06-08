@@ -888,9 +888,9 @@ def test_type_coar_auto_normalise_libelle_textuel(session: Session) -> None:
     assert rapport.erreurs == []
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
     items = sorted(fonds.items, key=lambda i: i.cote)
-    # `journal` → URI COAR Périodique (c_3e5a).
+    # `journal` → URI COAR Périodique (c_2fe3, corrigée V0.9.10).
     for item in items:
-        assert item.type_coar == "http://purl.org/coar/resource_type/c_3e5a"
+        assert item.type_coar == "http://purl.org/coar/resource_type/c_2fe3"
 
 
 def test_type_coar_libelle_inconnu_garde_brut(session: Session) -> None:

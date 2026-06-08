@@ -44,9 +44,9 @@ Les sentinelles d'absence (`"none"`, `"n/a"`, `"s.d."`, vide,
 
 ```csv
 cote,titre,date,annee,langue,type_coar
-HK-001,"Hara-Kiri n°1","1960-09",1960,fra,http://purl.org/coar/resource_type/c_2659
-HK-002,"Hara-Kiri n°2","1960-10",1960,fra,http://purl.org/coar/resource_type/c_2659
-HK-003,"Hara-Kiri n°3","1960-11",1960,fra,http://purl.org/coar/resource_type/c_2659
+HK-001,"Hara-Kiri n°1","1960-09",1960,fra,http://purl.org/coar/resource_type/c_2fe3
+HK-002,"Hara-Kiri n°2","1960-10",1960,fra,http://purl.org/coar/resource_type/c_2fe3
+HK-003,"Hara-Kiri n°3","1960-11",1960,fra,http://purl.org/coar/resource_type/c_2fe3
 ```
 
 ## Préparer ses scans

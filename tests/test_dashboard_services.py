@@ -470,7 +470,7 @@ def test_page_collection_n_emet_pas_plus_de_7_requetes(
 def _options_demo() -> OptionsFiltresCollection:
     return OptionsFiltresCollection(
         langues=("fra", "eng"),
-        types_coar=("http://purl.org/coar/resource_type/c_2659",),
+        types_coar=("http://purl.org/coar/resource_type/c_2fe3",),
         annee_min=1960,
         annee_max=1985,
     )

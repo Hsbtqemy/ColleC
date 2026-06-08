@@ -144,12 +144,37 @@ coupler ColleC à madbot.
 dépôt Nakala (lecture + écriture, round-trip via `PUT /datas/{id}` +
 versioning), **sans couplage madbot**.
 
-**Trouvaille** : 9 des 15 types COAR de ColleC sont hors du set accepté
-par Nakala (dont `c_12cd` mal étiqueté « Vidéo » = en fait « carte »).
-Correction en attente d'une décision produit (Périodique/Numéro de
-périodique n'ont pas d'équivalent Nakala).
+### Correction du vocabulaire COAR + projection Nakala (Tier A bis)
 
-6 tests (`test_vocabulaires_nakala.py`).
+Trouvaille : plusieurs URIs COAR de ColleC étaient fausses ou mal
+étiquetées (auraient produit des `dc:type` non résolvables et des rejets
+au dépôt Nakala). Et rappel de cadrage : **ColleC est un outil de
+collections numérisées tous types** (pas de périodiques) — le vocabulaire
+de types doit être large. Décision : **deux vocabulaires** (interne large
++ projection à l'export), vocabulaire interne = **set Nakala complet (29)
++ 3 extras**.
+
+- `TYPES_COAR_OPTIONS` = **32 types** : les 29 acceptés par Nakala
+  (libellés FR : Texte, Périodique, Article, Ouvrage, Manuscrit,
+  **Lettre / Correspondance**, Fonds d'archives, Rapport, Thèse, Image,
+  Photographie, Carte, Partition, Vidéo, Son, Œuvre artistique, Jeu de
+  données, Logiciel…) + 3 genres COAR valides hors set Nakala (Chapitre
+  de livre, Document de travail, Photographie). URIs vérifiées contre le
+  vocabulaire COAR autoritatif (corrige `c_12cd` « Vidéo » = en fait
+  « carte », Manuscrit `c_8a7e`→`c_0040`, Périodique `c_3e5a`→`c_2fe3`,
+  etc.).
+- `COAR_INTERNE_VERS_NAKALA` + `type_coar_pour_nakala()` : projette les
+  3 extras vers une cible Nakala (Chapitre→texte, Doc travail→préprint,
+  Photo→image) ; les 29 autres = identité. Appliquée à l'export
+  (`nkl:type`) ; `dc:type` garde l'URI COAR interne. Invariant testé :
+  chaque type interne projette vers le set Nakala.
+- `normaliser_type_coar` couvre tous les genres (lettre/correspondance,
+  rapport, thèse, œuvre, jeu de données, logiciel, site web…).
+- Migration `r6v7w8x9y0z1` : remap des `item.type_coar` existants
+  (anciennes URIs → corrigées), séquence ordonnée pour la chaîne de
+  réaffectations qui se recouvrent (Vidéo/Carte/Photo).
+
+17 tests (vocab projection/alias + migration remap + résolution langue).
 
 ## V0.9.9 (stable, 2026-06-08)
 

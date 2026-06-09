@@ -80,11 +80,14 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   portage depuis `plugins-madbot`. **Tier A + A bis livrés** :
   vocabulaires vendorisés, résolution langue, vocabulaire COAR corrigé
   + projection interne→Nakala + migration de remap. Décision actée :
-  deux vocabulaires (interne riche + projection export). **P1a livré** :
-  `external/nakala/` (client lecture httpx `ClientLectureNakala` +
-  mapper dépôt→`DepotNakala`, config `nakala:`, lecture pure, 16 tests).
-  Reste P1b/c/d (cache+réconciliation / rapatrier-rafraîchir / CLI-UI)
-  puis P2/P3 (create / round-trip).
+  deux vocabulaires (interne riche + projection export). **P1a+P1b
+  livrés** : `external/nakala/` (client lecture httpx + mapper
+  dépôt→`DepotNakala`, config `nakala:`) ; `api/services/nakala.py`
+  (cache `RessourceExterne` par DOI + réconciliation `Item.doi_nakala`
+  via `LienExterneItem`). P1a = lecture pure (aucune écriture DB) ;
+  P1b écrit dans les tables externes (cache + liens) mais ne crée ni
+  ne mute aucun Item — il ne fait que le lier. 22 tests. Reste P1c/d
+  (rapatrier-rafraîchir / CLI-UI) puis P2/P3 (create / round-trip).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

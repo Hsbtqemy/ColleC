@@ -175,7 +175,7 @@ V0.9.10 :
 | **Tier A (fait 2026-06-08)** | Vendoring des 3 vocab snapshots + loaders + résolution libellé langue (longue traîne) | livré | faible |
 | **Tier A bis** | Correction COAR (après décision (a)/(b)) + alias mis à jour | prochain | moyen (données) |
 | **P1a — Client + mapper (livré)** | `external/nakala/client.py` (`ClientLectureNakala` httpx, lecture seule, exceptions ColleC) + `mapper.py` (dépôt Nakala JSON → `DepotNakala` neutre : titre/créateurs/date/type/langue 639-3/sujets/licence/fichiers/metadonnées) + config `nakala:` (base_url + clé API). **Aucune écriture DB.** 16 tests (httpx mocké + fixture). | livré | faible |
-| **P1b — Cache + réconciliation** | Service : upsert `RessourceExterne` (par DOI, `recupere_le`/`metadonnees_brutes`) + réconciliation `Item.doi_nakala` + seed `SourceExterne` « nakala ». | V2 | moyen |
+| **P1b — Cache + réconciliation (livré)** | `api/services/nakala.py` : `source_nakala` (get-or-create), `upsert_ressource` (par DOI, `recupere_le` bumpé / `metadonnees_brutes` JSON brut), `reconcilier_item` (lie `Item.doi_nakala` via `LienExterneItem`, ne crée pas d'item), `mettre_en_cache_depot` (orchestration, commit unique). 6 tests. | livré | moyen |
 | **P1c — Rapatrier / rafraîchir** | Créer un item depuis un dépôt + re-pull avec **diff/dry-run** avant overwrite (difficulté n°1). Pont langues complet. | V2 | moyen |
 | **P1d — CLI/UI** | `archives-tool nakala pull <doi> [--dry-run]`, puis UI. | V2 | faible |
 | **P2 — Create** | Dépôt (`POST /datas` pending → DOI), porté de `madbot_nakala_submission/{client,mapper,preflight}.py` | V3 | moyen |

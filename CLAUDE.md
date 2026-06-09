@@ -86,8 +86,12 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   (cache `RessourceExterne` par DOI + réconciliation `Item.doi_nakala`
   via `LienExterneItem`). P1a = lecture pure (aucune écriture DB) ;
   P1b écrit dans les tables externes (cache + liens) mais ne crée ni
-  ne mute aucun Item — il ne fait que le lier. 22 tests. Reste P1c/d
-  (rapatrier-rafraîchir / CLI-UI) puis P2/P3 (create / round-trip).
+  ne mute aucun Item — il ne fait que le lier. **P1c livré** :
+  `rapatrier` (crée un Item depuis un dépôt, cote dérivée du DOI ou
+  explicite, cache + lien, garde déjà-existant, dry-run) + `rafraichir`
+  (re-pull → diff documentaire + dry-run par défaut avant overwrite via
+  `modifier_item`, champs ColleC-only préservés). 32 tests. Reste P1d
+  (CLI/UI) puis P2/P3 (create / round-trip).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

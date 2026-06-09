@@ -12,6 +12,35 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class NakalaConfig(BaseModel):
+    """Configuration d'accès Nakala (lecture, V0.9.x P1).
+
+    Optionnelle : présente uniquement si l'utilisateur veut tirer des
+    dépôts depuis Nakala. Clé API facultative — les dépôts publics sont
+    lisibles anonymement ; la clé est requise pour les dépôts privés /
+    en attente / sous embargo.
+
+    Exemple :
+        nakala:
+          base_url: https://apitest.nakala.fr
+          api_key: "33170cfe-..."
+    """
+
+    # Prod par défaut ; mettre `https://apitest.nakala.fr` pour les tests.
+    base_url: str = "https://api.nakala.fr"
+    api_key: str | None = None
+    verify_ssl: bool = True
+    timeout: float = 30.0
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url_http(cls, v: str) -> str:
+        v = v.rstrip("/")
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("nakala.base_url doit commencer par http:// ou https://")
+        return v
+
+
 class ConfigLocale(BaseModel):
     """Contenu attendu du `config_local.yaml`.
 
@@ -29,6 +58,8 @@ class ConfigLocale(BaseModel):
     # occasionnel sans risque d'édition accidentelle — ce n'est pas
     # une mesure de sécurité (l'utilisateur peut éditer le YAML).
     lecture_seule: bool = False
+    # Accès Nakala en lecture (P1) — None si non configuré.
+    nakala: NakalaConfig | None = None
 
     @field_validator("racines")
     @classmethod

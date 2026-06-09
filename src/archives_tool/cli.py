@@ -56,7 +56,21 @@ from archives_tool.api.services.fonds import (
     supprimer_fonds,
 )
 from archives_tool.api.services.operations_entite import lister_suppressions
+from archives_tool.api.services.nakala import (
+    RafraichissementImpossible,
+    RapatriementInvalide,
+    rafraichir,
+    rapatrier,
+)
 from archives_tool.config import ConfigLocale, charger_config
+from archives_tool.external.nakala.client import (
+    ClientLectureNakala,
+    ErreurNakala,
+    NakalaAuthRefusee,
+    NakalaInjoignable,
+    NakalaIntrouvable,
+)
+from archives_tool.external.nakala.mapper import mapper_depot
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dublin_core
 from archives_tool.exporters.excel import exporter_excel
@@ -2007,6 +2021,206 @@ def cmd_annotations_enrichir(
             typer.echo(
                 "\nRelancez avec --appliquer pour figer en base.",
             )
+
+
+# ---------------------------------------------------------------------------
+# Commande `nakala` : pull (lecture / rapatriement / rafraîchissement).
+# ---------------------------------------------------------------------------
+
+nakala_app = typer.Typer(
+    help="Pull Nakala : inspecter, rapatrier, rafraîchir des dépôts.",
+    no_args_is_help=True,
+)
+app.add_typer(nakala_app, name="nakala")
+
+_CONFIG_OPTION_NAKALA = typer.Option(
+    Path("config_local.yaml"),
+    "--config",
+    help="Config locale (section `nakala:` requise : base_url + clé API).",
+)
+
+
+def _client_nakala_ou_sortie(config: ConfigLocale) -> ClientLectureNakala:
+    if config.nakala is None:
+        typer.echo(
+            "Erreur : aucune section `nakala:` dans le config_local.yaml "
+            "(base_url + api_key).",
+            err=True,
+        )
+        raise typer.Exit(2)
+    n = config.nakala
+    return ClientLectureNakala(
+        n.base_url, n.api_key, timeout=n.timeout, verify_ssl=n.verify_ssl
+    )
+
+
+def _lire_depot_ou_sortie(client: ClientLectureNakala, doi: str) -> dict:
+    try:
+        return client.lire_depot(doi)
+    except NakalaIntrouvable:
+        typer.echo(f"Erreur : dépôt {doi!r} introuvable sur Nakala.", err=True)
+        raise typer.Exit(1) from None
+    except NakalaAuthRefusee:
+        typer.echo(
+            f"Erreur : accès refusé à {doi!r} — clé API manquante/invalide "
+            "(dépôt privé/embargo ?).",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+    except NakalaInjoignable as e:
+        typer.echo(f"Erreur : Nakala injoignable ({e}).", err=True)
+        raise typer.Exit(1) from None
+    except ErreurNakala as e:
+        typer.echo(f"Erreur Nakala : {e}", err=True)
+        raise typer.Exit(1) from None
+
+
+@nakala_app.command("montrer")
+def cmd_nakala_montrer(
+    doi: str = typer.Argument(..., help="DOI/identifiant Nakala (10.34847/nkl.…)."),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+) -> None:
+    """Lire et afficher un dépôt Nakala (lecture seule, sans toucher la base)."""
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        brut = _lire_depot_ou_sortie(client, doi)
+    depot = mapper_depot(brut)
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        typer.echo(json.dumps(
+            {
+                "identifiant": depot.identifiant,
+                "statut": depot.statut,
+                "titre": depot.titre,
+                "createurs": depot.createurs,
+                "date": depot.date,
+                "type_coar": depot.type_coar,
+                "langues": depot.langues,
+                "description": depot.description,
+                "sujets": depot.sujets,
+                "licence": depot.licence,
+                "nb_fichiers": len(depot.fichiers),
+                "metadonnees": depot.metadonnees,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ))
+        return
+
+    typer.echo(f"Dépôt {depot.identifiant} [{depot.statut or '?'}]")
+    typer.echo(f"  Titre      : {depot.titre or '—'}")
+    typer.echo(f"  Créateurs  : {', '.join(depot.createurs) or '—'}")
+    typer.echo(f"  Date       : {depot.date or '—'}")
+    typer.echo(f"  Type COAR  : {depot.type_coar or '—'}")
+    typer.echo(f"  Langues    : {', '.join(depot.langues) or '—'}")
+    typer.echo(f"  Licence    : {depot.licence or '—'}")
+    typer.echo(f"  Sujets     : {', '.join(depot.sujets) or '—'}")
+    typer.echo(f"  Fichiers   : {len(depot.fichiers)}")
+    if depot.metadonnees:
+        typer.echo(f"  Métadonnées: {', '.join(sorted(depot.metadonnees))}")
+
+
+@nakala_app.command("rapatrier")
+def cmd_nakala_rapatrier(
+    doi: str = typer.Argument(..., help="DOI/identifiant Nakala à rapatrier."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds cible."),
+    cote: str | None = typer.Option(
+        None, "--cote", help="Cote de l'item (sinon dérivée du DOI)."
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Créer réellement (sinon : aperçu)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Créer un item ColleC depuis un dépôt Nakala (dry-run par défaut)."""
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        brut = _lire_depot_ou_sortie(client, doi)
+    depot = mapper_depot(brut)
+
+    with _ouvrir_session_existante(db_path) as session:
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            rapport = rapatrier(
+                session, depot, brut, fonds_id=fonds_obj.id, cote=cote,
+                cree_par=config.utilisateur, dry_run=not no_dry_run,
+            )
+        except RapatriementInvalide as e:
+            typer.echo(f"Erreur : {e.erreurs}", err=True)
+            raise typer.Exit(2) from None
+        except ItemInvalide as e:
+            # Ex. cote dérivée en collision avec un autre item du fonds.
+            typer.echo(
+                f"Erreur : item invalide ({e.erreurs}). "
+                "Fournir une cote explicite via --cote ?",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    if rapport.deja_existant:
+        typer.echo(
+            f"[{mode}] Dépôt déjà rapatrié → item {rapport.cote!r} "
+            f"(id={rapport.item_id}). Utiliser `nakala rafraichir` pour mettre à jour."
+        )
+    elif no_dry_run:
+        typer.echo(
+            f"✓ Item {rapport.cote!r} créé (id={rapport.item_id}) dans le fonds {fonds}."
+        )
+    else:
+        typer.echo(
+            f"[DRY-RUN] Créerait l'item {rapport.cote!r} dans le fonds {fonds}. "
+            "Relancer avec --no-dry-run pour créer."
+        )
+
+
+@nakala_app.command("rafraichir")
+def cmd_nakala_rafraichir(
+    doi: str = typer.Argument(..., help="DOI d'un dépôt déjà rapatrié."),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Appliquer l'overwrite (sinon : diff seul)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Re-tirer un dépôt et le comparer / réappliquer sur l'item lié
+    (diff par défaut, overwrite avec --no-dry-run)."""
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        brut = _lire_depot_ou_sortie(client, doi)
+    depot = mapper_depot(brut)
+
+    with _ouvrir_session_existante(db_path) as session:
+        try:
+            rapport = rafraichir(
+                session, depot, brut,
+                modifie_par=config.utilisateur, dry_run=not no_dry_run,
+            )
+        except RafraichissementImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except ItemInvalide as e:
+            # Ex. dépôt sans titre → l'overwrite serait invalide.
+            typer.echo(f"Erreur : overwrite invalide ({e.erreurs}).", err=True)
+            raise typer.Exit(1) from None
+
+    if not rapport.a_des_changements:
+        typer.echo(f"Item {rapport.item_cote!r} déjà à jour (aucun changement).")
+        return
+    typer.echo(f"Item {rapport.item_cote!r} — changements :")
+    for d in rapport.diffs:
+        typer.echo(f"  {d.champ:12} : {d.avant or '—'}  →  {d.apres or '—'}")
+    if rapport.metadonnees_modifiees:
+        typer.echo("  métadonnées  : (mises à jour Nakala)")
+    if rapport.applique:
+        typer.echo("✓ Overwrite appliqué.")
+    else:
+        typer.echo("[DRY-RUN] Relancer avec --no-dry-run pour appliquer.")
 
 
 def main() -> None:

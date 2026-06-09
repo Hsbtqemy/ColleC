@@ -22,7 +22,7 @@ correction et le contrôle de catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.10 livré** (1335/1335 tests verts, doc déployée
+**Statut :** **V0.9.11 livré** (1376/1376 tests verts, doc déployée
 sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
 Fonds / Collection / Item, CLI complète, interface web complète
 (synthèse collection + fonds avec cartographie cross-collection +
@@ -86,12 +86,13 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   (cache `RessourceExterne` par DOI + réconciliation `Item.doi_nakala`
   via `LienExterneItem`). P1a = lecture pure (aucune écriture DB) ;
   P1b écrit dans les tables externes (cache + liens) mais ne crée ni
-  ne mute aucun Item — il ne fait que le lier. **P1c livré** :
-  `rapatrier` (crée un Item depuis un dépôt, cote dérivée du DOI ou
-  explicite, cache + lien, garde déjà-existant, dry-run) + `rafraichir`
-  (re-pull → diff documentaire + dry-run par défaut avant overwrite via
-  `modifier_item`, champs ColleC-only préservés). 32 tests. Reste P1d
-  (CLI/UI) puis P2/P3 (create / round-trip).
+  ne mute aucun Item — il ne fait que le lier. **P1 livré (V0.9.11)** :
+  `rapatrier` (crée un Item depuis un dépôt, cache + lien, garde
+  déjà-existant, dry-run) + `rafraichir` (re-pull → diff documentaire +
+  dry-run par défaut avant overwrite, champs ColleC-only préservés) ;
+  CLI `archives-tool nakala {montrer,rapatrier,rafraichir}`. 46 tests.
+  Reste **P2/P3** (create `POST /datas` / round-trip `PUT` + versioning)
+  + UI web (reportée, respectera `lecture_seule`).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

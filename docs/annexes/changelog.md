@@ -121,6 +121,40 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.9.11 (2026-06-09)
+
+### Pull Nakala — lecture, rapatriement, rafraîchissement (P1)
+
+Première moitié du chantier dépôt/round-trip Nakala (voir
+`docs/developpeurs/nakala-depot-future.md`) : **ColleC tire des données
+depuis Nakala**, sans couplage madbot. Le savoir Nakala (client HTTP,
+mapping des champs) est porté du dépôt annexe `plugins-madbot`, découplé.
+
+- **Client lecture** `external/nakala/client.py` (`ClientLectureNakala`,
+  httpx, lecture seule, exceptions ColleC) + **mapper** `mapper_depot`
+  (dépôt JSON → `DepotNakala` neutre : titre, créateurs, date, type COAR,
+  langues normalisées 639-1→639-3 / RFC5646, sujets, licence, fichiers +
+  embargo, métadonnées catch-all). Config `nakala:` (base_url + clé API).
+- **Cache + réconciliation** `api/services/nakala.py` : `RessourceExterne`
+  par DOI (`recupere_le` / `metadonnees_brutes`), lien `Item.doi_nakala`
+  via `LienExterneItem`.
+- **Rapatrier** : crée un Item depuis un dépôt (cote dérivée du DOI ou
+  explicite, mapping documentaire + métadonnées), garde « déjà-existant »
+  (pas de doublon par DOI ; cache + lie même un item pré-existant),
+  dry-run.
+- **Rafraîchir** : re-tire un dépôt lié, calcule un **diff documentaire**
+  et signale les métadonnées modifiées ; **dry-run par défaut** (garde-fou
+  anti-écrasement) ; l'overwrite passe par `modifier_item` (bump version /
+  traçabilité) en préservant les champs ColleC-only (cote, état, notes,
+  numéro, fonds).
+- **CLI** `archives-tool nakala {montrer,rapatrier,rafraichir}` (montrer
+  text/json ; rapatrier/rafraichir dry-run par défaut, `--no-dry-run`
+  pour écrire).
+
+Reste P2 (création de dépôt `POST /datas`) et P3 (round-trip `PUT
+/datas/{id}` + versioning) en V2/V3, plus une UI web (respectera
+`lecture_seule`). 46 tests Nakala (client, mapper, cache, pull, CLI).
+
 ## V0.9.10 (2026-06-08)
 
 ### Vocabulaires Nakala vendorisés + résolution de langue (Tier A)

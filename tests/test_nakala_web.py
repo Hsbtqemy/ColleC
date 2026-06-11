@@ -267,3 +267,125 @@ def test_export_erreur_nakala_redirige(
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]
     assert "introuvable" in r.headers["location"]
+
+
+# ---------------------------------------------------------------------------
+# Dégradation gracieuse : erreurs Nakala + config absente
+# ---------------------------------------------------------------------------
+
+
+def _fake_qui_leve(exc: Exception):
+    """Fabrique un faux client qui lève `exc` sur tout appel réseau."""
+
+    class _C(_FakeClient):
+        def lire_collection(self, doi):  # rapatrier + export
+            raise exc
+
+        def lister_depots_collection(self, doi, *, page=1, taille=50):  # rafraîchir
+            raise exc
+
+    return _C
+
+
+@pytest.mark.parametrize(
+    "exc_cls, attendu",
+    [
+        ("NakalaAuthRefusee", "Acc%C3%A8s%20refus%C3%A9"),  # « Accès refusé » encodé
+        ("NakalaInjoignable", "injoignable"),
+        ("ErreurNakala", "Erreur%20Nakala"),
+    ],
+)
+def test_apercu_rapatrier_messages_erreur(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, exc_cls: str, attendu: str
+) -> None:
+    import archives_tool.external.nakala.client as nc
+
+    exc = getattr(nc, exc_cls)("boom")
+    monkeypatch.setattr(nakala_web, "ClientLectureNakala", _fake_qui_leve(exc))
+    r = client.get("/nakala/rapatrier", params={"doi": _DOI_COL},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/nakala?erreur=") and attendu in loc
+
+
+@pytest.mark.parametrize(
+    "methode, chemin",
+    [
+        ("get", "/nakala/rapatrier"),
+        ("get", "/nakala/rafraichir"),
+        ("post", "/nakala/rapatrier"),
+        ("post", "/nakala/rafraichir"),
+    ],
+)
+def test_endpoints_sans_nakala_redirigent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, methode: str, chemin: str
+) -> None:
+    cfg = tmp_path / "config.yaml"
+    _ecrire_config(cfg, avec_nakala=False)  # pas de section nakala, pas lecture seule
+    monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
+    monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_db(tmp_path)))
+    monkeypatch.setattr(nakala_web, "ClientLectureNakala", _FakeClient)
+    tc = TestClient(app)
+    if methode == "get":
+        r = tc.get(chemin, params={"doi": _DOI_COL}, follow_redirects=False)
+    else:
+        r = tc.post(chemin, data={"doi": _DOI_COL}, follow_redirects=False)
+    assert r.status_code == 303
+    assert "/nakala?erreur=" in r.headers["location"]
+
+
+def test_executer_rafraichir_erreur_nakala_redirige(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from archives_tool.external.nakala.client import NakalaInjoignable
+
+    monkeypatch.setattr(
+        nakala_web, "ClientLectureNakala", _fake_qui_leve(NakalaInjoignable("x"))
+    )
+    r = client.post("/nakala/rafraichir", data={"doi": _DOI_COL},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert "/nakala?erreur=" in r.headers["location"]
+
+
+def test_executer_rapatrier_fonds_inexistant_redirige(client: TestClient) -> None:
+    r = client.post("/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": "INEXISTANT"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert "introuvable" in r.headers["location"]
+
+
+def test_apercu_rapatrier_fonds_inexistant_redirige(client: TestClient) -> None:
+    r = client.get("/nakala/rapatrier", params={"doi": _DOI_COL, "fonds": "INEXISTANT"},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    assert "introuvable" in r.headers["location"]
+
+
+def test_executer_rapatrier_erreur_nakala_redirige(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from archives_tool.external.nakala.client import ErreurNakala
+
+    monkeypatch.setattr(
+        nakala_web, "ClientLectureNakala", _fake_qui_leve(ErreurNakala("boom"))
+    )
+    r = client.post("/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": ""},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert "/nakala?erreur=" in r.headers["location"]
+
+
+def test_apercu_rafraichir_erreur_nakala_redirige(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from archives_tool.external.nakala.client import ErreurNakala
+
+    monkeypatch.setattr(
+        nakala_web, "ClientLectureNakala", _fake_qui_leve(ErreurNakala("boom"))
+    )
+    r = client.get("/nakala/rafraichir", params={"doi": _DOI_COL},
+                   follow_redirects=False)
+    assert r.status_code == 303
+    assert "/nakala?erreur=" in r.headers["location"]

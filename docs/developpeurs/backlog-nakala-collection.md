@@ -82,6 +82,43 @@ volets confirmés :
   collection/donnée directement. Best-effort (pas de motif → saisie rendue
   telle quelle, 404 propre). Tests unitaires + câblage CLI.
 
+## P2 — Dépôt (écriture) vers Nakala (livré)
+
+Premier chemin d'**écriture** : créer la collection Nakala + y déposer ses
+items. Moteur porté de `plugins-madbot/madbot_nakala_submission` (couplage
+madbot retiré). Statut `pending`/`private` + dry-run par défaut (réversible).
+
+- [x] **A1** `external/nakala/write_client.py` — `NakalaEcritureClient`
+  (uploader_fichier, creer_depot, creer_collection, rattacher_a_collection,
+  supprimer_depot/upload/collection) + `extraire_doi`. Clé API obligatoire.
+  13 tests (httpx mocké).
+- [x] **A2** `external/nakala/depot_mapper.py` — `SLUG_TO_NAKALA` (57 champs)
+  + `slugs_vers_metas` + parse_creator/created + DCSV spatial/temporal +
+  sentinels. `MetaInvalide` (local). 12 tests.
+- [x] **A3** `external/nakala/preflight.py` — `preflight_appliquer` (cascade
+  créateur/date, promotion `dcterms:*`→`nkl:*`). 6 tests.
+- [x] **A4** `api/services/nakala_depot.py` — `item_vers_slugs` (réutilise
+  le savoir de `exporters/nakala.py`) + `deposer_item` (résout fichiers
+  locaux via `files/paths.resoudre_chemin`, dry-run, cleanup orphelins,
+  garde déjà-déposé / sans-fichier). 9 tests.
+- [x] **A5** CLI `archives-tool nakala deposer <cote> --fonds X [--statut]
+  [--collection DOI] [--no-dry-run]`.
+- [x] **B1+B2** `creer_collection` + `deposer_collection` (POST /collections
+  → pose `Collection.doi_nakala`, boucle `deposer_item` ; erreurs/non-
+  déposables/sautés collectés).
+- [x] **B3** CLI `archives-tool nakala deposer-collection <cote> --fonds X
+  [--statut-donnee] [--statut-collection] [--no-dry-run]`.
+- [x] **C1** `tests/test_nakala_depot_integration.py` (`-m integration`,
+  opt-in, clé publique apitest) : round-trip réel upload+depot+collection+
+  lecture+cleanup. Marqueur `integration` déclaré (pyproject, exclu par
+  défaut).
+- [x] **C2** doc (cette section, `nakala-depot-future.md`, `CLAUDE.md`).
+
+**Hors P2 → P3** : publication (`published` + DOI DataCite), round-trip
+`PUT /datas/{id}` + versioning fichiers (conflit/fraîcheur), UI web de dépôt.
+**Limite** : seuls les Items avec fichiers **locaux** sont déposables
+(Nakala-only non re-déposable). `dcterms:*` extras coercés best-effort.
+
 ## Lot 3 — UI web (livré)
 
 Page autonome `/nakala` (lien header) + bouton « Rafraîchir depuis Nakala »

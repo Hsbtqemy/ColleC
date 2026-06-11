@@ -65,10 +65,18 @@ from archives_tool.api.services.nakala import (
     rapatrier_collection,
     titre_collection_nakala,
 )
+from archives_tool.api.services.nakala_depot import (
+    DepotImpossible,
+    deposer_collection,
+    deposer_item,
+)
+from archives_tool.external.nakala.depot_mapper import MetaInvalide
+from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.external.nakala.client import (
     ClientLectureNakala,
     ErreurNakala,
+    NakalaAccesInterdit,
     NakalaAuthRefusee,
     NakalaInjoignable,
     NakalaIntrouvable,
@@ -2448,6 +2456,157 @@ def cmd_nakala_rafraichir_collection(
         typer.echo(f"  ✗ {doi_err} : {detail}", err=True)
     if not no_dry_run and modifies:
         typer.echo("Relancer avec --no-dry-run pour appliquer les overwrites.")
+
+
+# ---------------------------------------------------------------------------
+# Dépôt (écriture) Nakala — P2
+# ---------------------------------------------------------------------------
+
+
+def _client_ecriture_nakala_ou_sortie(config: ConfigLocale) -> NakalaEcritureClient:
+    """Construit un client d'écriture Nakala depuis la config, ou sort (2)."""
+    if config.nakala is None:
+        typer.echo(
+            "Erreur : aucune section `nakala:` dans le config_local.yaml.", err=True
+        )
+        raise typer.Exit(2)
+    n = config.nakala
+    if not n.api_key:
+        typer.echo(
+            "Erreur : `nakala.api_key` est obligatoire pour le dépôt (écriture).",
+            err=True,
+        )
+        raise typer.Exit(2)
+    return NakalaEcritureClient(
+        n.base_url, n.api_key, timeout=n.timeout, verify_ssl=n.verify_ssl
+    )
+
+
+def _sortie_erreur_nakala_ecriture(exc: ErreurNakala) -> None:
+    """Traduit une exception Nakala écriture en message stderr + Exit(1)."""
+    if isinstance(exc, NakalaAuthRefusee):
+        typer.echo("Erreur : clé API Nakala manquante/invalide (401).", err=True)
+    elif isinstance(exc, NakalaAccesInterdit):
+        typer.echo(
+            "Erreur : la clé n'a pas le droit de dépôt sur cette ressource (403).",
+            err=True,
+        )
+    elif isinstance(exc, NakalaInjoignable):
+        typer.echo(f"Erreur : Nakala injoignable ({exc}).", err=True)
+    else:  # NakalaSoumissionInvalide (422/4xx) + ErreurNakala (5xx)
+        typer.echo(f"Erreur Nakala : {exc}", err=True)
+    raise typer.Exit(1) from None
+
+
+@nakala_app.command("deposer")
+def cmd_nakala_deposer(
+    cote: str = typer.Argument(..., help="Cote de l'item ColleC à déposer."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    statut: str = typer.Option(
+        "pending", "--statut", help="pending (défaut, réversible) ou published."
+    ),
+    collection: str | None = typer.Option(
+        None, "--collection", help="DOI d'une collection Nakala où rattacher."
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Déposer un item ColleC comme nouveau dépôt Nakala (dry-run par défaut).
+
+    Seuls les fichiers locaux de l'item sont téléversés. `pending` (défaut)
+    crée un dépôt supprimable sans DOI minté.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    racines = dict(config.racines)
+    with _client_ecriture_nakala_ou_sortie(config) as client:
+        with _ouvrir_session_existante(db_path) as session:
+            fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+            assert fonds_obj is not None
+            try:
+                item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+            except ItemIntrouvable:
+                typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            try:
+                rapport = deposer_item(
+                    session, client, item, racines=racines, statut=statut,
+                    collection_doi=collection, cree_par=config.utilisateur,
+                    dry_run=not no_dry_run,
+                )
+            except DepotImpossible as e:
+                typer.echo(f"Erreur : {e}", err=True)
+                raise typer.Exit(1) from None
+            except MetaInvalide as e:
+                typer.echo(f"Erreur : métadonnées insuffisantes — {e}", err=True)
+                raise typer.Exit(1) from None
+            except ErreurNakala as e:
+                _sortie_erreur_nakala_ecriture(e)
+
+    if rapport.deja_depose:
+        typer.echo(f"Item {rapport.cote!r} déjà déposé → {rapport.doi}.")
+    elif no_dry_run:
+        typer.echo(
+            f"✓ Item {rapport.cote!r} déposé → {rapport.doi} "
+            f"({rapport.nb_fichiers} fichier(s), statut {statut})."
+        )
+    else:
+        typer.echo(
+            f"[DRY-RUN] Déposerait l'item {rapport.cote!r} : "
+            f"{rapport.nb_fichiers} fichier(s), {len(rapport.metas)} métadonnée(s), "
+            f"statut {statut}."
+        )
+    for avert in rapport.avertissements:
+        typer.echo(f"  ⚠ {avert}")
+    if not no_dry_run and not rapport.deja_depose:
+        typer.echo("Relancer avec --no-dry-run pour déposer réellement.")
+
+
+@nakala_app.command("deposer-collection")
+def cmd_nakala_deposer_collection(
+    cote: str = typer.Argument(..., help="Cote de la collection ColleC."),
+    fonds: str | None = typer.Option(
+        None, "--fonds", "-f", help="Cote du fonds (désambiguïse une cote partagée)."
+    ),
+    statut_donnee: str = typer.Option("pending", "--statut-donnee"),
+    statut_collection: str = typer.Option("private", "--statut-collection"),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Créer la collection Nakala + y déposer ses items (dry-run par défaut)."""
+    config = _charger_config_ou_sortie(config_path)
+    racines = dict(config.racines)
+    with _client_ecriture_nakala_ou_sortie(config) as client:
+        with _ouvrir_session_existante(db_path) as session:
+            collection = _resoudre_collection_pour_export(session, cote, fonds)
+            try:
+                rapport = deposer_collection(
+                    session, client, collection, racines=racines,
+                    statut_donnee=statut_donnee, statut_collection=statut_collection,
+                    cree_par=config.utilisateur, dry_run=not no_dry_run,
+                )
+            except ErreurNakala as e:
+                _sortie_erreur_nakala_ecriture(e)
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    cible = rapport.collection_doi or "(à créer)"
+    if rapport.collection_creee:
+        cible += " (créée)"
+    typer.echo(
+        f"[{mode}] Collection {collection.cote} → {cible} : "
+        f"{len(rapport.deposes)} déposé(s), {len(rapport.sautes)} déjà déposé(s), "
+        f"{len(rapport.non_deposables)} sans fichier local, "
+        f"{len(rapport.erreurs)} erreur(s)."
+    )
+    for c, detail in rapport.erreurs:
+        typer.echo(f"  ✗ {c} : {detail}", err=True)
+    if not no_dry_run:
+        typer.echo("Relancer avec --no-dry-run pour déposer réellement.")
 
 
 def main() -> None:

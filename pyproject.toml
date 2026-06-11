@@ -46,6 +46,12 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Les tests `integration` touchent l'API Nakala apitest (réseau) — exclus
+# par défaut. Les lancer explicitement : `pytest -m integration`.
+addopts = "-m 'not integration'"
+markers = [
+    "integration: test bout-en-bout contre apitest.nakala.fr (réseau, opt-in)",
+]
 
 [tool.ruff]
 line-length = 88

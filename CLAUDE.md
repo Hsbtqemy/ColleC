@@ -115,8 +115,17 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   lien header) — export tableur (téléchargement CSV/xlsx), aperçu+rapatriement,
   aperçu+rafraîchissement ; bouton « Rafraîchir depuis Nakala » sur les fonds
   dont la miroir a un DOI. Pull/rafraîchir synchrones (aperçu dry-run GET +
-  confirmation POST bloquée en lecture seule) ; DOI ou URL accepté. Reste
-  **P2/P3** (create `POST /datas` / round-trip `PUT` + versioning).
+  confirmation POST bloquée en lecture seule) ; DOI ou URL accepté.
+  **P2 livré (écriture)** : `external/nakala/write_client.py`
+  (`NakalaEcritureClient`) + `depot_mapper.py` (port `SLUG_TO_NAKALA`
+  57 champs) + `preflight.py` (cascade créateur/date) +
+  `api/services/nakala_depot.py` (`deposer_item`/`deposer_collection` :
+  fichiers locaux, statut `pending`/`private`, dry-run par défaut, garde
+  déjà-déposé, cleanup orphelins). CLI `archives-tool nakala deposer` +
+  `deposer-collection`. Moteur porté de
+  `plugins-madbot/madbot_nakala_submission` (couplage retiré). Tests
+  d'intégration opt-in (`-m integration`, apitest). Reste **P3**
+  (publication `published` + round-trip `PUT` + versioning fichiers).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

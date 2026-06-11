@@ -82,6 +82,35 @@ volets confirmés :
   collection/donnée directement. Best-effort (pas de motif → saisie rendue
   telle quelle, 404 propre). Tests unitaires + câblage CLI.
 
+## P3 — Round-trip métadonnées (livré)
+
+Push des modifications de métadonnées vers un dépôt existant + publication.
+Pendant symétrique de `rafraichir` (pull→local). **Sans** versioning fichiers
+(choix utilisateur). Réutilise toute la chaîne P2 (mapper 57 champs +
+preflight).
+
+- [x] **T1** `write_client.modifier_depot(id, *, metas, status=None)`
+  (`PUT /datas/{id}`, remplace les metas ; `status="published"` publie). Tests.
+- [x] **T2** `nakala_depot` (suite) : `diff_push` (par propertyUri, multiset
+  value/lang, **canonicalise les créateurs** — voir ci-dessous) +
+  `pousser_item` (re-pull → diff + dérive, dry-run, PUT + refresh cache) +
+  `publier_item` (statut published) + `pousser_collection`. Tests
+  (idempotent → diff vide, modif titre, dérive, sans-DOI → erreur).
+- [x] **T3** CLI `nakala pousser <cote> --fonds X [--no-dry-run]`,
+  `nakala publier …` (irréversible), `nakala pousser-collection …`.
+- [x] **T4** `tests/test_nakala_push_integration.py` (`-m integration`) :
+  round-trip idempotent (déposer → re-lire → diff vide) + modif titre, **validé
+  live sur apitest**. doc (cette section, nakala-depot-future, CLAUDE.md).
+
+**Découverte du test d'intégration (fidélité #3)** : Nakala **enrichit les
+créateurs** au stockage (`{givenname, surname}` → `{authorId, fullName,
+givenname, orcid: null, surname}`). Sans correctif, chaque push aurait vu un
+faux changement de créateur. `diff_push` canonicalise donc les créateurs sur
+les seuls champs identifiants (`surname`/`givenname`/`orcid` non nul).
+
+**Hors P3 → futur** : versioning fichiers (#4, SHA-1↔SHA-256), update des
+métadonnées de **collection** (`PUT /collections/{id}`), UI web de push.
+
 ## P2 — Dépôt (écriture) vers Nakala (livré)
 
 Premier chemin d'**écriture** : créer la collection Nakala + y déposer ses

@@ -205,6 +205,29 @@ class NakalaEcritureClient:
         self._verifier_statut(reponse, contexte="POST /collections")
         return reponse.json()
 
+    def modifier_depot(
+        self,
+        identifiant: str,
+        *,
+        metas: list[dict[str, Any]],
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Met à jour un dépôt existant (`PUT /datas/{id}`).
+
+        Le `PUT` **remplace** intégralement les `metas` → on envoie la liste
+        complète. `status` optionnel : passer `"published"` publie le dépôt
+        (mint DOI DataCite, irréversible). Renvoie la réponse JSON (souvent
+        vide ou un écho selon Nakala)."""
+        corps: dict[str, Any] = {"metas": metas}
+        if status is not None:
+            corps["status"] = status
+        reponse = self._requete("PUT", f"/datas/{identifiant}", json=corps)
+        self._verifier_statut(reponse, contexte=f"PUT /datas/{identifiant}")
+        try:
+            return reponse.json()
+        except Exception:  # noqa: BLE001 - PUT peut renvoyer un corps vide
+            return {}
+
     def rattacher_a_collection(self, depot_id: str, collection_id: str) -> None:
         """Rattache un dépôt existant à une collection (POST, additif)."""
         reponse = self._requete(

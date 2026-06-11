@@ -69,6 +69,9 @@ from archives_tool.api.services.nakala_depot import (
     DepotImpossible,
     deposer_collection,
     deposer_item,
+    pousser_collection,
+    pousser_item,
+    publier_item,
 )
 from archives_tool.external.nakala.depot_mapper import MetaInvalide
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
@@ -2607,6 +2610,181 @@ def cmd_nakala_deposer_collection(
         typer.echo(f"  ✗ {c} : {detail}", err=True)
     if not no_dry_run:
         typer.echo("Relancer avec --no-dry-run pour déposer réellement.")
+
+
+# ---------------------------------------------------------------------------
+# Round-trip métadonnées — P3
+# ---------------------------------------------------------------------------
+
+
+def _nom_court_propriete(uri: str) -> str:
+    """URI propriété → libellé court (`nkl:title`, `dcterms:subject`)."""
+    if "#" in uri:
+        return "nkl:" + uri.rsplit("#", 1)[-1]
+    if "/dc/terms/" in uri:
+        return "dcterms:" + uri.rsplit("/", 1)[-1]
+    return uri
+
+
+def _afficher_diff_push(rapport, mode: str, no_dry_run: bool) -> None:
+    """Sortie commune des commandes de push (diff + dérive)."""
+    if rapport.derive:
+        typer.echo(
+            "⚠ Le dépôt distant a changé depuis le dernier rapatriement "
+            "(dérive) — vérifier avant d'écraser.",
+            err=True,
+        )
+    if not rapport.a_des_changements:
+        typer.echo(f"Item {rapport.cote!r} ({rapport.doi}) : aucun changement à pousser.")
+        return
+    typer.echo(f"[{mode}] Item {rapport.cote!r} ({rapport.doi}) — "
+               f"{len(rapport.diffs)} champ(s) à modifier :")
+    for d in rapport.diffs:
+        avant = " | ".join(d.avant) or "∅"
+        apres = " | ".join(d.apres) or "∅"
+        typer.echo(f"  • {_nom_court_propriete(d.property_uri)} : {avant}  →  {apres}")
+    if rapport.applique:
+        typer.echo("✓ Métadonnées poussées sur Nakala.")
+    elif not no_dry_run:
+        typer.echo("Relancer avec --no-dry-run pour pousser.")
+
+
+@nakala_app.command("pousser")
+def cmd_nakala_pousser(
+    cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Pousser les modifications de métadonnées d'un item vers son dépôt Nakala.
+
+    Diff par défaut (dry-run) ; `--no-dry-run` applique le `PUT` (remplace les
+    métadonnées). Signale une dérive si le distant a changé depuis le pull.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _client_ecriture_nakala_ou_sortie(config) as ecriture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+            raise typer.Exit(1) from None
+        try:
+            rapport = pousser_item(
+                session, lecture, ecriture, item,
+                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+            )
+        except DepotImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except MetaInvalide as e:
+            typer.echo(f"Erreur : métadonnées insuffisantes — {e}", err=True)
+            raise typer.Exit(1) from None
+        except ErreurNakala as e:
+            _sortie_erreur_nakala_ecriture(e)
+
+    _afficher_diff_push(rapport, "RÉEL" if no_dry_run else "DRY-RUN", no_dry_run)
+
+
+@nakala_app.command("publier")
+def cmd_nakala_publier(
+    cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Publier le dépôt d'un item (`pending → published`).
+
+    **Irréversible** : mint un DOI DataCite définitif. Dry-run par défaut.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _client_ecriture_nakala_ou_sortie(config) as ecriture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+            raise typer.Exit(1) from None
+        try:
+            rapport = publier_item(
+                session, lecture, ecriture, item,
+                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+            )
+        except DepotImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except MetaInvalide as e:
+            typer.echo(f"Erreur : métadonnées insuffisantes — {e}", err=True)
+            raise typer.Exit(1) from None
+        except ErreurNakala as e:
+            _sortie_erreur_nakala_ecriture(e)
+
+    if rapport.applique:
+        typer.echo(f"✓ Dépôt {rapport.doi} publié (DOI minté — irréversible).")
+    else:
+        typer.echo(
+            f"[DRY-RUN] Publierait le dépôt {rapport.doi} (item {rapport.cote!r}). "
+            "Relancer avec --no-dry-run — IRRÉVERSIBLE."
+        )
+
+
+@nakala_app.command("pousser-collection")
+def cmd_nakala_pousser_collection(
+    cote: str = typer.Argument(..., help="Cote de la collection ColleC."),
+    fonds: str | None = typer.Option(
+        None, "--fonds", "-f", help="Cote du fonds (désambiguïse une cote partagée)."
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Pousser les métadonnées de tous les items liés d'une collection."""
+    config = _charger_config_ou_sortie(config_path)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _client_ecriture_nakala_ou_sortie(config) as ecriture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        try:
+            rapport = pousser_collection(
+                session, lecture, ecriture, collection,
+                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+            )
+        except ErreurNakala as e:
+            _sortie_erreur_nakala_ecriture(e)
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    verbe = "poussé(s)" if no_dry_run else "à pousser"
+    typer.echo(
+        f"[{mode}] Collection {collection.cote} : {len(rapport.pousses)} {verbe}, "
+        f"{len(rapport.inchanges)} inchangé(s), {len(rapport.non_lies)} non lié(s), "
+        f"{len(rapport.erreurs)} erreur(s)."
+    )
+    for r in rapport.pousses:
+        typer.echo(f"  • {r.cote} : {len(r.diffs)} champ(s)")
+    for c, detail in rapport.erreurs:
+        typer.echo(f"  ✗ {c} : {detail}", err=True)
+    if not no_dry_run and rapport.pousses:
+        typer.echo("Relancer avec --no-dry-run pour pousser.")
 
 
 def main() -> None:

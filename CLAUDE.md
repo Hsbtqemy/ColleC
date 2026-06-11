@@ -123,9 +123,17 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   fichiers locaux, statut `pending`/`private`, dry-run par défaut, garde
   déjà-déposé, cleanup orphelins). CLI `archives-tool nakala deposer` +
   `deposer-collection`. Moteur porté de
-  `plugins-madbot/madbot_nakala_submission` (couplage retiré). Tests
-  d'intégration opt-in (`-m integration`, apitest). Reste **P3**
-  (publication `published` + round-trip `PUT` + versioning fichiers).
+  `plugins-madbot/madbot_nakala_submission` (couplage retiré).
+  **P3 livré (round-trip métadonnées)** : `write_client.modifier_depot`
+  (`PUT /datas/{id}`, remplace les metas) + `nakala_depot` : `diff_push`
+  (par propertyUri, ordre-insensible, **canonicalise les créateurs** — Nakala
+  ajoute `authorId`/`fullName`/`orcid:null` au stockage), `pousser_item`/
+  `pousser_collection` (re-pull → diff + dérive, dry-run, PUT + refresh cache),
+  `publier_item` (`status=published`, irréversible). CLI `nakala pousser` +
+  `publier` + `pousser-collection`. Round-trip idempotent validé live (apitest).
+  Tests d'intégration opt-in (`-m integration`). Reste **futur** : versioning
+  fichiers (#4 SHA-1), update métadonnées de collection (`PUT /collections`),
+  UI web de push.
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

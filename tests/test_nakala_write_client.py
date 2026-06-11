@@ -168,3 +168,42 @@ def test_supprimer_depot_et_upload() -> None:
 )
 def test_extraire_doi_variantes(reponse: dict, attendu: str | None) -> None:
     assert extraire_doi(reponse) == attendu
+
+
+def test_modifier_depot_put_metas() -> None:
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        vus["method"] = request.method
+        vus["path"] = request.url.path
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(200, json={})
+
+    metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "Nouveau"}]
+    with _client(handler) as c:
+        c.modifier_depot("10.34847/nkl.d1", metas=metas)
+    assert vus["method"] == "PUT"
+    assert vus["path"] == "/datas/10.34847/nkl.d1"
+    assert vus["body"] == {"metas": metas}
+
+
+def test_modifier_depot_avec_status_publie() -> None:
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(200, content=b"")  # corps vide toléré
+
+    metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "T"}]
+    with _client(handler) as c:
+        rep = c.modifier_depot("10.34847/nkl.d1", metas=metas, status="published")
+    assert vus["body"]["status"] == "published"
+    assert rep == {}  # corps vide → dict vide
+
+
+def test_modifier_depot_422_leve() -> None:
+    with _client(lambda r: httpx.Response(422, json={"message": "bad"})) as c:
+        with pytest.raises(NakalaSoumissionInvalide):
+            c.modifier_depot("10.34847/nkl.d1", metas=[])

@@ -26,6 +26,7 @@ class _FakeWriteClient:
         self.uploads: list[str] = []
         self.depots: list[dict] = []
         self.collections: list[dict] = []
+        self.puts: list[dict] = []
         _FakeWriteClient.instances.append(self)
 
     def __enter__(self) -> "_FakeWriteClient":
@@ -50,11 +51,37 @@ class _FakeWriteClient:
     def supprimer_upload(self, sha1):
         pass
 
+    def modifier_depot(self, identifiant, *, metas, status=None):
+        self.puts.append({"id": identifiant, "metas": metas, "status": status})
+        return {}
+
+
+class _FakeReadClient:
+    """Faux client lecture pour les push : lire_depot configurable."""
+
+    metas_distantes: list[dict] = []
+    mod_date: str = "2024-01-01"
+
+    def __init__(self, *a, **k) -> None:
+        pass
+
+    def __enter__(self) -> "_FakeReadClient":
+        return self
+
+    def __exit__(self, *a) -> bool:
+        return False
+
+    def lire_depot(self, doi: str) -> dict:
+        return {"identifier": doi, "metas": list(_FakeReadClient.metas_distantes),
+                "modDate": _FakeReadClient.mod_date, "files": [], "status": "pending"}
+
 
 @pytest.fixture(autouse=True)
 def _mock_write_client(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeWriteClient.instances.clear()
+    _FakeReadClient.metas_distantes = []
     monkeypatch.setattr(cli_mod, "NakalaEcritureClient", _FakeWriteClient)
+    monkeypatch.setattr(cli_mod, "ClientLectureNakala", _FakeReadClient)
 
 
 @pytest.fixture
@@ -166,3 +193,75 @@ def test_deposer_collection_reel(config_nakala: Path, db_avec_item: Path) -> Non
             )
         )
         assert miroir.doi_nakala == "10.34847/nkl.colNEW"
+
+
+# ---------------------------------------------------------------------------
+# pousser / publier (P3)
+# ---------------------------------------------------------------------------
+
+_NKL = "http://nakala.fr/terms#"
+
+
+def _poser_doi(db: Path, cote: str, doi: str) -> None:
+    with _session(db) as s:
+        item = s.scalar(select(Item).where(Item.cote == cote))
+        item.doi_nakala = doi
+        s.commit()
+
+
+def test_pousser_sans_doi_exit1(config_nakala: Path, db_avec_item: Path) -> None:
+    r = runner.invoke(app, [
+        "nakala", "pousser", "AS-001", "--fonds", "AS",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 1
+    assert "deposer" in r.output.lower()
+
+
+def test_pousser_dry_run_montre_diff(config_nakala: Path, db_avec_item: Path) -> None:
+    _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
+    # Distant : titre différent du local ("La mujer desnuda").
+    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Ancien"}]
+    r = runner.invoke(app, [
+        "nakala", "pousser", "AS-001", "--fonds", "AS",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "DRY-RUN" in r.output and "nkl:title" in r.output
+    assert _FakeWriteClient.instances[0].puts == []  # rien poussé
+
+
+def test_pousser_reel_applique_put(config_nakala: Path, db_avec_item: Path) -> None:
+    _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
+    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Ancien"}]
+    r = runner.invoke(app, [
+        "nakala", "pousser", "AS-001", "--fonds", "AS", "--no-dry-run",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "poussées" in r.output
+    puts = _FakeWriteClient.instances[0].puts
+    assert len(puts) == 1 and puts[0]["id"] == "10.34847/nkl.x1"
+
+
+def test_publier_dry_run(config_nakala: Path, db_avec_item: Path) -> None:
+    _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
+    r = runner.invoke(app, [
+        "nakala", "publier", "AS-001", "--fonds", "AS",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "DRY-RUN" in r.output and "IRRÉVERSIBLE" in r.output
+    assert _FakeWriteClient.instances[0].puts == []
+
+
+def test_publier_reel(config_nakala: Path, db_avec_item: Path) -> None:
+    _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
+    r = runner.invoke(app, [
+        "nakala", "publier", "AS-001", "--fonds", "AS", "--no-dry-run",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "publié" in r.output
+    puts = _FakeWriteClient.instances[0].puts
+    assert puts[0]["status"] == "published"

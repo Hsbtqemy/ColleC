@@ -18,13 +18,19 @@ orphelins si le `POST /datas` échoue après upload ; **dry-run par défaut**
 
 from __future__ import annotations
 
+import json
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
+from archives_tool.api.services.nakala import mettre_en_cache_depot
 from archives_tool.api.services.vocabulaires import type_coar_pour_nakala
+from archives_tool.external.nakala.client import ClientLectureNakala, ErreurNakala
 from archives_tool.external.nakala.depot_mapper import (
     MULTILINGUE_SLUGS,
     SLUG_TO_NAKALA,
@@ -32,13 +38,13 @@ from archives_tool.external.nakala.depot_mapper import (
     MetaInvalide,
     slugs_vers_metas,
 )
+from archives_tool.external.nakala.mapper import mapper_depot
 from archives_tool.external.nakala.preflight import preflight_appliquer
 from archives_tool.external.nakala.write_client import (
     NakalaEcritureClient,
     extraire_doi,
 )
-from archives_tool.external.nakala.client import ErreurNakala
-from archives_tool.models import Collection, Item
+from archives_tool.models import Collection, Item, RessourceExterne
 
 #: Licence par défaut si l'item n'en porte pas (alignée sur l'export CSV).
 LICENCE_DEFAUT = "CC-BY-NC-ND-4.0"
@@ -321,4 +327,247 @@ def deposer_collection(
             rapport.sautes.append(item.cote)
         else:
             rapport.deposes.append(r)
+    return rapport
+
+
+# ---------------------------------------------------------------------------
+# P3 — round-trip : pousser les modifs de métadonnées + publier
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChampPushDiff:
+    """Une propriété dont la valeur diffère entre Nakala (avant) et le local
+    (apres) — rendus lisibles, ordre-insensible."""
+
+    property_uri: str
+    avant: list[str]
+    apres: list[str]
+
+
+def _canon_valeur(v: Any) -> Any:
+    """Forme canonique d'une valeur de meta pour la comparaison de diff.
+
+    Nakala **enrichit** les créateurs au stockage : on envoie
+    `{givenname, surname}` et il renvoie `{authorId, fullName, givenname,
+    orcid: null, surname}`. Pour ne pas voir un faux changement à chaque push,
+    on ne compare que les champs **identifiants** que ColleC contrôle
+    (`surname`, `givenname`, `orcid` non nul) et on ignore les champs ajoutés
+    par Nakala (`authorId`, `fullName`, `orcid: null`)."""
+    if isinstance(v, dict):
+        canon: dict[str, Any] = {}
+        for cle in ("surname", "givenname"):
+            if v.get(cle):
+                canon[cle] = v[cle]
+        if v.get("orcid"):
+            canon["orcid"] = v["orcid"]
+        return canon
+    return v
+
+
+def _cle_valeur(v: Any) -> str:
+    """Forme canonique comparable d'une valeur de meta (str | dict | None)."""
+    return json.dumps(_canon_valeur(v), sort_keys=True, ensure_ascii=False)
+
+
+def _grouper_metas(metas: list[dict[str, Any]]) -> dict[str, list[tuple[str, Any]]]:
+    groupes: dict[str, list[tuple[str, Any]]] = {}
+    for m in metas:
+        uri = m.get("propertyUri")
+        if not uri:
+            continue
+        groupes.setdefault(uri, []).append((_cle_valeur(m.get("value")), m.get("lang")))
+    return groupes
+
+
+def _rendre(paires: list[tuple[str, Any]]) -> list[str]:
+    out: list[str] = []
+    for cle, lang in paires:
+        v = json.loads(cle)
+        if v is None:
+            rendu = "∅"
+        elif isinstance(v, str):
+            rendu = v
+        else:
+            rendu = json.dumps(v, ensure_ascii=False)
+        out.append(f"[{lang}] {rendu}" if lang else rendu)
+    return out
+
+
+def diff_push(
+    metas_distantes: list[dict[str, Any]], metas_locales: list[dict[str, Any]]
+) -> list[ChampPushDiff]:
+    """Diff par propertyUri (multiset value/lang, insensible à l'ordre).
+
+    Renvoie une entrée par propriété dont l'ensemble des valeurs diffère.
+    Liste vide = round-trip idempotent (le local correspond au distant)."""
+    gd = _grouper_metas(metas_distantes)
+    gl = _grouper_metas(metas_locales)
+    diffs: list[ChampPushDiff] = []
+    for uri in sorted(set(gd) | set(gl)):
+        if Counter(gd.get(uri, [])) != Counter(gl.get(uri, [])):
+            diffs.append(
+                ChampPushDiff(uri, _rendre(gd.get(uri, [])), _rendre(gl.get(uri, [])))
+            )
+    return diffs
+
+
+@dataclass
+class RapportPush:
+    """Résultat d'un `pousser_item`. En dry-run : `applique=False`, `diffs`
+    décrit ce qui changerait sur Nakala."""
+
+    cote: str
+    doi: str
+    dry_run: bool
+    diffs: list[ChampPushDiff] = field(default_factory=list)
+    derive: bool = False  # le distant a changé depuis notre dernier fetch
+    applique: bool = False
+
+    @property
+    def a_des_changements(self) -> bool:
+        return bool(self.diffs)
+
+
+def _metas_locales(item: Item, licence_defaut: str = LICENCE_DEFAUT) -> list[dict[str, Any]]:
+    metas = slugs_vers_metas(item_vers_slugs(item, licence_defaut=licence_defaut))
+    metas, _ = preflight_appliquer(metas)
+    return metas
+
+
+def _baseline_moddate(db: Any, doi: str) -> str | None:
+    """`modDate` du dernier dépôt caché pour ce DOI (None si pas de cache)."""
+    ressource = db.scalar(
+        select(RessourceExterne).where(RessourceExterne.identifiant_externe == doi)
+    )
+    if ressource is not None and ressource.metadonnees_brutes:
+        return ressource.metadonnees_brutes.get("modDate")
+    return None
+
+
+def pousser_item(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    item: Item,
+    *,
+    dry_run: bool = True,
+    modifie_par: str | None = None,
+    licence_defaut: str = LICENCE_DEFAUT,
+) -> RapportPush:
+    """Pousse les métadonnées locales d'un Item vers son dépôt Nakala existant.
+
+    Exige `item.doi_nakala` (sinon `DepotImpossible` : utiliser `deposer`).
+    Re-tire le dépôt distant pour calculer le **diff** (par propriété) + un
+    drapeau de **dérive** (le distant a-t-il changé depuis notre dernier
+    fetch ?). Dry-run (défaut) → renvoie le diff sans écrire. Réel →
+    `PUT /datas/{id}` (remplace les metas) puis rafraîchit le cache.
+    """
+    if not item.doi_nakala:
+        raise DepotImpossible(
+            f"Item {item.cote!r} n'a pas de DOI Nakala — utiliser `deposer`."
+        )
+    brut = client_lecture.lire_depot(item.doi_nakala)
+    metas_distantes = brut.get("metas") or []
+    metas_locales = _metas_locales(item, licence_defaut)  # peut lever MetaInvalide
+
+    diffs = diff_push(metas_distantes, metas_locales)
+    baseline = _baseline_moddate(db, item.doi_nakala)
+    distant_mod = brut.get("modDate")
+    derive = bool(baseline and distant_mod and str(distant_mod) > str(baseline))
+
+    rapport = RapportPush(
+        cote=item.cote, doi=item.doi_nakala, dry_run=dry_run,
+        diffs=diffs, derive=derive,
+    )
+    if dry_run or not diffs:
+        return rapport
+
+    client_ecriture.modifier_depot(item.doi_nakala, metas=metas_locales)
+    # Rafraîchit la baseline (recupere_le + metadonnees_brutes) pour le prochain push.
+    brut2 = client_lecture.lire_depot(item.doi_nakala)
+    mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
+    rapport.applique = True
+    return rapport
+
+
+@dataclass
+class RapportPublication:
+    cote: str
+    doi: str
+    dry_run: bool
+    applique: bool = False
+
+
+def publier_item(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    item: Item,
+    *,
+    dry_run: bool = True,
+    modifie_par: str | None = None,
+    licence_defaut: str = LICENCE_DEFAUT,
+) -> RapportPublication:
+    """Publie un dépôt (`pending → published`, **irréversible**).
+
+    Le `PUT` remplaçant les metas, on renvoie la liste complète + `status=
+    published`. Exige `item.doi_nakala`. Dry-run (défaut) → ne publie pas."""
+    if not item.doi_nakala:
+        raise DepotImpossible(
+            f"Item {item.cote!r} n'a pas de DOI Nakala — utiliser `deposer`."
+        )
+    rapport = RapportPublication(cote=item.cote, doi=item.doi_nakala, dry_run=dry_run)
+    if dry_run:
+        return rapport
+    metas_locales = _metas_locales(item, licence_defaut)
+    client_ecriture.modifier_depot(
+        item.doi_nakala, metas=metas_locales, status="published"
+    )
+    brut2 = client_lecture.lire_depot(item.doi_nakala)
+    mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
+    rapport.applique = True
+    return rapport
+
+
+@dataclass
+class RapportPushCollection:
+    collection_cote: str
+    dry_run: bool
+    pousses: list[RapportPush] = field(default_factory=list)  # avec diff
+    inchanges: list[str] = field(default_factory=list)  # diff vide
+    non_lies: list[str] = field(default_factory=list)  # sans doi_nakala
+    erreurs: list[tuple[str, str]] = field(default_factory=list)
+
+
+def pousser_collection(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    collection: Collection,
+    *,
+    dry_run: bool = True,
+    modifie_par: str | None = None,
+    licence_defaut: str = LICENCE_DEFAUT,
+) -> RapportPushCollection:
+    """Pousse les métadonnées de tous les items liés (doi_nakala) d'une
+    collection. Items sans DOI → `non_lies` ; sans diff → `inchanges` ;
+    échec mapping/Nakala → `erreurs` (n'arrête pas le lot)."""
+    rapport = RapportPushCollection(collection_cote=collection.cote, dry_run=dry_run)
+    for item in collection.items:
+        if not item.doi_nakala:
+            rapport.non_lies.append(item.cote)
+            continue
+        try:
+            r = pousser_item(
+                db, client_lecture, client_ecriture, item,
+                dry_run=dry_run, modifie_par=modifie_par, licence_defaut=licence_defaut,
+            )
+        except (MetaInvalide, ErreurNakala) as exc:
+            rapport.erreurs.append((item.cote, str(exc)))
+            continue
+        if r.a_des_changements:
+            rapport.pousses.append(r)
+        else:
+            rapport.inchanges.append(item.cote)
     return rapport

@@ -252,6 +252,129 @@ def test_deposer_collection_reel_cree_et_pose_doi(db_path: Path, tmp_path: Path)
         assert _collection_miroir(s, "AS").doi_nakala == "10.34847/nkl.colNEW"
 
 
+def _NKL_T(v: str, lang: str | None = None) -> dict:
+    m: dict = {"propertyUri": f"{_NKL}title", "value": v}
+    if lang:
+        m["lang"] = lang
+    return m
+
+
+class _FakeRWClient:
+    """Client combiné lecture+écriture pour les tests de push."""
+
+    def __init__(self, metas_distantes: list[dict], mod_date: str = "2024-01-01") -> None:
+        self._metas = metas_distantes
+        self._mod = mod_date
+        self.put: dict | None = None
+
+    def lire_depot(self, doi: str) -> dict:
+        return {"identifier": doi, "metas": self._metas, "modDate": self._mod,
+                "files": [], "status": "pending"}
+
+    def modifier_depot(self, identifiant, *, metas, status=None):
+        self.put = {"metas": metas, "status": status}
+        # après PUT, le distant reflète les nouvelles metas (re-pull).
+        self._metas = metas
+        self._mod = "2024-06-01"
+        return {}
+
+
+def _item_depose(s, tmp_path: Path, *, titre="Titre local", doi="10.34847/nkl.x1") -> Item:
+    item = _item_avec_fichier_local(s, tmp_path)
+    item.titre = titre
+    item.doi_nakala = doi
+    s.commit()
+    return item
+
+
+def test_diff_push_idempotent_vide() -> None:
+    from archives_tool.api.services.nakala_depot import diff_push
+
+    metas = [_NKL_T("T"), {"propertyUri": f"{_DCT}subject", "value": "S"}]
+    assert diff_push(metas, list(reversed(metas))) == []  # ordre-insensible
+
+
+def test_diff_push_createur_enrichi_par_nakala_ignore() -> None:
+    """Nakala enrichit les créateurs (authorId/fullName/orcid:null) au
+    stockage — le diff ne doit pas voir de faux changement."""
+    from archives_tool.api.services.nakala_depot import diff_push
+
+    distant = [{"propertyUri": f"{_NKL}creator", "value": {
+        "authorId": "abc-123", "fullName": "Test, ColleC",
+        "givenname": "ColleC", "orcid": None, "surname": "Test"}}]
+    local = [{"propertyUri": f"{_NKL}creator",
+              "value": {"givenname": "ColleC", "surname": "Test"}}]
+    assert diff_push(distant, local) == []
+
+
+def test_diff_push_detecte_modif_titre() -> None:
+    from archives_tool.api.services.nakala_depot import diff_push
+
+    diffs = diff_push([_NKL_T("Ancien")], [_NKL_T("Nouveau")])
+    assert len(diffs) == 1
+    assert diffs[0].property_uri == f"{_NKL}title"
+    assert diffs[0].avant == ["Ancien"] and diffs[0].apres == ["Nouveau"]
+
+
+def test_pousser_item_sans_doi_refuse(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)  # pas de doi_nakala
+        client = _FakeRWClient([])
+        with pytest.raises(DepotImpossible):
+            pousser_item(s, client, client, item, dry_run=True)
+
+
+def test_pousser_item_dry_run_montre_diff_sans_ecrire(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        # Distant a un titre différent → diff attendu.
+        client = _FakeRWClient([_NKL_T("Titre distant", lang="spa")])
+        rapport = pousser_item(s, client, client, item, dry_run=True)
+    assert rapport.a_des_changements
+    assert client.put is None  # rien écrit
+
+
+def test_pousser_item_reel_applique_put(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        client = _FakeRWClient([_NKL_T("Titre distant", lang="spa")])
+        rapport = pousser_item(s, client, client, item, dry_run=False)
+    assert rapport.applique
+    assert client.put is not None
+    # le PUT envoie les metas locales (titre local).
+    titres = [m["value"] for m in client.put["metas"] if m["propertyUri"] == f"{_NKL}title"]
+    assert "Titre local" in titres
+
+
+def test_pousser_item_sans_diff_n_ecrit_pas(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import _metas_locales, pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        # Distant = exactement les metas locales → diff vide → pas de PUT.
+        client = _FakeRWClient(_metas_locales(item))
+        rapport = pousser_item(s, client, client, item, dry_run=False)
+    assert not rapport.a_des_changements and not rapport.applique
+    assert client.put is None
+
+
+def test_publier_item_reel(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import publier_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path)
+        client = _FakeRWClient([])
+        rapport = publier_item(s, client, client, item, dry_run=False)
+    assert rapport.applique
+    assert client.put is not None and client.put["status"] == "published"
+
+
 def test_deposer_collection_item_sans_fichier_local_collecte(
     db_path: Path, tmp_path: Path
 ) -> None:

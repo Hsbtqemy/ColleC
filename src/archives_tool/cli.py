@@ -60,7 +60,10 @@ from archives_tool.api.services.nakala import (
     RafraichissementImpossible,
     RapatriementInvalide,
     rafraichir,
+    rafraichir_collection,
     rapatrier,
+    rapatrier_collection,
+    titre_collection_nakala,
 )
 from archives_tool.config import ConfigLocale, charger_config
 from archives_tool.external.nakala.client import (
@@ -69,8 +72,15 @@ from archives_tool.external.nakala.client import (
     NakalaAuthRefusee,
     NakalaInjoignable,
     NakalaIntrouvable,
+    normaliser_identifiant_nakala,
 )
+from archives_tool.external.nakala.collection import iterer_donnees_collection
 from archives_tool.external.nakala.mapper import mapper_depot
+from archives_tool.external.nakala.tableur import (
+    lignes_niveau_donnee,
+    lignes_niveau_fichier,
+)
+from archives_tool.external.nakala.tableur_io import ecrire_csv, ecrire_xlsx
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.exporters.dublin_core import exporter_dublin_core
 from archives_tool.exporters.excel import exporter_excel
@@ -2082,6 +2092,7 @@ def cmd_nakala_montrer(
     config_path: Path = _CONFIG_OPTION_NAKALA,
 ) -> None:
     """Lire et afficher un dépôt Nakala (lecture seule, sans toucher la base)."""
+    doi = normaliser_identifiant_nakala(doi)
     config = _charger_config_ou_sortie(config_path)
     with _client_nakala_ou_sortie(config) as client:
         brut = _lire_depot_ou_sortie(client, doi)
@@ -2137,9 +2148,11 @@ def cmd_nakala_rapatrier(
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
     """Créer un item ColleC depuis un dépôt Nakala (dry-run par défaut)."""
+    doi = normaliser_identifiant_nakala(doi)
     config = _charger_config_ou_sortie(config_path)
     with _client_nakala_ou_sortie(config) as client:
         brut = _lire_depot_ou_sortie(client, doi)
+        base_url = client.base_url
     depot = mapper_depot(brut)
 
     with _ouvrir_session_existante(db_path) as session:
@@ -2149,6 +2162,7 @@ def cmd_nakala_rapatrier(
             rapport = rapatrier(
                 session, depot, brut, fonds_id=fonds_obj.id, cote=cote,
                 cree_par=config.utilisateur, dry_run=not no_dry_run,
+                base_url=base_url,
             )
         except RapatriementInvalide as e:
             typer.echo(f"Erreur : {e.erreurs}", err=True)
@@ -2170,7 +2184,8 @@ def cmd_nakala_rapatrier(
         )
     elif no_dry_run:
         typer.echo(
-            f"✓ Item {rapport.cote!r} créé (id={rapport.item_id}) dans le fonds {fonds}."
+            f"✓ Item {rapport.cote!r} créé (id={rapport.item_id}) dans le fonds {fonds} "
+            f"— {rapport.nb_fichiers} fichier(s) Nakala."
         )
     else:
         typer.echo(
@@ -2190,6 +2205,7 @@ def cmd_nakala_rafraichir(
 ) -> None:
     """Re-tirer un dépôt et le comparer / réappliquer sur l'item lié
     (diff par défaut, overwrite avec --no-dry-run)."""
+    doi = normaliser_identifiant_nakala(doi)
     config = _charger_config_ou_sortie(config_path)
     with _client_nakala_ou_sortie(config) as client:
         brut = _lire_depot_ou_sortie(client, doi)
@@ -2221,6 +2237,217 @@ def cmd_nakala_rafraichir(
         typer.echo("✓ Overwrite appliqué.")
     else:
         typer.echo("[DRY-RUN] Relancer avec --no-dry-run pour appliquer.")
+
+
+class _GranulariteTableur(str, enum.Enum):
+    DONNEE = "donnee"
+    FICHIER = "fichier"
+
+
+class _FormatTableur(str, enum.Enum):
+    CSV = "csv"
+    XLSX = "xlsx"
+
+
+def _lire_collection_ou_sortie(client: ClientLectureNakala, doi: str) -> dict:
+    """Comme `_lire_depot_ou_sortie` mais pour une collection."""
+    try:
+        return client.lire_collection(doi)
+    except NakalaIntrouvable:
+        typer.echo(f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True)
+        raise typer.Exit(1) from None
+    except NakalaAuthRefusee:
+        typer.echo(
+            f"Erreur : accès refusé à {doi!r} — clé API manquante/invalide.",
+            err=True,
+        )
+        raise typer.Exit(1) from None
+    except NakalaInjoignable as e:
+        typer.echo(f"Erreur : Nakala injoignable ({e}).", err=True)
+        raise typer.Exit(1) from None
+    except ErreurNakala as e:
+        typer.echo(f"Erreur Nakala : {e}", err=True)
+        raise typer.Exit(1) from None
+
+
+@nakala_app.command("exporter-tableur")
+def cmd_nakala_exporter_tableur(
+    doi: str = typer.Argument(..., help="DOI/identifiant de la collection Nakala."),
+    granularite: _GranulariteTableur = typer.Option(
+        _GranulariteTableur.DONNEE,
+        "--granularite",
+        help="donnee = 1 ligne/donnée ; fichier = 1 ligne/fichier (+ colonnes techniques).",
+    ),
+    format_sortie: _FormatTableur = typer.Option(
+        _FormatTableur.CSV, "--format", help="csv ou xlsx."
+    ),
+    sep: str = typer.Option(";", "--sep", help="Séparateur CSV (ignoré en xlsx)."),
+    sortie: Path | None = typer.Option(
+        None, "--sortie", help="Chemin de sortie (défaut : <doi>_<granularite>.<ext> dans le cwd)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+) -> None:
+    """Exporter une collection Nakala en tableur (lecture seule, sans base).
+
+    Au choix : niveau **donnée** (toutes les métadonnées en colonnes) ou
+    niveau **fichier** (métadonnées de la donnée recopiées + colonnes
+    techniques du fichier : nom, sha1, mime, taille, embargo…).
+    """
+    doi = normaliser_identifiant_nakala(doi)
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        meta = _lire_collection_ou_sortie(client, doi)
+        titre = titre_collection_nakala(meta)
+        donnees = list(iterer_donnees_collection(client, doi))
+
+    if granularite is _GranulariteTableur.FICHIER:
+        tableur = lignes_niveau_fichier(donnees)
+    else:
+        tableur = lignes_niveau_donnee(donnees)
+
+    ext = format_sortie.value
+    if sortie is None:
+        slug = doi.replace("/", "_").replace(".", "_")
+        sortie = Path.cwd() / f"{slug}_{granularite.value}.{ext}"
+
+    if format_sortie is _FormatTableur.XLSX:
+        ecrire_xlsx(tableur, sortie, titre_collection=titre)
+    else:
+        ecrire_csv(tableur, sortie, sep=sep)
+
+    typer.echo(
+        f"✓ {len(donnees)} donnée(s) → {len(tableur.lignes)} ligne(s) "
+        f"({granularite.value}, {ext}) : {sortie}"
+    )
+
+
+@nakala_app.command("rapatrier-collection")
+def cmd_nakala_rapatrier_collection(
+    doi: str = typer.Argument(..., help="DOI/identifiant de la collection Nakala."),
+    fonds: str | None = typer.Option(
+        None, "--fonds", "-f",
+        help="Cote du fonds cible (sinon un fonds est créé depuis la collection).",
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Rapatrier réellement (sinon : aperçu)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Rapatrier toute une collection Nakala (Fonds + N Items, dry-run par défaut).
+
+    Une donnée → un Item (granularité native du modèle). Les fichiers Nakala
+    ne sont pas matérialisés en `Fichier` (le JSON brut est caché).
+    """
+    doi = normaliser_identifiant_nakala(doi)
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        with _ouvrir_session_existante(db_path) as session:
+            try:
+                rapport = rapatrier_collection(
+                    session, client, doi, fonds_cote=fonds,
+                    cree_par=config.utilisateur, dry_run=not no_dry_run,
+                )
+            except FondsIntrouvable:
+                typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
+                raise typer.Exit(1) from None
+            except NakalaIntrouvable:
+                typer.echo(f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True)
+                raise typer.Exit(1) from None
+            except NakalaAuthRefusee:
+                typer.echo(
+                    f"Erreur : accès refusé à {doi!r} — clé API manquante/invalide.",
+                    err=True,
+                )
+                raise typer.Exit(1) from None
+            except NakalaInjoignable as e:
+                typer.echo(f"Erreur : Nakala injoignable ({e}).", err=True)
+                raise typer.Exit(1) from None
+            except ErreurNakala as e:
+                typer.echo(f"Erreur Nakala : {e}", err=True)
+                raise typer.Exit(1) from None
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    cible = (
+        f"fonds {rapport.fonds_cote!r}"
+        + (" (créé)" if rapport.fonds_cree else "")
+    )
+    suffixe_fichiers = (
+        f", {rapport.fichiers_crees} fichier(s)" if rapport.fichiers_crees else ""
+    )
+    typer.echo(
+        f"[{mode}] Collection {doi} → {cible} : "
+        f"{len(rapport.crees)} créé(s){suffixe_fichiers}, "
+        f"{len(rapport.deja_existants)} déjà présent(s), {len(rapport.erreurs)} erreur(s)."
+    )
+    for doi_err, detail in rapport.erreurs:
+        typer.echo(f"  ✗ {doi_err} : {detail}", err=True)
+    if not no_dry_run:
+        typer.echo("Relancer avec --no-dry-run pour rapatrier réellement.")
+
+
+#: Plafond d'items détaillés listés dans l'aperçu de rafraichir-collection.
+_MAX_DETAIL_RAFRAICHIR = 50
+
+
+@nakala_app.command("rafraichir-collection")
+def cmd_nakala_rafraichir_collection(
+    doi: str = typer.Argument(..., help="DOI/identifiant de la collection Nakala."),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Appliquer les overwrites (sinon : diff seul)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Re-tirer une collection Nakala et comparer/réappliquer sur les items liés.
+
+    Diff par défaut (dry-run) ; `--no-dry-run` applique les overwrites. Les
+    données de la collection sans item ColleC sont signalées (à rapatrier).
+    Les fichiers ne sont pas re-synchronisés (champs documentaires seulement).
+    """
+    doi = normaliser_identifiant_nakala(doi)
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        with _ouvrir_session_existante(db_path) as session:
+            try:
+                rapport = rafraichir_collection(
+                    session, client, doi,
+                    modifie_par=config.utilisateur, dry_run=not no_dry_run,
+                )
+            except NakalaIntrouvable:
+                typer.echo(f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True)
+                raise typer.Exit(1) from None
+            except NakalaAuthRefusee:
+                typer.echo(
+                    f"Erreur : accès refusé à {doi!r} — clé API manquante/invalide.",
+                    err=True,
+                )
+                raise typer.Exit(1) from None
+            except NakalaInjoignable as e:
+                typer.echo(f"Erreur : Nakala injoignable ({e}).", err=True)
+                raise typer.Exit(1) from None
+            except ErreurNakala as e:
+                typer.echo(f"Erreur Nakala : {e}", err=True)
+                raise typer.Exit(1) from None
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    modifies = rapport.modifies
+    verbe = "modifié(s)" if no_dry_run else "à modifier"
+    typer.echo(
+        f"[{mode}] Collection {doi} : {len(modifies)} {verbe}, "
+        f"{len(rapport.inchanges)} inchangé(s), {len(rapport.non_lies)} non lié(s), "
+        f"{len(rapport.erreurs)} erreur(s)."
+    )
+    for r in modifies[:_MAX_DETAIL_RAFRAICHIR]:
+        champs = ", ".join(d.champ for d in r.diffs) or "—"
+        meta = " + métadonnées" if r.metadonnees_modifiees else ""
+        typer.echo(f"  • {r.item_cote} : {champs}{meta}")
+    if len(modifies) > _MAX_DETAIL_RAFRAICHIR:
+        typer.echo(f"  … et {len(modifies) - _MAX_DETAIL_RAFRAICHIR} autre(s).")
+    for doi_err, detail in rapport.erreurs:
+        typer.echo(f"  ✗ {doi_err} : {detail}", err=True)
+    if not no_dry_run and modifies:
+        typer.echo("Relancer avec --no-dry-run pour appliquer les overwrites.")
 
 
 def main() -> None:

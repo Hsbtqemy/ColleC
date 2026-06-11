@@ -91,8 +91,32 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   déjà-existant, dry-run) + `rafraichir` (re-pull → diff documentaire +
   dry-run par défaut avant overwrite, champs ColleC-only préservés) ;
   CLI `archives-tool nakala {montrer,rapatrier,rafraichir}`. 46 tests.
-  Reste **P2/P3** (create `POST /datas` / round-trip `PUT` + versioning)
-  + UI web (reportée, respectera `lecture_seule`).
+  **P1.5 — niveau collection (en cours)** : `external/nakala/collection.py`
+  (itérateur paginé ; le listing renvoie déjà les `files` complets → pas
+  de N+1) + `tableur.py` (aplatisseur pur exhaustif, valeurs multiples
+  jointes) + `tableur_io.py` (CSV `utf-8-sig` sép. `;` / xlsx openpyxl
+  `write_only`). **P1.5a livré** : `archives-tool nakala exporter-tableur
+  <doi_collection> --granularite donnee|fichier --format csv|xlsx`
+  (lecture seule, niveau fichier = métadonnées donnée + colonnes techniques
+  nom/sha1/mime/taille/embargo). **P1.5b livré** : `archives-tool nakala
+  rapatrier-collection <doi> [--fonds COTE] [--no-dry-run]` crée Fonds +
+  miroir (DOI posé) + N Items en bouclant `rapatrier` (dry-run par défaut,
+  erreurs par donnée collectées). **T2.5 livré** : `rapatrier(base_url=...)`
+  matérialise les fichiers Nakala en `Fichier` (`iiif_url_nakala` info.json
+  pour images / data URL sinon, `sha1` en `metadonnees`) → items navigables
+  dans la visionneuse ; bénéficie au pull collection ET au `rapatrier`
+  unitaire (CLI passe `client.base_url`). **P1.5c livré** :
+  `archives-tool nakala rafraichir-collection <doi> [--no-dry-run]`
+  (re-pull → diff par item lié en bouclant `rafraichir`, dry-run par défaut,
+  données non rapatriées signalées, pas de re-sync fichiers). Backlog
+  détaillé :
+  [`backlog-nakala-collection.md`](docs/developpeurs/backlog-nakala-collection.md).
+  **UI web livrée** : page autonome `/nakala` (`api/routes/nakala_web.py`,
+  lien header) — export tableur (téléchargement CSV/xlsx), aperçu+rapatriement,
+  aperçu+rafraîchissement ; bouton « Rafraîchir depuis Nakala » sur les fonds
+  dont la miroir a un DOI. Pull/rafraîchir synchrones (aperçu dry-run GET +
+  confirmation POST bloquée en lecture seule) ; DOI ou URL accepté. Reste
+  **P2/P3** (create `POST /datas` / round-trip `PUT` + versioning).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

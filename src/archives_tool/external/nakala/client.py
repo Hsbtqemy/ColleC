@@ -21,6 +21,7 @@ client est porté) :
 from __future__ import annotations
 
 import logging
+import re
 from types import TracebackType
 from typing import Any
 
@@ -37,6 +38,25 @@ PREFIXE_NAKALA = "10.34847/nkl."
 
 #: Scopes exposés pour `POST /users/{datas,collections}/{scope}`.
 SCOPES_CONNUS = ("readable", "owned", "deposited")
+
+#: DOI Nakala dans une chaîne libre : `10.<registrant>/<suffixe>` (le
+#: suffixe peut porter une version `.vN`). S'arrête au prochain `/`, espace,
+#: `?` ou `#` — donc s'extrait proprement d'une URL.
+_PATTERN_DOI = re.compile(r"10\.\d+/[^\s/?#]+")
+
+
+def normaliser_identifiant_nakala(entree: str) -> str:
+    """Extrait le DOI Nakala d'une saisie (URL ou DOI déjà nu).
+
+    Tolère les formes que l'utilisateur copie-colle :
+    `https://nakala.fr/collection/10.34847/nkl.xxx`,
+    `https://api.nakala.fr/datas/10.34847/nkl.xxx`, `doi:10.34847/nkl.xxx`,
+    ou le DOI nu `10.34847/nkl.xxx`. Best-effort : si aucun motif DOI n'est
+    trouvé, retourne la saisie strippée (l'API renverra alors un 404 propre).
+    """
+    s = (entree or "").strip()
+    m = _PATTERN_DOI.search(s)
+    return m.group(0) if m else s
 
 
 class ErreurNakala(Exception):

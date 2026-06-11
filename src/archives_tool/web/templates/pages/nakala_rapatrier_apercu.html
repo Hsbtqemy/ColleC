@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Aperçu rapatriement Nakala · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/nakala" class="text-sm" style="color:#2563eb;">← Nakala</a>
+</div>
+
+<h1 class="text-xl font-medium mb-1" style="color:#1f1f1f;">Aperçu du rapatriement</h1>
+<p class="text-sm text-gray-500 mb-5">
+  Collection <code style="font-family:monospace;">{{ doi }}</code> →
+  fonds <strong>{{ rapport.fonds_cote }}</strong>
+  {% if not fonds %}(créé depuis la collection s'il n'existe pas){% endif %}.
+  <span class="text-gray-400">Aucune écriture n'a encore eu lieu.</span>
+</p>
+
+<div class="flex gap-3 mb-5 flex-wrap">
+  {% set carte = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:14px 18px;min-width:130px;" %}
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:#065f46;">{{ rapport.crees|length }}</div>
+    <div class="text-xs text-gray-500">item(s) à créer</div>
+  </div>
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:#1f2937;">{{ rapport.deja_existants|length }}</div>
+    <div class="text-xs text-gray-500">déjà présent(s)</div>
+  </div>
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:{% if rapport.erreurs %}#991b1b{% else %}#9ca3af{% endif %};">{{ rapport.erreurs|length }}</div>
+    <div class="text-xs text-gray-500">erreur(s)</div>
+  </div>
+</div>
+
+{% if rapport.erreurs %}
+<details class="mb-4" style="font-size:13px;">
+  <summary style="cursor:pointer;color:#991b1b;">{{ rapport.erreurs|length }} erreur(s) prévue(s)</summary>
+  <ul style="margin:8px 0 0 18px;color:#7f1d1d;">
+    {% for doi_err, detail in rapport.erreurs %}
+    <li><code style="font-family:monospace;">{{ doi_err }}</code> — {{ detail }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if rapport.crees|length > 500 %}
+<div role="alert" style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#92400e;">
+  ⚠ {{ rapport.crees|length }} items à créer — le rapatriement est synchrone et
+  <strong>peut prendre plusieurs minutes</strong>. Ne fermez pas l'onglet.
+</div>
+{% endif %}
+
+{% if rapport.crees|length == 0 %}
+<p class="text-sm text-gray-500">Rien à créer (tout est déjà présent ou en erreur).</p>
+{% elif not est_lecture_seule() %}
+<form method="post" action="/nakala/rapatrier" data-nakala-confirm>
+  <input type="hidden" name="doi" value="{{ doi }}">
+  <input type="hidden" name="fonds" value="{{ fonds or '' }}">
+  <button type="submit"
+          style="padding:8px 18px;font-size:13px;border-radius:5px;border:0;
+                 background:#065f46;color:white;cursor:pointer;">
+    Confirmer le rapatriement de {{ rapport.crees|length }} item(s)
+  </button>
+  <span data-nakala-progress class="text-sm text-gray-500" style="display:none;margin-left:10px;">
+    Rapatriement en cours… (peut prendre plusieurs minutes)
+  </span>
+</form>
+{% else %}
+<p class="text-sm" style="color:#92400e;">
+  Rapatriement désactivé (mode lecture seule).
+</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Désactive le bouton au submit + affiche un indicateur (le POST bloque
+  // pendant tout le rapatriement synchrone).
+  document.querySelectorAll("form[data-nakala-confirm]").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var btn = f.querySelector("button[type=submit]");
+      if (btn) { btn.disabled = true; btn.style.opacity = "0.6"; }
+      var ind = f.querySelector("[data-nakala-progress]");
+      if (ind) { ind.style.display = "inline"; }
+    });
+  });
+</script>
+{% endblock %}

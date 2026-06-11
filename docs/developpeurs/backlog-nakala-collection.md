@@ -1,0 +1,106 @@
+# Backlog — Nakala niveau collection (tableur + pull)
+
+> Exclu du build MkDocs (dossier `developpeurs/`). Suivi d'avancement des
+> tickets. Voir le cadrage global dans
+> [`nakala-depot-future.md`](nakala-depot-future.md).
+
+## Contexte
+
+Né d'un usage réel : extraire vers un tableur toutes les métadonnées de
+4 collections Nakala (Armonía Somers, Julio Cortázar, Fernando Aínsa,
+José Mora Guarnido), d'abord via un script jetable réutilisant le client
+`external/nakala`. On en fait une fonctionnalité de premier ordre, en deux
+volets confirmés :
+
+1. **Export tableur** (lecture seule) — collection Nakala → CSV/xlsx, au
+   choix niveau **donnée** (1 ligne/donnée) ou **fichier** (1 ligne/fichier,
+   métadonnées de la donnée recopiées + colonnes techniques fichier).
+2. **Pull collection en base** — collection Nakala → Fonds + miroir + N
+   Items (+ Fichiers), en étendant le `rapatrier` unitaire (P1).
+
+### Décisions actées
+
+- La granularité donnée/fichier **ne concerne que le tableur**. Le pull en
+  base produit toujours 1 Item portant N Fichiers (granularité native).
+- CSV : séparateur `;` par défaut, encodage `utf-8-sig`, `--sep`
+  configurable, valeurs multiples jointes ` | `.
+- Le listing de collection renvoie déjà les `files` complets → **pas de
+  N+1** pour le niveau fichier.
+- Aínsa = 6163 données → xlsx en `write_only`, CSV en flux.
+
+## Lot 1 — Export tableur (lecture seule)
+
+- [x] **T1.1** Itérateur `external/nakala/collection.py`
+  (`iterer_donnees_collection`) + tests `test_nakala_collection.py` (4).
+- [x] **T1.2** Aplatisseur `external/nakala/tableur.py`
+  (`lignes_niveau_donnee`, `lignes_niveau_fichier`, `TableurNakala`) +
+  tests `test_nakala_tableur.py` (6).
+- [x] **T1.3** Écrivains `ecrire_csv` / `ecrire_xlsx` (openpyxl write_only)
+  dans `tableur_io.py` + tests `test_nakala_tableur_io.py` (4).
+- [x] **T1.4** CLI `nakala exporter-tableur` (granularité, format, sep,
+  sortie) + tests `test_cli_nakala_tableur.py` (6). Validé réel sur José
+  Mora (65 données → 155 lignes fichier).
+- [x] **T1.5** Doc : `CLAUDE.md` + `nakala-depot-future.md` (pas de page
+  MkDocs : le CLI nakala n'y figure pas encore — chantier doc à part).
+
+## Lot 2 — Pull collection en base
+
+- [x] **T2.1** Service `rapatrier_collection` (services/nakala.py) + tests
+  `test_nakala_pull_collection.py` (6). Crée Fonds + miroir (DOI posé) + N
+  Items en bouclant `rapatrier` ; dry-run ; erreurs par donnée collectées ;
+  `doi_collection_nakala` posé sur chaque Item.
+- [x] **T2.2** CLI `nakala rapatrier-collection` (dry-run par défaut) +
+  tests `test_cli_nakala_collection.py` (4).
+- [x] **T2.3** `rafraichir-collection` — `archives-tool nakala
+  rafraichir-collection <doi> [--no-dry-run]` : re-pull, diff par item lié
+  (boucle `rafraichir`), dry-run par défaut. Données sans item ColleC →
+  `non_lies` (signalées, pas erreur). Champs documentaires seulement (pas de
+  re-sync fichiers, cohérent avec `rafraichir`). 4 service + 2 CLI tests.
+- [x] **T2.4** Doc Lot 2 (CLAUDE.md, nakala-depot-future, backlog).
+
+### Matérialisation des fichiers
+
+- [x] **T2.5** **Matérialiser les fichiers Nakala en `Fichier`** —
+  `files/nakala.py::construire_source_fichier_nakala` bâtit l'URL depuis
+  `(base_url, doi, sha1)` (info.json pour les images, data URL sinon, même
+  convention que l'import) ;
+  `services/nakala.py::materialiser_fichiers_nakala` crée les `Fichier`
+  depuis le JSON brut (clés réelles `name/sha1/size/extension/mime_type`).
+  Câblé dans `rapatrier(base_url=...)` → bénéficie au pull collection **et**
+  au `rapatrier` unitaire (CLI passe `client.base_url`). `sha1` rangé en
+  `metadonnees` (pas dans `hash_sha256` — algo différent). Pas de
+  re-matérialisation sur déjà-existant (pas de doublon). +3 tests (image
+  info.json, PDF data URL, no-dup) + 2 unitaires builder.
+  **Non couvert** : re-sync des fichiers à `rafraichir` (champs
+  documentaires seuls) — à voir si besoin.
+
+## Commodités transverses
+
+- [x] **URL → DOI** : `client.normaliser_identifiant_nakala` extrait le DOI
+  d'une saisie (URL `nakala.fr/collection/…`, `…/datas/…`, `doi:…`, ou DOI
+  nu). Appliqué en tête des 6 commandes `nakala` → on peut coller une URL de
+  collection/donnée directement. Best-effort (pas de motif → saisie rendue
+  telle quelle, 404 propre). Tests unitaires + câblage CLI.
+
+## Lot 3 — UI web (livré)
+
+Page autonome `/nakala` (lien header) + bouton « Rafraîchir depuis Nakala »
+sur les fonds dont la miroir porte un DOI. Router
+`api/routes/nakala_web.py`. Pull/rafraîchir **synchrones** avec aperçu
+dry-run (GET, lecture seule OK) + confirmation POST (bloquée 423 en lecture
+seule par le middleware) + bouton qui se désactive au submit (« en cours… »,
+couvre le blocage). Pas d'infra async (principe n°6). DOI ou URL accepté.
+
+- [x] **T3.0** Router + `GET /nakala` (`pages/nakala.html`, 3 formulaires) ;
+  message si `nakala:` non configuré.
+- [x] **T3.1** `GET /nakala/tableur` → téléchargement CSV/xlsx (variantes
+  mémoire `tableur_io.{vers_csv_bytes,vers_xlsx_bytes}` + MIME). GET =
+  autorisé en lecture seule.
+- [x] **T3.2** `GET /nakala/rapatrier` (aperçu dry-run) +
+  `POST /nakala/rapatrier` (exécution → redirect `/fonds/<cote>` + flash).
+- [x] **T3.3** `GET/POST /nakala/rafraichir` (aperçu + exécution) + bouton
+  « Rafraîchir depuis Nakala » sur `fonds_lecture.html`
+  (`FondsDetail.doi_nakala_miroir` ajouté au composer).
+- [x] **T3.4** Lien header, spinner submit, doc. Tests `test_nakala_web.py`
+  (11). Validé live sur José Mora (export 65 lignes, pull 65 items/155
+  fichiers, bouton + flash sur le fonds, aperçu rafraîchir « inchangés »).

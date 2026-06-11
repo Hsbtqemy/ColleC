@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Aperçu rafraîchissement Nakala · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/nakala" class="text-sm" style="color:#2563eb;">← Nakala</a>
+</div>
+
+<h1 class="text-xl font-medium mb-1" style="color:#1f1f1f;">Aperçu du rafraîchissement</h1>
+<p class="text-sm text-gray-500 mb-5">
+  Collection <code style="font-family:monospace;">{{ doi }}</code>.
+  <span class="text-gray-400">Diff des champs documentaires ; aucune écriture pour l'instant.</span>
+</p>
+
+<div class="flex gap-3 mb-5 flex-wrap">
+  {% set carte = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:14px 18px;min-width:130px;" %}
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:#92400e;">{{ rapport.modifies|length }}</div>
+    <div class="text-xs text-gray-500">à modifier</div>
+  </div>
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:#1f2937;">{{ rapport.inchanges|length }}</div>
+    <div class="text-xs text-gray-500">inchangé(s)</div>
+  </div>
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:#1f2937;">{{ rapport.non_lies|length }}</div>
+    <div class="text-xs text-gray-500">non lié(s)</div>
+  </div>
+  <div style="{{ carte }}">
+    <div class="text-2xl font-medium" style="color:{% if rapport.erreurs %}#991b1b{% else %}#9ca3af{% endif %};">{{ rapport.erreurs|length }}</div>
+    <div class="text-xs text-gray-500">erreur(s)</div>
+  </div>
+</div>
+
+{% if rapport.modifies %}
+<div style="border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+  <h2 class="text-sm font-medium mb-2" style="color:#1f1f1f;">Items à modifier</h2>
+  <ul style="font-size:13px;color:#374151;margin-left:4px;">
+    {% for r in rapport.modifies[:200] %}
+    <li style="margin-bottom:2px;">
+      <code style="font-family:monospace;">{{ r.item_cote }}</code> :
+      {{ r.diffs | map(attribute='champ') | join(', ') or '—' }}{% if r.metadonnees_modifiees %} + métadonnées{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if rapport.modifies|length > 200 %}
+  <p class="text-xs text-gray-400 mt-1">… et {{ rapport.modifies|length - 200 }} autre(s).</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if rapport.non_lies %}
+<details class="mb-4" style="font-size:13px;">
+  <summary style="cursor:pointer;color:#374151;">{{ rapport.non_lies|length }} donnée(s) non liée(s) (à rapatrier)</summary>
+  <ul style="margin:8px 0 0 18px;color:#6b7280;">
+    {% for d in rapport.non_lies[:200] %}
+    <li><code style="font-family:monospace;">{{ d }}</code></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if rapport.erreurs %}
+<details class="mb-4" style="font-size:13px;">
+  <summary style="cursor:pointer;color:#991b1b;">{{ rapport.erreurs|length }} erreur(s)</summary>
+  <ul style="margin:8px 0 0 18px;color:#7f1d1d;">
+    {% for doi_err, detail in rapport.erreurs %}
+    <li><code style="font-family:monospace;">{{ doi_err }}</code> — {{ detail }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
+{% if rapport.modifies|length == 0 %}
+<p class="text-sm text-gray-500">Rien à modifier.</p>
+{% elif not est_lecture_seule() %}
+<form method="post" action="/nakala/rafraichir" data-nakala-confirm>
+  <input type="hidden" name="doi" value="{{ doi }}">
+  <button type="submit"
+          style="padding:8px 18px;font-size:13px;border-radius:5px;border:0;
+                 background:#92400e;color:white;cursor:pointer;">
+    Appliquer les {{ rapport.modifies|length }} modification(s)
+  </button>
+  <span data-nakala-progress class="text-sm text-gray-500" style="display:none;margin-left:10px;">
+    Application en cours…
+  </span>
+</form>
+{% else %}
+<p class="text-sm" style="color:#92400e;">Rafraîchissement désactivé (mode lecture seule).</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll("form[data-nakala-confirm]").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var btn = f.querySelector("button[type=submit]");
+      if (btn) { btn.disabled = true; btn.style.opacity = "0.6"; }
+      var ind = f.querySelector("[data-nakala-progress]");
+      if (ind) { ind.style.display = "inline"; }
+    });
+  });
+</script>
+{% endblock %}

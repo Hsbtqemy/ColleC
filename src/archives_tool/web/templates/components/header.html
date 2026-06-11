@@ -33,6 +33,15 @@
       <span>{{ utilisateur }}</span>
     </div>
 
+    {# Lien Nakala : page autonome export / rapatriement / rafraîchissement.
+       Visible même en lecture seule (l'export est en lecture ; les écritures
+       y sont bloquées par le middleware). #}
+    <a href="/nakala"
+       class="inline-flex items-center rounded hover:bg-gray-50"
+       style="padding:4px 12px;font-size:12px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);"
+       title="Exporter / rapatrier / rafraîchir une collection Nakala">Nakala</a>
+
     {# Menu « Importer » : entrée principale vers /import + raccourci
        « Nouvelle collection vide ». Masqué en lecture seule (le wizard
        est de toute façon bloqué par le middleware en 423). #}

@@ -208,7 +208,9 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
             nom=f.get("name"),
             sha1=f.get("sha1"),
             taille=f.get("size"),
-            mime=f.get("mime"),
+            # L'API Nakala expose `mime_type` (et non `mime`) ; on tolère
+            # les deux pour rester robuste aux variantes / fixtures.
+            mime=f.get("mime_type") or f.get("mime"),
             embargo_actif=_embargo_actif(f.get("embargoed")),
         )
         for f in (depot.get("files") or [])

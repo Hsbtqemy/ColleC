@@ -35,8 +35,9 @@ _DEPOT = {
         {"propertyUri": f"{_DCT}temporal", "value": "1960/1985"},
     ],
     "files": [
-        {"name": "p001.jpg", "sha1": "aaa", "size": 1024, "mime": "image/jpeg"},
-        {"name": "secret.pdf", "sha1": "bbb", "size": 2048, "mime": "application/pdf",
+        # Clé `mime_type` = celle réellement exposée par l'API Nakala.
+        {"name": "p001.jpg", "sha1": "aaa", "size": 1024, "mime_type": "image/jpeg"},
+        {"name": "secret.pdf", "sha1": "bbb", "size": 2048, "mime_type": "application/pdf",
          "embargoed": "2999-01-01"},
     ],
 }

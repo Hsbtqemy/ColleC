@@ -44,6 +44,8 @@ _DEPOT_JSON = {
 class _FakeClient:
     """Stub de ClientLectureNakala : retourne le dépôt fixture."""
 
+    base_url = "https://apitest.nakala.fr"
+
     def __init__(self, *a, **k) -> None:
         pass
 

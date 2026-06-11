@@ -38,6 +38,7 @@ from archives_tool.api.routes import (
     derives,
     import_assistant,
     inline_edit,
+    nakala_web,
     preferences,
     vocabulaires,
 )
@@ -100,3 +101,4 @@ app.include_router(inline_edit.router)
 app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)
 app.include_router(annotations.router)
+app.include_router(nakala_web.router)

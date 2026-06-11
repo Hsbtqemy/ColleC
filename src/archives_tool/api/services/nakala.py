@@ -19,21 +19,35 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from archives_tool.api.services._erreurs import FormulaireInvalide
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+)
 from archives_tool.api.services.items import (
     FormulaireItem,
+    ItemInvalide,
     creer_item,
     formulaire_depuis_item,
     modifier_item,
 )
-from archives_tool.external.nakala.mapper import DepotNakala
+from archives_tool.external.nakala.client import ClientLectureNakala
+from archives_tool.external.nakala.collection import iterer_donnees_collection
+from archives_tool.external.nakala.mapper import DepotNakala, mapper_depot
+from archives_tool.files.nakala import construire_source_fichier_nakala
 from archives_tool.models import (
+    Collection,
+    Fichier,
+    Fonds,
     Item,
     LienExterneItem,
     RessourceExterne,
     SourceExterne,
+    TypeCollection,
 )
 
 
@@ -215,6 +229,7 @@ def _depot_vers_formulaire(
     fonds_id: int,
     cote: str,
     base: FormulaireItem | None = None,
+    doi_collection: str | None = None,
 ) -> FormulaireItem:
     """Construit un `FormulaireItem` depuis un dépôt.
 
@@ -222,6 +237,10 @@ def _depot_vers_formulaire(
     les champs documentaires + les clés `metadonnees` issues de Nakala,
     en préservant le reste (cote, état, notes, numéro, version). `None`
     (rapatrier) : création neuve (état brouillon par défaut).
+
+    `doi_collection` (pull collection) : rattachement Nakala partagé, posé
+    uniquement à la création (jamais en rafraîchir, pour ne pas écraser un
+    choix local).
     """
     langue = depot.langues[0] if depot.langues else ""
     metadonnees = dict(base.metadonnees) if base else {}
@@ -247,8 +266,74 @@ def _depot_vers_formulaire(
         langue=langue,
         description=depot.description or "",
         doi_nakala=depot.identifiant,
+        doi_collection_nakala=doi_collection or "",
         metadonnees=metadonnees,
     )
+
+
+def materialiser_fichiers_nakala(
+    db: Session,
+    item: Item,
+    brut: dict,
+    *,
+    base_url: str,
+    ajoute_par: str | None = None,
+) -> int:
+    """Crée les `Fichier` ColleC d'un item depuis les fichiers d'un dépôt.
+
+    Lit directement `brut["files"]` (clés réelles de l'API : `name`,
+    `sha1`, `size`, `extension`, `mime_type`, `puid`, `embargoed`) plutôt
+    que la projection `DepotNakala.fichiers` (lossy). Chaque fichier reçoit
+    une `iiif_url_nakala` construite via `construire_source_fichier_nakala`
+    (info.json pour les images, data URL sinon) — seule source disponible
+    pour un fichier Nakala-only, et suffisante pour le CHECK.
+
+    Le `sha1` Nakala n'est **pas** rangé dans `hash_sha256` (algorithmes
+    différents — l'y mettre fausserait la détection de doublons QA) : il
+    est conservé dans `Fichier.metadonnees`. Retourne le nombre de fichiers
+    créés. Les fichiers sans `sha1` (URL non constructible) sont ignorés.
+    """
+    doi = (brut.get("identifier") or "").strip()
+    fichiers = brut.get("files") or []
+    if not doi:
+        return 0
+
+    cree = 0
+    for f in fichiers:
+        sha1 = (f.get("sha1") or "").strip()
+        if not sha1:
+            continue  # sans sha1 : URL non constructible (CHECK), on saute
+        nom = f.get("name") or sha1
+        source = construire_source_fichier_nakala(
+            base_url, doi, sha1, nom_fichier=str(nom)
+        )
+        taille = f.get("size")
+        try:
+            taille_octets = int(taille) if taille not in (None, "") else None
+        except (TypeError, ValueError):
+            taille_octets = None
+        meta_fichier = {
+            cle: f[cle]
+            for cle in ("sha1", "mime_type", "puid", "embargoed")
+            if f.get(cle) not in (None, "", [])
+        }
+        # `ordre` = rang parmi les fichiers réellement créés (contigu,
+        # même si des fichiers sans sha1 ont été sautés) — évite un faux
+        # « saut d'ordre » dans le panneau fichiers.
+        cree += 1
+        db.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier=str(nom),
+                ordre=cree,
+                iiif_url_nakala=source,
+                taille_octets=taille_octets,
+                format=(f.get("extension") or None),
+                metadonnees=meta_fichier or None,
+                ajoute_par=ajoute_par,
+            )
+        )
+    return cree
 
 
 @dataclass
@@ -260,6 +345,7 @@ class RapportRapatriement:
     dry_run: bool
     deja_existant: bool
     item_id: int | None = None
+    nb_fichiers: int = 0  # fichiers Nakala matérialisés (création réelle)
 
 
 def rapatrier(
@@ -271,6 +357,8 @@ def rapatrier(
     cote: str | None = None,
     cree_par: str | None = None,
     dry_run: bool = False,
+    doi_collection: str | None = None,
+    base_url: str | None = None,
 ) -> RapportRapatriement:
     """Crée un Item ColleC depuis un dépôt Nakala, dans `fonds_id`.
 
@@ -279,7 +367,10 @@ def rapatrier(
       utiliser `rafraichir`) ;
     - `dry_run` → aucune écriture, retourne juste le plan (cote, fonds,
       déjà-existant) ;
-    - réel → `creer_item` + cache + lien (via `mettre_en_cache_depot`).
+    - réel → `creer_item` + cache + lien (via `mettre_en_cache_depot`) ;
+    - `base_url` fourni → matérialise aussi les fichiers Nakala en `Fichier`
+      (`iiif_url_nakala`, T2.5), rendant l'item navigable. Absent → item seul
+      (rétrocompat : appels directs sans hôte Nakala).
     """
     cote_finale = (cote or _cote_depuis_doi(depot.identifiant) or "").strip()
     if not cote_finale:
@@ -308,12 +399,19 @@ def rapatrier(
             deja_existant=False, item_id=None,
         )
 
-    form = _depot_vers_formulaire(depot, fonds_id=fonds_id, cote=cote_finale)
+    form = _depot_vers_formulaire(
+        depot, fonds_id=fonds_id, cote=cote_finale, doi_collection=doi_collection
+    )
     item = creer_item(db, form, cree_par=cree_par)
+    nb_fichiers = 0
+    if base_url:
+        nb_fichiers = materialiser_fichiers_nakala(
+            db, item, brut, base_url=base_url, ajoute_par=cree_par
+        )
     mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
     return RapportRapatriement(
         cote=item.cote, fonds_id=item.fonds_id, dry_run=False,
-        deja_existant=False, item_id=item.id,
+        deja_existant=False, item_id=item.id, nb_fichiers=nb_fichiers,
     )
 
 
@@ -386,4 +484,212 @@ def rafraichir(
     modifier_item(db, item.id, cible, modifie_par=modifie_par)
     mettre_en_cache_depot(db, depot, brut, cree_par=modifie_par)
     rapport.applique = True
+    return rapport
+
+
+# ---------------------------------------------------------------------------
+# Lot 2 — rapatrier une collection entière (Fonds + N Items)
+# ---------------------------------------------------------------------------
+
+_NKL_TITLE = "http://nakala.fr/terms#title"
+
+
+def titre_collection_nakala(meta: dict) -> str | None:
+    """Extrait le `nkl:title` d'une collection Nakala (1er trouvé).
+
+    Public : réutilisé par la CLI (`exporter-tableur`) pour titrer la feuille
+    xlsx, en plus du pull collection.
+    """
+    for m in meta.get("metas") or []:
+        if m.get("propertyUri") == _NKL_TITLE and m.get("value"):
+            return str(m["value"]).strip()
+    return None
+
+
+def _poser_doi_miroir(db: Session, fonds: Fonds, doi_collection: str) -> None:
+    """Pose le DOI de la collection Nakala sur la miroir du fonds.
+
+    `Collection.doi_nakala` est UNIQUE : si le DOI est déjà pris par une
+    autre collection, on annule (rollback) ce seul rattachement — le fonds
+    déjà committé par `creer_fonds` reste intact."""
+    miroir = db.scalar(
+        select(Collection).where(
+            Collection.fonds_id == fonds.id,
+            Collection.type_collection == TypeCollection.MIROIR.value,
+        )
+    )
+    if miroir is None:
+        return
+    miroir.doi_nakala = doi_collection
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+@dataclass
+class RapportRapatriementCollection:
+    """Résultat agrégé d'un `rapatrier_collection`."""
+
+    doi_collection: str
+    fonds_cote: str | None
+    dry_run: bool
+    fonds_cree: bool = False
+    crees: list[str] = field(default_factory=list)
+    deja_existants: list[str] = field(default_factory=list)
+    erreurs: list[tuple[str, str]] = field(default_factory=list)
+    fichiers_crees: int = 0  # total des fichiers Nakala matérialisés
+
+    @property
+    def total(self) -> int:
+        return len(self.crees) + len(self.deja_existants) + len(self.erreurs)
+
+
+def rapatrier_collection(
+    db: Session,
+    client: ClientLectureNakala,
+    doi_collection: str,
+    *,
+    fonds_cote: str | None = None,
+    cree_par: str | None = None,
+    dry_run: bool = False,
+) -> RapportRapatriementCollection:
+    """Rapatrie tous les dépôts d'une collection Nakala dans un fonds ColleC.
+
+    - **Cible** : `fonds_cote` fourni → fonds existant (lève
+      `FondsIntrouvable` si absent) ; sinon un fonds est créé (cote dérivée
+      du DOI collection, titre = titre Nakala, DOI posé sur la miroir). En
+      dry-run sans fonds existant, aucun fonds n'est créé (rapport
+      prévisionnel : tout serait créé).
+    - **Boucle** : chaque donnée est mappée puis confiée au `rapatrier`
+      unitaire (réutilisation directe : Item + Fichiers + cache + lien,
+      `doi_collection_nakala` posé). Une donnée en échec (cote en collision)
+      est collectée dans `erreurs` sans arrêter le lot.
+
+    Le choix donnée/fichier ne s'applique pas ici : le modèle ColleC est
+    nativement Item 1..n Fichier (une donnée → un Item portant ses fichiers).
+
+    Les fichiers Nakala sont **matérialisés en `Fichier`** (T2.5) via
+    `rapatrier(base_url=...)` : chaque fichier reçoit son `iiif_url_nakala`
+    (info.json pour les images, data URL sinon), ce qui rend l'item
+    navigable dans la visionneuse. Le JSON brut reste aussi caché dans
+    `RessourceExterne.metadonnees_brutes`.
+    """
+    meta = client.lire_collection(doi_collection)
+    titre = titre_collection_nakala(meta) or doi_collection
+
+    cote_cible = fonds_cote or _cote_depuis_doi(doi_collection) or doi_collection
+    fonds: Fonds | None = None
+    fonds_cree = False
+    if fonds_cote:
+        fonds = lire_fonds_par_cote(db, fonds_cote)  # FondsIntrouvable si absent
+    else:
+        existant = db.scalar(select(Fonds).where(Fonds.cote == cote_cible))
+        if existant is not None:
+            fonds = existant
+        elif not dry_run:
+            fonds = creer_fonds(
+                db, FormulaireFonds(cote=cote_cible, titre=titre), cree_par=cree_par
+            )
+            fonds_cree = True
+            _poser_doi_miroir(db, fonds, doi_collection)
+
+    rapport = RapportRapatriementCollection(
+        doi_collection=doi_collection,
+        fonds_cote=fonds.cote if fonds is not None else cote_cible,
+        dry_run=dry_run,
+        fonds_cree=fonds_cree,
+    )
+
+    for brut in iterer_donnees_collection(client, doi_collection):
+        depot = mapper_depot(brut)
+        if fonds is None:
+            # Dry-run sur un fonds qui n'existe pas encore : tout serait créé.
+            rapport.crees.append(_cote_depuis_doi(depot.identifiant) or depot.identifiant)
+            continue
+        try:
+            r = rapatrier(
+                db, depot, brut,
+                fonds_id=fonds.id, cree_par=cree_par, dry_run=dry_run,
+                doi_collection=doi_collection, base_url=client.base_url,
+            )
+        except (RapatriementInvalide, ItemInvalide) as e:
+            detail = getattr(e, "erreurs", None) or str(e)
+            rapport.erreurs.append((depot.identifiant, str(detail)))
+            continue
+        if r.deja_existant:
+            rapport.deja_existants.append(r.cote)
+        else:
+            rapport.crees.append(r.cote)
+            rapport.fichiers_crees += r.nb_fichiers
+
+    return rapport
+
+
+# ---------------------------------------------------------------------------
+# T2.3 — rafraîchir une collection entière (re-pull + diff par item lié)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RapportRafraichissementCollection:
+    """Résultat agrégé d'un `rafraichir_collection`."""
+
+    doi_collection: str
+    dry_run: bool
+    #: Diffs des données liées à un Item ColleC (modifiées ou non).
+    rapports: list[RapportRafraichissement] = field(default_factory=list)
+    #: DOIs présents dans la collection mais sans Item ColleC (à rapatrier).
+    non_lies: list[str] = field(default_factory=list)
+    erreurs: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def modifies(self) -> list[RapportRafraichissement]:
+        return [r for r in self.rapports if r.a_des_changements]
+
+    @property
+    def inchanges(self) -> list[RapportRafraichissement]:
+        return [r for r in self.rapports if not r.a_des_changements]
+
+
+def rafraichir_collection(
+    db: Session,
+    client: ClientLectureNakala,
+    doi_collection: str,
+    *,
+    modifie_par: str | None = None,
+    dry_run: bool = True,
+) -> RapportRafraichissementCollection:
+    """Re-tire toute une collection Nakala et la compare aux items liés.
+
+    Boucle le `rafraichir` unitaire sur chaque donnée :
+
+    - donnée liée à un Item ColleC (par DOI) → diff documentaire + métadonnées
+      (overwrite si ``dry_run=False`` et qu'il y a des changements) ;
+    - donnée **sans** Item lié → ajoutée à ``non_lies`` (informatif : c'est
+      attendu si la collection a grossi depuis le rapatriement — utiliser
+      `rapatrier-collection` pour les nouvelles) ;
+    - overwrite invalide (ex. dépôt sans titre) → collecté dans ``erreurs``.
+
+    `dry_run` défaut **True** (garde-fou contre l'écrasement silencieux,
+    cohérent avec `rafraichir`). Comme le `rafraichir` unitaire, **les
+    fichiers ne sont pas re-synchronisés** (champs documentaires seulement).
+    """
+    rapport = RapportRafraichissementCollection(
+        doi_collection=doi_collection, dry_run=dry_run
+    )
+    for brut in iterer_donnees_collection(client, doi_collection):
+        depot = mapper_depot(brut)
+        try:
+            r = rafraichir(
+                db, depot, brut, modifie_par=modifie_par, dry_run=dry_run
+            )
+        except RafraichissementImpossible:
+            rapport.non_lies.append(depot.identifiant)
+            continue
+        except ItemInvalide as e:
+            detail = getattr(e, "erreurs", None) or str(e)
+            rapport.erreurs.append((depot.identifiant, str(detail)))
+            continue
+        rapport.rapports.append(r)
     return rapport

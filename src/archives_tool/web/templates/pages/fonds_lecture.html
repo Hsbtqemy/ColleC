@@ -40,6 +40,18 @@
   </span>
 {%- endmacro %}
 
+{# Flash après un rapatriement Nakala (redirigé ici par /nakala/rapatrier). #}
+{% set nakala_crees = request.query_params.get('nakala_crees') %}
+{% if nakala_crees %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#065f46;">
+  ✓ Rapatriement Nakala : {{ nakala_crees }} item(s) créé(s),
+  {{ request.query_params.get('nakala_fichiers', 0) }} fichier(s)
+  {% set nerr = request.query_params.get('nakala_erreurs') %}
+  {% if nerr and nerr|int > 0 %}<span style="color:#991b1b;">· {{ nerr }} erreur(s)</span>{% endif %}.
+</div>
+{% endif %}
+
 <header class="mb-6">
   <p class="text-sm text-gray-500">
     <a href="/" class="hover:underline">Tableau de bord</a> ›
@@ -61,12 +73,22 @@
         {%- endcall %}
       </p>
     </div>
-    {% if not est_lecture_seule() %}
-      <a href="/fonds/{{ detail.fonds.cote }}/modifier"
-         class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
-        Modifier le fonds
-      </a>
-    {% endif %}
+    <div class="flex items-center gap-2 shrink-0">
+      {% if detail.doi_nakala_miroir %}
+        {# Aperçu read-only (GET) ; l'overwrite éventuel est bloqué en lecture seule. #}
+        <a href="/nakala/rafraichir?doi={{ detail.doi_nakala_miroir }}"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+           title="Re-tirer la collection Nakala et comparer aux items liés">
+          Rafraîchir depuis Nakala
+        </a>
+      {% endif %}
+      {% if not est_lecture_seule() %}
+        <a href="/fonds/{{ detail.fonds.cote }}/modifier"
+           class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50">
+          Modifier le fonds
+        </a>
+      {% endif %}
+    </div>
   </div>
 
   {# Metadonnees revue (responsable, editeur, ISSN, periodicite, dates)

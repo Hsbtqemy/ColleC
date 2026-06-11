@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Nakala · ColleC{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-medium mb-2" style="color:#1f1f1f;letter-spacing:-0.02em;">Nakala</h1>
+<p class="text-sm text-gray-500 mb-6">
+  Exporter une collection en tableur, ou la rapatrier / la rafraîchir en base.
+  Collez le DOI <em>ou</em> l'URL de la collection (ex.
+  <code style="font-family:monospace;">https://nakala.fr/collection/10.34847/nkl.xxxxxxxx</code>).
+</p>
+
+{% set erreur = request.query_params.get('erreur') %}
+{% if erreur %}
+<div role="alert" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#991b1b;">
+  ✗ {{ erreur }}
+</div>
+{% endif %}
+
+{% set modifies = request.query_params.get('nakala_modifies') %}
+{% if modifies %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#065f46;">
+  ✓ Rafraîchissement appliqué : {{ modifies }} item(s) modifié(s).
+</div>
+{% endif %}
+
+{% if not nakala_configure %}
+<div role="alert" style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;
+     padding:14px 16px;font-size:13px;color:#92400e;">
+  <strong>Nakala n'est pas configuré.</strong>
+  Ajoutez une section <code style="font-family:monospace;">nakala:</code>
+  (avec <code style="font-family:monospace;">base_url</code> et, pour les dépôts
+  privés, <code style="font-family:monospace;">api_key</code>) dans votre
+  <code style="font-family:monospace;">config_local.yaml</code>.
+</div>
+{% else %}
+
+{% set doi_pre = request.query_params.get('doi', '') %}
+{% set label_style = "display:block;font-size:12px;color:#374151;margin-bottom:4px;" %}
+{% set input_style = "width:100%;padding:6px 10px;font-size:13px;border:1px solid rgba(0,0,0,0.15);border-radius:4px;" %}
+{% set carte_style = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:18px 20px;margin-bottom:18px;" %}
+{% set bouton_style = "padding:7px 16px;font-size:13px;border-radius:5px;border:1px solid transparent;background:#1f2937;color:white;cursor:pointer;" %}
+
+{# ---- Exporter un tableur (lecture seule, GET → téléchargement) ---- #}
+<section style="{{ carte_style }}">
+  <h2 class="text-base font-medium mb-1" style="color:#1f1f1f;">Exporter un tableur</h2>
+  <p class="text-xs text-gray-500 mb-3">
+    Télécharge toutes les métadonnées de la collection (lecture seule, ne touche pas la base).
+  </p>
+  <form method="get" action="/nakala/tableur" class="flex flex-col gap-3" style="max-width:640px;">
+    <div>
+      <label style="{{ label_style }}" for="exp-doi">DOI ou URL de la collection</label>
+      <input id="exp-doi" type="text" name="doi" required value="{{ doi_pre }}"
+             placeholder="10.34847/nkl.xxxxxxxx" style="{{ input_style }}">
+    </div>
+    <div class="flex gap-6 flex-wrap">
+      <fieldset style="border:0;padding:0;">
+        <legend style="{{ label_style }}">Granularité</legend>
+        <label style="font-size:13px;margin-right:12px;">
+          <input type="radio" name="granularite" value="donnee" checked> 1 ligne / donnée
+        </label>
+        <label style="font-size:13px;">
+          <input type="radio" name="granularite" value="fichier"> 1 ligne / fichier
+        </label>
+      </fieldset>
+      <fieldset style="border:0;padding:0;">
+        <legend style="{{ label_style }}">Format</legend>
+        <label style="font-size:13px;margin-right:12px;">
+          <input type="radio" name="format" value="csv" checked> CSV (;)
+        </label>
+        <label style="font-size:13px;">
+          <input type="radio" name="format" value="xlsx"> xlsx
+        </label>
+      </fieldset>
+    </div>
+    <div>
+      <button type="submit" style="{{ bouton_style }}">Télécharger le tableur</button>
+    </div>
+  </form>
+</section>
+
+{# ---- Rapatrier en base (aperçu d'abord, GET) ---- #}
+<section style="{{ carte_style }}">
+  <h2 class="text-base font-medium mb-1" style="color:#1f1f1f;">Rapatrier en base</h2>
+  <p class="text-xs text-gray-500 mb-3">
+    Crée un fonds + des items depuis la collection. Un <strong>aperçu</strong>
+    s'affiche avant toute écriture.
+  </p>
+  <form method="get" action="/nakala/rapatrier" class="flex flex-col gap-3" style="max-width:640px;">
+    <div>
+      <label style="{{ label_style }}" for="rap-doi">DOI ou URL de la collection</label>
+      <input id="rap-doi" type="text" name="doi" required value="{{ doi_pre }}"
+             placeholder="10.34847/nkl.xxxxxxxx" style="{{ input_style }}">
+    </div>
+    <div>
+      <label style="{{ label_style }}" for="rap-fonds">Cote du fonds cible (optionnel)</label>
+      <input id="rap-fonds" type="text" name="fonds"
+             placeholder="laisser vide pour créer un fonds depuis la collection"
+             style="{{ input_style }}">
+    </div>
+    <div>
+      <button type="submit" style="{{ bouton_style }}">Aperçu du rapatriement</button>
+    </div>
+  </form>
+</section>
+
+{# ---- Rafraîchir les items liés (aperçu d'abord, GET) ---- #}
+<section style="{{ carte_style }}">
+  <h2 class="text-base font-medium mb-1" style="color:#1f1f1f;">Rafraîchir les items liés</h2>
+  <p class="text-xs text-gray-500 mb-3">
+    Re-tire la collection et compare aux items déjà rapatriés (diff avant overwrite).
+  </p>
+  <form method="get" action="/nakala/rafraichir" class="flex flex-col gap-3" style="max-width:640px;">
+    <div>
+      <label style="{{ label_style }}" for="raf-doi">DOI ou URL de la collection</label>
+      <input id="raf-doi" type="text" name="doi" required value="{{ doi_pre }}"
+             placeholder="10.34847/nkl.xxxxxxxx" style="{{ input_style }}">
+    </div>
+    <div>
+      <button type="submit" style="{{ bouton_style }}">Aperçu du rafraîchissement</button>
+    </div>
+  </form>
+</section>
+
+{% endif %}
+{% endblock %}

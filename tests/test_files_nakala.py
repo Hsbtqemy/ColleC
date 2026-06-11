@@ -133,3 +133,22 @@ def test_vers_thumb_non_nakala_retourne_none() -> None:
         "",
     ):
         assert vers_thumb(url) is None
+
+
+def test_construire_source_image_donne_info_json() -> None:
+    from archives_tool.files.nakala import construire_source_fichier_nakala
+
+    url = construire_source_fichier_nakala(
+        "https://api.nakala.fr", DOI, SHA, nom_fichier="page.jpg"
+    )
+    assert url == f"https://api.nakala.fr/iiif/{DOI}/{SHA}/info.json"
+
+
+def test_construire_source_non_image_donne_data() -> None:
+    from archives_tool.files.nakala import construire_source_fichier_nakala
+
+    url = construire_source_fichier_nakala(
+        "https://api.nakala.fr/", DOI, SHA, nom_fichier="numero.pdf"
+    )
+    # base_url avec slash final toléré ; non-image → data binaire.
+    assert url == f"https://api.nakala.fr/data/{DOI}/{SHA}"

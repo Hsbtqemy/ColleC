@@ -89,6 +89,30 @@ def vers_thumb(url: str, taille_max: int = 200) -> str | None:
     )
 
 
+def construire_source_fichier_nakala(
+    base_url: str, doi: str, sha1: str, *, nom_fichier: str | None = None
+) -> str:
+    """Construit l'URL source d'un fichier Nakala à partir de ses identifiants.
+
+    Pendant « montant » des helpers de transformation : ici on **bâtit**
+    l'URL depuis `(base_url, doi, sha1)` (cas du rapatriement depuis le
+    listing de collection, où l'on n'a pas d'URL pré-existante à
+    transformer).
+
+    - image (extension IIIF) → URL IIIF `…/iiif/<doi>/<sha1>/info.json`
+      (consommable par OpenSeadragon) ;
+    - autre (PDF, vidéo…) → URL `data` binaire `…/data/<doi>/<sha1>`
+      (pas de viewer, mais source valide + fallback « Télécharger »).
+
+    Même convention que l'importer (`ecrivain._fichier_depuis_colonnes`) :
+    les deux formes satisfont le CHECK `ck_fichier_source_au_moins_une`.
+    """
+    base = base_url.rstrip("/")
+    if est_extension_image_iiif(nom_fichier):
+        return f"{base}/iiif/{doi}/{sha1}/info.json"
+    return f"{base}/data/{doi}/{sha1}"
+
+
 def vers_data(url: str) -> str | None:
     """Transforme une URL Nakala (data/embed/iiif) en URL `data`
     (binaire téléchargeable). Retourne `None` si pas un pattern

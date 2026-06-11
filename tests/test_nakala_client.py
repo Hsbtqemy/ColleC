@@ -96,3 +96,43 @@ def test_lister_depots_poste_corps_vide() -> None:
         c.lister_depots("readable")
     assert vus["method"] == "POST"  # lecture via POST (piège Nakala)
     assert vus["path"] == "/users/datas/readable"
+
+
+# ---------------------------------------------------------------------------
+# normaliser_identifiant_nakala (URL → DOI)
+# ---------------------------------------------------------------------------
+
+
+import pytest as _pytest  # noqa: E402
+
+from archives_tool.external.nakala.client import (  # noqa: E402
+    normaliser_identifiant_nakala,
+)
+
+_DOI = "10.34847/nkl.d8der2w4"
+
+
+@_pytest.mark.parametrize(
+    "entree",
+    [
+        _DOI,
+        f"  {_DOI}  ",
+        f"https://nakala.fr/collection/{_DOI}",
+        f"https://nakala.fr/{_DOI}",
+        f"https://api.nakala.fr/collections/{_DOI}",
+        f"https://api.nakala.fr/datas/{_DOI}/abcdef0123",  # chemin fichier → DOI seul
+        f"doi:{_DOI}",
+        f"https://nakala.fr/collection/{_DOI}?page=2",
+    ],
+)
+def test_normaliser_extrait_le_doi(entree: str) -> None:
+    assert normaliser_identifiant_nakala(entree) == _DOI
+
+
+def test_normaliser_conserve_la_version() -> None:
+    assert normaliser_identifiant_nakala(f"https://nakala.fr/{_DOI}.v2") == f"{_DOI}.v2"
+
+
+def test_normaliser_sans_doi_retourne_la_saisie() -> None:
+    # Pas de motif DOI : on rend la saisie strippée (l'API fera un 404 propre).
+    assert normaliser_identifiant_nakala("  pas-un-doi  ") == "pas-un-doi"

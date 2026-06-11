@@ -580,6 +580,9 @@ class FondsDetail:
     repartition_etats: dict[str, int] = field(default_factory=_repartition_vide)
     modifie_par: str | None = None
     modifie_le: datetime | None = None
+    #: DOI Nakala de la miroir (si publiée) — alimente le bouton
+    #: « Rafraîchir depuis Nakala » de la page fonds.
+    doi_nakala_miroir: str | None = None
 
     @property
     def miroir_resume(self) -> CollectionResume | None:
@@ -757,6 +760,15 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         for i in items_rows
     )
 
+    doi_nakala_miroir = next(
+        (
+            c.doi_nakala
+            for c in collections_rows
+            if c.type_collection == TypeCollection.MIROIR.value and c.doi_nakala
+        ),
+        None,
+    )
+
     return FondsDetail(
         fonds=fonds,
         nb_items=nb_items,
@@ -767,6 +779,7 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         repartition_etats=repartition_fonds,
         modifie_par=f_mod_par,
         modifie_le=f_mod_le,
+        doi_nakala_miroir=doi_nakala_miroir,
     )
 
 

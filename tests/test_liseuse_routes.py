@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from archives_tool.api.main import app
 from archives_tool.db import creer_engine, creer_session_factory

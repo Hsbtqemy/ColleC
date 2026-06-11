@@ -29,7 +29,6 @@ from archives_tool.importers.ecrivain import importer
 from archives_tool.models import (
     Fonds,
     Item,
-    Fichier,
     SessionImport,
 )
 
@@ -139,9 +138,6 @@ def main() -> None:
         # 6. Inspect
         print("\n=== État post-import ===")
         pf = db.scalar(select(Fonds).where(Fonds.cote == "PF"))
-        nb_items = db.scalar(
-            select(Item).where(Item.fonds_id == pf.id)
-        )
         items = db.scalars(
             select(Item).where(Item.fonds_id == pf.id).order_by(Item.cote)
         ).all()
@@ -164,7 +160,7 @@ def main() -> None:
             print(f"  nb fichiers = {len(i.fichiers)}")
             if i.fichiers:
                 f = i.fichiers[0]
-                print(f"  Fichier 1 :")
+                print("  Fichier 1 :")
                 print(f"    nom_fichier      = {f.nom_fichier!r}")
                 print(f"    iiif_url_nakala  = {f.iiif_url_nakala!r}")
                 print(f"    hash_sha256      = {f.hash_sha256!r}")

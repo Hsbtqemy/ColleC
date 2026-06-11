@@ -1428,8 +1428,6 @@ def test_mapping_simple_affiche_bannerre_si_champs_avances(
     # puis on ajoute un champ avancé via override... pas possible avec
     # le CSV. On fait un POST direct avec un mapping artificiel.
     # Plus simple : modifier directement la session via le client.
-    import sqlalchemy as sa
-    from archives_tool.db import creer_engine, creer_session_factory
 
     # Soumission initiale en avancé avec mapping qui inclut un champ
     # dédié (type_coar) pour simuler un usage avancé.

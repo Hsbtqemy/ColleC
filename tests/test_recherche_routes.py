@@ -16,8 +16,7 @@ from archives_tool.db import (
     reindexer_fts,
 )
 from archives_tool.demo import peupler_base
-from archives_tool.models import Fonds, Item
-from archives_tool.models.base import Base
+from archives_tool.models import Fonds
 
 
 @pytest.fixture

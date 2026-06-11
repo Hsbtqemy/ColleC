@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.main import app
@@ -212,7 +211,7 @@ def _amorcer_pour_autocomplete(s: Session) -> tuple[int, int, int, int]:
 
     v_hk = _vocab_avec_valeurs(s, "dess_hk", ["Reiser", "Cabu"])
     v_pf = _vocab_avec_valeurs(s, "dess_pf", ["Copi", "Forges"])
-    v_global = _vocab_avec_valeurs(s, "langues", ["français", "espagnol"])
+    _vocab_avec_valeurs(s, "langues", ["français", "espagnol"])  # vocab global
 
     attacher_vocabulaire_au_fonds(s, v_hk.id, hk.id)
     attacher_vocabulaire_au_fonds(s, v_pf.id, pf.id)
@@ -393,7 +392,7 @@ def test_attacher_via_route(
     db_factory, monkeypatch, tmp_path: Path
 ) -> None:
     with db_factory() as s:
-        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
         v = _vocab_avec_valeurs(s, "test", ["A"])
         s.commit()
         vid = v.id
@@ -474,7 +473,7 @@ def test_page_liste_vocab_affiche_badges(
     with db_factory() as s:
         hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
         pf = creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
-        v_global = _vocab_avec_valeurs(s, "global_vocab", ["A"])
+        _vocab_avec_valeurs(s, "global_vocab", ["A"])  # vocab global (non rattaché)
         v_scope = _vocab_avec_valeurs(s, "scope_vocab", ["B"])
         attacher_vocabulaire_au_fonds(s, v_scope.id, hk.id)
         attacher_vocabulaire_au_fonds(s, v_scope.id, pf.id)
@@ -496,7 +495,7 @@ def test_routes_attacher_detacher_bloquees_en_lecture_seule(
     """Le middleware lecture_seule bloque POST en 423, donc les
     routes attacher/detacher renvoient 423 sans toucher à la base."""
     with db_factory() as s:
-        hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
         v = _vocab_avec_valeurs(s, "test", ["A"])
         s.commit()
         vid = v.id

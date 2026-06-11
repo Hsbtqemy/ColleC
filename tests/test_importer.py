@@ -789,7 +789,6 @@ def test_propagation_doi_collection_sur_miroir(session: Session) -> None:
     `doi_collection_nakala`, on propage cette valeur sur
     `Collection.miroir.doi_nakala`. Cas typique : tous les items
     d'un fonds Nakala pointent sur la même collection Nakala."""
-    from archives_tool.profils.schema import MappingSimple
 
     profil, chemin = _profil("cas_fichier_colonnes")
     # Pose un DOI collection commun à tous les items via valeurs_par_defaut.
@@ -872,7 +871,6 @@ def test_type_coar_auto_normalise_libelle_textuel(session: Session) -> None:
     via `vocabulaires.normaliser_type_coar`. Sans cette normalisation,
     `item.type_coar = "journal"` brut — non-exportable proprement et
     non reconnu par le sélecteur d'édition inline."""
-    from archives_tool.profils.schema import MappingSimple
 
     profil, chemin = _profil("cas_fichier_colonnes")
     # Ajoute un mapping `type_coar` ← une colonne du tableur. Comme la

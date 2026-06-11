@@ -23,7 +23,6 @@ from archives_tool.api.services.import_web import (
     RACINE_IMPORT_TMP,
     _chemin_tableur_absolu,
 )
-from archives_tool.models import SessionImport
 
 
 class _FauxSession:

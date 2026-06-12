@@ -55,6 +55,17 @@ def nettoyage(client_ecriture):
             pass
 
 
+@pytest.fixture
+def nettoyage_collections(client_ecriture):
+    cols: list[str] = []
+    yield cols
+    for doi in cols:
+        try:
+            client_ecriture.supprimer_collection(doi)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _metas(titre: str) -> list[dict]:
     metas, _ = preflight_appliquer(slugs_vers_metas({
         "nkl_title": [{"value": titre, "lang": "fr"}],
@@ -94,6 +105,38 @@ def test_round_trip_idempotent_et_modif(
     metas2 = _metas("ColleC — round-trip P3 (RÉVISÉ)")
     client_ecriture.modifier_depot(doi, metas=metas2)
     distant2 = client_lecture.lire_depot(doi)["metas"]
+    titres = [
+        m["value"] for m in distant2
+        if m.get("propertyUri") == "http://nakala.fr/terms#title"
+    ]
+    assert any("RÉVISÉ" in t for t in titres)
+    assert diff_push(distant2, metas2) == []
+
+
+def test_round_trip_collection_metadonnees(
+    client_ecriture, client_lecture, nettoyage_collections
+) -> None:
+    """Round-trip métadonnées de collection (PUT /collections/{id})."""
+    metas = slugs_vers_metas({
+        "nkl_title": [{"value": "ColleC — collection round-trip", "lang": "fr"}],
+        "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
+    })
+    rep = client_ecriture.creer_collection(metas=metas, status="private")
+    doi = extraire_doi(rep)
+    assert doi
+    nettoyage_collections.append(doi)
+
+    # Idempotent : ce qu'on a envoyé = ce qui est stocké (diff vide).
+    distant = client_lecture.lire_collection(doi)["metas"]
+    assert diff_push(distant, metas) == []
+
+    # Update : PUT titre modifié → re-lire → changé + toujours idempotent.
+    metas2 = slugs_vers_metas({
+        "nkl_title": [{"value": "ColleC — collection round-trip (RÉVISÉ)", "lang": "fr"}],
+        "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
+    })
+    client_ecriture.modifier_collection(doi, metas=metas2)
+    distant2 = client_lecture.lire_collection(doi)["metas"]
     titres = [
         m["value"] for m in distant2
         if m.get("propertyUri") == "http://nakala.fr/terms#title"

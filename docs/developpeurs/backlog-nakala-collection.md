@@ -108,8 +108,25 @@ givenname, orcid: null, surname}`). Sans correctif, chaque push aurait vu un
 faux changement de créateur. `diff_push` canonicalise donc les créateurs sur
 les seuls champs identifiants (`surname`/`givenname`/`orcid` non nul).
 
-**Hors P3 → futur** : versioning fichiers (#4, SHA-1↔SHA-256), update des
-métadonnées de **collection** (`PUT /collections/{id}`), UI web de push.
+**Métadonnées de collection (livré, complément P3)** :
+`write_client.modifier_collection` (`PUT /collections/{id}` → 204) +
+`nakala_depot.pousser_metadonnees_collection` (réutilise `diff_push` ; **pas
+de dérive** — collections Nakala sans `modDate`). `pousser-collection` pousse
+désormais **l'entité collection puis ses items**. Round-trip validé live.
+
+**Fusion, pas remplacement** : ColleC ne modélise que **titre + description**
+d'une collection (`_PROPRIETES_COLLECTION_GEREES`), et `PUT` remplace tout →
+on **fusionne** (préserve les metas Nakala hors champs gérés — sujet/créateur
+d'une collection créée hors ColleC — et ne remplace que titre+description).
+Sans ça, un push effacerait ces metas non modélisées.
+
+Sondage apitest : `typeUri` remis à `null` au stockage (sans impact,
+`diff_push` l'ignore). Nuances : ColleC possède titre+description (description
+vide en local → effacée sur Nakala) ; pas de langue de titre de collection
+(`lang=None`). Le dry-run montre tout avant écrasement.
+
+**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256), UI web de
+push.
 
 ## P2 — Dépôt (écriture) vers Nakala (livré)
 

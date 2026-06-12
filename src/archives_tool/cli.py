@@ -2756,7 +2756,7 @@ def cmd_nakala_pousser_collection(
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
-    """Pousser les métadonnées de tous les items liés d'une collection."""
+    """Pousser les métadonnées de la collection puis de ses items liés."""
     config = _charger_config_ou_sortie(config_path)
     with (
         _client_nakala_ou_sortie(config) as lecture,
@@ -2773,9 +2773,29 @@ def cmd_nakala_pousser_collection(
             _sortie_erreur_nakala_ecriture(e)
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    # Entité collection (titre/description) d'abord.
+    mc = rapport.meta_collection
+    if mc is None:
+        typer.echo(
+            f"Collection {collection.cote} : pas de DOI Nakala — "
+            "métadonnées de collection non poussées (items uniquement)."
+        )
+    elif not mc.a_des_changements:
+        typer.echo(f"Métadonnées de collection ({mc.doi}) : aucun changement.")
+    else:
+        etat = "poussées" if mc.applique else "à pousser"
+        typer.echo(
+            f"Métadonnées de collection ({mc.doi}) — {len(mc.diffs)} champ(s) {etat} :"
+        )
+        for d in mc.diffs:
+            avant = " | ".join(d.avant) or "∅"
+            apres = " | ".join(d.apres) or "∅"
+            typer.echo(f"  • {_nom_court_propriete(d.property_uri)} : {avant}  →  {apres}")
+
+    # Puis les items.
     verbe = "poussé(s)" if no_dry_run else "à pousser"
     typer.echo(
-        f"[{mode}] Collection {collection.cote} : {len(rapport.pousses)} {verbe}, "
+        f"[{mode}] Items de {collection.cote} : {len(rapport.pousses)} {verbe}, "
         f"{len(rapport.inchanges)} inchangé(s), {len(rapport.non_lies)} non lié(s), "
         f"{len(rapport.erreurs)} erreur(s)."
     )
@@ -2783,7 +2803,7 @@ def cmd_nakala_pousser_collection(
         typer.echo(f"  • {r.cote} : {len(r.diffs)} champ(s)")
     for c, detail in rapport.erreurs:
         typer.echo(f"  ✗ {c} : {detail}", err=True)
-    if not no_dry_run and rapport.pousses:
+    if not no_dry_run and (rapport.pousses or (mc and mc.a_des_changements)):
         typer.echo("Relancer avec --no-dry-run pour pousser.")
 
 

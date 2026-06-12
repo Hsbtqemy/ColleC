@@ -249,11 +249,22 @@ def deposer_item(
 # ---------------------------------------------------------------------------
 
 
+#: propertyUri des champs de collection que ColleC modélise et **possède**
+#: (titre + description) — pour la fusion au push (cf.
+#: `pousser_metadonnees_collection`). Doit rester aligné sur les slugs émis
+#: par `collection_vers_metas`.
+_PROPRIETES_COLLECTION_GEREES: frozenset[str] = frozenset({
+    SLUG_TO_NAKALA["nkl_title"]["propertyUri"],
+    SLUG_TO_NAKALA["dcterms_description"]["propertyUri"],
+})
+
+
 def collection_vers_metas(collection: Collection) -> list[dict[str, Any]]:
     """Métadonnées Nakala d'une collection (titre + description).
 
     Les collections Nakala sont plus légères que les données (pas de
-    créateur/date/type obligatoires) : titre suffit."""
+    créateur/date/type obligatoires) : titre suffit. ColleC ne modélise que
+    ces deux champs (cf. `_PROPRIETES_COLLECTION_GEREES`)."""
     slugs: dict[str, Any] = {"nkl_title": [{"value": collection.titre or "", "lang": None}]}
     if collection.description:
         slugs["dcterms_description"] = [{"value": collection.description, "lang": None}]
@@ -530,13 +541,64 @@ def publier_item(
     return rapport
 
 
+def pousser_metadonnees_collection(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    collection: Collection,
+    *,
+    dry_run: bool = True,
+    statut: str | None = None,
+) -> RapportPush:
+    """Pousse les métadonnées de l'**entité collection** (titre/description)
+    vers sa collection Nakala (`PUT /collections/{id}`).
+
+    ColleC ne modélise pour une collection que **titre + description**. Comme
+    le `PUT` remplace tout, on procède par **fusion** : on préserve les metas
+    Nakala que ColleC ne gère pas (sujet, créateur… d'une collection créée
+    hors ColleC) et on ne remplace que titre + description. Sans ça, un push
+    effacerait ces metas non modélisées.
+
+    Exige `collection.doi_nakala` (sinon `DepotImpossible`). Réutilise
+    `diff_push` (par propertyUri, ignore le `typeUri` que Nakala remet à
+    null). Pas de drapeau de dérive : les collections Nakala n'exposent pas
+    de `modDate`. Dry-run (défaut) → diff sans écrire ; réel → `PUT`.
+    """
+    if not collection.doi_nakala:
+        raise DepotImpossible(
+            f"Collection {collection.cote!r} n'a pas de DOI Nakala — "
+            "la déposer d'abord (`deposer-collection`)."
+        )
+    distant = client_lecture.lire_collection(collection.doi_nakala).get("metas") or []
+    gerees = collection_vers_metas(collection)  # titre + description (ColleC les possède)
+    # Fusion : metas Nakala hors champs gérés + valeurs locales des champs gérés.
+    preservees = [
+        m for m in distant if m.get("propertyUri") not in _PROPRIETES_COLLECTION_GEREES
+    ]
+    fusionnees = preservees + gerees
+
+    diffs = diff_push(distant, fusionnees)
+    rapport = RapportPush(
+        cote=collection.cote, doi=collection.doi_nakala, dry_run=dry_run, diffs=diffs,
+    )
+    if dry_run or not diffs:
+        return rapport
+    client_ecriture.modifier_collection(
+        collection.doi_nakala, metas=fusionnees, status=statut
+    )
+    rapport.applique = True
+    return rapport
+
+
 @dataclass
 class RapportPushCollection:
     collection_cote: str
     dry_run: bool
-    pousses: list[RapportPush] = field(default_factory=list)  # avec diff
-    inchanges: list[str] = field(default_factory=list)  # diff vide
-    non_lies: list[str] = field(default_factory=list)  # sans doi_nakala
+    #: Push de l'entité collection elle-même (None si pas de doi_nakala).
+    meta_collection: RapportPush | None = None
+    pousses: list[RapportPush] = field(default_factory=list)  # items avec diff
+    inchanges: list[str] = field(default_factory=list)  # items diff vide
+    non_lies: list[str] = field(default_factory=list)  # items sans doi_nakala
     erreurs: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -550,10 +612,20 @@ def pousser_collection(
     modifie_par: str | None = None,
     licence_defaut: str = LICENCE_DEFAUT,
 ) -> RapportPushCollection:
-    """Pousse les métadonnées de tous les items liés (doi_nakala) d'une
-    collection. Items sans DOI → `non_lies` ; sans diff → `inchanges` ;
-    échec mapping/Nakala → `erreurs` (n'arrête pas le lot)."""
+    """Pousse les métadonnées de la collection **puis** de ses items liés.
+
+    L'entité collection (titre/description) est poussée si elle a un
+    `doi_nakala` (`meta_collection`). Puis chaque item : sans DOI →
+    `non_lies` ; sans diff → `inchanges` ; échec → `erreurs` (n'arrête pas
+    le lot)."""
     rapport = RapportPushCollection(collection_cote=collection.cote, dry_run=dry_run)
+    if collection.doi_nakala:
+        try:
+            rapport.meta_collection = pousser_metadonnees_collection(
+                db, client_lecture, client_ecriture, collection, dry_run=dry_run
+            )
+        except (MetaInvalide, ErreurNakala) as exc:
+            rapport.erreurs.append((f"collection:{collection.cote}", str(exc)))
     for item in collection.items:
         if not item.doi_nakala:
             rapport.non_lies.append(item.cote)

@@ -228,6 +228,28 @@ class NakalaEcritureClient:
         except Exception:  # noqa: BLE001 - PUT peut renvoyer un corps vide
             return {}
 
+    def modifier_collection(
+        self,
+        identifiant: str,
+        *,
+        metas: list[dict[str, Any]],
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Met à jour les métadonnées d'une collection (`PUT /collections/{id}`).
+
+        Comme `modifier_depot`, le `PUT` **remplace** les `metas` (titre,
+        description…). `status` optionnel (`private`/`public`). Nakala renvoie
+        `204` (corps vide) en succès."""
+        corps: dict[str, Any] = {"metas": metas}
+        if status is not None:
+            corps["status"] = status
+        reponse = self._requete("PUT", f"/collections/{identifiant}", json=corps)
+        self._verifier_statut(reponse, contexte=f"PUT /collections/{identifiant}")
+        try:
+            return reponse.json()
+        except Exception:  # noqa: BLE001 - 204 → corps vide
+            return {}
+
     def rattacher_a_collection(self, depot_id: str, collection_id: str) -> None:
         """Rattache un dépôt existant à une collection (POST, additif)."""
         reponse = self._requete(

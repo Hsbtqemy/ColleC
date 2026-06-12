@@ -131,9 +131,15 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `pousser_collection` (re-pull → diff + dérive, dry-run, PUT + refresh cache),
   `publier_item` (`status=published`, irréversible). CLI `nakala pousser` +
   `publier` + `pousser-collection`. Round-trip idempotent validé live (apitest).
-  Tests d'intégration opt-in (`-m integration`). Reste **futur** : versioning
-  fichiers (#4 SHA-1), update métadonnées de collection (`PUT /collections`),
-  UI web de push.
+  **P3.5 livré (métadonnées de collection)** : `write_client.modifier_collection`
+  (`PUT /collections/{id}` → 204) + `nakala_depot.pousser_metadonnees_collection`
+  (réutilise `diff_push` ; pas de dérive — collections sans `modDate` ;
+  **fusion** : ColleC ne gère que titre+description → préserve les metas Nakala
+  non modélisées au lieu de les écraser) ; `pousser-collection` pousse l'entité
+  collection **puis** ses items. Round-trip collection validé live. Tests
+  d'intégration opt-in
+  (`-m integration`). Reste **futur** : versioning fichiers (#4 SHA-1), UI web
+  de push.
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

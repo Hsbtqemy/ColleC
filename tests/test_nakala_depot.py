@@ -262,10 +262,13 @@ def _NKL_T(v: str, lang: str | None = None) -> dict:
 class _FakeRWClient:
     """Client combiné lecture+écriture pour les tests de push."""
 
-    def __init__(self, metas_distantes: list[dict], mod_date: str = "2024-01-01") -> None:
+    def __init__(self, metas_distantes: list[dict], mod_date: str = "2024-01-01",
+                 metas_collection: list[dict] | None = None) -> None:
         self._metas = metas_distantes
         self._mod = mod_date
+        self._metas_col = metas_collection if metas_collection is not None else []
         self.put: dict | None = None
+        self.put_collection: dict | None = None
 
     def lire_depot(self, doi: str) -> dict:
         return {"identifier": doi, "metas": self._metas, "modDate": self._mod,
@@ -276,6 +279,14 @@ class _FakeRWClient:
         # après PUT, le distant reflète les nouvelles metas (re-pull).
         self._metas = metas
         self._mod = "2024-06-01"
+        return {}
+
+    def lire_collection(self, doi: str) -> dict:
+        return {"identifier": doi, "metas": list(self._metas_col), "status": "private"}
+
+    def modifier_collection(self, identifiant, *, metas, status=None):
+        self.put_collection = {"metas": metas, "status": status}
+        self._metas_col = metas
         return {}
 
 
@@ -373,6 +384,63 @@ def test_publier_item_reel(db_path: Path, tmp_path: Path) -> None:
         rapport = publier_item(s, client, client, item, dry_run=False)
     assert rapport.applique
     assert client.put is not None and client.put["status"] == "published"
+
+
+def _NKL_TITLE(v: str) -> dict:
+    return {"propertyUri": f"{_NKL}title", "value": v}
+
+
+def test_pousser_metadonnees_collection_sans_doi_refuse(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_metadonnees_collection
+
+    with _session(db_path) as s:
+        _item_avec_fichier_local(s, tmp_path)  # crée fonds AS + miroir (sans doi)
+        miroir = _collection_miroir(s, "AS")
+        client = _FakeRWClient([])
+        with pytest.raises(DepotImpossible):
+            pousser_metadonnees_collection(s, client, client, miroir, dry_run=True)
+
+
+def test_pousser_metadonnees_collection_diff_put_et_preservation(
+    db_path: Path, tmp_path: Path
+) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_metadonnees_collection
+
+    with _session(db_path) as s:
+        _item_avec_fichier_local(s, tmp_path)
+        miroir = _collection_miroir(s, "AS")  # titre "Armonía Somers"
+        miroir.doi_nakala = "10.34847/nkl.col1"
+        s.commit()
+        # Distant : titre différent (à remplacer) + un sujet (non géré → à préserver).
+        client = _FakeRWClient([], metas_collection=[
+            _NKL_TITLE("Ancien titre"),
+            {"propertyUri": f"{_DCT}subject", "value": "Préservé"},
+        ])
+        rapport = pousser_metadonnees_collection(s, client, client, miroir, dry_run=False)
+    assert rapport.applique and rapport.a_des_changements
+    assert client.put_collection is not None
+    metas = client.put_collection["metas"]
+    titres = [m["value"] for m in metas if m["propertyUri"] == f"{_NKL}title"]
+    sujets = [m["value"] for m in metas if m["propertyUri"] == f"{_DCT}subject"]
+    assert "Armonía Somers" in titres  # titre remplacé par celui de ColleC
+    assert "Préservé" in sujets  # sujet non géré → préservé (fusion, pas remplacement)
+
+
+def test_pousser_collection_inclut_entite(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_collection
+
+    with _session(db_path) as s:
+        _item_depose(s, tmp_path, titre="Titre local")  # AS-001 lié
+        miroir = _collection_miroir(s, "AS")
+        miroir.doi_nakala = "10.34847/nkl.col1"
+        s.commit()
+        # Distant : collection titre différent + item titre différent.
+        client = _FakeRWClient([_NKL_T("Distant item")],
+                               metas_collection=[_NKL_TITLE("Distant col")])
+        rapport = pousser_collection(s, client, client, miroir, dry_run=True)
+    # L'entité collection a un diff + l'item aussi.
+    assert rapport.meta_collection is not None and rapport.meta_collection.a_des_changements
+    assert len(rapport.pousses) == 1
 
 
 def _seed_cache(s, doi: str, mod_date: str) -> None:

@@ -224,3 +224,22 @@ def test_rattacher_a_collection() -> None:
     assert vus["method"] == "POST"
     assert vus["path"] == "/datas/10.34847/nkl.d1/collections"
     assert vus["body"] == ["10.34847/nkl.col1"]
+
+
+def test_modifier_collection_put() -> None:
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        vus["method"] = request.method
+        vus["path"] = request.url.path
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(204, content=b"")  # Nakala renvoie 204 vide
+
+    metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "Collection révisée"}]
+    with _client(handler) as c:
+        rep = c.modifier_collection("10.34847/nkl.col1", metas=metas, status="public")
+    assert vus["method"] == "PUT"
+    assert vus["path"] == "/collections/10.34847/nkl.col1"
+    assert vus["body"] == {"metas": metas, "status": "public"}
+    assert rep == {}

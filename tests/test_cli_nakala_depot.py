@@ -27,6 +27,7 @@ class _FakeWriteClient:
         self.depots: list[dict] = []
         self.collections: list[dict] = []
         self.puts: list[dict] = []
+        self.puts_collection: list[dict] = []
         _FakeWriteClient.instances.append(self)
 
     def __enter__(self) -> "_FakeWriteClient":
@@ -55,11 +56,16 @@ class _FakeWriteClient:
         self.puts.append({"id": identifiant, "metas": metas, "status": status})
         return {}
 
+    def modifier_collection(self, identifiant, *, metas, status=None):
+        self.puts_collection.append({"id": identifiant, "metas": metas})
+        return {}
+
 
 class _FakeReadClient:
-    """Faux client lecture pour les push : lire_depot configurable."""
+    """Faux client lecture pour les push : lire_depot/lire_collection configurables."""
 
     metas_distantes: list[dict] = []
+    metas_collection: list[dict] = []
     mod_date: str = "2024-01-01"
 
     def __init__(self, *a, **k) -> None:
@@ -75,11 +81,16 @@ class _FakeReadClient:
         return {"identifier": doi, "metas": list(_FakeReadClient.metas_distantes),
                 "modDate": _FakeReadClient.mod_date, "files": [], "status": "pending"}
 
+    def lire_collection(self, doi: str) -> dict:
+        return {"identifier": doi, "metas": list(_FakeReadClient.metas_collection),
+                "status": "private"}
+
 
 @pytest.fixture(autouse=True)
 def _mock_write_client(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeWriteClient.instances.clear()
     _FakeReadClient.metas_distantes = []
+    _FakeReadClient.metas_collection = []
     monkeypatch.setattr(cli_mod, "NakalaEcritureClient", _FakeWriteClient)
     monkeypatch.setattr(cli_mod, "ClientLectureNakala", _FakeReadClient)
 
@@ -265,3 +276,30 @@ def test_publier_reel(config_nakala: Path, db_avec_item: Path) -> None:
     assert "publié" in r.output
     puts = _FakeWriteClient.instances[0].puts
     assert puts[0]["status"] == "published"
+
+
+def test_pousser_collection_cli_entite_et_items(
+    config_nakala: Path, db_avec_item: Path
+) -> None:
+    # Miroir AS + item AS-001 tous deux liés Nakala.
+    with _session(db_avec_item) as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        item.doi_nakala = "10.34847/nkl.x1"
+        miroir = s.scalar(
+            select(Collection).where(
+                Collection.cote == "AS",
+                Collection.type_collection == TypeCollection.MIROIR.value,
+            )
+        )
+        miroir.doi_nakala = "10.34847/nkl.col1"
+        s.commit()
+    # Distant : titre collection ET titre item différents → diffs.
+    _FakeReadClient.metas_collection = [{"propertyUri": f"{_NKL}title", "value": "Col distante"}]
+    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Item distant"}]
+    r = runner.invoke(app, [
+        "nakala", "pousser-collection", "AS", "--fonds", "AS",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "Métadonnées de collection" in r.output
+    assert "Items de AS" in r.output and "1 à pousser" in r.output

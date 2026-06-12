@@ -22,10 +22,12 @@ correction et le contrôle de catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.9.11 livré** (1376/1376 tests verts, doc déployée
-sur <https://hsbtqemy.github.io/ColleC/>). Modèle pivoté
-Fonds / Collection / Item, CLI complète, interface web complète
-(synthèse collection + fonds avec cartographie cross-collection +
+**Statut :** **V0.10.0 livré** (1554 tests verts + 6 d'intégration
+opt-in, doc déployée sur <https://hsbtqemy.github.io/ColleC/>). Modèle
+pivoté Fonds / Collection / Item, CLI complète, interface web complète
+(écriture Nakala complète — dépôt + round-trip métadonnées +
+publication, CLI et UI — depuis V0.10.0 ; synthèse collection + fonds
+avec cartographie cross-collection +
 édition inline complète bandeau et identifiants depuis V0.9.6 ;
 workflow champs personnalisés + vocabulaires UI bouclé bout-en-bout
 depuis V0.9.4 ; recherche FTS5 depuis V0.9.3 ; restauration

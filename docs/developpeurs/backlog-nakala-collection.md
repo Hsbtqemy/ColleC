@@ -125,8 +125,42 @@ Sondage apitest : `typeUri` remis à `null` au stockage (sans impact,
 vide en local → effacée sur Nakala) ; pas de langue de titre de collection
 (`lang=None`). Le dry-run montre tout avant écrasement.
 
-**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256), UI web de
-push.
+**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256).
+
+## UI web de push (livré)
+
+Surfaçage du push/publication P3 dans l'UI web, en parité avec le pull du
+Lot 3 (`/nakala`, bouton « Rafraîchir »). Même schéma : **aperçu dry-run en
+GET** (lecture seule OK) → **confirmation POST** (bloquée 423 en lecture
+seule). Les aperçus de publication sont **rouges** (irréversible).
+
+- [x] **U1** `nakala_depot.publier_collection` (boucle `publier_item` :
+  `publies` / `non_lies` / `erreurs`) + CLI `nakala publier-collection <cote>
+  [--fonds] [--no-dry-run]`. Tests service + CLI.
+- [x] **U2** routes push **item** (`nakala_web.py`) : `_client_ecriture_ou_none`
+  (None si `api_key` absent) ; `GET/POST /nakala/pousser` (aperçu diff +
+  dérive → PUT) ; `GET/POST /nakala/publier` (aperçu rouge irréversible).
+- [x] **U3** routes push **collection** : `GET/POST /nakala/pousser-collection`
+  (diff entité + récap items) ; `GET/POST /nakala/publier-collection`. Le
+  redirect de retour pointe sur le **fonds** (`fonds or cote`) — la cote de la
+  miroir peut différer de celle du fonds.
+- [x] **U4** points d'entrée + 4 templates d'aperçu :
+  - `item_fiche.html` : si `item.doi_nakala` → « Pousser vers Nakala » +
+    « Publier » (rouge) ; flash `nakala_pousse` / `nakala_publie` /
+    `nakala_erreur`.
+  - `fonds_lecture.html` : à côté de « Rafraîchir », si `doi_nakala_miroir`
+    → « Pousser vers Nakala » + « Publier la collection »
+    (`detail.miroir_resume.cote`) ; flash `nakala_pousse_items` /
+    `nakala_publie_items` / `nakala_erreur`.
+  - aperçus `nakala_pousser_apercu` / `nakala_publier_apercu` /
+    `nakala_pousser_collection_apercu` / `nakala_publier_collection_apercu`,
+    confirmation masquée en lecture seule + mini-script « En cours… ».
+- [x] **U5** `tests/test_nakala_web_push.py` (18 tests, clients lecture+
+  écriture mockés) : aperçu diff, POST → PUT, publication → `status=
+  published`, push/publication collection, **POST bloqué 423 en lecture
+  seule**, sans `doi`/`api_key` → message, boutons présents/absents. doc.
+
+**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256).
 
 ## P2 — Dépôt (écriture) vers Nakala (livré)
 

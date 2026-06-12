@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Publier sur Nakala · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/item/{{ cote }}?fonds={{ fonds }}" class="text-sm" style="color:#2563eb;">← Item {{ cote }}</a>
+</div>
+
+<h1 class="text-xl font-medium mb-1" style="color:#991b1b;">Publier le dépôt sur Nakala</h1>
+<p class="text-sm text-gray-500 mb-4">
+  Item <strong>{{ cote }}</strong>
+  (<code style="font-family:monospace;">{{ doi }}</code>).
+</p>
+
+<div role="alert" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;
+     padding:14px 16px;margin-bottom:18px;font-size:13px;color:#7f1d1d;">
+  <strong>Action irréversible.</strong> Publier mint un DOI DataCite définitif :
+  le dépôt ne pourra plus être dépublié ni supprimé (seules les métadonnées
+  resteront éditables). Assurez-vous que les métadonnées sont prêtes
+  (au besoin, « Pousser » d'abord).
+</div>
+
+{% if not est_lecture_seule() %}
+<form method="post" action="/nakala/publier" data-nakala-confirm>
+  <input type="hidden" name="cote" value="{{ cote }}">
+  <input type="hidden" name="fonds" value="{{ fonds }}">
+  <button type="submit"
+          style="padding:8px 18px;font-size:13px;border-radius:5px;border:0;
+                 background:#991b1b;color:white;cursor:pointer;">
+    Publier définitivement (irréversible)
+  </button>
+  <span data-nakala-progress class="text-sm text-gray-500" style="display:none;margin-left:10px;">
+    Publication en cours…
+  </span>
+</form>
+{% else %}
+<p class="text-sm" style="color:#92400e;">Publication désactivée (mode lecture seule).</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll("form[data-nakala-confirm]").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var btn = f.querySelector("button[type=submit]");
+      if (btn) { btn.disabled = true; btn.style.opacity = "0.6"; }
+      var ind = f.querySelector("[data-nakala-progress]");
+      if (ind) { ind.style.display = "inline"; }
+    });
+  });
+</script>
+{% endblock %}

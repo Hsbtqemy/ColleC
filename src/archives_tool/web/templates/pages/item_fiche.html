@@ -29,15 +29,51 @@
 
 {{ bandeau_item(item, fonds, fiche.nb_fichiers, fiche.navigation, fiche.collections, q_surligne=q_surligne) }}
 
-{# Bouton visionneuse en haut à droite, accès direct au layout
-   page-par-page (workflow catalogage). #}
+{# Boutons en haut à droite : Nakala (si l'item est déposé) + visionneuse. #}
 <div class="flex items-center justify-end mb-3 gap-2" style="font-size:13px;">
+  {% if item.doi_nakala %}
+    {# Aperçus read-only (GET) ; les écritures sont bloquées en lecture seule. #}
+    <a href="/nakala/pousser?cote={{ item.cote | urlencode }}&fonds={{ fonds.cote | urlencode }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
+       style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);"
+       title="Pousser les métadonnées locales vers le dépôt Nakala">
+      Pousser vers Nakala
+    </a>
+    <a href="/nakala/publier?cote={{ item.cote | urlencode }}&fonds={{ fonds.cote | urlencode }}"
+       class="inline-flex items-center gap-1.5 rounded hover:bg-red-50"
+       style="padding:4px 12px;color:#991b1b;border:1px solid #fecaca;"
+       title="Publier définitivement le dépôt sur Nakala (irréversible)">
+      Publier
+    </a>
+  {% endif %}
   <a href="{{ visionneuse_url }}"
      class="inline-flex items-center gap-1.5 rounded hover:bg-gray-50"
      style="padding:4px 12px;color:#374151;border:1px solid rgba(0,0,0,0.10);">
     Visionneuse →
   </a>
 </div>
+
+{# Flash après un push/publication d'item (redirigé ici par /nakala/{pousser,publier}). #}
+{% set nakala_pousse = request.query_params.get('nakala_pousse') %}
+{% if nakala_pousse %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:14px;font-size:13px;color:#065f46;">
+  ✓ Push Nakala : {{ nakala_pousse }} champ(s) poussé(s) vers le dépôt.
+</div>
+{% endif %}
+{% if request.query_params.get('nakala_publie') %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:14px;font-size:13px;color:#065f46;">
+  ✓ Dépôt publié sur Nakala (DOI définitif minté).
+</div>
+{% endif %}
+{% set nakala_erreur = request.query_params.get('nakala_erreur') %}
+{% if nakala_erreur %}
+<div role="alert" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;
+     padding:10px 14px;margin-bottom:14px;font-size:13px;color:#991b1b;">
+  ⚠ {{ nakala_erreur }}
+</div>
+{% endif %}
 
 {# Grid 3 colonnes desktop, 1 colonne empilée mobile. Sur desktop :
    - Item et Fichiers grandissent naturellement (no scroll interne).

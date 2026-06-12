@@ -29,12 +29,27 @@ from archives_tool.api.deps import (
     get_nom_base,
     get_utilisateur_courant,
 )
-from archives_tool.api.routes._helpers import contexte_base as _contexte_base
+from archives_tool.api.routes._helpers import (
+    charger_fonds_ou_404 as _charger_fonds_ou_404,
+    contexte_base as _contexte_base,
+)
+from archives_tool.api.services.collections import (
+    CollectionIntrouvable,
+    lire_collection_par_cote,
+)
 from archives_tool.api.services.fonds import FondsIntrouvable
+from archives_tool.api.services.items import ItemIntrouvable, lire_item_par_cote
 from archives_tool.api.services.nakala import (
     rafraichir_collection,
     rapatrier_collection,
     titre_collection_nakala,
+)
+from archives_tool.api.services.nakala_depot import (
+    DepotImpossible,
+    pousser_collection,
+    pousser_item,
+    publier_collection,
+    publier_item,
 )
 from archives_tool.api.templating import templates
 from archives_tool.config import ConfigLocale
@@ -47,6 +62,8 @@ from archives_tool.external.nakala.client import (
     NakalaIntrouvable,
     normaliser_identifiant_nakala,
 )
+from archives_tool.external.nakala.depot_mapper import MetaInvalide
+from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.external.nakala.collection import iterer_donnees_collection
 from archives_tool.external.nakala.tableur import (
     lignes_niveau_donnee,
@@ -75,7 +92,17 @@ def _client_ou_none(config: ConfigLocale) -> ClientLectureNakala | None:
     )
 
 
-def _fermer(client: ClientLectureNakala) -> None:
+def _client_ecriture_ou_none(config: ConfigLocale) -> NakalaEcritureClient | None:
+    """Client d'écriture, ou `None` si `nakala:` / `api_key` absent."""
+    if config.nakala is None or not config.nakala.api_key:
+        return None
+    n = config.nakala
+    return NakalaEcritureClient(
+        n.base_url, n.api_key, timeout=n.timeout, verify_ssl=n.verify_ssl
+    )
+
+
+def _fermer(client) -> None:
     fermer = getattr(client, "fermer", None)
     if callable(fermer):
         fermer()
@@ -309,4 +336,294 @@ def executer_rafraichir(
 
     return RedirectResponse(
         f"/nakala?nakala_modifies={len(rapport.modifies)}", status_code=303
+    )
+
+
+# ---------------------------------------------------------------------------
+# Push (écriture) — item & collection. Aperçu GET (dry-run, lecture seule OK)
+# → confirmation POST (bloquée 423 en lecture seule par le middleware).
+# ---------------------------------------------------------------------------
+
+
+def _redirect_item_erreur(cote: str, fonds: str, message: str) -> RedirectResponse:
+    return RedirectResponse(
+        f"/item/{cote}?fonds={fonds}&nakala_erreur={quote(message)}", status_code=303
+    )
+
+
+def _redirect_fonds_erreur(cote: str, message: str) -> RedirectResponse:
+    return RedirectResponse(
+        f"/fonds/{cote}?nakala_erreur={quote(message)}", status_code=303
+    )
+
+
+def _config_ecriture_absente() -> str:
+    return "Section `nakala:` avec `api_key` requise pour écrire vers Nakala."
+
+
+def _ecriture_configuree(config: ConfigLocale) -> bool:
+    """Vrai si la config permet d'écrire (section `nakala:` + `api_key`).
+
+    Vérifie la config **sans instancier** de client : construire un client
+    httpx puis l'abandonner sur un early-return fuirait la connexion (les
+    `__init__` des clients ouvrent un `httpx.Client` eagerly)."""
+    return config.nakala is not None and bool(config.nakala.api_key)
+
+
+def _resoudre_item_ou_404(db: Session, cote: str, fonds: str):
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
+    try:
+        return lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        from fastapi import HTTPException
+
+        raise HTTPException(404, detail=f"Item {cote!r} introuvable.") from e
+
+
+def _resoudre_collection_ou_404(db: Session, cote: str, fonds: str | None):
+    fonds_id = _charger_fonds_ou_404(db, fonds).id if fonds else None
+    try:
+        return lire_collection_par_cote(db, cote, fonds_id=fonds_id)
+    except CollectionIntrouvable as e:
+        from fastapi import HTTPException
+
+        raise HTTPException(404, detail=f"Collection {cote!r} introuvable.") from e
+
+
+# ---- Item : pousser ----------------------------------------------------
+
+
+@router.get("/nakala/pousser", response_class=HTMLResponse, response_model=None)
+def apercu_pousser_item(
+    request: Request,
+    cote: str = Query(...),
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Aperçu (dry-run) du push des métadonnées d'un item."""
+    if not _ecriture_configuree(config):
+        return _redirect_item_erreur(cote, fonds, _config_ecriture_absente())
+    item = _resoudre_item_ou_404(db, cote, fonds)  # peut lever 404 — avant tout client
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = pousser_item(db, lecture, ecriture, item, dry_run=True,
+                               modifie_par=utilisateur)
+    except DepotImpossible as exc:
+        return _redirect_item_erreur(cote, fonds, str(exc))
+    except MetaInvalide as exc:
+        return _redirect_item_erreur(cote, fonds, f"Métadonnées insuffisantes — {exc}")
+    except ErreurNakala as exc:
+        return _redirect_item_erreur(cote, fonds, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return templates.TemplateResponse(
+        request, "pages/nakala_pousser_apercu.html",
+        _contexte_base(nom_base, utilisateur, rapport=rapport, cote=cote, fonds=fonds),
+    )
+
+
+@router.post("/nakala/pousser")
+def executer_pousser_item(
+    cote: Annotated[str, Form()],
+    fonds: Annotated[str, Form()],
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    """Pousse réellement (bloqué 423 en lecture seule)."""
+    if not _ecriture_configuree(config):
+        return _redirect_item_erreur(cote, fonds, _config_ecriture_absente())
+    item = _resoudre_item_ou_404(db, cote, fonds)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = pousser_item(db, lecture, ecriture, item, dry_run=False,
+                               modifie_par=utilisateur)
+    except (DepotImpossible, MetaInvalide) as exc:
+        return _redirect_item_erreur(cote, fonds, str(exc))
+    except ErreurNakala as exc:
+        return _redirect_item_erreur(cote, fonds, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return RedirectResponse(
+        f"/item/{cote}?fonds={fonds}&nakala_pousse={len(rapport.diffs)}",
+        status_code=303,
+    )
+
+
+# ---- Item : publier (irréversible) -------------------------------------
+
+
+@router.get("/nakala/publier", response_class=HTMLResponse, response_model=None)
+def apercu_publier_item(
+    request: Request,
+    cote: str = Query(...),
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Aperçu (rouge, irréversible) de la publication d'un item."""
+    # Aperçu statique : aucun client réseau nécessaire (juste l'avertissement).
+    if not _ecriture_configuree(config):
+        return _redirect_item_erreur(cote, fonds, _config_ecriture_absente())
+    item = _resoudre_item_ou_404(db, cote, fonds)
+    if not item.doi_nakala:
+        return _redirect_item_erreur(cote, fonds, "Item non déposé sur Nakala.")
+    return templates.TemplateResponse(
+        request, "pages/nakala_publier_apercu.html",
+        _contexte_base(nom_base, utilisateur, cote=cote, fonds=fonds,
+                       doi=item.doi_nakala),
+    )
+
+
+@router.post("/nakala/publier")
+def executer_publier_item(
+    cote: Annotated[str, Form()],
+    fonds: Annotated[str, Form()],
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    """Publie réellement (irréversible ; bloqué 423 en lecture seule)."""
+    if not _ecriture_configuree(config):
+        return _redirect_item_erreur(cote, fonds, _config_ecriture_absente())
+    item = _resoudre_item_ou_404(db, cote, fonds)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        publier_item(db, lecture, ecriture, item, dry_run=False, modifie_par=utilisateur)
+    except (DepotImpossible, MetaInvalide) as exc:
+        return _redirect_item_erreur(cote, fonds, str(exc))
+    except ErreurNakala as exc:
+        return _redirect_item_erreur(cote, fonds, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return RedirectResponse(f"/item/{cote}?fonds={fonds}&nakala_publie=1", status_code=303)
+
+
+# ---- Collection : pousser & publier ------------------------------------
+
+
+@router.get("/nakala/pousser-collection", response_class=HTMLResponse, response_model=None)
+def apercu_pousser_collection(
+    request: Request,
+    cote: str = Query(...),
+    fonds: str | None = Query(None),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Aperçu (dry-run) du push d'une collection (entité + items)."""
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = pousser_collection(db, lecture, ecriture, collection, dry_run=True,
+                                     modifie_par=utilisateur)
+    except ErreurNakala as exc:
+        return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return templates.TemplateResponse(
+        request, "pages/nakala_pousser_collection_apercu.html",
+        _contexte_base(nom_base, utilisateur, rapport=rapport, cote=collection.cote,
+                       fonds=fonds or ""),
+    )
+
+
+@router.post("/nakala/pousser-collection")
+def executer_pousser_collection(
+    cote: Annotated[str, Form()],
+    fonds: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds or None)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = pousser_collection(db, lecture, ecriture, collection, dry_run=False,
+                                     modifie_par=utilisateur)
+    except ErreurNakala as exc:
+        return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return RedirectResponse(
+        f"/fonds/{fonds or cote}?nakala_pousse_items={len(rapport.pousses)}",
+        status_code=303,
+    )
+
+
+@router.get("/nakala/publier-collection", response_class=HTMLResponse, response_model=None)
+def apercu_publier_collection(
+    request: Request,
+    cote: str = Query(...),
+    fonds: str | None = Query(None),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Aperçu (rouge, irréversible) de la publication d'une collection."""
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = publier_collection(db, lecture, ecriture, collection, dry_run=True,
+                                     modifie_par=utilisateur)
+    except ErreurNakala as exc:
+        return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return templates.TemplateResponse(
+        request, "pages/nakala_publier_collection_apercu.html",
+        _contexte_base(nom_base, utilisateur, rapport=rapport, cote=collection.cote,
+                       fonds=fonds or ""),
+    )
+
+
+@router.post("/nakala/publier-collection")
+def executer_publier_collection(
+    cote: Annotated[str, Form()],
+    fonds: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds or None)
+    lecture = _client_ou_none(config)
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = publier_collection(db, lecture, ecriture, collection, dry_run=False,
+                                     modifie_par=utilisateur)
+    except ErreurNakala as exc:
+        return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
+    finally:
+        _fermer(lecture)
+        _fermer(ecriture)
+    return RedirectResponse(
+        f"/fonds/{fonds or cote}?nakala_publie_items={len(rapport.publies)}",
+        status_code=303,
     )

@@ -303,3 +303,15 @@ def test_pousser_collection_cli_entite_et_items(
     assert r.exit_code == 0, r.output
     assert "Métadonnées de collection" in r.output
     assert "Items de AS" in r.output and "1 à pousser" in r.output
+
+
+def test_publier_collection_cli(config_nakala: Path, db_avec_item: Path) -> None:
+    _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
+    r = runner.invoke(app, [
+        "nakala", "publier-collection", "AS", "--fonds", "AS", "--no-dry-run",
+        "--config", str(config_nakala), "--db-path", str(db_avec_item),
+    ])
+    assert r.exit_code == 0, r.output
+    assert "1 publié(s)" in r.output
+    puts = _FakeWriteClient.instances[0].puts
+    assert puts and puts[0]["status"] == "published"

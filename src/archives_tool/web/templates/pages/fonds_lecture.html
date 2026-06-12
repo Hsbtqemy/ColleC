@@ -52,6 +52,30 @@
 </div>
 {% endif %}
 
+{# Flash après un push/publication de collection (redirigé ici par /nakala/{pousser,publier}-collection). #}
+{% set nakala_pousse_items = request.query_params.get('nakala_pousse_items') %}
+{% if nakala_pousse_items %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#065f46;">
+  ✓ Push Nakala : {{ nakala_pousse_items }} item(s) poussé(s).
+</div>
+{% endif %}
+{% set nakala_publie_items = request.query_params.get('nakala_publie_items') %}
+{% if nakala_publie_items %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#065f46;">
+  ✓ Publication Nakala : {{ nakala_publie_items }} item(s) publié(s).
+</div>
+{% endif %}
+{# Erreur Nakala (redirigée par les routes push/publication). #}
+{% set nakala_erreur = request.query_params.get('nakala_erreur') %}
+{% if nakala_erreur %}
+<div role="alert" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#991b1b;">
+  ⚠ {{ nakala_erreur }}
+</div>
+{% endif %}
+
 <header class="mb-6">
   <p class="text-sm text-gray-500">
     <a href="/" class="hover:underline">Tableau de bord</a> ›
@@ -75,12 +99,25 @@
     </div>
     <div class="flex items-center gap-2 shrink-0">
       {% if detail.doi_nakala_miroir %}
-        {# Aperçu read-only (GET) ; l'overwrite éventuel est bloqué en lecture seule. #}
+        {# Aperçus read-only (GET) ; les écritures éventuelles sont bloquées en lecture seule. #}
         <a href="/nakala/rafraichir?doi={{ detail.doi_nakala_miroir }}"
            class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
            title="Re-tirer la collection Nakala et comparer aux items liés">
           Rafraîchir depuis Nakala
         </a>
+        {% if detail.miroir_resume %}
+          <a href="/nakala/pousser-collection?cote={{ detail.miroir_resume.cote | urlencode }}&fonds={{ detail.fonds.cote | urlencode }}"
+             class="inline-flex items-center px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+             title="Pousser les métadonnées locales vers Nakala (entité + items)">
+            Pousser vers Nakala
+          </a>
+          <a href="/nakala/publier-collection?cote={{ detail.miroir_resume.cote | urlencode }}&fonds={{ detail.fonds.cote | urlencode }}"
+             class="inline-flex items-center px-3 py-1 text-sm border rounded hover:bg-red-50"
+             style="color:#991b1b;border-color:#fecaca;"
+             title="Publier définitivement les items sur Nakala (irréversible)">
+            Publier la collection
+          </a>
+        {% endif %}
       {% endif %}
       {% if not est_lecture_seule() %}
         <a href="/fonds/{{ detail.fonds.cote }}/modifier"

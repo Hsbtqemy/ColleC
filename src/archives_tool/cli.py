@@ -71,6 +71,7 @@ from archives_tool.api.services.nakala_depot import (
     deposer_item,
     pousser_collection,
     pousser_item,
+    publier_collection,
     publier_item,
 )
 from archives_tool.external.nakala.depot_mapper import MetaInvalide
@@ -2805,6 +2806,49 @@ def cmd_nakala_pousser_collection(
         typer.echo(f"  ✗ {c} : {detail}", err=True)
     if not no_dry_run and (rapport.pousses or (mc and mc.a_des_changements)):
         typer.echo("Relancer avec --no-dry-run pour pousser.")
+
+
+@nakala_app.command("publier-collection")
+def cmd_nakala_publier_collection(
+    cote: str = typer.Argument(..., help="Cote de la collection ColleC."),
+    fonds: str | None = typer.Option(
+        None, "--fonds", "-f", help="Cote du fonds (désambiguïse une cote partagée)."
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Publier tous les items liés d'une collection (`pending → published`).
+
+    **Irréversible** : mint un DOI DataCite par item. Dry-run par défaut.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _client_ecriture_nakala_ou_sortie(config) as ecriture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        collection = _resoudre_collection_pour_export(session, cote, fonds)
+        try:
+            rapport = publier_collection(
+                session, lecture, ecriture, collection,
+                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+            )
+        except ErreurNakala as e:
+            _sortie_erreur_nakala_ecriture(e)
+
+    mode = "RÉEL" if no_dry_run else "DRY-RUN"
+    verbe = "publié(s)" if no_dry_run else "à publier"
+    typer.echo(
+        f"[{mode}] Collection {collection.cote} : {len(rapport.publies)} {verbe}, "
+        f"{len(rapport.non_lies)} non lié(s), {len(rapport.erreurs)} erreur(s)."
+    )
+    for c, detail in rapport.erreurs:
+        typer.echo(f"  ✗ {c} : {detail}", err=True)
+    if not no_dry_run and rapport.publies:
+        typer.echo("Relancer avec --no-dry-run pour publier — IRRÉVERSIBLE.")
 
 
 def main() -> None:

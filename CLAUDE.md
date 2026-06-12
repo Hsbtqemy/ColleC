@@ -137,9 +137,18 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   **fusion** : ColleC ne gère que titre+description → préserve les metas Nakala
   non modélisées au lieu de les écraser) ; `pousser-collection` pousse l'entité
   collection **puis** ses items. Round-trip collection validé live. Tests
-  d'intégration opt-in
-  (`-m integration`). Reste **futur** : versioning fichiers (#4 SHA-1), UI web
-  de push.
+  d'intégration opt-in (`-m integration`).
+  **UI web de push livrée** : surfaçage du push/publication dans l'UI
+  (`nakala_web.py`), parité avec le pull du Lot 3. `_client_ecriture_ou_none`
+  et 8 routes `GET/POST /nakala/{pousser,publier,pousser-collection,publier-collection}`
+  (aperçu dry-run GET → confirmation POST bloquée 423 en lecture seule ;
+  aperçus de publication rouges/irréversibles). `nakala_depot.publier_collection`
+  (boucle `publier_item`) + CLI `nakala publier-collection`. Boutons sur la
+  fiche item (si `doi_nakala`) et la page fonds (si `doi_nakala_miroir`, via
+  `miroir_resume.cote`) ; flash en query string. Le redirect de retour des
+  routes collection pointe sur le **fonds** (`fonds or cote` — la cote de la
+  miroir peut différer de celle du fonds). 18 tests web (clients mockés).
+  Reste **futur** : versioning fichiers (#4 SHA-1).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

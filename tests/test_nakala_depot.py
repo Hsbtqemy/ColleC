@@ -386,6 +386,23 @@ def test_publier_item_reel(db_path: Path, tmp_path: Path) -> None:
     assert client.put is not None and client.put["status"] == "published"
 
 
+def test_publier_collection(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import publier_collection
+
+    with _session(db_path) as s:
+        _item_depose(s, tmp_path)  # AS-001 lié (doi)
+        f = lire_fonds_par_cote(s, "AS")
+        creer_item(s, FormulaireItem(cote="AS-002", titre="T2", fonds_id=f.id,
+                                     date="1985", metadonnees={"createurs": ["X, Y"]}))
+        s.commit()
+        miroir = _collection_miroir(s, "AS")
+        client = _FakeRWClient([])
+        rapport = publier_collection(s, client, client, miroir, dry_run=False)
+    assert rapport.publies == ["AS-001"]
+    assert rapport.non_lies == ["AS-002"]  # pas de doi → non publié
+    assert client.put is not None and client.put["status"] == "published"
+
+
 def _NKL_TITLE(v: str) -> dict:
     return {"propertyUri": f"{_NKL}title", "value": v}
 

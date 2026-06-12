@@ -643,3 +643,45 @@ def pousser_collection(
         else:
             rapport.inchanges.append(item.cote)
     return rapport
+
+
+@dataclass
+class RapportPublicationCollection:
+    collection_cote: str
+    dry_run: bool
+    publies: list[str] = field(default_factory=list)  # items publiés (ou à publier)
+    non_lies: list[str] = field(default_factory=list)  # items sans doi_nakala
+    erreurs: list[tuple[str, str]] = field(default_factory=list)
+
+
+def publier_collection(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    collection: Collection,
+    *,
+    dry_run: bool = True,
+    modifie_par: str | None = None,
+    licence_defaut: str = LICENCE_DEFAUT,
+) -> RapportPublicationCollection:
+    """Publie tous les items liés (doi_nakala) d'une collection (**irréversible**).
+
+    Boucle `publier_item`. Items sans DOI → `non_lies` ; échec → `erreurs`
+    (n'arrête pas le lot). Dry-run (défaut) → liste ce qui serait publié."""
+    rapport = RapportPublicationCollection(
+        collection_cote=collection.cote, dry_run=dry_run
+    )
+    for item in collection.items:
+        if not item.doi_nakala:
+            rapport.non_lies.append(item.cote)
+            continue
+        try:
+            publier_item(
+                db, client_lecture, client_ecriture, item,
+                dry_run=dry_run, modifie_par=modifie_par, licence_defaut=licence_defaut,
+            )
+        except (MetaInvalide, ErreurNakala) as exc:
+            rapport.erreurs.append((item.cote, str(exc)))
+            continue
+        rapport.publies.append(item.cote)
+    return rapport

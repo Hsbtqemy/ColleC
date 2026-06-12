@@ -207,3 +207,20 @@ def test_modifier_depot_422_leve() -> None:
     with _client(lambda r: httpx.Response(422, json={"message": "bad"})) as c:
         with pytest.raises(NakalaSoumissionInvalide):
             c.modifier_depot("10.34847/nkl.d1", metas=[])
+
+
+def test_rattacher_a_collection() -> None:
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+        vus["method"] = request.method
+        vus["path"] = request.url.path
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(200, json={})
+
+    with _client(handler) as c:
+        c.rattacher_a_collection("10.34847/nkl.d1", "10.34847/nkl.col1")
+    assert vus["method"] == "POST"
+    assert vus["path"] == "/datas/10.34847/nkl.d1/collections"
+    assert vus["body"] == ["10.34847/nkl.col1"]

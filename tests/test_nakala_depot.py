@@ -375,6 +375,76 @@ def test_publier_item_reel(db_path: Path, tmp_path: Path) -> None:
     assert client.put is not None and client.put["status"] == "published"
 
 
+def _seed_cache(s, doi: str, mod_date: str) -> None:
+    """Amorce une RessourceExterne cachée (baseline de fraîcheur) pour un DOI."""
+    from archives_tool.models import RessourceExterne, SourceExterne
+
+    src = SourceExterne(code="nakala", libelle="Nakala", type_api="nakala",
+                        url_base="https://api.nakala.fr")
+    s.add(src)
+    s.flush()
+    s.add(RessourceExterne(source_id=src.id, identifiant_externe=doi,
+                           metadonnees_brutes={"modDate": mod_date}))
+    s.commit()
+
+
+def test_pousser_item_signale_derive(db_path: Path, tmp_path: Path) -> None:
+    """Distant plus récent que la baseline cachée → dérive signalée."""
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        _seed_cache(s, item.doi_nakala, "2024-01-01")  # dernier fetch ancien
+        client = _FakeRWClient([_NKL_T("Titre distant")], mod_date="2024-06-01")
+        rapport = pousser_item(s, client, client, item, dry_run=True)
+    assert rapport.derive is True
+
+
+def test_pousser_item_sans_cache_pas_de_derive(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")  # pas de cache
+        client = _FakeRWClient([_NKL_T("Titre distant")], mod_date="2024-06-01")
+        rapport = pousser_item(s, client, client, item, dry_run=True)
+    assert rapport.derive is False
+
+
+def test_pousser_collection_mixte(db_path: Path, tmp_path: Path) -> None:
+    from archives_tool.api.services.nakala_depot import pousser_collection
+
+    with _session(db_path) as s:
+        _item_depose(s, tmp_path, titre="Titre local")  # AS-001 lié (a un doi)
+        f = lire_fonds_par_cote(s, "AS")
+        creer_item(s, FormulaireItem(cote="AS-002", titre="T2", fonds_id=f.id,
+                                     date="1985", metadonnees={"createurs": ["X, Y"]}))
+        s.commit()
+        miroir = _collection_miroir(s, "AS")
+        client = _FakeRWClient([_NKL_T("Titre distant")])  # AS-001 → diff
+        rapport = pousser_collection(s, client, client, miroir, dry_run=True)
+    assert len(rapport.pousses) == 1  # AS-001 (a un diff)
+    assert rapport.non_lies == ["AS-002"]  # pas de doi_nakala
+    assert rapport.erreurs == []
+
+
+def test_pousser_collection_erreur_metas_collectee(db_path: Path, tmp_path: Path) -> None:
+    """Un item lié dont les métadonnées sont insuffisantes (preflight) →
+    collecté dans erreurs, n'arrête pas le lot."""
+    from archives_tool.api.services.nakala_depot import pousser_collection
+
+    with _session(db_path) as s:
+        f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
+        # Item lié (doi) mais sans créateur ni date → preflight lèvera.
+        item = creer_item(s, FormulaireItem(cote="AS-009", titre="Casse", fonds_id=f.id))
+        item.doi_nakala = "10.34847/nkl.casse"
+        s.commit()
+        miroir = _collection_miroir(s, "AS")
+        client = _FakeRWClient([_NKL_T("Distant")])
+        rapport = pousser_collection(s, client, client, miroir, dry_run=True)
+    assert rapport.pousses == [] and rapport.inchanges == []
+    assert len(rapport.erreurs) == 1 and rapport.erreurs[0][0] == "AS-009"
+
+
 def test_deposer_collection_item_sans_fichier_local_collecte(
     db_path: Path, tmp_path: Path
 ) -> None:

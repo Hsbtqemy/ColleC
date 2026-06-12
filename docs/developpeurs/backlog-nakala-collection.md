@@ -28,6 +28,80 @@ volets confirmés :
   N+1** pour le niveau fichier.
 - Aínsa = 6163 données → xlsx en `write_only`, CSV en flux.
 
+## Dépôt UI — phase 1 (réservation des DOI) en tâche de fond ◀ PLAN ACTIF
+
+Compléter l'UI pour que le **dépôt** (création sur Nakala) soit cliquable, pas
+seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
+
+1. **Phase 1 — déposer / réserver les DOI** : crée les dépôts Nakala
+   (`pending`), Nakala renvoie les identifiants `10.34847/nkl.xxxx`, le service
+   les **mappe** sur `Item.doi_nakala` (+ collection sur `Collection.doi_nakala`).
+   *Manque uniquement en UI* (déjà en CLI `deposer-collection`).
+2. **Phase 2 — pousser les données** (DOI = adresse) : déjà en UI
+   (`/nakala/pousser-collection`) + publication. Rien à faire.
+
+### Décisions actées (cette session)
+
+- **Réutiliser `deposer_collection` tel quel** (pas de mode « réserve
+  minimale »). Argument décisif : les fichiers ne montent qu'à la **création**
+  du dépôt — aucun push de fichiers en phase 2 (c'est le versioning #4, futur).
+  Donc phase 1 = upload complet, obligatoirement. La phase 1 est l'étape lourde.
+- **DOI = adresse** : on n'inscrit pas les DOI dans les métadonnées (renvois
+  croisés) — plus complexe, peu utile ici ; le design laisse la porte ouverte.
+- **Exécution en tâche de fond** (1ʳᵉ du projet) + **reprise idempotente**
+  (orthogonale, héritée de `deposer` : un item déjà déposé est sauté). L'onglet
+  est libre, une page de suivi poll l'avancement ; si la tâche meurt, relancer
+  reprend où ça s'était arrêté. Léger : thread in-process + dict en mémoire,
+  **aucune nouvelle dépendance**, pas de broker. Sûr grâce à la reprise (aucun
+  état critique perdu : `doi_nakala` commité par item, dépôts durables côté Nakala).
+- **Aperçu dry-run** avant tout lancement (principe n°3).
+- **Bouton** : page fonds, quand la miroir n'a **pas** de `doi_nakala`
+  (dichotomie nette avec « Pousser »/« Publier » qui n'apparaissent qu'**après**).
+
+### Tickets
+
+- [ ] **D1 — Hook de progression (service)** : `deposer_collection(...,
+  progress=None)` callback `(cote, index, total)` appelé par item. Vérifier la
+  **reprise** : collection déjà créée (`Collection.doi_nakala`) réutilisée, items
+  déjà déposés sautés. Tests (callback appelé N fois ; 2ᵉ run = tout sauté).
+- [ ] **D2 — Runner + registre mémoire** : `executer_depot_collection(job_id,
+  …)` **fonction pure testable en synchrone** ; registre `_JOBS`
+  `{job_id: {statut, total, faits, erreurs:[(cote,detail)], cote_courante,
+  doi_collection}}` protégé par `threading.Lock` ; **garde anti-concurrent**
+  (un seul dépôt à la fois — mono-utilisateur). Tests (transitions du registre,
+  reprise, garde concurrente).
+- [ ] **D3 — Routes** (`nakala_web.py`) : `GET /nakala/deposer-collection`
+  (aperçu `deposer_collection(dry_run=True)` : items déposables, fichiers,
+  non-déposables, durée) ; `POST /nakala/deposer-collection` (lance le thread
+  daemon → redirige vers le suivi ; **bloqué 423** en lecture seule) ;
+  `GET /nakala/deposer-collection/suivi/{job_id}` (page) +
+  `GET /nakala/deposer-collection/statut/{job_id}` (fragment HTMX `every 2s`).
+  Réutilise `_ecriture_configuree`, `_resoudre_collection_ou_404`. Tests (aperçu
+  200, POST → 303 + job lancé, statut, 423 lecture seule, sans `api_key`).
+- [ ] **D4 — Templates** : `nakala_deposer_collection_apercu.html` (miroir du
+  push : plan + avertissement de durée appuyé + « gros fonds → CLI ») +
+  `nakala_deposer_suivi.html` (barre N/total + journal par item + bouton
+  **« Reprendre »** si job interrompu + lien fonds à la fin). Bouton « Déposer
+  sur Nakala (réserver les DOI) » sur `fonds_lecture.html` (si miroir sans DOI).
+- [ ] **D5 — Doc + décision d'archi** : noter dans `CLAUDE.md` (section
+  *Décisions d'architecture notables*) l'introduction de la **1ʳᵉ tâche de fond**
+  (scope, sûreté par reprise idempotente, pas de broker) ; cocher ce backlog ;
+  `nakala-depot-future.md`.
+- [ ] **D6 (option) — validation live apitest** : smoke `-m integration` du
+  dépôt collection **via la route web** sur un petit lot (réutilise apitest +
+  le pattern `test_nakala_web_push_integration.py`), avec cleanup des dépôts
+  pending.
+
+### Limites assumées (v1)
+
+- Le bouton ne s'affiche que si la miroir n'a pas de DOI. Déposer des items
+  **nouvellement ajoutés** à une collection déjà déposée passe par le CLI
+  (`deposer-collection` re-joué, idempotent) — UI de « complément » = futur.
+- Progression **en mémoire** : perdue si le serveur redémarre (la reprise
+  couvre la donnée, pas la barre). Un seul job à la fois.
+- Très gros fonds : viable mais long ; l'aperçu recommande le CLI au-delà d'un
+  seuil. Pas d'annulation en cours de route (futur).
+
 ## Lot 1 — Export tableur (lecture seule)
 
 - [x] **T1.1** Itérateur `external/nakala/collection.py`

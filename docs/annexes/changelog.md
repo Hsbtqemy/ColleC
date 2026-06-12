@@ -121,6 +121,45 @@ Les jalons notables. Le détail commit-par-commit est dans
   (style du bouton « Modifier » sur Item, présence variable du
   pied de page « Retour ») mais hors scope simplify.
 
+## V0.10.0 (2026-06-12)
+
+### Écriture Nakala complète — dépôt, round-trip, publication (CLI + UI)
+
+Palier majeur : ColleC passe de **Nakala en lecture seule** (V0.9.11) à un
+**chemin d'écriture bidirectionnel complet**, en CLI et en interface web.
+Tout est validé en intégration sur le bac à sable `apitest.nakala.fr`
+(tests opt-in `-m integration`).
+
+- **Niveau collection (P1.5)** : export tableur CSV/xlsx d'une collection
+  Nakala (`exporter-tableur`), rapatriement de collection (Fonds + miroir +
+  N items + matérialisation des fichiers IIIF/data), rafraîchissement de
+  collection (diff par item lié).
+- **Dépôt / create (P2)** : `external/nakala/write_client.py`
+  (`NakalaEcritureClient`), `depot_mapper.py` (carte 57 champs), `preflight.py`
+  (cascade créateur/date), `nakala_depot.{deposer_item,deposer_collection}`
+  (fichiers locaux, statut `pending`/`private`, dry-run par défaut, garde
+  déjà-déposé, cleanup orphelins). CLI `nakala deposer` + `deposer-collection`.
+- **Round-trip métadonnées (P3) + collection (P3.5)** : `modifier_depot`
+  (`PUT /datas/{id}`) + `modifier_collection` (`PUT /collections/{id}`),
+  `diff_push` (par propertyUri, ordre-insensible, canonicalise les créateurs
+  enrichis par Nakala), `pousser_item`/`pousser_collection` (re-pull → diff +
+  dérive, dry-run), `publier_item`/`publier_collection` (`status=published`,
+  **irréversible**). Métadonnées de collection poussées par **fusion**
+  (préserve les metas Nakala non modélisées). CLI `nakala pousser`/`publier`/
+  `pousser-collection`/`publier-collection`.
+- **UI web (pull + push)** : page autonome `/nakala` (export tableur,
+  rapatriement, rafraîchissement) + boutons « Pousser » / « Publier » sur la
+  fiche item et la page fonds. Schéma **aperçu dry-run GET → confirmation POST**
+  (bloquée 423 en lecture seule ; aperçus de publication rouges/irréversibles).
+- **Fix #422 (langue)** découvert en validant l'UI push live : ColleC stocke
+  les langues en ISO 639-3 (`spa`), Nakala type `dcterms:language` en RFC5646
+  (`es`) — le dépôt/push d'un item avec langue était rejeté.
+  `mapper.langue_vers_nakala` convertit la valeur `dcterms:language` + les
+  attributs `lang` des littéraux. (Reliquat : export CSV bulk à corriger.)
+
+Reste **futur** : versioning des fichiers (#4, réconciliation SHA-1↔SHA-256)
+et la langue de l'export CSV bulk. Suite : 1554 tests + 6 d'intégration opt-in.
+
 ## V0.9.11 (2026-06-09)
 
 ### Pull Nakala — lecture, rapatriement, rafraîchissement (P1)

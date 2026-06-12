@@ -90,15 +90,32 @@ def test_item_vers_slugs_coeur() -> None:
         metadonnees = {"createurs": ["Somers, Armonía"], "sujets": ["Lit"],
                        "dcterms_publisher": "CNRS", "dcterms_issued": "1984"}
     slugs = item_vers_slugs(_I())
-    assert slugs["nkl_title"] == [{"value": "T", "lang": "spa"}]
+    # Langue convertie 639-3 → RFC5646 pour Nakala (spa → es) : sur la VALEUR
+    # `dcterms:language` ET sur l'attribut `lang` des littéraux multilingues
+    # (sinon dépôt/push rejeté 422 — `spa` absent du vocab Nakala).
+    assert slugs["nkl_title"] == [{"value": "T", "lang": "es"}]
     assert slugs["nkl_creator"] == ["Somers, Armonía"]
     assert slugs["nkl_created"] == "1984"
     assert slugs["nkl_type"].endswith("c_2f33")
-    assert slugs["dcterms_subject"] == [{"value": "Lit", "lang": "spa"}]
-    assert slugs["dcterms_language"] == ["spa"]
+    assert slugs["dcterms_subject"] == [{"value": "Lit", "lang": "es"}]
+    assert slugs["dcterms_language"] == ["es"]
     # Extra multilingue coercé, extra date en liste de chaînes.
-    assert slugs["dcterms_publisher"] == [{"value": "CNRS", "lang": "spa"}]
+    assert slugs["dcterms_publisher"] == [{"value": "CNRS", "lang": "es"}]
     assert slugs["dcterms_issued"] == ["1984"]
+
+
+def test_langue_vers_nakala() -> None:
+    """ColleC stocke en 639-3 ; Nakala veut du RFC5646 (≈ 639-1)."""
+    from archives_tool.external.nakala.mapper import langue_vers_nakala
+
+    assert langue_vers_nakala("spa") == "es"  # bug live #422 corrigé
+    assert langue_vers_nakala("fra") == "fr"
+    assert langue_vers_nakala("eng") == "en"
+    assert langue_vers_nakala("es") == "es"  # déjà 639-1 → inchangé
+    assert langue_vers_nakala("fr-FR") == "fr"  # sous-tag région ignoré
+    assert langue_vers_nakala("spq") == "spq"  # 639-3 sans 639-1 → tel quel
+    assert langue_vers_nakala(None) is None
+    assert langue_vers_nakala("") is None
 
 
 def test_dry_run_ne_depose_rien(db_path: Path, tmp_path: Path) -> None:

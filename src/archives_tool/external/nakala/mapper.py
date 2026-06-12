@@ -134,6 +134,32 @@ def langue_vers_iso639_3(code: Any) -> str | None:
     return _ISO1_VERS_ISO3.get(primaire, primaire)
 
 
+#: Inverse de `_ISO1_VERS_ISO3` : ISO 639-3 → 639-1. Sert au **dépôt**
+#: (sens écriture) — cf. `langue_vers_nakala`.
+_ISO3_VERS_ISO1: dict[str, str] = {v: k for k, v in _ISO1_VERS_ISO3.items()}
+
+
+def langue_vers_nakala(code: Any) -> str | None:
+    """Convertit un code langue ColleC (ISO 639-3) vers le code attendu par
+    Nakala (RFC5646 ≈ 639-1) pour `dcterms:language` **et** l'attribut `lang`
+    des littéraux multilingues.
+
+    Nakala type `dcterms:language` en RFC5646 et son vocabulaire emploie le
+    639-1 quand il existe (`spa` → `es`, `fra` → `fr`). Sans cette conversion,
+    un dépôt/push d'un Item avec langue est **rejeté 422** (`es` est dans le
+    vocab Nakala, `spa` non). Jumelle inverse de `langue_vers_iso639_3`.
+
+    `spa` → `es` ; `fra` → `fr` ; `es` (déjà 639-1) → `es` ; code 639-3 sans
+    équivalent 639-1 (`spq`, `osp`…) → tel quel (Nakala les accepte) ;
+    None/vide → None.
+    """
+    if not isinstance(code, str) or not code.strip():
+        return None
+    # Tolère un tag déjà RFC5646 (`es`, `fr-FR`) : on garde le sous-tag primaire.
+    primaire = code.strip().lower().split("-", 1)[0]
+    return _ISO3_VERS_ISO1.get(primaire, primaire)
+
+
 def _embargo_actif(brut: Any, aujourdhui: date | None = None) -> bool:
     """Vrai si la date d'embargo est dans le futur. Non parsable → actif
     (prudent : mieux vaut refuser un téléchargement que le promettre à

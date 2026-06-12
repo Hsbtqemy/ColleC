@@ -148,7 +148,20 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `miroir_resume.cote`) ; flash en query string. Le redirect de retour des
   routes collection pointe sur le **fonds** (`fonds or cote` — la cote de la
   miroir peut différer de celle du fonds). 18 tests web (clients mockés).
-  Reste **futur** : versioning fichiers (#4 SHA-1).
+  **Validation live UI sur apitest (smoke bout-en-bout)** :
+  `tests/test_nakala_web_push_integration.py` pilote les vraies routes
+  `/nakala/pousser` et `/nakala/publier` via `TestClient` + vrais clients
+  (dépôt → modif titre → push → vérif distant ; publication gardée derrière
+  `NAKALA_ALLOW_PUBLISH=1` car irréversible). **Bug #422 découvert + corrigé** :
+  ColleC stocke les langues en ISO 639-3 (`spa`) mais Nakala type
+  `dcterms:language` en RFC5646 (vocab = 639-1 `es`) — le dépôt/push d'un Item
+  avec langue était rejeté (latent : aucun test d'intégration ne déposait de
+  langue). `mapper.langue_vers_nakala` (inverse de `langue_vers_iso639_3`)
+  convertit la **valeur** `dcterms:language` ET l'attribut `lang` des littéraux
+  multilingues, appelé dans `item_vers_slugs`. **Reliquat connu** :
+  `exporters/nakala.py` (CSV bulk) émet aussi la langue brute — même classe de
+  bug sur un chemin séparé (upload manuel), à corriger après validation du
+  format bulk. Reste **futur** : versioning fichiers (#4 SHA-1).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

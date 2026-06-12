@@ -38,7 +38,7 @@ from archives_tool.external.nakala.depot_mapper import (
     MetaInvalide,
     slugs_vers_metas,
 )
-from archives_tool.external.nakala.mapper import mapper_depot
+from archives_tool.external.nakala.mapper import langue_vers_nakala, mapper_depot
 from archives_tool.external.nakala.preflight import preflight_appliquer
 from archives_tool.external.nakala.write_client import (
     NakalaEcritureClient,
@@ -86,7 +86,9 @@ def item_vers_slugs(item: Item, *, licence_defaut: str = LICENCE_DEFAUT) -> dict
     licence, description, sujet, langue) ; extras `dcterms_*` repris de
     `metadonnees` avec coercition de forme (best-effort)."""
     meta = item.metadonnees or {}
-    lang = item.langue or None
+    # Nakala attend du RFC5646 (≈ 639-1) pour `dcterms:language` ET l'attribut
+    # `lang` des littéraux ; ColleC stocke en 639-3 → conversion (sinon 422).
+    lang = langue_vers_nakala(item.langue or None)
 
     slugs: dict[str, Any] = {}
     # Titre (multilingue, toujours présent).

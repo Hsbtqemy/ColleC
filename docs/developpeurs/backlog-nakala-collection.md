@@ -159,8 +159,20 @@ seule). Les aperçus de publication sont **rouges** (irréversible).
   écriture mockés) : aperçu diff, POST → PUT, publication → `status=
   published`, push/publication collection, **POST bloqué 423 en lecture
   seule**, sans `doi`/`api_key` → message, boutons présents/absents. doc.
+- [x] **U6 — validation live + fix #422** (`tests/test_nakala_web_push_integration.py`,
+  `-m integration`) : pilote les vraies routes `/nakala/pousser` et
+  `/nakala/publier` via `TestClient` + **vrais clients** sur apitest (dépôt →
+  modif titre → push → vérif distant ; publication derrière
+  `NAKALA_ALLOW_PUBLISH=1`). **Bug découvert** : langue stockée en ISO 639-3
+  (`spa`) émise telle quelle alors que Nakala type `dcterms:language` en
+  RFC5646 (`es`) → dépôt/push **rejeté 422** (latent : aucun test n'avait
+  déposé de langue). **Fix** : `mapper.langue_vers_nakala` convertit la valeur
+  `dcterms:language` + l'attribut `lang` des littéraux, dans `item_vers_slugs`.
+  Reliquat : `exporters/nakala.py` (CSV bulk) émet aussi la langue brute —
+  même bug, chemin séparé, à traiter après validation du format bulk.
 
-**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256).
+**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256) ; fix langue
+de l'export CSV bulk.
 
 ## P2 — Dépôt (écriture) vers Nakala (livré)
 

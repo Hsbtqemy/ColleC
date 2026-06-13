@@ -568,3 +568,123 @@ def test_deposer_collection_item_sans_fichier_local_collecte(
     assert len(rapport.deposes) == 1
     assert rapport.non_deposables == ["AS-002"]
     assert rapport.erreurs == []
+
+
+# ---------------------------------------------------------------------------
+# D1 (backlog dépôt UI) — hook de progression `progress=callback`
+# ---------------------------------------------------------------------------
+
+
+def test_deposer_collection_progress_callback_appele_par_item(
+    db_path: Path, tmp_path: Path
+) -> None:
+    """Le callback est invoqué une fois par item, dans l'ordre, avec
+    `(cote, index_1based, total)`. Le total est fixe et reflete le nombre
+    d'items de la collection (3 ici)."""
+    racines = {"scans": tmp_path / "scans"}
+    client = _FakeWriteClientCol()
+    from archives_tool.api.services.nakala_depot import deposer_collection
+
+    appels: list[tuple[str, int, int]] = []
+
+    with _session(db_path) as s:
+        # 3 items dont 1 deposable, 1 non-deposable (Nakala-only), 1
+        # deja deposable mais sans createur → erreur de mapping.
+        _item_avec_fichier_local(s, tmp_path)
+        f = lire_fonds_par_cote(s, "AS")
+        # Item 2 : Nakala-only, sera classe non_deposables
+        item2 = creer_item(s, FormulaireItem(
+            cote="AS-002", titre="T2", fonds_id=f.id, date="1985",
+            metadonnees={"createurs": ["X, Y"]},
+        ))
+        s.add(Fichier(
+            item_id=item2.id, nom_fichier="y.jpg", ordre=1,
+            iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json",
+        ))
+        # Item 3 : avec fichier local mais SANS createur ET sans editeur
+        # → MetaInvalide (preflight echoue), classe `erreurs`.
+        item3 = creer_item(s, FormulaireItem(
+            cote="AS-003", titre="T3", fonds_id=f.id, date="1986",
+        ))
+        (tmp_path / "scans" / "as003.jpg").write_bytes(b"\xff\xd8\xff img3")
+        s.add(Fichier(
+            item_id=item3.id, nom_fichier="as003.jpg", racine="scans",
+            chemin_relatif="as003.jpg", ordre=1,
+        ))
+        s.commit()
+        miroir = _collection_miroir(s, "AS")
+        rapport = deposer_collection(
+            s, client, miroir, racines=racines, dry_run=True,
+            progress=lambda cote, idx, total: appels.append((cote, idx, total)),
+        )
+
+    # Le callback a fire exactement 3 fois (1 par item), dans l'ordre,
+    # avec un total constant.
+    assert len(appels) == 3
+    assert appels[0] == ("AS-001", 1, 3)
+    assert appels[1] == ("AS-002", 2, 3)
+    assert appels[2] == ("AS-003", 3, 3)
+    # Le rapport en dry-run montre les 3 categories (deposable plan,
+    # non_deposable, erreur preflight).
+    assert len(rapport.deposes) == 1  # AS-001 (plan dry-run)
+    assert rapport.non_deposables == ["AS-002"]
+    # AS-003 : preflight catch via MetaInvalide → erreurs
+    assert any(cote == "AS-003" for cote, _ in rapport.erreurs)
+
+
+def test_deposer_collection_progress_2e_run_tout_saute(
+    db_path: Path, tmp_path: Path
+) -> None:
+    """Reprise idempotente : si tous les items ont deja un `doi_nakala`
+    et la collection aussi, le 2e run ne refait aucun appel client, mais
+    le callback fire quand meme par item (UI a besoin de signaler
+    `cote_courante = "AS-001"` puis sauter). Tous les items remontent
+    dans `sautes`."""
+    racines = {"scans": tmp_path / "scans"}
+    client = _FakeWriteClientCol()
+    from archives_tool.api.services.nakala_depot import deposer_collection
+
+    with _session(db_path) as s:
+        _item_avec_fichier_local(s, tmp_path)
+        # Pre-pose tous les DOI : simule un 2e run apres interruption.
+        miroir = _collection_miroir(s, "AS")
+        miroir.doi_nakala = "10.34847/nkl.colDEJA"
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        item.doi_nakala = "10.34847/nkl.itemDEJA"
+        s.commit()
+        appels: list[tuple[str, int, int]] = []
+        rapport = deposer_collection(
+            s, client, miroir, racines=racines, dry_run=False,
+            progress=lambda c, i, t: appels.append((c, i, t)),
+        )
+
+    # 2e run : aucune ecriture client
+    assert client.collections == []
+    assert client.depot_cree is None
+    # La collection n'est pas re-creee (DOI deja pose)
+    assert rapport.collection_creee is False
+    assert rapport.collection_doi == "10.34847/nkl.colDEJA"
+    # L'item est saute
+    assert rapport.sautes == ["AS-001"]
+    assert rapport.deposes == []
+    # Le callback a quand meme fire pour signaler la progression
+    assert appels == [("AS-001", 1, 1)]
+
+
+def test_deposer_collection_progress_default_none_pas_de_callback(
+    db_path: Path, tmp_path: Path
+) -> None:
+    """Sans `progress` (defaut), le service marche comme avant — preuve
+    que l'ajout de D1 est strictement additif (les callers actuels ne
+    voient aucun changement)."""
+    racines = {"scans": tmp_path / "scans"}
+    client = _FakeWriteClientCol()
+    from archives_tool.api.services.nakala_depot import deposer_collection
+
+    with _session(db_path) as s:
+        _item_avec_fichier_local(s, tmp_path)
+        miroir = _collection_miroir(s, "AS")
+        rapport = deposer_collection(s, client, miroir, racines=racines, dry_run=True)
+    # Comportement identique a test_deposer_collection_dry_run_ne_cree_rien
+    assert rapport.dry_run and not rapport.collection_creee
+    assert len(rapport.deposes) == 1

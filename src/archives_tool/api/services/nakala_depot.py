@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -298,6 +298,7 @@ def deposer_collection(
     cree_par: str | None = None,
     dry_run: bool = True,
     licence_defaut: str = LICENCE_DEFAUT,
+    progress: Callable[[str, int, int], None] | None = None,
 ) -> RapportDepotCollection:
     """Crée la collection Nakala puis y dépose ses items.
 
@@ -307,6 +308,17 @@ def deposer_collection(
       `deposer_item` par item déposable en rattachant. Items déjà déposés →
       `sautes` ; sans fichier local → `non_deposables` ; échec mapping/Nakala
       → `erreurs` (n'arrête pas le lot).
+
+    ``progress`` (D1 backlog dépôt UI) : callback optionnel
+    ``(cote, index_1based, total)`` appelé une fois par item APRÈS son
+    traitement, quelle que soit l'issue (deposé / sauté / non-déposable /
+    erreur). N'est PAS appelé pour la création de la collection elle-même
+    (cas particulier, signalé via ``rapport.collection_creee``). Permet à
+    un runner en tâche de fond (D2) d'alimenter une barre de progression
+    persistée dans un registre mémoire — sans coupler le service à un
+    quelconque mécanisme de progression spécifique. Le défaut ``None``
+    préserve le comportement existant : tous les callers actuels (CLI,
+    tests directs) restent inchangés.
     """
     rapport = RapportDepotCollection(
         collection_cote=collection.cote, dry_run=dry_run,
@@ -323,7 +335,8 @@ def deposer_collection(
         collection.doi_nakala = rapport.collection_doi
         db.commit()
 
-    for item in collection.items:
+    total = len(collection.items)
+    for index, item in enumerate(collection.items, start=1):
         try:
             r = deposer_item(
                 db, client, item, racines=racines, statut=statut_donnee,
@@ -332,14 +345,20 @@ def deposer_collection(
             )
         except DepotImpossible:
             rapport.non_deposables.append(item.cote)
-            continue
         except (MetaInvalide, ErreurNakala) as exc:
             rapport.erreurs.append((item.cote, str(exc)))
-            continue
-        if r.deja_depose:
-            rapport.sautes.append(item.cote)
         else:
-            rapport.deposes.append(r)
+            if r.deja_depose:
+                rapport.sautes.append(item.cote)
+            else:
+                rapport.deposes.append(r)
+        # Progression : fire UNE fois par item, apres son traitement.
+        # `else:` ci-dessus n'est pas atomique avec le callback (un
+        # exception non-prevue dans `else` propagerait et sauterait le
+        # progress) mais en pratique le else n'execute que des appends
+        # in-memory sans I/O — pas de cas d'echec realiste.
+        if progress is not None:
+            progress(item.cote, index, total)
     return rapport
 
 

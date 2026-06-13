@@ -60,10 +60,15 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
 
 ### Tickets
 
-- [ ] **D1 — Hook de progression (service)** : `deposer_collection(...,
-  progress=None)` callback `(cote, index, total)` appelé par item. Vérifier la
-  **reprise** : collection déjà créée (`Collection.doi_nakala`) réutilisée, items
-  déjà déposés sautés. Tests (callback appelé N fois ; 2ᵉ run = tout sauté).
+- [x] **D1 — Hook de progression (service)** : `deposer_collection(...,
+  progress=None)` callback `(cote, index, total)` appelé par item, **après**
+  son traitement quelle que soit l'issue (déposé / sauté / non-déposable /
+  erreur). Strictement additif (défaut `None` préserve l'existant). 3 tests
+  dans `test_nakala_depot.py` : appels en ordre avec total constant sur 3
+  items (1 déposable, 1 non-déposable, 1 erreur preflight) ; 2ᵉ run sur
+  collection déjà créée + items déjà déposés → callback fire quand même
+  mais tous remontent en `sautes`, aucun appel client ; sans `progress`
+  → comportement identique avant D1.
 - [ ] **D2 — Runner + registre mémoire** : `executer_depot_collection(job_id,
   …)` **fonction pure testable en synchrone** ; registre `_JOBS`
   `{job_id: {statut, total, faits, erreurs:[(cote,detail)], cote_courante,

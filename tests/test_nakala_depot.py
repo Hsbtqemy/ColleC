@@ -147,6 +147,38 @@ def test_reel_upload_et_cree_depot(db_path: Path, tmp_path: Path) -> None:
     with _session(db_path) as s:
         item = s.scalar(select(Item).where(Item.cote == "AS-001"))
         assert item.doi_nakala == "10.34847/nkl.cree1"
+        # P3+a : sha1 capturé à l'upload et persisté sur le Fichier.
+        fichier = next(iter(item.fichiers))
+        assert fichier.sha1_nakala == "sha-1"
+
+
+def test_sha1_nakala_pas_persiste_si_creer_depot_echoue(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si `creer_depot` lève après les uploads, les `sha1_nakala` mis en
+    mémoire sur les Fichier ne sont pas commités (db.commit() jamais
+    atteint). Garantit qu'un échec mid-flow ne laisse pas de sha1
+    incohérent en base (les uploads orphelins ont été supprimés côté
+    Nakala, on serait avec des sha1 pointant sur du vide)."""
+    from archives_tool.api.services.nakala_depot import ErreurNakala
+
+    class _ClientQuiFaitFlop(_FakeWriteClient):
+        def creer_depot(self, **kwargs):
+            raise ErreurNakala("Simulation échec POST /datas")
+
+    racines = {"scans": tmp_path / "scans"}
+    client = _ClientQuiFaitFlop()
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        with pytest.raises(ErreurNakala):
+            deposer_item(s, client, item, racines=racines, dry_run=False)
+    # Cleanup orphelins effectif côté Nakala.
+    assert client.supprimes == ["sha-1"]
+    # `sha1_nakala` non persisté en base (rollback de fait via absence de commit).
+    with _session(db_path) as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        fichier = next(iter(item.fichiers))
+        assert fichier.sha1_nakala is None
 
 
 def test_deja_depose_saute(db_path: Path, tmp_path: Path) -> None:

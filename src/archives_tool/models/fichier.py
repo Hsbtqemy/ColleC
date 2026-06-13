@@ -54,6 +54,20 @@ class Fichier(Base):
     iiif_url_nakala: Mapped[str | None] = mapped_column(Text)
 
     hash_sha256: Mapped[str | None] = mapped_column(String(64))
+    #: SHA-1 calculé par Nakala à l'upload (`POST /datas/uploads`) ou
+    #: lu sur un fichier matérialisé via `rapatrier`. C'est l'identité
+    #: du fichier côté Nakala — sert au versioning fichiers (P3+ du
+    #: backlog `nakala-depot-future.md` difficulté #4) : on réconcilie
+    #: `Fichier` ColleC ↔ entrée `files[i]` Nakala par cette colonne.
+    #:
+    #: **Distinct de `hash_sha256`** : algorithmes différents (SHA-1 vs
+    #: SHA-256), sémantiques distinctes — ne pas comparer l'un à l'autre.
+    #: `hash_sha256` reste la source de vérité ColleC pour l'intégrité
+    #: disque ; `sha1_nakala` est purement l'identifiant Nakala.
+    #:
+    #: `None` pour les fichiers jamais déposés ni pullés depuis Nakala
+    #: (cas normal d'un fichier purement local).
+    sha1_nakala: Mapped[str | None] = mapped_column(String(40))
     taille_octets: Mapped[int | None] = mapped_column(Integer)
     format: Mapped[str | None] = mapped_column(String(20))
     largeur_px: Mapped[int | None] = mapped_column(Integer)
@@ -105,6 +119,7 @@ class Fichier(Base):
         ),
         Index("ix_fichier_item", "item_id"),
         Index("ix_fichier_hash", "hash_sha256"),
+        Index("ix_fichier_sha1_nakala", "sha1_nakala"),
         Index("ix_fichier_nom", "nom_fichier"),
         Index("ix_fichier_etat", "etat"),
     )

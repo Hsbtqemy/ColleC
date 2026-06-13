@@ -74,6 +74,10 @@ from archives_tool.api.services.nakala_depot import (
     publier_collection,
     publier_item,
 )
+from archives_tool.api.services.nakala_fichiers import (
+    ComparaisonImpossible,
+    comparer_fichiers_item,
+)
 from archives_tool.external.nakala.depot_mapper import MetaInvalide
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.config import ConfigLocale, charger_config
@@ -2849,6 +2853,144 @@ def cmd_nakala_publier_collection(
         typer.echo(f"  ✗ {c} : {detail}", err=True)
     if not no_dry_run and rapport.publies:
         typer.echo("Relancer avec --no-dry-run pour publier — IRRÉVERSIBLE.")
+
+
+@nakala_app.command("comparer-fichiers")
+def cmd_nakala_comparer_fichiers(
+    cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Comparer les fichiers d'un item ColleC vs son dépôt Nakala (P3+b).
+
+    Lecture seule, **aucune écriture**. Recalcule le SHA-1 des binaires
+    locaux et confronte aux fichiers distants. Classifie en :
+
+    - **nouveaux** : à uploader au push (binaire local jamais déposé).
+    - **modifiés** : à ré-uploader (binaire local changé).
+    - **inchangés** : à conserver tels quels.
+    - **Nakala-only sans local** : pas de binaire local résolvable — au
+      push, **danger** s'ils ne sont pas préservés explicitement.
+    - **orphelins distants** : sur Nakala mais plus en local — au push,
+      ils seraient supprimés côté Nakala.
+
+    Le palier P3+c (push effectif) refusera par défaut s'il y a des
+    orphelins distants ou des Nakala-only sans local. Cette commande
+    sert d'aperçu humain avant de décider.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    racines = dict(config.racines)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+            raise typer.Exit(1) from None
+        try:
+            rapport = comparer_fichiers_item(
+                session, lecture, item, racines=racines,
+            )
+        except ComparaisonImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except ErreurNakala as e:
+            typer.echo(f"Erreur Nakala : {e}", err=True)
+            raise typer.Exit(1) from None
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        typer.echo(json.dumps({
+            "cote_item": rapport.cote_item,
+            "doi": rapport.doi,
+            "aucun_changement": rapport.aucun_changement,
+            "nouveaux": [
+                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
+                 "sha1_local": fc.sha1_local}
+                for fc in rapport.nouveaux
+            ],
+            "modifies": [
+                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
+                 "sha1_local": fc.sha1_local, "sha1_distant": fc.sha1_distant}
+                for fc in rapport.modifies
+            ],
+            "inchanges": [
+                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
+                 "sha1": fc.sha1_local}
+                for fc in rapport.inchanges
+            ],
+            "nakala_only_sans_local": [
+                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
+                 "sha1_distant": fc.sha1_distant}
+                for fc in rapport.nakala_only_sans_local
+            ],
+            "orphelins_distants": [
+                {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
+                for fo in rapport.orphelins_distants
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
+
+    typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi}")
+    typer.echo(
+        f"  Inchangés : {len(rapport.inchanges)}"
+        f" · Modifiés : {len(rapport.modifies)}"
+        f" · Nouveaux : {len(rapport.nouveaux)}"
+        f" · Orphelins distants : {len(rapport.orphelins_distants)}"
+        f" · Nakala-only sans local : {len(rapport.nakala_only_sans_local)}"
+    )
+    if rapport.aucun_changement and not rapport.nakala_only_sans_local:
+        typer.echo("  ✓ Aucun changement à pousser.")
+        return
+    if rapport.aucun_changement:
+        typer.echo(
+            "  ⚠ Aucun changement à pousser mais des Nakala-only sans local "
+            "sont signalés — vérifier au push."
+        )
+
+    def _detail_liste(titre: str, items: list, formatter) -> None:
+        if not items:
+            return
+        typer.echo(f"  {titre} :")
+        for i in items:
+            typer.echo(f"    • {formatter(i)}")
+
+    _detail_liste(
+        "Nouveaux (à uploader)",
+        rapport.nouveaux,
+        lambda fc: f"[{fc.ordre:02d}] {fc.nom_fichier} (sha1 local: {fc.sha1_local[:12]}…)",
+    )
+    _detail_liste(
+        "Modifiés (sha1 a changé)",
+        rapport.modifies,
+        lambda fc: (
+            f"[{fc.ordre:02d}] {fc.nom_fichier} "
+            f"({fc.sha1_distant[:12]}… → {fc.sha1_local[:12]}…)"
+        ),
+    )
+    _detail_liste(
+        "Nakala-only sans binaire local",
+        rapport.nakala_only_sans_local,
+        lambda fc: (
+            f"[{fc.ordre:02d}] {fc.nom_fichier}"
+            + (f" (sha1 distant: {fc.sha1_distant[:12]}…)" if fc.sha1_distant else "")
+        ),
+    )
+    _detail_liste(
+        "Orphelins distants (présents Nakala, absents locaux)",
+        rapport.orphelins_distants,
+        lambda fo: f"{fo.nom_fichier or '(sans nom)'} (sha1: {fo.sha1[:12]}…)",
+    )
 
 
 def main() -> None:

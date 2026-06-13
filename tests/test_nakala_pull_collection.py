@@ -95,8 +95,11 @@ def test_cree_fonds_miroir_items_et_fichiers(db_path: Path) -> None:
             "https://apitest.nakala.fr/iiif/10.34847/nkl.aaa1/aaa10/info.json"
         )
         assert fichiers[0].nom_fichier == "aaa1-0.jpg"
-        # sha1 conservé en metadonnees, PAS dans hash_sha256 (algo différent).
+        # sha1 conservé en colonne dédiée `sha1_nakala` (P3+a) et en
+        # miroir dans `metadonnees["sha1"]` (rétrocompat). PAS dans
+        # `hash_sha256` qui est SHA-256 (algos différents).
         assert fichiers[0].hash_sha256 is None
+        assert fichiers[0].sha1_nakala == "aaa10"
         assert fichiers[0].metadonnees["sha1"] == "aaa10"
         fonds = lire_fonds_par_cote(s, "collec01")  # cote dérivée du DOI
         assert fonds is not None

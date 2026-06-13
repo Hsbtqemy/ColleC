@@ -288,10 +288,15 @@ def materialiser_fichiers_nakala(
     (info.json pour les images, data URL sinon) — seule source disponible
     pour un fichier Nakala-only, et suffisante pour le CHECK.
 
-    Le `sha1` Nakala n'est **pas** rangé dans `hash_sha256` (algorithmes
-    différents — l'y mettre fausserait la détection de doublons QA) : il
-    est conservé dans `Fichier.metadonnees`. Retourne le nombre de fichiers
-    créés. Les fichiers sans `sha1` (URL non constructible) sont ignorés.
+    Le `sha1` Nakala est rangé dans `Fichier.sha1_nakala` (colonne dédiée
+    posée par P3+a, cf. `nakala-depot-future.md` difficulté #4) **et**
+    conservé en miroir dans `metadonnees["sha1"]` pour la rétrocompatibilité
+    des consommateurs qui le lisaient là (exports, scripts ad-hoc). Surtout
+    **pas** dans `hash_sha256` : algos différents (SHA-1 vs SHA-256),
+    l'y mettre fausserait la détection de doublons QA.
+
+    Retourne le nombre de fichiers créés. Les fichiers sans `sha1` (URL
+    non constructible) sont ignorés.
     """
     doi = (brut.get("identifier") or "").strip()
     fichiers = brut.get("files") or []
@@ -327,6 +332,7 @@ def materialiser_fichiers_nakala(
                 nom_fichier=str(nom),
                 ordre=cree,
                 iiif_url_nakala=source,
+                sha1_nakala=sha1,
                 taille_octets=taille_octets,
                 format=(f.get("extension") or None),
                 metadonnees=meta_fichier or None,

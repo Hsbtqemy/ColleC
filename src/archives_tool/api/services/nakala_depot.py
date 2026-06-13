@@ -44,7 +44,7 @@ from archives_tool.external.nakala.write_client import (
     NakalaEcritureClient,
     extraire_doi,
 )
-from archives_tool.models import Collection, Item, RessourceExterne
+from archives_tool.models import Collection, Fichier, Item, RessourceExterne
 
 #: Licence par défaut si l'item n'en porte pas (alignée sur l'export CSV).
 LICENCE_DEFAUT = "CC-BY-NC-ND-4.0"
@@ -148,15 +148,20 @@ class RapportDepot:
 
 def _fichiers_locaux(
     item: Item, racines: Mapping[str, Path]
-) -> list[tuple[Path, str]]:
+) -> list[tuple[Path, str, "Fichier"]]:
     """Résout les Fichier de l'item ayant un binaire local existant.
 
-    Renvoie `[(chemin_absolu, nom_fichier)]` trié par `ordre`. Les Fichier
-    Nakala-only (pas de `chemin_relatif`/`racine`) ou introuvables sur disque
-    sont ignorés."""
+    Renvoie `[(chemin_absolu, nom_fichier, fichier_orm)]` trié par
+    `ordre`. Les Fichier Nakala-only (pas de `chemin_relatif`/`racine`)
+    ou introuvables sur disque sont ignorés.
+
+    Inclut l'objet ORM dans le tuple — l'appelant a besoin de poser
+    `sha1_nakala` sur le Fichier au retour d'`uploader_fichier` (cf.
+    P3+a versioning fichiers, `nakala-depot-future.md`).
+    """
     from archives_tool.files.paths import resoudre_chemin
 
-    locaux: list[tuple[Path, str]] = []
+    locaux: list[tuple[Path, str, "Fichier"]] = []
     for f in sorted(item.fichiers, key=lambda x: x.ordre):
         if not f.racine or not f.chemin_relatif:
             continue
@@ -165,7 +170,7 @@ def _fichiers_locaux(
         except (KeyError, ValueError):
             continue
         if chemin.is_file():
-            locaux.append((chemin, f.nom_fichier))
+            locaux.append((chemin, f.nom_fichier, f))
     return locaux
 
 
@@ -208,24 +213,33 @@ def deposer_item(
     if dry_run:
         return RapportDepot(
             cote=item.cote, dry_run=True, doi=None,
-            nb_fichiers=len(locaux), fichiers=[nom for _, nom in locaux],
+            nb_fichiers=len(locaux), fichiers=[nom for _, nom, _ in locaux],
             metas=metas, avertissements=avertissements,
         )
 
     # Réel : upload des fichiers puis création du dépôt.
+    # On capture le sha1 retourné par Nakala dans `Fichier.sha1_nakala`
+    # — identifiant canonique côté Nakala pour le versioning (P3+a, cf.
+    # `nakala-depot-future.md` difficulté #4). Persisté dans le même
+    # commit que `Item.doi_nakala`.
     uploades: list[dict[str, Any]] = []
     sha1s: list[str] = []
     try:
-        for chemin, nom in locaux:
+        for chemin, nom, fichier_orm in locaux:
             desc = client.uploader_fichier(chemin, nom)
-            uploades.append({"sha1": desc["sha1"], "name": desc.get("name") or nom})
-            sha1s.append(desc["sha1"])
+            sha1 = desc["sha1"]
+            uploades.append({"sha1": sha1, "name": desc.get("name") or nom})
+            sha1s.append(sha1)
+            fichier_orm.sha1_nakala = sha1
         reponse = client.creer_depot(
             metas=metas, files=uploades, status=statut,
             collections_ids=[collection_doi] if collection_doi else None,
         )
     except ErreurNakala:
         # Cleanup best-effort des uploads orphelins (le POST a échoué après upload).
+        # Les `Fichier.sha1_nakala` éventuellement posés en mémoire ne
+        # sont pas commités (db.commit() plus bas) — la session SQLAlchemy
+        # les expire au rollback implicite.
         for sha1 in sha1s:
             try:
                 client.supprimer_upload(sha1)
@@ -241,7 +255,7 @@ def deposer_item(
 
     return RapportDepot(
         cote=item.cote, dry_run=False, doi=doi,
-        nb_fichiers=len(locaux), fichiers=[nom for _, nom in locaux],
+        nb_fichiers=len(locaux), fichiers=[nom for _, nom, _ in locaux],
         metas=metas, avertissements=avertissements,
     )
 

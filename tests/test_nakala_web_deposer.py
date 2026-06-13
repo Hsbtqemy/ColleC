@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import yaml
@@ -175,14 +176,26 @@ def test_get_apercu_collection_deja_deposee_redirige(
 ) -> None:
     """Si la miroir a déjà un DOI, on refuse (utiliser « Pousser » à la
     place). Garde défensive : le bouton ne devait pas s'afficher mais
-    URL direct possible."""
-    client = _client(tmp_path, monkeypatch, doi_nakala="10.34847/nkl.dejaPosé")
+    URL direct possible.
+
+    DOI fixture neutre (`nkl.x1`) volontairement — un DOI qui
+    contiendrait « deja » en sous-chaîne ferait passer le test par
+    coïncidence même si la garde ne fonctionnait pas (passe revue D3).
+    On parse l'URL pour vérifier le message décodé."""
+    client = _client(tmp_path, monkeypatch, doi_nakala="10.34847/nkl.x1")
     r = client.get(
         "/nakala/deposer-collection?cote=AS&fonds=AS",
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "déjà déposée" in r.headers["location"] or "deja" in r.headers["location"].lower()
+    location = r.headers["location"]
+    parsed = urlparse(location)
+    assert parsed.path == "/fonds/AS"
+    # parse_qs decode automatiquement l'URL encoding.
+    message = parse_qs(parsed.query).get("nakala_erreur", [""])[0]
+    assert "déjà déposée" in message
+    # Le DOI est mentionne dans le message (pour debug)
+    assert "10.34847/nkl.x1" in message
 
 
 # ---------------------------------------------------------------------------

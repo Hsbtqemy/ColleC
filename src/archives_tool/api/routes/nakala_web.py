@@ -753,7 +753,27 @@ def lancer_depot_collection(
         daemon=True,
         name=f"depot-collection-{job_id[:8]}",
     )
-    thread.start()
+    try:
+        thread.start()
+    except RuntimeError as exc:
+        # `Thread.start()` ne lève quasi-jamais en pratique (RuntimeError
+        # uniquement sur thread déjà démarré, ce qui ne peut pas arriver
+        # car on instancie un nouveau Thread). Defense en profondeur :
+        # relâcher `_id_actuel` pour ne pas bloquer indéfiniment, marquer
+        # le job en echec pour qu'il apparaisse dans le suivi avec le
+        # bon statut.
+        from archives_tool.api.services import nakala_depot_jobs
+        with nakala_depot_jobs._lock:
+            etat = nakala_depot_jobs._JOBS.get(job_id)
+            if etat is not None:
+                etat.statut = "echec"
+                etat.erreur_globale = (
+                    f"Impossible de démarrer le thread de dépôt : {exc}"
+                )
+            nakala_depot_jobs._id_actuel = None
+        return _redirect_fonds_erreur(
+            fonds or cote, f"Démarrage du dépôt échoué : {exc}",
+        )
 
     return RedirectResponse(
         f"/nakala/deposer-collection/suivi/{job_id}",
@@ -811,7 +831,7 @@ def fragment_statut_depot(
     etat = lire_etat_job(job_id)
     if etat is None:
         return HTMLResponse(
-            f"<p>Job introuvable.</p>", status_code=404,
+            "<p>Job introuvable.</p>", status_code=404,
         )
     return templates.TemplateResponse(
         request,

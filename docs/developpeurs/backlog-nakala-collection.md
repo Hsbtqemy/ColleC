@@ -94,14 +94,43 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
   - Smoke test lock : 100 lectures concurrentes pendant un finaliseur,
     aucun snapshot ne voit un état partiellement écrit (statut=termine
     sans collection_doi, ou inverse).
-- [ ] **D3 — Routes** (`nakala_web.py`) : `GET /nakala/deposer-collection`
-  (aperçu `deposer_collection(dry_run=True)` : items déposables, fichiers,
-  non-déposables, durée) ; `POST /nakala/deposer-collection` (lance le thread
-  daemon → redirige vers le suivi ; **bloqué 423** en lecture seule) ;
-  `GET /nakala/deposer-collection/suivi/{job_id}` (page) +
-  `GET /nakala/deposer-collection/statut/{job_id}` (fragment HTMX `every 2s`).
-  Réutilise `_ecriture_configuree`, `_resoudre_collection_ou_404`. Tests (aperçu
-  200, POST → 303 + job lancé, statut, 423 lecture seule, sans `api_key`).
+- [x] **D3 — Routes** (`nakala_web.py`) : 4 routes ajoutées en fin de
+  fichier, conventions héritées (`_ecriture_configuree`,
+  `_resoudre_collection_ou_404`, `_redirect_fonds_erreur`, `_fermer`).
+  - `GET /nakala/deposer-collection?cote=X&fonds=Y` : aperçu dry-run
+    (`deposer_collection(dry_run=True)` rendu via le template D4
+    `nakala_deposer_collection_apercu.html`). Garde défensive : refuse
+    si `collection.doi_nakala` posé (utiliser « Pousser » à la place).
+  - `POST /nakala/deposer-collection` : `reserver_job` + thread daemon
+    `threading.Thread(target=executer_depot_collection, ..., daemon=True)`
+    avec `chemin_db=chemin_base_courant()`, `collection_id`,
+    `config_nakala=config.nakala`, `racines=dict(racines)`. Sur
+    `JobConcurrent` → redirect erreur (pas de 409 JSON — cohérent
+    avec le reste du module qui utilise `_redirect_fonds_erreur`).
+    Bloqué 423 par middleware lecture seule.
+  - `GET /suivi/{job_id}` : page de suivi (`nakala_deposer_suivi.html`),
+    redirect erreur si job inexistant.
+  - `GET /statut/{job_id}` : fragment HTMX
+    (`partials/nakala_deposer_statut.html`), 404 si inexistant.
+  Tests (12 dans `test_nakala_web_deposer.py` avec fixture autouse
+  `reset_registre` + patch de `executer_depot_collection` en stub
+  no-op pour ne pas toucher à Nakala) :
+  - apercu 200 + contient AS-001 + form action ;
+  - sans api_key → redirect erreur ;
+  - DOI déjà posé → redirect refuse ;
+  - POST → 303 vers `/suivi/{job_id}` + runner appelé avec les bons
+    kwargs (collection_id, cree_par, config_nakala) ;
+  - POST garde concurrente : 2e POST quand `_id_actuel` posé →
+    redirect erreur sans nouvel appel runner ;
+  - POST en lecture seule → 423 + pas de réservation ;
+  - POST sans api_key → redirect erreur ;
+  - GET suivi avec job réservé → 200 avec wrapper HTMX ;
+  - GET suivi job inconnu → redirect vers /nakala ;
+  - GET statut avec progression posée → 200 avec `faits/total` +
+    `cote_courante` rendus ;
+  - GET statut job inconnu → 404 (HTMX gère côté client) ;
+  - GET statut quand job=termine → markup sans `every 2s` (le
+    polling s'arrête, sinon le browser garderait un cycle infini).
 - [ ] **D4 — Templates** : `nakala_deposer_collection_apercu.html` (miroir du
   push : plan + avertissement de durée appuyé + « gros fonds → CLI ») +
   `nakala_deposer_suivi.html` (barre N/total + journal par item + bouton

@@ -16,6 +16,8 @@ pour être monkeypatchable en test (comme la CLI).
 
 from __future__ import annotations
 
+import threading
+from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
 
@@ -24,9 +26,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import (
+    chemin_base_courant,
     get_config,
     get_db,
     get_nom_base,
+    get_racines,
     get_utilisateur_courant,
 )
 from archives_tool.api.routes._helpers import (
@@ -46,10 +50,17 @@ from archives_tool.api.services.nakala import (
 )
 from archives_tool.api.services.nakala_depot import (
     DepotImpossible,
+    deposer_collection,
     pousser_collection,
     pousser_item,
     publier_collection,
     publier_item,
+)
+from archives_tool.api.services.nakala_depot_jobs import (
+    JobConcurrent,
+    executer_depot_collection,
+    lire_etat_job,
+    reserver_job,
 )
 from archives_tool.api.templating import templates
 from archives_tool.config import ConfigLocale
@@ -626,4 +637,184 @@ def executer_publier_collection(
     return RedirectResponse(
         f"/fonds/{fonds or cote}?nakala_publie_items={len(rapport.publies)}",
         status_code=303,
+    )
+
+
+# ---------------------------------------------------------------------------
+# D3 (backlog dépôt UI) — dépôt collection en tâche de fond
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/nakala/deposer-collection",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def apercu_deposer_collection(
+    request: Request,
+    cote: str = Query(...),
+    fonds: str | None = Query(None),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    racines: dict[str, Path] = Depends(get_racines),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Aperçu (dry-run) du dépôt d'une collection.
+
+    Liste : items déposables (avec fichiers), items non-déposables
+    (Nakala-only), erreurs préflight. Permet à l'utilisateur de relire
+    avant de confirmer.
+    """
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds or None)
+    # Garde défensive : si la miroir a déjà un DOI, le bouton « Déposer »
+    # n'aurait pas dû être affiché (cf. fonds_lecture.html), mais on
+    # protège contre l'accès direct par URL.
+    if collection.doi_nakala:
+        return _redirect_fonds_erreur(
+            fonds or cote,
+            f"Collection {collection.cote} déjà déposée "
+            f"(DOI {collection.doi_nakala}). Utiliser « Pousser vers Nakala » "
+            "pour les modifications.",
+        )
+    ecriture = _client_ecriture_ou_none(config)
+    try:
+        rapport = deposer_collection(
+            db, ecriture, collection, racines=racines,
+            dry_run=True, cree_par=utilisateur,
+        )
+    except ErreurNakala as exc:
+        return _redirect_fonds_erreur(
+            fonds or cote, _message_erreur_nakala(exc, cote)
+        )
+    finally:
+        _fermer(ecriture)
+    return templates.TemplateResponse(
+        request,
+        "pages/nakala_deposer_collection_apercu.html",
+        _contexte_base(
+            nom_base, utilisateur,
+            rapport=rapport, cote=cote, fonds=fonds or "",
+            collection_titre=collection.titre,
+        ),
+    )
+
+
+@router.post("/nakala/deposer-collection")
+def lancer_depot_collection(
+    cote: Annotated[str, Form()],
+    fonds: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    racines: dict[str, Path] = Depends(get_racines),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    """Lance le dépôt en tâche de fond.
+
+    Réserve un job_id (lève `JobConcurrent` si un autre dépôt tourne),
+    démarre un `threading.Thread` daemon qui appelle
+    `executer_depot_collection(...)`, puis redirige immédiatement vers
+    la page de suivi. **Bloqué 423** par le middleware en lecture seule
+    (la route est invoquée par le middleware avant ce handler).
+    """
+    if not _ecriture_configuree(config):
+        return _redirect_fonds_erreur(fonds or cote, _config_ecriture_absente())
+    collection = _resoudre_collection_ou_404(db, cote, fonds or None)
+    if collection.doi_nakala:
+        return _redirect_fonds_erreur(
+            fonds or cote,
+            f"Collection {collection.cote} déjà déposée.",
+        )
+    total = len(collection.items)
+    try:
+        job_id = reserver_job(
+            fonds_cote=collection.fonds.cote if collection.fonds else "",
+            collection_cote=collection.cote, total=total,
+        )
+    except JobConcurrent as exc:
+        return _redirect_fonds_erreur(fonds or cote, str(exc))
+
+    # Thread daemon : meurt avec le serveur uvicorn. La reprise après
+    # restart est gérée côté donnée (DOI commités par item).
+    # `racines` et `config.nakala` sont passés par référence — partage
+    # mémoire OK puisque le runner ne les mute pas.
+    thread = threading.Thread(
+        target=executer_depot_collection,
+        args=(job_id,),
+        kwargs={
+            "chemin_db": chemin_base_courant(),
+            "collection_id": collection.id,
+            "config_nakala": config.nakala,
+            "racines": dict(racines),
+            "cree_par": utilisateur,
+        },
+        daemon=True,
+        name=f"depot-collection-{job_id[:8]}",
+    )
+    thread.start()
+
+    return RedirectResponse(
+        f"/nakala/deposer-collection/suivi/{job_id}",
+        status_code=303,
+    )
+
+
+@router.get(
+    "/nakala/deposer-collection/suivi/{job_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def page_suivi_depot(
+    job_id: str,
+    request: Request,
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Page de suivi du dépôt — affiche barre de progression + journal.
+
+    Le fragment HTMX `every 2s` (statut) met à jour la barre. Si le job
+    n'existe pas (uvicorn redémarré → registre vidé), retour à `/nakala`
+    avec un message d'erreur.
+    """
+    etat = lire_etat_job(job_id)
+    if etat is None:
+        return _redirect_erreur(
+            f"Job {job_id[:8]}… introuvable "
+            "(serveur redémarré ou job nettoyé). "
+            "Relancer le dépôt depuis la page du fonds."
+        )
+    return templates.TemplateResponse(
+        request,
+        "pages/nakala_deposer_suivi.html",
+        _contexte_base(
+            nom_base, utilisateur,
+            etat=etat, job_id=job_id,
+        ),
+    )
+
+
+@router.get(
+    "/nakala/deposer-collection/statut/{job_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def fragment_statut_depot(
+    job_id: str, request: Request,
+) -> HTMLResponse:
+    """Fragment HTMX (every 2s) — barre + dernière cote traitée.
+
+    Retourne le markup partiel à injecter dans la page suivi. 404 si
+    le job est inconnu — HTMX peut afficher un message côté client.
+    """
+    etat = lire_etat_job(job_id)
+    if etat is None:
+        return HTMLResponse(
+            f"<p>Job introuvable.</p>", status_code=404,
+        )
+    return templates.TemplateResponse(
+        request,
+        "partials/nakala_deposer_statut.html",
+        {"etat": etat, "request": request},
     )

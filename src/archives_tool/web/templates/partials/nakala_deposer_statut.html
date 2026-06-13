@@ -1,0 +1,98 @@
+{# Fragment HTMX du suivi de dépôt — recharge every 2s.
+
+   Variables :
+   - etat : EtatJobDepot (snapshot deepcopy)
+
+   Le wrapper `#statut-job` doit avoir les hx-* du parent ; quand le
+   job est `termine` ou `echec`, on retire `hx-trigger` pour arrêter
+   le polling — sinon HTMX continuerait indéfiniment.
+#}
+{%- set arret = etat.statut in ("termine", "echec") -%}
+<div id="statut-job"
+     {%- if not arret %}
+     hx-get="/nakala/deposer-collection/statut/{{ etat.job_id }}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {%- endif %}>
+
+  {# Barre de progression #}
+  {%- set pct = (100 * etat.faits / etat.total) if etat.total > 0 else 0 -%}
+  <div style="background:#e5e7eb;border-radius:6px;overflow:hidden;height:18px;margin-bottom:12px;">
+    <div style="height:100%;width:{{ pct|round(1) }}%;background:{% if etat.statut == 'echec' %}#991b1b{% elif arret %}#065f46{% else %}#1e40af{% endif %};transition:width 0.3s;"></div>
+  </div>
+  <p class="text-sm" style="margin-bottom:8px;color:#374151;">
+    <strong>{{ etat.faits }} / {{ etat.total }}</strong>
+    {%- if etat.cote_courante %}
+    — dernier traité : <code style="font-family:monospace;">{{ etat.cote_courante }}</code>
+    {%- endif %}
+  </p>
+
+  {# Statut #}
+  {%- if etat.statut == "en_cours" %}
+  <p class="text-sm" style="color:#1e40af;">⏳ En cours…</p>
+  {%- elif etat.statut == "termine" %}
+  <p class="text-sm" style="color:#065f46;">✓ Terminé.</p>
+  {%- elif etat.statut == "echec" %}
+  <p class="text-sm" style="color:#991b1b;">✗ Échec : {{ etat.erreur_globale }}</p>
+  {%- endif %}
+
+  {# Résumé final si terminé #}
+  {%- if arret %}
+  <div class="flex gap-3 mb-4 flex-wrap mt-3">
+    {%- set carte = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:10px 14px;min-width:110px;" %}
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:#065f46;">{{ etat.deposes|length }}</div>
+      <div class="text-xs text-gray-500">déposé(s)</div>
+    </div>
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:#1f2937;">{{ etat.sautes|length }}</div>
+      <div class="text-xs text-gray-500">sauté(s)</div>
+    </div>
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:#92400e;">{{ etat.non_deposables|length }}</div>
+      <div class="text-xs text-gray-500">non-déposable(s)</div>
+    </div>
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:{% if etat.erreurs %}#991b1b{% else %}#9ca3af{% endif %};">{{ etat.erreurs|length }}</div>
+      <div class="text-xs text-gray-500">erreur(s)</div>
+    </div>
+  </div>
+
+  {%- if etat.collection_doi %}
+  <p class="text-sm" style="margin-bottom:8px;">
+    DOI collection :
+    <code style="font-family:monospace;">{{ etat.collection_doi }}</code>
+  </p>
+  {%- endif %}
+
+  {%- if etat.erreurs %}
+  <details class="mb-4" style="font-size:13px;">
+    <summary style="cursor:pointer;color:#991b1b;">{{ etat.erreurs|length }} erreur(s) item</summary>
+    <ul style="margin:8px 0 0 18px;color:#7f1d1d;">
+      {%- for c, detail in etat.erreurs %}
+      <li><code style="font-family:monospace;">{{ c }}</code> — {{ detail }}</li>
+      {%- endfor %}
+    </ul>
+  </details>
+  {%- endif %}
+
+  <div class="mt-4 flex gap-2 flex-wrap">
+    <a href="/fonds/{{ etat.fonds_cote }}"
+       style="padding:6px 14px;font-size:13px;border-radius:4px;background:#1e40af;color:white;text-decoration:none;">
+      Retour au fonds
+    </a>
+    {%- if etat.statut == "echec" %}
+    {# Reprise : un nouveau POST relance le dépôt. La reprise idempotente
+       saute les items déjà déposés grâce à `Item.doi_nakala`. #}
+    <form method="post" action="/nakala/deposer-collection" style="display:inline;">
+      <input type="hidden" name="cote" value="{{ etat.collection_cote }}">
+      <input type="hidden" name="fonds" value="{{ etat.fonds_cote }}">
+      <button type="submit"
+              style="padding:6px 14px;font-size:13px;border-radius:4px;background:#92400e;color:white;border:0;cursor:pointer;">
+        Reprendre
+      </button>
+    </form>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</div>

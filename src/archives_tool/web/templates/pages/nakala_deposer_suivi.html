@@ -1,0 +1,30 @@
+{# Page de suivi d'un dépôt collection en tâche de fond.
+
+   Variables :
+   - etat : EtatJobDepot (snapshot deepcopy issu de lire_etat_job)
+   - job_id : str (UUID hex)
+
+   Le fragment HTMX `every 2s` met à jour le contenu via
+   `/nakala/deposer-collection/statut/{job_id}`.
+#}
+{% extends "base.html" %}
+{% block title %}Dépôt en cours · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/fonds/{{ etat.fonds_cote }}" class="text-sm" style="color:#2563eb;">← Fonds {{ etat.fonds_cote }}</a>
+</div>
+
+<h1 class="text-xl font-medium mb-1" style="color:#1f1f1f;">Dépôt en cours sur Nakala</h1>
+<p class="text-sm text-gray-500 mb-4">
+  Collection <strong>{{ etat.collection_cote }}</strong> — job <code style="font-family:monospace;">{{ job_id[:8] }}</code>.
+</p>
+
+{# Le partial possède le wrapper #statut-job avec hx-get/hx-trigger.
+   On l'inclut directement — `hx-swap="outerHTML"` remplace le wrapper
+   par le nouveau wrapper à chaque tick HTMX. Pas de double wrapper
+   (sinon doublon d'id, comportement HTMX imprévisible). #}
+{% with etat=etat %}
+  {% include "partials/nakala_deposer_statut.html" %}
+{% endwith %}
+{% endblock %}

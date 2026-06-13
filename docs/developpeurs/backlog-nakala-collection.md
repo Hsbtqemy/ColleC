@@ -131,11 +131,33 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
   - GET statut job inconnu → 404 (HTMX gère côté client) ;
   - GET statut quand job=termine → markup sans `every 2s` (le
     polling s'arrête, sinon le browser garderait un cycle infini).
-- [ ] **D4 — Templates** : `nakala_deposer_collection_apercu.html` (miroir du
-  push : plan + avertissement de durée appuyé + « gros fonds → CLI ») +
-  `nakala_deposer_suivi.html` (barre N/total + journal par item + bouton
-  **« Reprendre »** si job interrompu + lien fonds à la fin). Bouton « Déposer
-  sur Nakala (réserver les DOI) » sur `fonds_lecture.html` (si miroir sans DOI).
+- [x] **D4 — Templates** : les 3 templates créés en D3 couvraient déjà
+  l'essentiel ; D4 a apporté le polish et la voie d'entrée :
+  - **Bouton « Déposer sur Nakala »** sur `fonds_lecture.html` dans le
+    bloc actions du bandeau fonds. Branche `{% elif detail.miroir_resume
+    and not est_lecture_seule() %}` (dichotomie nette avec
+    Rafraîchir/Pousser/Publier qui apparaissent quand `doi_nakala_miroir`
+    est posé). Style vert émeraude (cohérent avec « créer » + statut
+    pending réversible). Masqué en lecture seule (cohérent avec le 423
+    middleware sur POST).
+  - **Aperçu** (`nakala_deposer_collection_apercu.html`) : avertissement
+    de durée **tiérisé** (≥10 / ≥50 / ≥200 items) avec, pour les très
+    gros fonds (200+), recommandation explicite de la CLI + commande
+    pré-remplie dans un `<pre>` (avec `--appliquer`). Les 2 paliers
+    inférieurs gardent l'option UI tout en étant honnêtes sur la durée.
+  - **Suivi** (`nakala_deposer_suivi.html` + partial
+    `nakala_deposer_statut.html`) déjà fonctionnel depuis D3 : barre,
+    `faits/total`, `cote_courante` (dernier traité), statut texte,
+    résumé final (4 cartes), DOI collection final, erreurs détaillées,
+    bouton « Reprendre » si echec, retour fonds. **Arrêt du polling**
+    quand `statut in (termine, echec)` — retire `hx-trigger` du
+    wrapper. Pas de journal chronologique par item (nécessiterait
+    d'étendre la signature D1 du callback `progress` avec un `outcome`
+    — repoussé si demande réelle).
+  3 tests bouton dans `test_nakala_web_deposer.py` :
+  - bouton visible si miroir sans DOI (URL pointe sur GET aperçu D3) ;
+  - bouton absent si DOI posé (Rafraîchir/Pousser/Publier à la place) ;
+  - bouton absent en lecture seule.
 - [ ] **D5 — Doc + décision d'archi** : noter dans `CLAUDE.md` (section
   *Décisions d'architecture notables*) l'introduction de la **1ʳᵉ tâche de fond**
   (scope, sûreté par reprise idempotente, pas de broker) ; cocher ce backlog ;

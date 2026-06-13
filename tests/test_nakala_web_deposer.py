@@ -378,6 +378,47 @@ def test_get_statut_404_si_job_inconnu(
     assert r.status_code == 404
 
 
+def test_bouton_deposer_present_sur_fonds_si_miroir_sans_doi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D4 : sur `/fonds/AS`, le bouton « Déposer sur Nakala » apparaît
+    quand la miroir n'a PAS encore de `doi_nakala`. URL pointe sur la
+    route GET d'aperçu de D3."""
+    client = _client(tmp_path, monkeypatch, doi_nakala=None)
+    r = client.get("/fonds/AS")
+    assert r.status_code == 200
+    assert "Déposer sur Nakala" in r.text
+    assert "/nakala/deposer-collection" in r.text
+
+
+def test_bouton_deposer_absent_sur_fonds_si_miroir_a_deja_doi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Le bouton est masqué si la miroir a déjà un DOI — la dichotomie
+    avec Rafraîchir/Pousser/Publier qui apparaissent à la place est
+    nette."""
+    client = _client(tmp_path, monkeypatch, doi_nakala="10.34847/nkl.dejaPose")
+    r = client.get("/fonds/AS")
+    assert r.status_code == 200
+    assert "Déposer sur Nakala" not in r.text
+    # Les boutons de l'autre branche sont visibles
+    assert "Rafraîchir depuis Nakala" in r.text
+    assert "Pousser vers Nakala" in r.text
+
+
+def test_bouton_deposer_absent_en_lecture_seule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """En lecture seule, le bouton n'est pas affiché — le POST serait
+    bloqué 423 mais le bouton serait trompeur."""
+    client = _client(
+        tmp_path, monkeypatch, doi_nakala=None, lecture_seule=True,
+    )
+    r = client.get("/fonds/AS")
+    assert r.status_code == 200
+    assert "Déposer sur Nakala" not in r.text
+
+
 def test_get_statut_arrete_polling_quand_termine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

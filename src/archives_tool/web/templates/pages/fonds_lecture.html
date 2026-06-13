@@ -119,6 +119,19 @@
             Publier la collection
           </a>
         {% endif %}
+      {% elif detail.miroir_resume and not est_lecture_seule() %}
+        {# D4 (backlog dépôt UI) : bouton de dépôt phase 1 — création de
+           la collection Nakala + réservation des DOI des items (statut
+           `pending`, réversible). N'apparaît que si la miroir n'a PAS
+           encore de DOI (sinon dichotomie nette avec Rafraîchir / Pousser
+           / Publier ci-dessus). Masqué en lecture seule — le POST serait
+           bloqué 423 mais le bouton serait trompeur. #}
+        <a href="/nakala/deposer-collection?cote={{ detail.miroir_resume.cote | urlencode }}&fonds={{ detail.fonds.cote | urlencode }}"
+           class="inline-flex items-center px-3 py-1 text-sm border rounded hover:bg-emerald-50"
+           style="color:#065f46;border-color:#a7f3d0;"
+           title="Créer la collection Nakala + réserver les DOI des items (statut pending, réversible). Tâche de fond.">
+          Déposer sur Nakala
+        </a>
       {% endif %}
       {% if not est_lecture_seule() %}
         <a href="/fonds/{{ detail.fonds.cote }}/modifier"

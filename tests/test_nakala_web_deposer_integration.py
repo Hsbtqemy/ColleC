@@ -210,6 +210,17 @@ def test_web_deposer_collection_live(
         # 3. Attend la fin du job.
         etat = _polling_jusqu_a_fin(job_id)
 
+        # Capture les DOIs ASAP, AVANT toute assertion. Si une assertion
+        # plus bas saute (statut=echec, mismatch de compteur, vérif
+        # distante…), le cleanup `finally` doit pouvoir effacer ce qui a
+        # déjà été créé sur apitest. Le runner peut très bien avoir
+        # `collection_doi` et quelques `Item.doi_nakala` posés AVANT
+        # qu'une étape ultérieure plante. Source de vérité = registre
+        # mémoire (deepcopy thread-safe) + base locale.
+        if etat.collection_doi:
+            doi_collection = etat.collection_doi
+        doi_items = _items_doi(db)
+
         # 4. Assertions état + base.
         assert etat.statut == "termine", (
             f"Job en {etat.statut} — erreurs : {etat.erreurs} / "
@@ -221,15 +232,13 @@ def test_web_deposer_collection_live(
         assert len(etat.erreurs) == 0
         assert etat.collection_creee is True
         assert etat.collection_doi is not None
-
-        doi_collection = etat.collection_doi
-        doi_items = _items_doi(db)
         assert len(doi_items) == 3
         assert _miroir_doi(db) == doi_collection
 
         # 5. Vérification côté Nakala : la collection existe et liste 3 datas.
         cli = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
         try:
+            assert doi_collection is not None  # rassure mypy après les asserts ci-dessus
             collec = cli.lire_collection(doi_collection)
             assert collec.get("status") == "private"
             datas = collec.get("datas", [])
@@ -251,4 +260,20 @@ def test_web_deposer_collection_live(
         finally:
             cli.fermer()
     finally:
+        # Filet defensif : si le polling a timeout (pytest.fail leve
+        # AVANT la capture ligne ~218), `doi_collection` est encore
+        # None et `doi_items` est vide — alors que le runner peut etre
+        # en train de finir sur apitest. Lookup defensif :
+        # - registre : `collection_doi` est pose dès que `POST /collections`
+        #   réussit (cf. nakala_depot.py:346-349) ;
+        # - base : chaque `Item.doi_nakala` est commité après son depot
+        #   (nakala_depot.py:240) — visible même mid-run.
+        # Garantit qu'on ne laisse pas de pending orphelins sur apitest
+        # même en cas de timeout.
+        if doi_collection is None:
+            etat_final = nakala_depot_jobs.lire_etat_job(job_id)
+            if etat_final is not None and etat_final.collection_doi:
+                doi_collection = etat_final.collection_doi
+        if not doi_items:
+            doi_items = _items_doi(db)
         _supprimer_distants(doi_collection, doi_items)

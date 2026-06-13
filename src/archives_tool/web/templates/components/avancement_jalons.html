@@ -1,0 +1,60 @@
+{# ---------------------------------------------------------------------------
+   avancement_jalons.html — Vue de pilotage du chantier par jalons
+   ---------------------------------------------------------------------------
+   Lecture cumulative et séquentielle des items d'un fonds (cf.
+   `plan-de-chantier.md` section *Vue de pilotage du chantier*) :
+     planifiés → numérisés → vérifiés → validés
+   Chaque jalon affiche sa valeur absolue, son pourcentage vs planifiés,
+   et une barre proportionnelle. Distinct de `avancement_detaille` qui
+   montre la **répartition** des états de catalogage en stack chart ;
+   ici on rend une cascade séquentielle qui pose la question « où en est
+   le chantier dans son ensemble ? ».
+
+   Macro :
+     avancement_jalons(jalons)  → 4 lignes (cascade vertical)
+
+   `jalons` est un `AvancementJalons` (dataclass) avec :
+     planifies / numerises / verifies / valides : int
+     pourcentage(jalon) → float ∈ [0, 100]
+     vide → True si planifies == 0
+
+   Note : pas de jalon OCR — module non encore implémenté (cf.
+   `ocr-module-future.md`). À ajouter en V1.x/V2 quand le module pose
+   un flag par item.
+   --------------------------------------------------------------------------- #}
+
+{%- set _JALONS = [
+  ('planifies', 'Planifiés',  '#9ca3af', 'Items créés en base — premier état après import inventaire ou création série.'),
+  ('numerises', 'Numérisés',  '#60a5fa', 'Items avec au moins un fichier rattaché.'),
+  ('verifies',  'Vérifiés',   '#3b82f6', 'Items en état `vérifié` ou `validé`.'),
+  ('valides',   'Validés',    '#1d4ed8', 'Items en état `validé` (notice finalisée).'),
+] -%}
+
+{% macro avancement_jalons(jalons) -%}
+{%- if jalons.vide -%}
+  <p class="text-sm text-gray-500">
+    Aucun item planifié — créez une série d'items ou importez un inventaire
+    pour démarrer le suivi de chantier.
+  </p>
+{%- else -%}
+  <div class="space-y-2.5">
+  {%- for cle, libelle, couleur, aide in _JALONS -%}
+    {%- set valeur = jalons[cle] -%}
+    {%- set pct = jalons.pourcentage(valeur)|round(1) -%}
+    <div class="grid grid-cols-[140px_1fr_70px] items-center gap-3" title="{{ aide }}">
+      <span class="text-sm text-gray-700">{{ libelle }}</span>
+      <div class="bg-gray-100 overflow-hidden" style="height:8px;border-radius:4px;">
+        {%- if valeur > 0 -%}
+        <div style="width:{{ pct }}%;background:{{ couleur }};height:100%;
+                    transition:width 0.3s;"></div>
+        {%- endif -%}
+      </div>
+      <span class="text-sm text-gray-600 text-right font-variant-numeric tabular-nums">
+        {{ '{:,}'.format(valeur)|replace(',', ' ') }}
+        <span class="text-xs text-gray-400">· {{ pct }}%</span>
+      </span>
+    </div>
+  {%- endfor -%}
+  </div>
+{%- endif -%}
+{%- endmacro %}

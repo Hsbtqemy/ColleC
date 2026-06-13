@@ -342,13 +342,120 @@ def test_page_fonds_modifie_par_garde_fonds_si_plus_recent(
     assert detail.modifie_par == "Hugo"
 
 
-def test_page_fonds_n_emet_pas_plus_de_9_requetes(session_demo: Session) -> None:
-    """Garde-fou : `composer_page_fonds` reste sous 9 requêtes SQL sur
+# ---------------------------------------------------------------------------
+# Avancement par jalons (plan-de-chantier.md)
+# ---------------------------------------------------------------------------
+
+
+def test_avancement_jalons_demo_coherent(session_demo: Session) -> None:
+    """Les 4 jalons (planifies, numerises, verifies, valides) sont peuplés
+    et cohérents : planifies = nb_items, verifies inclut valides, valeurs
+    bornées par planifies."""
+    detail = composer_page_fonds(session_demo, "HK")
+    j = detail.avancement_jalons
+    assert j.planifies == detail.nb_items
+    # `verifies` agrège verifie + valide → il inclut `valides` par construction.
+    assert j.verifies >= j.valides
+    # `numerises` ≤ `planifies` (un item peut ne pas avoir de fichier).
+    assert 0 <= j.numerises <= j.planifies
+    # `verifies` et `valides` ≤ `planifies`.
+    assert 0 <= j.verifies <= j.planifies
+    assert 0 <= j.valides <= j.planifies
+    assert not j.vide  # demo a des items
+
+
+def test_avancement_jalons_fonds_vide_signale_vide(session_neuve: Session) -> None:
+    """Fonds sans items → `vide=True`, tous les jalons à 0."""
+    creer_fonds(session_neuve, FormulaireFonds(cote="VIDE", titre="Vide"))
+    detail = composer_page_fonds(session_neuve, "VIDE")
+    j = detail.avancement_jalons
+    assert j.vide
+    assert j.planifies == 0
+    assert j.numerises == 0
+    assert j.verifies == 0
+    assert j.valides == 0
+
+
+def test_avancement_jalons_pourcentage_borne(session_neuve: Session) -> None:
+    """`pourcentage(jalon)` ∈ [0, 100], 0.0 si planifies=0."""
+    from archives_tool.api.services.dashboard import AvancementJalons
+
+    vide = AvancementJalons(planifies=0, numerises=0, verifies=0, valides=0)
+    assert vide.pourcentage(0) == 0.0
+    assert vide.pourcentage(5) == 0.0  # garde-fou : pas de division par zéro
+
+    plein = AvancementJalons(planifies=10, numerises=3, verifies=2, valides=1)
+    assert plein.pourcentage(plein.planifies) == 100.0
+    assert plein.pourcentage(plein.numerises) == 30.0
+    assert plein.pourcentage(0) == 0.0
+    # Donnée incohérente (jalon > planifies) : borne à 100.
+    assert plein.pourcentage(50) == 100.0
+
+
+def test_avancement_jalons_verifies_inclut_valides(session_neuve: Session) -> None:
+    """`verifies` est la somme des items en état `verifie` OU `valide` —
+    un item validé compte aussi comme vérifié (sémantique du workflow)."""
+    fonds = creer_fonds(session_neuve, FormulaireFonds(cote="W", titre="Workflow"))
+    creer_item(session_neuve, FormulaireItem(
+        cote="W-001", titre="A", fonds_id=fonds.id,
+        etat_catalogage=EtatCatalogage.VERIFIE,
+    ))
+    creer_item(session_neuve, FormulaireItem(
+        cote="W-002", titre="B", fonds_id=fonds.id,
+        etat_catalogage=EtatCatalogage.VALIDE,
+    ))
+    creer_item(session_neuve, FormulaireItem(
+        cote="W-003", titre="C", fonds_id=fonds.id,
+        etat_catalogage=EtatCatalogage.BROUILLON,
+    ))
+    detail = composer_page_fonds(session_neuve, "W")
+    j = detail.avancement_jalons
+    assert j.planifies == 3
+    assert j.verifies == 2  # W-001 (vérifié) + W-002 (validé)
+    assert j.valides == 1   # W-002
+
+
+def test_avancement_jalons_numerises_compte_items_pas_fichiers(
+    session_neuve: Session,
+) -> None:
+    """`numerises` compte les items DISTINCT avec ≥1 fichier, pas les
+    fichiers eux-mêmes — un item à 40 fichiers compte pour 1."""
+    from archives_tool.models import Fichier
+
+    fonds = creer_fonds(session_neuve, FormulaireFonds(cote="N", titre="Numerise"))
+    item_avec = creer_item(session_neuve, FormulaireItem(
+        cote="N-001", titre="Avec fichiers", fonds_id=fonds.id,
+    ))
+    creer_item(session_neuve, FormulaireItem(
+        cote="N-002", titre="Sans fichier", fonds_id=fonds.id,
+    ))
+    # 3 fichiers sur le même item.
+    for i in range(3):
+        session_neuve.add(Fichier(
+            item_id=item_avec.id, nom_fichier=f"f{i}.jpg",
+            racine="scans", chemin_relatif=f"f{i}.jpg", ordre=i + 1,
+        ))
+    session_neuve.commit()
+
+    detail = composer_page_fonds(session_neuve, "N")
+    j = detail.avancement_jalons
+    assert j.planifies == 2
+    assert j.numerises == 1  # NOT 3 — un seul item couvert
+    assert detail.nb_fichiers == 3  # global compteur fichiers
+
+
+def test_page_fonds_n_emet_pas_plus_de_10_requetes(session_demo: Session) -> None:
+    """Garde-fou : `composer_page_fonds` reste sous 10 requêtes SQL sur
     la base demo (5 fonds, ~60 items pour le fonds HK).
 
     Indépendant du nombre de collections du fonds — toute boucle Python
     ne fait qu'attacher des agrégats déjà calculés. Si ce test régresse,
     quelqu'un a réintroduit un N+1 ou ajouté une query dérivable.
+
+    Bump de 9 → 10 : ajout du jalon « numérisés » (items DISTINCT avec
+    fichier) pour la section *Avancement par jalons* (cf.
+    `plan-de-chantier.md`). Les autres jalons (vérifiés, validés) se
+    dérivent de `repartition_etats` sans query supplémentaire.
     """
     queries: list[str] = []
 
@@ -362,9 +469,9 @@ def test_page_fonds_n_emet_pas_plus_de_9_requetes(session_demo: Session) -> None
     finally:
         event.remove(engine, "before_cursor_execute", _on_execute)
 
-    assert len(queries) <= 9, (
+    assert len(queries) <= 10, (
         f"composer_page_fonds a émis {len(queries)} requêtes "
-        f"(limite : 9). Première requête : {queries[0][:80]}"
+        f"(limite : 10). Première requête : {queries[0][:80]}"
     )
 
 

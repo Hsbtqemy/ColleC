@@ -570,6 +570,53 @@ def _composer_activite_recente(
 
 
 @dataclass(frozen=True)
+class AvancementJalons:
+    """Lecture par jalons du chantier d'un fonds (cf. `plan-de-chantier.md`).
+
+    Quatre jalons, ordre du moins au plus avancé :
+
+    - **planifies** : items qui existent en base (= `nb_items` du fonds).
+      Premier état après création série / import inventaire.
+    - **numerises** : items avec au moins un fichier rattaché (étape de
+      numérisation faite). Distinct du `nb_fichiers` total qui compte
+      les fichiers individuels — ici on compte les items couverts.
+    - **verifies** : items dont `etat_catalogage` est `verifie` OU `valide`
+      (un item validé l'est aussi par construction). Cohérent avec la
+      sémantique du workflow `etat_catalogage` (cf. modèle Item).
+    - **valides** : items dont `etat_catalogage` est `valide`. Dérivable
+      de `repartition_etats` mais expose ici comme jalon pour la lisibilité.
+
+    Le jalon **OCR** n'est pas dans cette dataclass : ColleC ne stocke
+    pas encore d'indication d'OCR par item (module OCR en chantier futur,
+    cf. `ocr-module-future.md`). À ajouter en V1.x/V2 quand le module
+    OCR pose un flag ou un compteur ALTO.
+
+    Champs annexes (pour le rendu) :
+
+    - **pourcentages** : float ∈ [0.0, 100.0] pour chaque jalon vs
+      `planifies`. `planifies = 0` → tous à 0.0 (vide tableau de bord).
+    """
+
+    planifies: int
+    numerises: int
+    verifies: int
+    valides: int
+
+    @property
+    def vide(self) -> bool:
+        """Pas un seul item planifié : on masque la section pour ne pas
+        bruiter un fonds tout juste créé."""
+        return self.planifies == 0
+
+    def pourcentage(self, jalon: int) -> float:
+        """Pourcentage d'un jalon vis-à-vis de `planifies`. Borné [0, 100]."""
+        if self.planifies == 0:
+            return 0.0
+        # Garde-fou : si jalon > planifies (donnée incohérente), borne à 100.
+        return min(100.0, 100.0 * jalon / self.planifies)
+
+
+@dataclass(frozen=True)
 class FondsDetail:
     fonds: Fonds  # modèle ORM (le template lit ses champs métadonnées)
     nb_items: int
@@ -583,6 +630,11 @@ class FondsDetail:
     #: DOI Nakala de la miroir (si publiée) — alimente le bouton
     #: « Rafraîchir depuis Nakala » de la page fonds.
     doi_nakala_miroir: str | None = None
+    #: Avancement par jalons (planifiés / numérisés / vérifiés / validés).
+    #: cf. `plan-de-chantier.md` section *Vue de pilotage du chantier*.
+    avancement_jalons: AvancementJalons = field(
+        default_factory=lambda: AvancementJalons(0, 0, 0, 0)
+    )
 
     @property
     def miroir_resume(self) -> CollectionResume | None:
@@ -694,6 +746,29 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         or 0
     )
 
+    # ---- Avancement par jalons (1 query : items DISTINCT avec fichier)
+    # Les jalons verifies/valides se dérivent de `repartition_fonds`
+    # (déjà chargé) sans nouvelle query. Seul `numerises` (≥1 fichier)
+    # demande un COUNT(DISTINCT) — on ne peut pas le déduire de
+    # `nb_fichiers_fonds` qui compte les fichiers, pas les items couverts.
+    items_avec_fichier: int = (
+        db.scalar(
+            select(func.count(func.distinct(Item.id)))
+            .join(Fichier, Fichier.item_id == Item.id)
+            .where(Item.fonds_id == fonds.id)
+        )
+        or 0
+    )
+    avancement_jalons = AvancementJalons(
+        planifies=nb_items,
+        numerises=items_avec_fichier,
+        # `verifie` + `valide` (un item validé l'est aussi par construction).
+        verifies=(
+            repartition_fonds.get("verifie", 0) + repartition_fonds.get("valide", 0)
+        ),
+        valides=repartition_fonds.get("valide", 0),
+    )
+
     # ---- Traçabilité fusionnée avec le dernier item du fonds (1 query)
     f_mod_le, f_mod_par = _tracabilite_fusionnee_avec_dernier_item(
         db,
@@ -780,6 +855,7 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         modifie_par=f_mod_par,
         modifie_le=f_mod_le,
         doi_nakala_miroir=doi_nakala_miroir,
+        avancement_jalons=avancement_jalons,
     )
 
 

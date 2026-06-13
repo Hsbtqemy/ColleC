@@ -9,6 +9,7 @@
 #}
 {% extends "base.html" %}
 {% from 'components/avancement.html' import avancement_detaille %}
+{% from 'components/avancement_jalons.html' import avancement_jalons %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
 {% from 'components/tableau_collections.html' import tableau_collections %}
 
@@ -149,6 +150,23 @@
     </div>
   </div>
 </header>
+
+{# Vue de pilotage du chantier (cf. plan-de-chantier.md) : lecture cumulative
+   par jalons sequentiels, distincte de avancement_detaille du bandeau qui
+   montre la repartition des etats. Auto-masque sur fonds sans items
+   (avancement_jalons rend lui-meme un message « aucun item planifie »). #}
+{% if not detail.avancement_jalons.vide %}
+<section class="mb-6" style="background:#fafafa;border:1px solid rgba(0,0,0,0.06);
+                              border-radius:8px;padding:16px 18px;">
+  <h2 class="text-sm font-medium mb-3" style="color:#1f1f1f;">
+    Avancement par jalons
+    <span class="text-xs text-gray-500 font-normal">
+      · vue cumulative du chantier
+    </span>
+  </h2>
+  {{ avancement_jalons(detail.avancement_jalons) }}
+</section>
+{% endif %}
 
 {# Synthèse fonds : section dense au-dessus de la liste des collections.
    Auto-masquée si aucun item ou rien d'agrégable (synthese.vide). #}

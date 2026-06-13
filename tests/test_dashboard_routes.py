@@ -199,6 +199,50 @@ def test_fonds_lecture_composants_riches(client_demo: TestClient) -> None:
     assert "Avancement" in response.text
 
 
+def test_fonds_lecture_section_avancement_jalons(client_demo: TestClient) -> None:
+    """La section *Avancement par jalons* (cf. `plan-de-chantier.md`) rend
+    les 4 jalons quand le fonds a des items."""
+    response = client_demo.get("/fonds/HK")
+    assert response.status_code == 200
+    # Titre de section distinct de « Avancement du catalogage » (du bandeau).
+    assert "Avancement par jalons" in response.text
+    # Les 4 jalons sont labelisés.
+    assert "Planifiés" in response.text
+    assert "Numérisés" in response.text
+    assert "Vérifiés" in response.text
+    assert "Validés" in response.text
+
+
+def test_fonds_lecture_section_jalons_masquee_si_fonds_vide(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fonds sans items : la section *Avancement par jalons* ne rend pas
+    (avancement_jalons.vide=True, conditional dans le template)."""
+    from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
+    from archives_tool.db import (
+        assurer_tables_fts, creer_engine, creer_session_factory,
+    )
+    from archives_tool.models import Base
+
+    db = tmp_path / "vide.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    assurer_tables_fts(engine)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Vide"))
+    engine.dispose()
+    monkeypatch.setenv("ARCHIVES_DB", str(db))
+    from archives_tool.api.main import app
+
+    response = TestClient(app).get("/fonds/VIDE")
+    assert response.status_code == 200
+    # Le bandeau « Avancement du catalogage » est toujours là (rendu
+    # par avancement_detaille même si vide), mais la section dédiée
+    # jalons est masquée.
+    assert "Avancement par jalons" not in response.text
+
+
 def test_fonds_inexistant_404(client_demo: TestClient) -> None:
     response = client_demo.get("/fonds/INEXISTANT")
     assert response.status_code == 404

@@ -164,8 +164,8 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `exporters/nakala.py` (CSV bulk) émet aussi la langue brute — même classe de
   bug sur un chemin séparé (upload manuel), à corriger après validation du
   format bulk.
-  **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6, branche
-  `feat/nakala-ui-depot-d1`) : bouton « Déposer sur Nakala » sur
+  **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6) :
+  bouton « Déposer sur Nakala » sur
   `fonds_lecture.html` (si miroir sans DOI, hors lecture seule), 4 routes
   `/nakala/deposer-collection` (GET aperçu / POST lance / GET suivi / GET
   statut) — le POST réserve un job, démarre un `threading.Thread` daemon

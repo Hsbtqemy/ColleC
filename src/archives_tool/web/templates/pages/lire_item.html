@@ -64,10 +64,15 @@
 
   {# Centre : visionneuse. id="zone-visionneuse" est la cible HTMX
      pour les swaps depuis le panneau vignettes et les boutons Page.
-     Le dispatcher choisit OSD / PDF.js / fallback selon l'extension. #}
+     Le dispatcher choisit OSD / PDF.js / fallback selon l'extension.
+
+     `lecture_seule=True` : la liseuse rend les annotations IIIF en
+     mode lecture pure (cf. annotations-image-future.md). L'attribut
+     data sur le wrapper OSD signale à `annotations_osd.js` qu'il
+     doit greffer Annotorious sans handlers create/update/delete. #}
   <div id="zone-visionneuse"
        style="flex:1;min-width:0;height:100%;">
-    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote) }}
+    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote, lecture_seule=True) }}
   </div>
 
   {# Droite : vignettes en colonne fixe. Variante simple (pas le
@@ -116,6 +121,29 @@
 {% block scripts %}
   <script src="{{ static_url('js/vendor/openseadragon/openseadragon.min.js') }}"></script>
   <script src="{{ static_url('js/visionneuse_osd.js') }}"></script>
+  {# Annotations IIIF en LECTURE SEULE — cf. annotations-image-future.md
+     section *Coexistence PDF.js / OSD dans la liseuse* :
+       catalogage = édition (page `/item/<cote>/visionneuse`),
+       consultation = lecture pure (cette page).
+     La macro `visionneuse_osd` rendue ici via `visionneuse_consultation`
+     pose `data-annotations-lecture-seule="1"` sur le wrapper viewer ;
+     `annotations_osd.js` lit cet attribut, greffe Annotorious avec
+     `readOnly=true` et n'attache PAS les handlers create/update/delete.
+     L'utilisateur consultant voit les annotations existantes mais ne
+     peut pas les modifier.
+
+     Indépendant de `est_lecture_seule()` : la liseuse marche aussi sur
+     instance en mode lecture seule globale ; le double verrou (attribut
+     data côté client + middleware 423 côté serveur) garantit qu'aucune
+     mutation ne passe. Vendors chargés uniquement s'il y a un fichier
+     image — pour PDF / xlsx / autres, visionneuse_consultation rend
+     respectivement PDF.js ou un fallback HTML, pas d'OSD donc pas
+     d'événement `visionneuse:pret`. #}
+  {% if f_courant %}
+    <link rel="stylesheet" href="{{ static_url('js/vendor/annotorious/annotorious.min.css') }}">
+    <script src="{{ static_url('js/vendor/annotorious/openseadragon-annotorious.min.js') }}"></script>
+    <script src="{{ static_url('js/annotations_osd.js') }}"></script>
+  {% endif %}
   {# Lot 3 : raccourcis clavier ← → page · Esc retour catalogage.
      Script chargé sur la page complète seulement — pas dans le partial
      swap (le listener global keydown reste persistent). #}

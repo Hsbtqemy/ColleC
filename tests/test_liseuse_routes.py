@@ -147,6 +147,54 @@ def test_partial_visionneuse_contient_les_3_fragments_oob(
     )
 
 
+# ---------------------------------------------------------------------------
+# Annotations IIIF en lecture seule sur la liseuse (chantier #2 petites portees)
+# ---------------------------------------------------------------------------
+
+
+def test_liseuse_wrapper_visionneuse_porte_lecture_seule(
+    client_demo: TestClient,
+) -> None:
+    """Le wrapper `visionneuse-<id>` rendu par la liseuse porte
+    `data-annotations-lecture-seule="1"`. Cet attribut est lu par
+    `annotations_osd.js` pour greffer Annotorious en mode lecture seule
+    (pas de handlers create/update/delete attachés).
+
+    cf. `annotations-image-future.md` *Coexistence PDF.js / OSD dans la
+    liseuse* : catalogage = édition, consultation = lecture pure."""
+    response = client_demo.get("/lire/HK/HK-001")
+    assert response.status_code == 200
+    # Le wrapper visionneuse OSD doit etre present (demo HK a apercu_chemin).
+    assert "visionneuse-osd" in response.text
+    assert 'data-annotations-lecture-seule="1"' in response.text
+
+
+def test_liseuse_charge_vendors_annotations(client_demo: TestClient) -> None:
+    """La liseuse charge les vendors Annotorious + le script de wiring.
+    Indépendamment de `est_lecture_seule()` (instance), car la lecture
+    seule des annotations est portée par l'attribut data, pas par le
+    skip vendor."""
+    response = client_demo.get("/lire/HK/HK-001")
+    assert response.status_code == 200
+    assert "openseadragon-annotorious.min.js" in response.text
+    assert "annotations_osd.js" in response.text
+
+
+def test_page_catalogage_wrapper_visionneuse_NE_porte_PAS_lecture_seule(
+    client_demo: TestClient,
+) -> None:
+    """Sur la page catalogage `/item/<cote>/visionneuse`, le wrapper NE
+    porte PAS l'attribut `data-annotations-lecture-seule` — Annotorious
+    s'y greffe en mode édition avec bouton « Annoter » et handlers
+    create/update/delete attachés. Contraste avec la liseuse."""
+    response = client_demo.get("/item/HK-001/visionneuse?fonds=HK")
+    assert response.status_code == 200
+    assert "visionneuse-osd" in response.text
+    # L'attribut est ABSENT (la macro `visionneuse_osd` est appelée sans
+    # `lecture_seule=True` côté catalogage).
+    assert "data-annotations-lecture-seule" not in response.text
+
+
 def test_liseuse_item_sans_fichier_rend_sans_crash(
     client_demo: TestClient, db_demo_factory
 ) -> None:

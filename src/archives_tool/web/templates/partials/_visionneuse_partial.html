@@ -40,11 +40,19 @@
 </div>
 
 {# Contenu principal : swap dans #zone-visionneuse. Le dispatcher
-   choisit OSD / PDF.js / fallback selon l'extension du fichier. #}
-{{ visionneuse_consultation(f_courant, item.cote, fonds_cote) }}
+   choisit OSD / PDF.js / fallback selon l'extension du fichier.
+   `lecture_seule=True` aligne le partial swap sur le rendu initial
+   de `lire_item.html` (cf. annotations-image-future.md : la liseuse
+   reste en lecture seule, même après navigation). #}
+{{ visionneuse_consultation(f_courant, item.cote, fonds_cote, lecture_seule=True) }}
 
 {# Ré-instancier OSD côté JS après swap HTMX. visionneuse_osd.js
-   écoute DOMContentLoaded — qui ne se redéclenche pas sur un swap. #}
+   écoute DOMContentLoaded — qui ne se redéclenche pas sur un swap.
+
+   Émet `visionneuse:pret` après l'`open` réussi pour que
+   `annotations_osd.js` puisse greffer Annotorious en lecture seule
+   sur la nouvelle visionneuse (sans ça, les annotations existantes
+   ne s'afficheraient pas après un swap depuis la 1re page). #}
 <script>
   (function () {
     if (typeof OpenSeadragon === "undefined") return;
@@ -66,6 +74,15 @@
         showRotationControl: true,
         showFullPageControl: true,
         gestureSettingsMouse: { clickToZoom: false },
+      });
+      // Cohérence avec visionneuse_osd.js : émettre `visionneuse:pret`
+      // au `open` reussi pour que les listeners (Annotorious notamment)
+      // se branchent sur la nouvelle instance OSD.
+      osd.addHandler("open", function () {
+        viz.dispatchEvent(new CustomEvent("visionneuse:pret", {
+          bubbles: true,
+          detail: { osd: osd, fichier_id: data.fichier_id || null },
+        }));
       });
       osd.addHandler("open-failed", function () {
         var fb = data.fallback;

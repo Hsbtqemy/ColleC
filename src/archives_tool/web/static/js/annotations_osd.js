@@ -274,8 +274,16 @@
    *  (récupéré par `chargerVocabulaires(fichierId)` côté caller).
    *  On passe une COPIE (`.slice()`) au widget pour qu'Annotorious
    *  ne capture pas la référence externe — défense en profondeur
-   *  contre toute mutation accidentelle ultérieure. */
-  function initialiserAnnotorious(osd, fichierId, vocabEntrees) {
+   *  contre toute mutation accidentelle ultérieure.
+   *
+   *  `lectureSeule` (boolean) : quand true (liseuse de consultation),
+   *  on n'attache PAS les handlers create/update/delete : Annotorious
+   *  reste en `readOnly=true` (pas de drag pour dessiner), affiche les
+   *  annotations existantes pour la lecture, mais l'utilisateur ne peut
+   *  rien créer/modifier/supprimer. Cf. spec annotations-image-future
+   *  section *Coexistence PDF.js / OSD dans la liseuse* :
+   *  catalogage = édition, consultation = lecture pure. */
+  function initialiserAnnotorious(osd, fichierId, vocabEntrees, lectureSeule) {
     if (fichierId == null) {
       console.warn(
         "[annotations] fichier_id absent — annotations désactivées.",
@@ -306,6 +314,15 @@
     });
 
     chargerAnnotations(anno, fichierId);
+
+    // Lecture seule : on stop ici. Annotorious affichera les annotations
+    // existantes (chargées ci-dessus) avec leur popup de lecture, mais
+    // l'utilisateur ne pourra ni en créer (drawingEnabled implicite à
+    // false via readOnly=true), ni en modifier ou supprimer (handlers
+    // non attachés → toute tentative reste lettre morte côté serveur).
+    if (lectureSeule) {
+      return anno;
+    }
 
     // Création : Annotorious appelle createAnnotation après le save
     // de la popup. La réponse serveur contient l'`id` neuf qu'on
@@ -367,11 +384,16 @@
     if (_annosParViseur.has(viz)) return; // déjà greffé (re-open)
     const { osd, fichier_id } = e.detail || {};
     if (!osd) return;
+    // Mode liseuse (lecture seule) signalé via attribut data sur le
+    // wrapper. Cf. macro `visionneuse_osd(... lecture_seule=True)`.
+    const lectureSeule = viz.dataset.annotationsLectureSeule === "1";
     // Charge le vocab filtré par le fichier courant — Annotorious démarre
     // avec les suggestions adaptées au fonds (cf. T2 scoping). Chaque
     // viewer reçoit son propre array (pas de singleton partagé).
-    const vocabEntrees = await chargerVocabulaires(fichier_id);
-    const anno = initialiserAnnotorious(osd, fichier_id, vocabEntrees);
+    // En lecture seule, le widget TAG n'est pas exposé (pas d'édition) :
+    // on évite l'appel réseau pour le vocab autocomplete, inutile.
+    const vocabEntrees = lectureSeule ? [] : await chargerVocabulaires(fichier_id);
+    const anno = initialiserAnnotorious(osd, fichier_id, vocabEntrees, lectureSeule);
     if (anno) {
       _annosParViseur.set(viz, anno);
     }

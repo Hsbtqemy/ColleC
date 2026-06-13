@@ -4,6 +4,14 @@
    - fichier : FichierResume (extension, nom_fichier, source_image)
    - cote : cote de l'item (pour le lien de téléchargement)
    - fonds_cote : pour le query string
+   - lecture_seule (optionnel, défaut False) : quand True, pose
+     `data-annotations-lecture-seule="1"` sur le wrapper viewer. Le
+     script `annotations_osd.js` lit cet attribut et **n'attache pas**
+     les handlers create/update/delete (Annotorious reste en
+     `readOnly=true`, affiche les annotations mais ne permet pas de
+     les modifier). Utilisé par la liseuse de consultation
+     (`lire_item.html`) — cf. `annotations-image-future.md` section
+     *Coexistence PDF.js / OSD dans la liseuse*.
 
    La visionneuse est instanciée par `static/js/visionneuse_osd.js` :
    elle lit `data-source` (JSON sérialisé sur le wrapper) et invoque
@@ -12,7 +20,7 @@
    (deuxième source de SourceImage) ou affiche un message.
 #}
 
-{% macro visionneuse_osd(fichier, cote, fonds_cote) -%}
+{% macro visionneuse_osd(fichier, cote, fonds_cote, lecture_seule=False) -%}
 {%- if not fichier %}
   <div class="flex items-center justify-center h-full bg-gray-50 rounded-lg"
        style="border:1px solid rgba(0,0,0,0.08);">
@@ -48,6 +56,7 @@
        class="visionneuse-osd"
        style="width:100%;height:100%;background:#1a1a1a;border-radius:6px;"
        data-fichier-id="{{ fichier.id }}"
+       {% if lecture_seule %}data-annotations-lecture-seule="1"{% endif %}
        data-source='{{ {
          "primary": fichier.source_image.primary,
          "fallback": fichier.source_image.fallback,

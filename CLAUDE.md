@@ -164,19 +164,21 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `exporters/nakala.py` (CSV bulk) émet aussi la langue brute — même classe de
   bug sur un chemin séparé (upload manuel), à corriger après validation du
   format bulk.
-  **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6, V0.10.1) :
-  bouton « Déposer sur Nakala » sur `fonds_lecture.html` (si miroir sans DOI,
-  hors lecture seule), 4 routes `/nakala/deposer-collection` (GET aperçu /
-  POST lance / GET suivi / GET statut) — le POST réserve un job, démarre un
-  `threading.Thread` daemon et redirige vers la page de suivi qui polle le
-  statut toutes les 2s (`hx-trigger`, arrêt auto en fin de job). Première
-  **tâche de fond** du projet — runner mémoire + reprise idempotente (DOI
-  persistés au fil de l'eau, relance saute les items déjà créés), pas de
-  broker. Décision et conditions de remise en cause documentées dans la
-  section *Décisions d'architecture notables* ci-dessous. Avertissements
-  de durée tiérisés dans l'aperçu (≥10 / ≥50 / ≥200 items) avec commande
-  CLI pré-remplie pour les très gros fonds. Reste **futur** : versioning
-  fichiers (#4 SHA-1).
+  **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6, branche
+  `feat/nakala-ui-depot-d1`) : bouton « Déposer sur Nakala » sur
+  `fonds_lecture.html` (si miroir sans DOI, hors lecture seule), 4 routes
+  `/nakala/deposer-collection` (GET aperçu / POST lance / GET suivi / GET
+  statut) — le POST réserve un job, démarre un `threading.Thread` daemon
+  et redirige vers la page de suivi qui polle le statut toutes les 2s
+  (`hx-trigger`, arrêt auto en fin de job). Bouton « Reprendre » sur
+  statut `echec` (relance le POST normal). Première **tâche de fond** du
+  projet — runner mémoire + reprise idempotente (DOI persistés au fil
+  de l'eau via `db.commit()` après chaque dépôt item, relance saute les
+  items déjà créés), pas de broker. Décision et conditions de remise en
+  cause documentées dans la section *Décisions d'architecture notables*
+  ci-dessous. Avertissements de durée tiérisés dans l'aperçu (≥10 /
+  ≥50 / ≥200 items) avec commande CLI pré-remplie pour les très gros
+  fonds. Reste **futur** : versioning fichiers (#4 SHA-1).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

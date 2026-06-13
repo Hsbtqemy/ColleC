@@ -311,14 +311,27 @@ def deposer_collection(
 
     ``progress`` (D1 backlog dépôt UI) : callback optionnel
     ``(cote, index_1based, total)`` appelé une fois par item APRÈS son
-    traitement, quelle que soit l'issue (deposé / sauté / non-déposable /
-    erreur). N'est PAS appelé pour la création de la collection elle-même
-    (cas particulier, signalé via ``rapport.collection_creee``). Permet à
-    un runner en tâche de fond (D2) d'alimenter une barre de progression
-    persistée dans un registre mémoire — sans coupler le service à un
-    quelconque mécanisme de progression spécifique. Le défaut ``None``
-    préserve le comportement existant : tous les callers actuels (CLI,
-    tests directs) restent inchangés.
+    traitement, quelle que soit l'issue **standard** (déposé / sauté /
+    non-déposable / erreur préflight ou Nakala). N'est PAS appelé pour
+    la création de la collection elle-même (cas particulier, signalé via
+    ``rapport.collection_creee``).
+
+    Comportement sur exceptions :
+
+    - Si une exception **non attendue** survient dans `deposer_item`
+      (KeyboardInterrupt, MemoryError, bug…), elle propage normalement
+      et `progress` n'est PAS appelé pour cet item ni pour les suivants.
+      Au caller (D2 runner) de catcher au niveau collection et marquer
+      le job en erreur globale.
+    - Si `progress` lui-même lève, l'exception propage et arrête le lot.
+      Le caller doit donc rendre son callback robuste (try/except interne)
+      s'il ne veut pas qu'une erreur de progression interrompe le dépôt.
+
+    Permet à un runner en tâche de fond (D2) d'alimenter une barre de
+    progression persistée dans un registre mémoire — sans coupler le
+    service à un quelconque mécanisme de progression spécifique. Le
+    défaut ``None`` préserve le comportement existant : tous les callers
+    actuels (CLI, tests directs) restent inchangés.
     """
     rapport = RapportDepotCollection(
         collection_cote=collection.cote, dry_run=dry_run,

@@ -618,12 +618,18 @@ def test_deposer_collection_progress_callback_appele_par_item(
             progress=lambda cote, idx, total: appels.append((cote, idx, total)),
         )
 
-    # Le callback a fire exactement 3 fois (1 par item), dans l'ordre,
-    # avec un total constant.
+    # Le callback a fire exactement 3 fois (1 par item).
+    # On asserte le CONTRAT (indexes 1..N, total constant, toutes les
+    # cotes traitees une fois) plutot que l'ordre exact des cotes :
+    # `Collection.items` n'a pas de `order_by` explicite, donc l'ordre
+    # depend de la convention SQLite (insertion order par defaut, non
+    # garantie). Si quelqu'un ajoute `order_by` au modele un jour, ce
+    # test ne casse pas pour une mauvaise raison.
     assert len(appels) == 3
-    assert appels[0] == ("AS-001", 1, 3)
-    assert appels[1] == ("AS-002", 2, 3)
-    assert appels[2] == ("AS-003", 3, 3)
+    indexes = [a[1] for a in appels]
+    assert indexes == [1, 2, 3]
+    assert all(a[2] == 3 for a in appels)
+    assert {a[0] for a in appels} == {"AS-001", "AS-002", "AS-003"}
     # Le rapport en dry-run montre les 3 categories (deposable plan,
     # non_deposable, erreur preflight).
     assert len(rapport.deposes) == 1  # AS-001 (plan dry-run)
@@ -688,3 +694,29 @@ def test_deposer_collection_progress_default_none_pas_de_callback(
     # Comportement identique a test_deposer_collection_dry_run_ne_cree_rien
     assert rapport.dry_run and not rapport.collection_creee
     assert len(rapport.deposes) == 1
+
+
+def test_deposer_collection_progress_collection_vide(
+    db_path: Path, tmp_path: Path
+) -> None:
+    """Collection sans aucun item : le callback n'est jamais appele,
+    pas de division par zero ni d'edge case. Le rapport reste valide
+    avec toutes les listes vides."""
+    racines = {"scans": tmp_path / "scans"}
+    client = _FakeWriteClientCol()
+    from archives_tool.api.services.nakala_depot import deposer_collection
+
+    appels: list = []
+    with _session(db_path) as s:
+        # Cree juste le fonds + miroir, sans items.
+        f = creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Vide"))
+        miroir = _collection_miroir(s, "VIDE")
+        rapport = deposer_collection(
+            s, client, miroir, racines=racines, dry_run=False,
+            progress=lambda c, i, t: appels.append((c, i, t)),
+        )
+    # Aucun appel progress + collection cree (1er run, dry_run=False)
+    assert appels == []
+    assert rapport.collection_creee is True
+    assert rapport.deposes == [] and rapport.sautes == []
+    assert rapport.non_deposables == [] and rapport.erreurs == []

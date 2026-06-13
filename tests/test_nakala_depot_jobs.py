@@ -323,62 +323,88 @@ def test_executer_depot_reprise_idempotente_via_doi_pre_existant(
 # ---------------------------------------------------------------------------
 
 
-def test_lock_protege_lectures_pendant_un_update() -> None:
-    """Smoke test thread-safety : 100 lectures concurrentes pendant
-    qu'un thread écrit. Aucune lecture ne doit voir un état partiel
-    (ex. statut=termine mais collection_doi=None). Si le lock manque,
-    Python's GIL ne suffit pas à garantir l'atomicité des updates
-    composés (set statut + set collection_doi + set deposes)."""
-    job_id = reserver_job(fonds_cote="AS", collection_cote="AS", total=1)
-    lectures: list[EtatJobDepot] = []
+def test_lire_etat_job_retourne_snapshot_isole_des_mutations() -> None:
+    """`lire_etat_job` doit retourner un snapshot deepcopy, pas l'objet
+    vivant. Sinon le caller (route HTMX every 2s qui rend un template
+    avec plusieurs accès aux champs après cette lecture) pourrait voir
+    un état muté entre deux accès — bug subtil de torn reads que le GIL
+    ne couvre PAS (`Lock` ne protège que les blocs `with _lock:`
+    explicites)."""
+    from archives_tool.api.services import nakala_depot_jobs
+
+    job_id = reserver_job(fonds_cote="AS", collection_cote="AS", total=2)
+    # Capture un snapshot AVANT de muter le registre.
+    snap_avant = lire_etat_job(job_id)
+    assert snap_avant is not None
+    assert snap_avant.statut == "en_cours"
+    assert snap_avant.deposes == []
+    assert snap_avant.collection_doi is None
+
+    # Mutation directe du registre (simule un finaliseur du runner).
+    with nakala_depot_jobs._lock:
+        live = nakala_depot_jobs._JOBS[job_id]
+        live.statut = "termine"
+        live.deposes = ["AS-001", "AS-002"]
+        live.collection_doi = "10.34847/nkl.fin"
+
+    # Le snapshot capturé avant la mutation N'A PAS bouge — preuve de
+    # l'isolation deepcopy. Sans le deepcopy, snap_avant et live seraient
+    # le meme objet → toutes les assertions ci-dessous tomberaient.
+    assert snap_avant.statut == "en_cours"
+    assert snap_avant.deposes == []  # liste pas mutee non plus
+    assert snap_avant.collection_doi is None
+
+    # Un nouveau snapshot reflete maintenant le nouvel etat
+    snap_apres = lire_etat_job(job_id)
+    assert snap_apres.statut == "termine"
+    assert snap_apres.deposes == ["AS-001", "AS-002"]
+    assert snap_apres.collection_doi == "10.34847/nkl.fin"
+
+
+def test_lire_etat_job_isolation_listes_avec_runner_concurrent() -> None:
+    """Smoke test concurrent : un thread mute en boucle, l'autre lit en
+    boucle. Sans isolation des listes (deepcopy), le reader pourrait
+    voir une liste en train d'etre re-assignee par le writer →
+    `len(snap.deposes)` puis `snap.deposes[i]` pourraient observer des
+    longueurs differentes. Avec deepcopy, chaque snapshot est un objet
+    isole."""
+    from archives_tool.api.services import nakala_depot_jobs
+
+    job_id = reserver_job(fonds_cote="AS", collection_cote="AS", total=5)
+    erreurs_detectees: list[str] = []
     arret = threading.Event()
 
     def lire_en_boucle():
-        for _ in range(100):
+        for _ in range(200):
             if arret.is_set():
                 return
-            etat = lire_etat_job(job_id)
-            if etat is not None:
-                lectures.append(EtatJobDepot(
-                    job_id=etat.job_id,
-                    fonds_cote=etat.fonds_cote,
-                    collection_cote=etat.collection_cote,
-                    total=etat.total,
-                    faits=etat.faits,
-                    statut=etat.statut,
-                    collection_doi=etat.collection_doi,
-                ))
+            snap = lire_etat_job(job_id)
+            if snap is None:
+                continue
+            # Test d'isolation : la longueur lue 1 fois et iteree doit
+            # rester coherente meme si le writer mute live entre-temps.
+            n = len(snap.deposes)
+            try:
+                items = list(snap.deposes)  # iteration sur le snapshot
+            except Exception as exc:
+                erreurs_detectees.append(f"iter: {exc}")
+                continue
+            if len(items) != n:
+                erreurs_detectees.append(
+                    f"longueur incoherente : len={n} mais list a {len(items)}"
+                )
 
     lecteur = threading.Thread(target=lire_en_boucle)
     lecteur.start()
 
-    # Simule un finaliseur du runner : set termine + collection_doi sous lock
-    from archives_tool.api.services import nakala_depot_jobs
-
-    for _ in range(20):
+    # Cycle de mutations rapides du writer
+    for i in range(50):
         with nakala_depot_jobs._lock:
-            etat = nakala_depot_jobs._JOBS[job_id]
-            etat.statut = "termine"
-            etat.collection_doi = "10.34847/nkl.fin"
-            etat.deposes = ["AS-001"]
-        with nakala_depot_jobs._lock:
-            etat = nakala_depot_jobs._JOBS[job_id]
-            etat.statut = "en_cours"
-            etat.collection_doi = None
-            etat.deposes = []
+            live = nakala_depot_jobs._JOBS[job_id]
+            live.deposes = [f"AS-{j:03d}" for j in range(i % 10)]
 
     arret.set()
     lecteur.join(timeout=2)
-
-    # Vérifie qu'aucun snapshot n'a `statut=termine` sans `collection_doi`
-    # ni inversement (cas qu'on verrait sans lock — write partiellement
-    # visible).
-    for snap in lectures:
-        if snap.statut == "termine":
-            assert snap.collection_doi == "10.34847/nkl.fin", (
-                "statut=termine sans collection_doi posé → race condition"
-            )
-        if snap.statut == "en_cours" and snap.collection_doi:
-            pytest.fail(
-                "statut=en_cours avec collection_doi posé → race condition"
-            )
+    assert erreurs_detectees == [], (
+        f"snapshot non isole : {erreurs_detectees[:3]}"
+    )

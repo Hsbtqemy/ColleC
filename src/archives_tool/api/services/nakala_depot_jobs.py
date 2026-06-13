@@ -35,6 +35,7 @@ reprise couvre les pannes — pas besoin de plus.
 
 from __future__ import annotations
 
+import copy
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -121,13 +122,22 @@ _id_actuel: str | None = None
 def lire_etat_job(job_id: str) -> EtatJobDepot | None:
     """Lecture thread-safe d'un état de job. ``None`` si inconnu.
 
-    Renvoie l'objet vivant (pas une copie) — l'appelant doit traiter le
-    résultat comme immutable car le runner peut le muter à tout moment.
-    Pour la route HTMX qui rend le template juste après lecture, c'est
-    acceptable : Jinja itère sur l'objet sous lock le temps du rendu.
+    Renvoie un **snapshot deepcopy** pris sous lock, pas l'objet vivant.
+    Garantit qu'aucun champ ne peut être muté pendant que l'appelant
+    le lit — critique pour la route HTMX every 2s qui rend un template
+    avec plusieurs accès aux champs après cette lecture (un writer qui
+    set `statut=termine` puis `collection_doi=...` puis `deposes=[...]`
+    pourrait laisser le reader voir un état partiellement écrit sinon).
+
+    Le deepcopy couvre les listes (`deposes`, `sautes`, …) — sans cela,
+    le reader recevrait une référence au même list object que le writer
+    pourrait remplacer en cours d'itération Jinja.
     """
     with _lock:
-        return _JOBS.get(job_id)
+        etat = _JOBS.get(job_id)
+        if etat is None:
+            return None
+        return copy.deepcopy(etat)
 
 
 def est_job_actif() -> bool:
@@ -246,6 +256,7 @@ def executer_depot_collection(
     - ``job_id`` a été obtenu via ``reserver_job(...)``.
     - ``_JOBS[job_id]`` existe (posé par la réservation).
     """
+    global _id_actuel
     rapport: RapportDepotCollection | None = None
     engine = creer_engine(chemin_db)
     try:
@@ -304,7 +315,6 @@ def executer_depot_collection(
         # rendu la main.
     finally:
         engine.dispose()
-        global _id_actuel
         with _lock:
             if _id_actuel == job_id:
                 _id_actuel = None

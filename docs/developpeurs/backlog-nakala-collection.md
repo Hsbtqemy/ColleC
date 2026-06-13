@@ -194,10 +194,28 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
   de phasage de `nakala-depot-future.md` (« UI web de dépôt
   collection (livré) ») mentionnant la 1ʳᵉ tâche de fond et pointant
   vers la section décision d'archi pour les détails. Backlog coché.
-- [ ] **D6 (option) — validation live apitest** : smoke `-m integration` du
-  dépôt collection **via la route web** sur un petit lot (réutilise apitest +
-  le pattern `test_nakala_web_push_integration.py`), avec cleanup des dépôts
-  pending.
+- [x] **D6 — validation live apitest** : `tests/test_nakala_web_deposer_integration.py`
+  pilote la **vraie** route `POST /nakala/deposer-collection` avec un
+  `TestClient` + vrais clients Nakala (non mockés), sur **3 items** côté
+  apitest. Spécificité par rapport au push (synchrone) : le dépôt est
+  asynchrone — le test extrait le `job_id` du redirect 303 vers
+  `/suivi/{job_id}`, déclenche **au moins un appel** à la route fragment
+  HTMX `/statut/{job_id}` pour la valider, puis polle `lire_etat_job`
+  (deepcopy thread-safe — pas d'accès direct à `_JOBS`) toutes les 0.5s
+  jusqu'à statut terminal (timeout 120s). Assertions sur l'état final :
+  `statut == "termine"`, `faits == total == 3`, `len(deposes) == 3`,
+  `collection_creee == True`, `collection_doi` posé. Vérifications base :
+  `Collection.doi_nakala` de la miroir aligné avec `collection_doi`,
+  3 items ont `doi_nakala`. Vérifications distantes : `lire_collection(doi)`
+  retourne `status=private` et liste les 3 DOIs items dans `datas` ;
+  chaque dépôt est en `status=pending`. **Cleanup** dans `finally` :
+  `supprimer_depot` pour chaque DOI item + `supprimer_collection`
+  (autorisés sur pending/private). Aucun mint DataCite, donc pas besoin
+  du gating `NAKALA_ALLOW_PUBLISH` — réversible 100%. Fixture
+  `reset_registre` autouse pour isoler du registre global. Hors run par
+  défaut (`addopts = "-m 'not integration'"` dans pyproject) ; lancer
+  via `NAKALA_API_KEY=... uv run pytest -m integration
+  tests/test_nakala_web_deposer_integration.py`.
 
 ### Limites assumées (v1)
 

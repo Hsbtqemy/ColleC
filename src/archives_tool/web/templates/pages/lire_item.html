@@ -66,13 +66,13 @@
      pour les swaps depuis le panneau vignettes et les boutons Page.
      Le dispatcher choisit OSD / PDF.js / fallback selon l'extension.
 
-     `lecture_seule=True` : la liseuse rend les annotations IIIF en
-     mode lecture pure (cf. annotations-image-future.md). L'attribut
-     data sur le wrapper OSD signale à `annotations_osd.js` qu'il
-     doit greffer Annotorious sans handlers create/update/delete. #}
+     `annotations_lecture_seule=True` : la liseuse rend les annotations
+     IIIF en mode lecture pure (cf. annotations-image-future.md).
+     L'attribut data sur le wrapper OSD signale à `annotations_osd.js`
+     qu'il doit greffer Annotorious sans handlers create/update/delete. #}
   <div id="zone-visionneuse"
        style="flex:1;min-width:0;height:100%;">
-    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote, lecture_seule=True) }}
+    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote, annotations_lecture_seule=True) }}
   </div>
 
   {# Droite : vignettes en colonne fixe. Variante simple (pas le

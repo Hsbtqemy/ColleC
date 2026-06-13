@@ -385,7 +385,7 @@
     const { osd, fichier_id } = e.detail || {};
     if (!osd) return;
     // Mode liseuse (lecture seule) signalé via attribut data sur le
-    // wrapper. Cf. macro `visionneuse_osd(... lecture_seule=True)`.
+    // wrapper. Cf. macro `visionneuse_osd(... annotations_lecture_seule=True)`.
     const lectureSeule = viz.dataset.annotationsLectureSeule === "1";
     // Charge le vocab filtré par le fichier courant — Annotorious démarre
     // avec les suggestions adaptées au fonds (cf. T2 scoping). Chaque

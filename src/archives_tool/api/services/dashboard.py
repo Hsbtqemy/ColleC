@@ -769,10 +769,13 @@ def composer_page_fonds(db: Session, cote: str) -> FondsDetail:
         planifies=nb_items,
         numerises=items_avec_fichier,
         # `verifie` + `valide` (un item validé l'est aussi par construction).
+        # Utilise l'enum plutôt que les strings hardcodées — cohérent avec
+        # le reste de dashboard.py et résistant à un renommage futur.
         verifies=(
-            repartition_fonds.get("verifie", 0) + repartition_fonds.get("valide", 0)
+            repartition_fonds.get(EtatCatalogage.VERIFIE.value, 0)
+            + repartition_fonds.get(EtatCatalogage.VALIDE.value, 0)
         ),
-        valides=repartition_fonds.get("valide", 0),
+        valides=repartition_fonds.get(EtatCatalogage.VALIDE.value, 0),
     )
 
     # ---- Traçabilité fusionnée avec le dernier item du fonds (1 query)

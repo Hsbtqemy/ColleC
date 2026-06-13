@@ -15,12 +15,14 @@
      url_telechargement_externe)
    - cote : cote de l'item (pour href de téléchargement local)
    - fonds_cote : pour le query string
-   - lecture_seule (optionnel, défaut False) : propagé à `visionneuse_osd`
-     pour activer le mode lecture seule des annotations IIIF. **À True
-     pour la liseuse de consultation** (`lire_item.html`), **à False
-     pour la page catalogage** (`item_lecture.html` qui veut l'édition
-     d'annotations). Le dispatcher lui-même ne sait pas dans quel
-     contexte il est appelé ; c'est l'appelant qui décide.
+   - annotations_lecture_seule (optionnel, défaut False) : propagé à
+     `visionneuse_osd` pour activer le mode lecture seule des
+     annotations IIIF. **À True pour la liseuse de consultation**
+     (`lire_item.html`), **à False pour la page catalogage**
+     (`item_lecture.html` qui veut l'édition d'annotations). Le
+     dispatcher lui-même ne sait pas dans quel contexte il est
+     appelé ; c'est l'appelant qui décide. Nom explicite pour éviter
+     la confusion avec `est_lecture_seule()` (mode global instance).
 #}
 
 {% from 'components/visionneuse_osd.html' import visionneuse_osd %}
@@ -28,7 +30,7 @@
 
 {%- set _EXTENSIONS_OSD = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] -%}
 
-{% macro visionneuse_consultation(fichier, cote, fonds_cote, lecture_seule=False) -%}
+{% macro visionneuse_consultation(fichier, cote, fonds_cote, annotations_lecture_seule=False) -%}
 {%- if not fichier %}
   <div class="flex items-center justify-center h-full bg-gray-50 rounded-lg"
        style="border:1px solid rgba(0,0,0,0.08);">
@@ -41,7 +43,8 @@
        ('/item/' ~ cote ~ '/fichiers/' ~ fichier.id ~ '?fonds=' ~ fonds_cote) %}
   {{ visionneuse_pdf(pdf_url, fichier.nom_fichier, fichier.id) }}
 {%- elif fichier.extension in _EXTENSIONS_OSD %}
-  {{ visionneuse_osd(fichier, cote, fonds_cote, lecture_seule=lecture_seule) }}
+  {{ visionneuse_osd(fichier, cote, fonds_cote,
+                     annotations_lecture_seule=annotations_lecture_seule) }}
 {%- else %}
   {# Autres (json, xlsx, csv, mp3, mp4, zip…) : fallback HTML.
      Lot 2 ne couvre que PDF + images. xlsx/csv/audio/video sont

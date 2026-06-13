@@ -69,12 +69,31 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
   collection déjà créée + items déjà déposés → callback fire quand même
   mais tous remontent en `sautes`, aucun appel client ; sans `progress`
   → comportement identique avant D1.
-- [ ] **D2 — Runner + registre mémoire** : `executer_depot_collection(job_id,
-  …)` **fonction pure testable en synchrone** ; registre `_JOBS`
-  `{job_id: {statut, total, faits, erreurs:[(cote,detail)], cote_courante,
-  doi_collection}}` protégé par `threading.Lock` ; **garde anti-concurrent**
-  (un seul dépôt à la fois — mono-utilisateur). Tests (transitions du registre,
-  reprise, garde concurrente).
+- [x] **D2 — Runner + registre mémoire** : `api/services/nakala_depot_jobs.py`
+  avec `EtatJobDepot` dataclass mutable, `_JOBS: dict[str, EtatJobDepot]`,
+  `_lock: threading.Lock`, `_id_actuel: str | None` pour la garde
+  anti-concurrent. `reserver_job(fonds_cote, collection_cote, total)` →
+  réserve atomiquement, lève `JobConcurrent` si un autre tourne.
+  `executer_depot_collection(job_id, *, chemin_db, collection_id,
+  config_nakala, racines, …)` est la **fonction pure synchrone** — la
+  route D3 fera `Thread(target=executer_..., daemon=True).start()` ;
+  les tests appellent directement. Gère engine dédié (dispose en fin),
+  capture `BaseException` (libère `_id_actuel` même sur `KeyboardInterrupt`
+  qui propage). Hook D1 alimente `cote_courante` + `faits` sous lock.
+  Finalisation atomique : `statut=termine` + `collection_doi` + listes
+  finales d'une seule mutation sous lock. 9 tests :
+  - `reserver_job` : uuid hex, garde concurrente lève `JobConcurrent`,
+    libération via `_id_actuel = None` (vérification fixture
+    `_reset_pour_tests`).
+  - `_make_progress` : MAJ `cote_courante` + `faits` ; silencieux si
+    registre nettoyé.
+  - `executer_depot_collection` : succès marque `termine`+libère
+    `_id_actuel` ; collection inconnue → `echec` + erreur_globale +
+    libération ; reprise idempotente sur DOI pré-posés (aucun appel
+    client, items en `sautes`, callback fire quand même).
+  - Smoke test lock : 100 lectures concurrentes pendant un finaliseur,
+    aucun snapshot ne voit un état partiellement écrit (statut=termine
+    sans collection_doi, ou inverse).
 - [ ] **D3 — Routes** (`nakala_web.py`) : `GET /nakala/deposer-collection`
   (aperçu `deposer_collection(dry_run=True)` : items déposables, fichiers,
   non-déposables, durée) ; `POST /nakala/deposer-collection` (lance le thread

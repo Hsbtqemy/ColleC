@@ -15,7 +15,6 @@ from sqlalchemy import select
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_depot_jobs import (
-    EtatJobDepot,
     JobConcurrent,
     _make_progress,
     _reset_pour_tests,

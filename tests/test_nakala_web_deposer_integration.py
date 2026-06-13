@@ -43,7 +43,7 @@ from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.external.nakala.client import ClientLectureNakala
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.models import (
-    Base, Collection, Fichier, Fonds, Item, TypeCollection,
+    Base, Collection, Fichier, Item, TypeCollection,
 )
 
 pytestmark = pytest.mark.integration

@@ -709,7 +709,7 @@ def test_deposer_collection_progress_collection_vide(
     appels: list = []
     with _session(db_path) as s:
         # Cree juste le fonds + miroir, sans items.
-        f = creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Vide"))
+        creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Vide"))
         miroir = _collection_miroir(s, "VIDE")
         rapport = deposer_collection(
             s, client, miroir, racines=racines, dry_run=False,

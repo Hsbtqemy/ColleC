@@ -10,7 +10,6 @@ dans `test_nakala_depot_jobs.py`).
 
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 

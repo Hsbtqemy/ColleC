@@ -158,10 +158,42 @@ seulement CLI. Surface le geste **phase 1** du workflow deux-temps voulu :
   - bouton visible si miroir sans DOI (URL pointe sur GET aperçu D3) ;
   - bouton absent si DOI posé (Rafraîchir/Pousser/Publier à la place) ;
   - bouton absent en lecture seule.
-- [ ] **D5 — Doc + décision d'archi** : noter dans `CLAUDE.md` (section
-  *Décisions d'architecture notables*) l'introduction de la **1ʳᵉ tâche de fond**
-  (scope, sûreté par reprise idempotente, pas de broker) ; cocher ce backlog ;
-  `nakala-depot-future.md`.
+- [x] **D5 — Doc + décision d'archi** : `CLAUDE.md` (section
+  *Décisions d'architecture notables*) gagne une sous-section
+  **Tâches de fond : runner mémoire + reprise idempotente** qui pose le
+  cadre de la 1ʳᵉ tâche de fond du projet (D1-D6) :
+  - Pourquoi pas de broker : « une instance = un processus » exclut
+    nativement un bus distribué — un Celery/RQ imposerait un Redis dédié
+    alors que V1.0 vise précisément zéro infra annexe (SQLite + Caddy +
+    davfs2). Pour le local mono-utilisateur, un broker serait absurde.
+  - Une seule tâche concurrente à la fois (`_id_actuel` + Lock) : pas de
+    queue, pas de scheduling — l'UI refuse simplement un 2ᵉ dépôt
+    simultané. À revoir si le projet accumule plusieurs types de tâches
+    de fond.
+  - Sûreté par **reprise idempotente, pas par retry de queue** : les
+    `Collection.doi_nakala` et `Item.doi_nakala` sont persistés au fil
+    de l'eau → un crash mid-run laisse les items déjà créés intacts.
+    Relancer depuis l'UI re-déroule la séquence : items avec DOI sautés
+    (branche `sautes`), restant reprend. La reprise est une conséquence
+    directe du principe « Nakala comme première classe », pas un
+    composant séparé (pas de replay/dead-letter/exponential backoff).
+  - Conséquences observables : état volatile (restart processus =
+    registre perdu, page suivi 404 sur job inconnu — mais base
+    cohérente, relance reprend) ; pas de timeline historique (si utile
+    plus tard, introduire `OperationTacheDeFond`) ; CLI reste l'outil
+    de référence pour les grosses opérations (avertissements ≥50 et
+    ≥200 dans l'UI avec commande pré-remplie).
+  - Conditions de remise en cause documentées : plusieurs types de
+    tâches de fond simultanées → asyncio/concurrent.futures avec
+    priorisation ; bascule multi-processus → store partagé (SQLite par
+    cohérence avant un broker externe).
+
+  Mention « UI web de dépôt collection livrée » ajoutée au chapeau
+  Nakala de `CLAUDE.md` (parité avec « UI web livrée » du pull et
+  « UI web de push livrée » du round-trip). Ligne ajoutée au tableau
+  de phasage de `nakala-depot-future.md` (« UI web de dépôt
+  collection (livré) ») mentionnant la 1ʳᵉ tâche de fond et pointant
+  vers la section décision d'archi pour les détails. Backlog coché.
 - [ ] **D6 (option) — validation live apitest** : smoke `-m integration` du
   dépôt collection **via la route web** sur un petit lot (réutilise apitest +
   le pattern `test_nakala_web_push_integration.py`), avec cleanup des dépôts

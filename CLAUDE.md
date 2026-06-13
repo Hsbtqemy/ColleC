@@ -163,7 +163,20 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   multilingues, appelé dans `item_vers_slugs`. **Reliquat connu** :
   `exporters/nakala.py` (CSV bulk) émet aussi la langue brute — même classe de
   bug sur un chemin séparé (upload manuel), à corriger après validation du
-  format bulk. Reste **futur** : versioning fichiers (#4 SHA-1).
+  format bulk.
+  **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6, V0.10.1) :
+  bouton « Déposer sur Nakala » sur `fonds_lecture.html` (si miroir sans DOI,
+  hors lecture seule), 4 routes `/nakala/deposer-collection` (GET aperçu /
+  POST lance / GET suivi / GET statut) — le POST réserve un job, démarre un
+  `threading.Thread` daemon et redirige vers la page de suivi qui polle le
+  statut toutes les 2s (`hx-trigger`, arrêt auto en fin de job). Première
+  **tâche de fond** du projet — runner mémoire + reprise idempotente (DOI
+  persistés au fil de l'eau, relance saute les items déjà créés), pas de
+  broker. Décision et conditions de remise en cause documentées dans la
+  section *Décisions d'architecture notables* ci-dessous. Avertissements
+  de durée tiérisés dans l'aperçu (≥10 / ≥50 / ≥200 items) avec commande
+  CLI pré-remplie pour les très gros fonds. Reste **futur** : versioning
+  fichiers (#4 SHA-1).
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,
@@ -2558,6 +2571,78 @@ Les entités structurantes (`Collection`, `ChampPersonnalise`,
   le travail.
 
 Les deux sont libres (TEXT), aucune structure imposée.
+
+### Tâches de fond : runner mémoire + reprise idempotente
+
+**Décision** (2026-06-13, introduite avec l'UI de dépôt collection
+Nakala — backlog dépôt UI D1-D6) : la 1ʳᵉ tâche de fond du projet
+est portée par un **`threading.Thread` daemon** + un **registre
+mémoire** thread-safe, **pas par un broker** (Celery, RQ, dramatiq,
+arq…).
+
+Trois angles de justification :
+
+1. **Une instance = un processus** (cf. `Une instance = une DB = un
+   contexte` plus haut). Le mono-processus exclut nativement un
+   bus de messages distribué — il n'y a aucun consommateur ailleurs
+   à qui parler. Un broker imposerait un Redis/PostgreSQL dédié
+   alors que le déploiement V1.0 vise précisément le contraire
+   (SQLite + Caddy + davfs2, pas d'infrastructure annexe). Pour le
+   local mono-utilisateur (mode actuel), un broker serait
+   absurde.
+2. **Une tâche concurrente à la fois.** Le registre porte
+   `_id_actuel` (`api/services/nakala_depot_jobs.py`) avec un
+   `threading.Lock` : `reserver_job()` lève `JobConcurrent` si un
+   autre dépôt tourne. Pas de queue, pas de scheduling — l'UI
+   refuse simplement un 2ᵉ dépôt simultané. Suffisant tant qu'il
+   n'y a pas plusieurs types de tâches de fond concurrentes ; à
+   revoir si le projet en accumule (export, OCR, IIIF
+   manifests…).
+3. **Sûreté par reprise idempotente, pas par retry de queue.** Le
+   service `deposer_collection` persiste les `Collection.doi_nakala`
+   et `Item.doi_nakala` au fil de l'eau — un crash mid-run laisse
+   les items déjà créés intacts. Relancer le dépôt depuis l'UI
+   re-déroule la séquence : les items avec DOI sont sautés (branche
+   `sautes`), le restant reprend. La reprise n'est pas un
+   composant séparé (replay/dead-letter/exponential backoff) — elle
+   est la conséquence directe du modèle de données déjà imposé
+   par le principe « Nakala comme première classe » (DOI = colonne
+   dédiée, unique). Le bouton « Reprendre » de la page de suivi
+   est donc juste un relancement du POST normal.
+
+**Conséquences observables** :
+
+- État volatile : un restart du processus FastAPI perd le registre
+  en mémoire (`_JOBS`). Conséquence acceptée : la page de suivi
+  d'un job en cours pointera vers un `job_id` inconnu (404). La
+  **base reste cohérente** (DOI persistés transactionnellement)
+  — relancer le dépôt reprend où on s'était arrêté.
+- Pas de timeline historique des tâches de fond — uniquement
+  l'état courant + le dernier job terminé tant que le processus
+  vit. Si l'historique devient utile (audit, debug), introduire
+  une table `OperationTacheDeFond` (analogue à `OperationFichier`
+  / `OperationEntite`).
+- L'UI affiche un avertissement « gros fonds → CLI » à partir de
+  50 items et un avertissement fort à partir de 200, avec la
+  commande CLI pré-remplie. La CLI (`archives-tool nakala
+  deposer-collection ... --no-dry-run`) reste l'outil de
+  référence pour les opérations massives : journalisation propre,
+  reprise plus simple en cas d'incident, pas de risque de
+  plantage onglet navigateur.
+
+**Conditions de remise en cause** : passage à plusieurs types de
+tâches de fond simultanées (auquel cas une vraie queue
+intra-processus type `asyncio` ou `concurrent.futures` avec
+priorisation ferait sens) ; ou bascule vers un déploiement
+multi-processus (auquel cas le registre mémoire ne suffit plus et
+un store partagé devient inévitable — probablement SQLite à
+nouveau, par cohérence avec le reste du projet, avant un broker
+externe).
+
+Référence opérationnelle : `api/services/nakala_depot_jobs.py`
+(registre + runner), `api/routes/nakala_web.py` (4 routes apercu /
+lancer / suivi / statut), pages `nakala_deposer_collection_apercu.html`
++ `nakala_deposer_suivi.html` + partial `nakala_deposer_statut.html`.
 
 ---
 

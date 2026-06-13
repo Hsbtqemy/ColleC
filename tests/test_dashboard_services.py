@@ -390,6 +390,8 @@ def test_avancement_jalons_pourcentage_borne(session_neuve: Session) -> None:
     assert plein.pourcentage(0) == 0.0
     # Donnée incohérente (jalon > planifies) : borne à 100.
     assert plein.pourcentage(50) == 100.0
+    # Valeur négative (cas dégénéré API/test) : borne à 0.
+    assert plein.pourcentage(-5) == 0.0
 
 
 def test_avancement_jalons_verifies_inclut_valides(session_neuve: Session) -> None:

@@ -43,7 +43,13 @@
     {%- set pct = jalons.pourcentage(valeur)|round(1) -%}
     <div class="grid grid-cols-[140px_1fr_70px] items-center gap-3" title="{{ aide }}">
       <span class="text-sm text-gray-700">{{ libelle }}</span>
-      <div class="bg-gray-100 overflow-hidden" style="height:8px;border-radius:4px;">
+      <div class="bg-gray-100 overflow-hidden"
+           role="progressbar"
+           aria-label="{{ libelle }} : {{ valeur }} sur {{ jalons.planifies }}"
+           aria-valuenow="{{ valeur }}"
+           aria-valuemin="0"
+           aria-valuemax="{{ jalons.planifies }}"
+           style="height:8px;border-radius:4px;">
         {%- if valeur > 0 -%}
         <div style="width:{{ pct }}%;background:{{ couleur }};height:100%;
                     transition:width 0.3s;"></div>

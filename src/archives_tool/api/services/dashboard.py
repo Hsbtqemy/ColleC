@@ -609,11 +609,17 @@ class AvancementJalons:
         return self.planifies == 0
 
     def pourcentage(self, jalon: int) -> float:
-        """Pourcentage d'un jalon vis-à-vis de `planifies`. Borné [0, 100]."""
+        """Pourcentage d'un jalon vis-à-vis de `planifies`. Borné [0, 100].
+
+        Cas dégénérés couverts :
+        - `planifies == 0` → 0.0 (pas de division par zéro).
+        - `jalon > planifies` (donnée incohérente) → 100.0.
+        - `jalon < 0` (valeur impossible en pratique mais possible
+          via test/usage en API) → 0.0.
+        """
         if self.planifies == 0:
             return 0.0
-        # Garde-fou : si jalon > planifies (donnée incohérente), borne à 100.
-        return min(100.0, 100.0 * jalon / self.planifies)
+        return max(0.0, min(100.0, 100.0 * jalon / self.planifies))
 
 
 @dataclass(frozen=True)

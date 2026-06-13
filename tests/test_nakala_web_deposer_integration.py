@@ -235,13 +235,20 @@ def test_web_deposer_collection_live(
         assert len(doi_items) == 3
         assert _miroir_doi(db) == doi_collection
 
-        # 5. Vérification côté Nakala : la collection existe et liste 3 datas.
+        # 5. Vérification côté Nakala : la collection existe + liste 3 datas
+        # rattachées. Deux endpoints distincts :
+        # - `GET /collections/{id}` (= `lire_collection`) : métadonnées de
+        #   la collection (titre, status) — PAS la liste des datas.
+        # - `GET /collections/{id}/datas` (= `lister_depots_collection`) :
+        #   page paginée des datas rattachées, clé `data` (sing.) pas
+        #   `datas`. Avec 3 items la page 1 suffit (taille défaut = 25).
         cli = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
         try:
             assert doi_collection is not None  # rassure mypy après les asserts ci-dessus
             collec = cli.lire_collection(doi_collection)
             assert collec.get("status") == "private"
-            datas = collec.get("datas", [])
+            page = cli.lister_depots_collection(doi_collection, page=1)
+            datas = page.get("data") or []
             ids_distants = {
                 d.get("identifier") for d in datas if d.get("identifier")
             }

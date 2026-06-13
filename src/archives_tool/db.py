@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event, text
@@ -36,6 +40,67 @@ def creer_engine(chemin_db: Path | str, *, echo: bool = False) -> Engine:
 
 def creer_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+
+# ---------------------------------------------------------------------------
+# Helper public d'ouverture de session pour les notebooks / scripts
+# ---------------------------------------------------------------------------
+
+#: Chemin par défaut de la base si `ARCHIVES_DB` n'est pas posée.
+#: Aligné sur `api/deps.py::CHEMIN_DB_DEFAUT` (même valeur).
+_CHEMIN_DB_DEFAUT = "data/archives.db"
+
+
+@lru_cache(maxsize=4)
+def _factory_pour(chemin_resolu: str) -> sessionmaker[Session]:
+    """Engine + factory cachés par chemin pour ne pas re-créer à chaque
+    ouverture. Borné à 4 entrées (l'usage notebook typique alterne entre
+    base de prod + base de demo au pire).
+
+    Note : la fonction homonyme dans ``api/deps.py`` est dédiée aux
+    requêtes FastAPI et reste séparée. Toute déduplication entraînerait
+    une dépendance non-désirée services métier → couche routes.
+    """
+    return creer_session_factory(creer_engine(chemin_resolu))
+
+
+@contextmanager
+def obtenir_session(chemin_db: Path | str | None = None) -> Iterator[Session]:
+    """Ouvre une session SQLAlchemy en context manager — pratique pour
+    les scripts ad-hoc et les notebooks Jupyter (cf.
+    ``docs/guide/notebook.md``).
+
+    Args:
+        chemin_db: Chemin vers le fichier SQLite. Si ``None`` (défaut),
+            utilise ``ARCHIVES_DB`` (variable d'env) ou
+            ``data/archives.db`` en dernier recours.
+
+    Yields:
+        Une session SQLAlchemy fermée automatiquement à la sortie du
+        ``with``. L'engine sous-jacent est **réutilisé** entre les
+        appels (cache par chemin) — pas besoin de le disposer dans les
+        notebooks.
+
+    Exemple :
+        >>> from archives_tool.db import obtenir_session
+        >>> from archives_tool.api.services.fonds import lister_fonds
+        >>> with obtenir_session() as db:
+        ...     for f in lister_fonds(db):
+        ...         print(f.cote, f.titre)
+
+    Pour cibler une base spécifique :
+        >>> with obtenir_session("data/demo.db") as db:
+        ...     ...
+
+    Garde : `with obtenir_session() as db:` à chaque opération — ne pas
+    laisser une session ouverte sur la durée du notebook (verrous
+    résiduels). cf. ``notebooks-sdk-future.md`` section *Pièges*.
+    """
+    if chemin_db is None:
+        chemin_db = os.environ.get("ARCHIVES_DB", _CHEMIN_DB_DEFAUT)
+    factory = _factory_pour(str(chemin_db))
+    with factory() as session:
+        yield session
 
 
 #: SQL des 3 tables virtuelles FTS5 + triggers de synchro. Centralisé

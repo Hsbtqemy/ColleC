@@ -209,16 +209,39 @@ class NakalaEcritureClient:
         self,
         identifiant: str,
         *,
-        metas: list[dict[str, Any]],
+        metas: list[dict[str, Any]] | None = None,
+        files: list[dict[str, Any]] | None = None,
         status: str | None = None,
     ) -> dict[str, Any]:
         """Met à jour un dépôt existant (`PUT /datas/{id}`).
 
-        Le `PUT` **remplace** intégralement les `metas` → on envoie la liste
-        complète. `status` optionnel : passer `"published"` publie le dépôt
-        (mint DOI DataCite, irréversible). Renvoie la réponse JSON (souvent
-        vide ou un écho selon Nakala)."""
-        corps: dict[str, Any] = {"metas": metas}
+        Chaque clé du corps est **optionnelle** (signature `metas/files
+        nullable`) et omise du corps si `None` — exploration apitest H2A
+        confirme que les clés non envoyées sont préservées côté Nakala.
+
+        - **metas** : si fourni, **remplace** intégralement les metas
+          (envoyer la liste complète, pas un delta).
+        - **files** : si fourni, **remplace** la liste `files[]` (H1).
+          Chaque entrée `{sha1, name, ...}` doit pointer un upload réussi
+          de la session courante OU un sha1 déjà rattaché au dépôt
+          (H4 : sha1 fantôme → HTTP 404). Garde l'ordre envoyé (H5).
+          Pour renommer un fichier sans re-upload : passer le même
+          `sha1` avec un nouveau `name` (H7, gratuit). **Cas dégénéré
+          H3 : `files=[]` (liste vide) est silencieusement ignoré
+          côté Nakala — utiliser `supprimer_depot` pour vider un
+          dépôt.**
+        - **status** : `"published"` mint un DOI DataCite (irréversible).
+
+        Renvoie la réponse JSON (souvent vide ou écho selon Nakala).
+
+        Hypothèses validées par `scripts/explorer_put_files_nakala.py`
+        contre apitest le 2026-06-14.
+        """
+        corps: dict[str, Any] = {}
+        if metas is not None:
+            corps["metas"] = metas
+        if files is not None:
+            corps["files"] = files
         if status is not None:
             corps["status"] = status
         reponse = self._requete("PUT", f"/datas/{identifiant}", json=corps)

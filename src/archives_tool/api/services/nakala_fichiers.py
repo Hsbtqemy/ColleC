@@ -1,20 +1,32 @@
 """Service de versioning fichiers Nakala (palier P3+, cf.
 `docs/developpeurs/nakala-depot-future.md` difficulté #4).
 
-Le palier P3+a a posé la fondation : colonne `Fichier.sha1_nakala`
-captant le SHA-1 calculé par Nakala à l'upload, et la migration
-`s7w8x9y0z1a2` qui backfill les Fichier matérialisés via `rapatrier`.
+- **P3+a** : fondation `Fichier.sha1_nakala` (colonne + migration +
+  capture upload + capture pull).
+- **P3+b** : ``comparer_fichiers_item`` — détection (lecture seule).
+- **P3+c** : ``pousser_fichiers_item`` — push effectif (upload des
+  nouveaux/modifies + ``PUT /datas/{id}`` avec ``files[]`` cible +
+  mise à jour ``sha1_nakala``).
 
-Ce module porte le palier **P3+b — détection (lecture seule)** :
-``comparer_fichiers_item`` classe les fichiers d'un item ColleC vs le
-dépôt Nakala distant en 5 catégories (nouveaux, modifies, inchanges,
-nakala_only_sans_local, orphelins_distants). Aucune écriture distante,
-aucune mutation de base — pure lecture.
+Les hypothèses Nakala validées contre apitest (script
+``scripts/explorer_put_files_nakala.py`` 2026-06-14) sont :
 
-Le palier P3+c (push effectif) viendra dans une session dédiée :
-upload des nouveaux/modifiés + `PUT /datas/{id}` avec le jeu cible +
-mise à jour `sha1_nakala`. Pour l'instant le résultat de ``comparer``
-sert juste à l'inspection humaine.
+- **H1** : ``PUT files=[...]`` remplace intégralement la liste.
+- **H2A** : ``PUT`` sans clé ``metas`` préserve les metas distantes.
+- **H3** : ``PUT files=[]`` est silencieusement ignoré → garde-fou
+  `PushImpossible` si la liste cible est vide.
+- **H4** : ``PUT`` avec un sha1 inconnu lève HTTP 404 explicite →
+  cleanup des uploads orphelins en cas d'échec.
+- **H5** : ordre ``files[]`` préservé (envoyé = restitué).
+- **H6** : idempotence du PUT (re-push identique = no-op silencieux).
+- **H7** : ``PUT {sha1: existant, name: nouveau}`` renomme côté Nakala
+  sans re-upload (gratuit pour les ``inchanges`` dont l'utilisateur a
+  changé le ``nom_fichier`` local).
+- **H10** : ``lire_depot`` immédiat post-PUT reflète les changements
+  (pas d'eventual consistency à gérer).
+- **H11** : champ ``description`` par fichier accepté et préservé.
+  **Pas exposé en MVP** (ColleC n'a pas encore `Fichier.description_externe`),
+  à intégrer en V2+ (cf. CLAUDE.md *Questions ouvertes*).
 """
 
 from __future__ import annotations
@@ -26,7 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from archives_tool.external.nakala.client import ClientLectureNakala
-from archives_tool.models import Item
+from archives_tool.external.nakala.write_client import NakalaEcritureClient
+from archives_tool.models import Fichier, Item
 from archives_tool.models.enums import EtatFichier
 
 #: Taille de chunk pour le streaming SHA-1 — 8 KiB.
@@ -35,6 +48,38 @@ _TAILLE_CHUNK_SHA1 = 8192
 
 class ComparaisonImpossible(Exception):
     """Item sans `doi_nakala` : pas de dépôt distant à comparer."""
+
+
+class OrphelinsDetectes(Exception):
+    """Refus du push : des fichiers Nakala existent sans pendant local.
+
+    Le ``PUT /datas/{id}`` retirerait automatiquement ces fichiers
+    côté distant (catastrophique pour items publiés). L'appelant doit
+    repasser avec ``retirer_orphelins=True`` pour confirmer l'intention.
+
+    Attribut ``orphelins`` : liste ``FichierOrphelin`` pour permettre à
+    l'appelant (CLI / route) d'afficher la liste à l'utilisateur.
+    """
+
+    def __init__(self, orphelins: list["FichierOrphelin"]) -> None:
+        self.orphelins = orphelins
+        noms = ", ".join(f"{o.nom_fichier} (sha1: {o.sha1[:12]}…)" for o in orphelins[:5])
+        suffixe = "" if len(orphelins) <= 5 else f" (+ {len(orphelins) - 5} autres)"
+        super().__init__(
+            f"{len(orphelins)} orphelin(s) distant(s) détecté(s) : {noms}{suffixe}. "
+            "Repasser avec retirer_orphelins=True pour confirmer."
+        )
+
+
+class PushImpossible(Exception):
+    """Refus du push pour un cas non supporté côté Nakala.
+
+    Cas principal : ``files_cible == []`` (tous les fichiers locaux
+    retirés ET ``retirer_orphelins=True``). L'hypothèse H3 confirme
+    que ``PUT files=[]`` est silencieusement ignoré côté Nakala —
+    la liste cible ne peut pas être vide. Pour vider un dépôt, passer
+    par ``supprimer_depot`` puis re-déposer.
+    """
 
 
 @dataclass(frozen=True)
@@ -280,4 +325,254 @@ def comparer_fichiers_item(
                 FichierOrphelin(sha1=sha1, nom_fichier=fd.get("name") or "")
             )
 
+    return rapport
+
+
+# ---------------------------------------------------------------------------
+# P3+c — Push fichiers (écriture)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PlanPushFichier:
+    """Une entrée du `files[]` cible envoyée au `PUT /datas/{id}`.
+
+    Concentre les 3 sources possibles : un Fichier déjà connu de Nakala
+    (inchangé, ou inchangé renommé via H7), un fichier uploadé pendant
+    le push (nouveau ou modifié), un Fichier Nakala-only sans local.
+    """
+
+    fichier_id: int | None  # None pour Nakala-only et orphelins préservés
+    nom_fichier: str
+    sha1: str
+    categorie: str  # "inchange" | "rename" | "nouveau" | "modifie" | "nakala_only"
+
+
+@dataclass
+class RapportPushFichiers:
+    """Résultat d'un ``pousser_fichiers_item``."""
+
+    cote_item: str
+    doi: str
+    dry_run: bool
+    applique: bool = False
+    raison: str | None = None  # "aucun_changement" | "orphelins_refuses" | ...
+    compare: RapportComparaisonFichiers | None = None
+    # Plan d'exécution rendu lisible pour l'utilisateur (dry-run et réel).
+    plan: list[PlanPushFichier] = field(default_factory=list)
+    # Listes des sha1 effectivement uploadés (vide en dry-run).
+    sha1s_uploades: list[str] = field(default_factory=list)
+    # Listes des sha1 distants retirés via PUT (= orphelins exclus).
+    sha1s_retires: list[str] = field(default_factory=list)
+
+
+def _construire_plan(
+    rapport_cmp: RapportComparaisonFichiers,
+    *, retirer_orphelins: bool,
+) -> list[PlanPushFichier]:
+    """Calcule le plan d'exécution (hors uploads) à partir du rapport
+    de comparaison. Les entrées `nouveau` et `modifie` portent le
+    `sha1_local` (recalculé local) comme sha1 prévisionnel — il sera
+    remplacé par le sha1 retourné par `uploader_fichier` au moment de
+    l'application réelle.
+
+    Les `orphelins_distants` sont exclus du plan : ne pas les inclure
+    dans `files[]` cible les retire automatiquement (cohérent avec H1 +
+    flag explicite).
+    """
+    plan: list[PlanPushFichier] = []
+    for fc in rapport_cmp.inchanges:
+        plan.append(PlanPushFichier(
+            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
+            sha1=fc.sha1_local or "",  # garanti non-None côté inchanges
+            categorie="inchange",
+        ))
+    for fc in rapport_cmp.modifies:
+        plan.append(PlanPushFichier(
+            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
+            sha1=fc.sha1_local or "",  # sera ré-uploadé
+            categorie="modifie",
+        ))
+    for fc in rapport_cmp.nouveaux:
+        plan.append(PlanPushFichier(
+            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
+            sha1=fc.sha1_local or "",  # sera uploadé
+            categorie="nouveau",
+        ))
+    for fc in rapport_cmp.nakala_only_sans_local:
+        # Préservés : on les inclut avec leur sha1_nakala connu.
+        if fc.sha1_distant:
+            plan.append(PlanPushFichier(
+                fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
+                sha1=fc.sha1_distant,
+                categorie="nakala_only",
+            ))
+    # Note : `retirer_orphelins` n'affecte pas le plan (les orphelins
+    # sont SIMPLEMENT exclus de files[]). On garde le param pour la
+    # symétrie d'API et un usage futur (logging, audit).
+    _ = retirer_orphelins
+    return plan
+
+
+def pousser_fichiers_item(
+    db: Any,
+    client_lecture: ClientLectureNakala,
+    client_ecriture: NakalaEcritureClient,
+    item: Item,
+    *,
+    racines: Mapping[str, Path],
+    dry_run: bool = True,
+    retirer_orphelins: bool = False,
+    modifie_par: str | None = None,
+) -> RapportPushFichiers:
+    """Pousse les fichiers locaux d'un Item vers son dépôt Nakala existant.
+
+    Pipeline :
+
+    1. Comparer (réutilise ``comparer_fichiers_item``).
+    2. Garde-fous :
+       - ``aucun_changement`` → return early, ``applique=False``.
+       - ``orphelins_distants > 0`` et ``not retirer_orphelins`` →
+         ``OrphelinsDetectes``.
+    3. Construire le plan (``inchanges`` + ``modifies`` + ``nouveaux`` +
+       ``nakala_only_sans_local``, les orphelins étant exclus).
+    4. Garde-fou H3 : ``len(plan) == 0`` → ``PushImpossible``.
+    5. Si ``dry_run`` : return avec le plan, sans écriture distante.
+    6. Réel : upload des ``nouveaux + modifies`` via
+       ``uploader_fichier`` (sha1 capturé). PUT
+       ``/datas/{id} {files: cible}`` avec la liste finalisée.
+    7. Met à jour ``Fichier.sha1_nakala`` pour ``modifies + nouveaux``.
+    8. Commit.
+
+    En cas d'erreur après upload(s) : cleanup des uploads orphelins
+    via ``supprimer_upload``. Les écritures DB (``sha1_nakala``) ne
+    sont commitées qu'**après** le PUT réussi — pas de divergence en
+    base si le distant ne s'est pas mis à jour.
+
+    Args:
+        retirer_orphelins: requis pour confirmer le retrait silencieux
+            de fichiers présents côté Nakala mais absents en local.
+            Sans ce flag, lève ``OrphelinsDetectes``.
+        modifie_par: tracé sur le futur cache de la ressource. Non
+            propagé au format ``files[]`` (Nakala n'a pas ce champ).
+
+    Returns:
+        ``RapportPushFichiers`` — riche en métadonnées d'exécution
+        (plan, sha1s uploadés, raison de no-op…).
+
+    Raises:
+        DepotImpossible: ``item.doi_nakala`` est None.
+        ComparaisonImpossible: propagé depuis ``comparer_fichiers_item``.
+        OrphelinsDetectes: orphelins distants sans flag.
+        PushImpossible: ``files_cible == []`` (cas H3).
+        ErreurNakala: échec du ``lire_depot``, ``uploader_fichier`` ou
+            ``modifier_depot`` (propagé).
+    """
+    if not item.doi_nakala:
+        from archives_tool.api.services.nakala_depot import DepotImpossible
+
+        raise DepotImpossible(
+            f"Item {item.cote!r} sans doi_nakala — utiliser `deposer` d'abord."
+        )
+
+    # 1. Comparer
+    rapport_cmp = comparer_fichiers_item(
+        db, client_lecture, item, racines=racines,
+    )
+
+    rapport = RapportPushFichiers(
+        cote_item=item.cote, doi=item.doi_nakala, dry_run=dry_run,
+        compare=rapport_cmp,
+    )
+
+    # 2. Garde-fous métier
+    if rapport_cmp.aucun_changement:
+        rapport.raison = "aucun_changement"
+        return rapport
+
+    if rapport_cmp.orphelins_distants and not retirer_orphelins:
+        raise OrphelinsDetectes(list(rapport_cmp.orphelins_distants))
+
+    # 3. Plan d'exécution (hors uploads)
+    rapport.plan = _construire_plan(rapport_cmp, retirer_orphelins=retirer_orphelins)
+
+    # 4. Garde-fou H3 : files cible vide → Nakala ignorerait silencieusement
+    if not rapport.plan:
+        raise PushImpossible(
+            f"Item {item.cote!r} : files_cible vide après garde-fous. "
+            "Nakala ignore silencieusement `PUT files=[]` (H3). Pour vider "
+            "un dépôt, utiliser `supprimer_depot` + redéposer."
+        )
+
+    # Pré-calcul des sha1 distants pour le rapport `sha1s_retires`.
+    rapport.sha1s_retires = [o.sha1 for o in rapport_cmp.orphelins_distants]
+
+    # 5. Dry-run : on ne touche pas au distant.
+    if dry_run:
+        return rapport
+
+    # 6. Réel : upload des nouveaux + modifies.
+    # Map fichier_id → sha1 fraîchement uploadé, pour mettre à jour
+    # `Fichier.sha1_nakala` après le PUT réussi.
+    nouveaux_sha1_par_fichier: dict[int, str] = {}
+    sha1s_uploades: list[str] = []
+    from archives_tool.files.paths import resoudre_chemin
+
+    try:
+        for fc in list(rapport_cmp.nouveaux) + list(rapport_cmp.modifies):
+            if fc.fichier_id is None:
+                continue  # ne devrait pas arriver (catégories à fichier local)
+            # Récupère le binaire local (le service a déjà calculé son
+            # sha1 dans la phase de comparaison, mais on re-upload depuis
+            # le binaire actuel — pas de cache).
+            # Le Fichier ORM doit toujours avoir `racine` et
+            # `chemin_relatif` valides à ce stade (sinon il aurait été
+            # classé en Nakala-only par la comparaison).
+            fichier_orm = db.get(Fichier, fc.fichier_id)
+            assert fichier_orm is not None
+            assert fichier_orm.racine and fichier_orm.chemin_relatif
+            chemin = resoudre_chemin(
+                racines, fichier_orm.racine, fichier_orm.chemin_relatif,
+            )
+            desc = client_ecriture.uploader_fichier(chemin, fc.nom_fichier)
+            sha1_neuf = desc["sha1"].strip().lower()
+            sha1s_uploades.append(sha1_neuf)
+            nouveaux_sha1_par_fichier[fc.fichier_id] = sha1_neuf
+
+        # Construire le `files[]` final avec les sha1 fraîchement uploadés
+        # pour `nouveau` et `modifie`. Les `inchange`/`rename`/`nakala_only`
+        # gardent leur sha1 du plan.
+        files_cible: list[dict[str, Any]] = []
+        for entree in rapport.plan:
+            sha1 = entree.sha1
+            if entree.categorie in ("nouveau", "modifie"):
+                # Override avec sha1 fraîchement uploadé
+                assert entree.fichier_id is not None
+                sha1 = nouveaux_sha1_par_fichier[entree.fichier_id]
+            files_cible.append({"sha1": sha1, "name": entree.nom_fichier})
+
+        # 7. PUT
+        client_ecriture.modifier_depot(item.doi_nakala, files=files_cible)
+
+    except Exception:
+        # Cleanup uploads orphelins (best-effort).
+        for sha1 in sha1s_uploades:
+            try:
+                client_ecriture.supprimer_upload(sha1)
+            except Exception:  # noqa: BLE001
+                pass
+        raise
+
+    rapport.sha1s_uploades = sha1s_uploades
+
+    # 8. Met à jour Fichier.sha1_nakala pour modifies + nouveaux.
+    for fichier_id, sha1_neuf in nouveaux_sha1_par_fichier.items():
+        fichier = db.get(Fichier, fichier_id)
+        if fichier is not None:
+            fichier.sha1_nakala = sha1_neuf
+            if modifie_par:
+                fichier.ajoute_par = fichier.ajoute_par or modifie_par
+    db.commit()
+
+    rapport.applique = True
     return rapport

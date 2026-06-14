@@ -2689,6 +2689,23 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **`Fichier.description_externe` : transcription par fichier.**
+      Cas d'usage stratégique pour ColleC : pour chaque scan d'une
+      collection (revue numérisée, correspondance, manuscrits,
+      partitions, cartes…), stocker la **transcription textuelle**
+      par fichier (en plus des annotations IIIF qui sont à granularité
+      bulle/région). Validé par exploration apitest H11 : Nakala
+      accepte un champ `description` par fichier au `POST /datas` et
+      `PUT /datas/{id}`, le préserve, le restitue à `lire_depot`.
+      Permet : (a) accompagner les scans Nakala d'une transcription
+      consultable côté portail public, (b) indexer la transcription
+      en FTS5 local pour recherche textuelle, (c) round-trip propre
+      ColleC ↔ Nakala. Mise en œuvre : colonne `Fichier.description_externe`
+      (TEXT) + UI édition par fichier (panneau item) + intégration au
+      `files_cible` de `pousser_fichiers_item` (palier P3+c, le format
+      reste extensible). Distinct des annotations IIIF (granularité
+      bulle, modèle W3C séparé). Probable V2+ après le palier P3+c
+      MVP. Cf. `nakala-depot-future.md` H11.
 - [ ] **Activer le verrou optimiste sur `Fichier`** (`__mapper_args__
       = {"version_id_col": TracabiliteMixin.version}`). La colonne
       `Fichier.version` existe mais n'est **pas câblée** comme verrou

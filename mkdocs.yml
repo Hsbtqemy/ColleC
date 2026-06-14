@@ -123,6 +123,7 @@ nav:
       - montrer: guide/cli/montrer.md
       - renommer: guide/cli/renommer.md
       - deriver: guide/cli/deriver.md
+      - nakala: guide/cli/nakala.md
   - Référence:
     - Vue d'ensemble: reference/index.md
     - Profils d'import: reference/profils.md

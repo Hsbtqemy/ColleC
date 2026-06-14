@@ -2139,6 +2139,19 @@ def cmd_nakala_montrer(
                 "sujets": depot.sujets,
                 "licence": depot.licence,
                 "nb_fichiers": len(depot.fichiers),
+                # Trou AC (passe 18) : liste fichiers exposee en JSON
+                # pour audits downstream sans 2e appel. Le compteur
+                # `nb_fichiers` reste pour compat retro.
+                "fichiers": [
+                    {
+                        "nom": f.nom,
+                        "sha1": f.sha1,
+                        "taille": f.taille,
+                        "mime": f.mime,
+                        "embargo_actif": f.embargo_actif,
+                    }
+                    for f in depot.fichiers
+                ],
                 "metadonnees": depot.metadonnees,
             },
             ensure_ascii=False,
@@ -2155,6 +2168,20 @@ def cmd_nakala_montrer(
     typer.echo(f"  Licence    : {depot.licence or '—'}")
     typer.echo(f"  Sujets     : {', '.join(depot.sujets) or '—'}")
     typer.echo(f"  Fichiers   : {len(depot.fichiers)}")
+    # Trou AC : si peu de fichiers, lister directement (utile pour
+    # audit visuel sans devoir aller sur nakala.fr). Au-dela de 20,
+    # message qui pointe vers --format json.
+    if depot.fichiers and len(depot.fichiers) <= 20:
+        for f in depot.fichiers:
+            sha = (f.sha1 or "")[:12] + "…" if f.sha1 else "(sans sha1)"
+            taille = f"{f.taille} o" if f.taille else "?"
+            embargo = " [EMBARGO]" if f.embargo_actif else ""
+            typer.echo(f"    • {f.nom or '(sans nom)'} ({sha}, {taille}){embargo}")
+    elif depot.fichiers:
+        typer.echo(
+            f"    (liste tronquée, utiliser --format json pour les "
+            f"{len(depot.fichiers)} fichiers)"
+        )
     if depot.metadonnees:
         typer.echo(f"  Métadonnées: {', '.join(sorted(depot.metadonnees))}")
 

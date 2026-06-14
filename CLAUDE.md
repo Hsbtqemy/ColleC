@@ -2689,6 +2689,20 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Ajouter `--format json` sur les commandes Nakala destructives**.
+      Aujourd'hui, 4/14 commandes Nakala exposent `--format json`
+      (`montrer`, `comparer-fichiers`, `pousser-fichiers`,
+      `exporter-tableur`). Les 10 autres (`rapatrier`, `rafraichir`,
+      `rapatrier-collection`, `rafraichir-collection`, `deposer`,
+      `deposer-collection`, `pousser`, `publier`, `pousser-collection`,
+      `publier-collection`) n'ont qu'un rendu text Rich. Pour un script
+      d'automatisation (CI batch, ETL Por Favor sur 173 items, audit
+      Nakala périodique), parser le text est fragile. Pattern à porter :
+      `_FormatRapport` + branche `if format_sortie is JSON: typer.echo
+      (json.dumps({...}))`. Helper sérialiseur partagé pour les
+      structures communes (RapportRapatriement, RapportPush, etc.).
+      Probable 1 session pour tout porter d'un coup + tests gardiens
+      par commande (anti-régression style passe 16/17).
 - [ ] **Re-caractérisation du binaire après `pousser_fichiers_item`**.
       La passe 12 (commit à venir) propage sha1_nakala et invalide les
       dérivés locaux. Mais d'autres champs caractérisent le binaire et

@@ -115,6 +115,48 @@ def test_montrer_json(config_nakala: Path) -> None:
     assert charge["langues"] == ["fra"]
 
 
+def test_montrer_json_expose_liste_fichiers(
+    config_nakala: Path,
+) -> None:
+    """Trou AC (passe 18) — `montrer --format json` doit exposer la
+    LISTE des fichiers (pas seulement `nb_fichiers`). Sans cette
+    expose, un script consommateur doit faire un 2e appel pour
+    auditer la coherence locale ↔ Nakala."""
+    r = runner.invoke(
+        app, ["nakala", "montrer", _DOI,
+              "--config", str(config_nakala), "--format", "json"]
+    )
+    assert r.exit_code == 0, r.output
+    charge = json.loads(r.output)
+    # nb_fichiers reste pour compat retro
+    assert charge["nb_fichiers"] == 1
+    # Liste exposee avec structure complete (5 champs FichierNakala)
+    assert "fichiers" in charge
+    assert len(charge["fichiers"]) == 1
+    f = charge["fichiers"][0]
+    assert f["nom"] == "p1.jpg"
+    assert f["sha1"] == "a"
+    assert f["taille"] == 10
+    assert f["mime"] == "image/jpeg"
+    assert f["embargo_actif"] is False
+
+
+def test_montrer_text_liste_fichiers_si_peu(
+    config_nakala: Path,
+) -> None:
+    """Trou AC — format text liste les fichiers si N ≤ 20. Le user
+    voit directement le contenu sans devoir aller sur nakala.fr."""
+    r = runner.invoke(app, ["nakala", "montrer", _DOI,
+                            "--config", str(config_nakala)])
+    assert r.exit_code == 0, r.output
+    # Nom du fichier dans la sortie
+    assert "p1.jpg" in r.output
+    # Sha tronque (12 premiers chars + ellipsis)
+    # NOTE : sha "a" est < 12 chars, donc s'affiche brut + ellipsis.
+    # On verifie juste que la ligne fichier est presente.
+    assert "•" in r.output or "p1.jpg" in r.output
+
+
 def test_montrer_sans_config_nakala_exit2(tmp_path: Path) -> None:
     cfg = tmp_path / "c.yaml"
     cfg.write_text("utilisateur: x\n", encoding="utf-8")  # pas de section nakala

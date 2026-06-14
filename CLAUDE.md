@@ -2689,6 +2689,19 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Activer le verrou optimiste sur `Fichier`** (`__mapper_args__
+      = {"version_id_col": TracabiliteMixin.version}`). La colonne
+      `Fichier.version` existe mais n'est **pas câblée** comme verrou
+      optimiste, contrairement à `Item`, `Collection`, `Fonds`. Pas
+      de bug actif aujourd'hui : `deposer_item` (P3+a) écrit
+      `sha1_nakala` toujours avec la même valeur idempotente, et les
+      autres mutations passent par le `renamer` transactionnel
+      (verrouillage applicatif). Mais dette structurelle : toute
+      future mutation par session concurrente (ex. UI rename + dépôt
+      simultané, ou annotations / état fichier en V2+) bénéficierait
+      du verrou. **Risque** : activer `version_id_col` casse les tests
+      qui n'incrémentent pas `version` à l'écriture — audit complet
+      requis avant. Voir pattern dans `models/item.py:46-47`.
 - [ ] **Tester `alembic downgrade` dans la CI.** Aucun test
       n'exerce `command.downgrade` actuellement — les `downgrade()`
       des migrations sont écrits mais jamais validés. Si on doit

@@ -76,6 +76,7 @@ from archives_tool.api.services.nakala_depot import (
 )
 from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
+    BackfillIncomplet,
     OrphelinsDetectes,
     PushImpossible,
     comparer_fichiers_item,
@@ -3069,6 +3070,15 @@ def cmd_nakala_pousser_fichiers(
         except ComparaisonImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
+        except BackfillIncomplet as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            typer.echo(
+                "Relancer `alembic upgrade head` pour rejouer le backfill "
+                "sha1_nakala, ou nettoyer manuellement les Fichier ColleC "
+                "concernés avant de pousser.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
         except OrphelinsDetectes as e:
             typer.echo(f"Erreur : {e}", err=True)
             typer.echo(
@@ -3097,6 +3107,7 @@ def cmd_nakala_pousser_fichiers(
             "dry_run": rapport.dry_run,
             "applique": rapport.applique,
             "raison": rapport.raison,
+            "derive": rapport.derive,
             "plan": [_entree(p) for p in rapport.plan],
             "sha1s_uploades": rapport.sha1s_uploades,
             "sha1s_retires": rapport.sha1s_retires,
@@ -3108,6 +3119,12 @@ def cmd_nakala_pousser_fichiers(
         "APPLIQUÉ" if rapport.applique else "NO-OP"
     )
     typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi} : push fichiers [{mode}]")
+
+    if rapport.derive:
+        typer.echo(
+            "  ⚠ Dérive détectée : le dépôt distant a changé depuis le "
+            "dernier pull cache. Re-comparer recommandé avant push."
+        )
 
     if rapport.raison == "aucun_changement":
         typer.echo("  ✓ Aucun changement à pousser.")

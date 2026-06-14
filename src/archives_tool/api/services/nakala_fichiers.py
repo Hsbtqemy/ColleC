@@ -84,6 +84,31 @@ class PushImpossible(Exception):
     """
 
 
+class BackfillIncomplet(Exception):
+    """Refus du push : un ou plusieurs Fichier en `nakala_only_sans_local`
+    n'ont pas de ``sha1_nakala`` peuplé (legacy pré-P3+a, ou backfill
+    qui a échoué pour certaines URLs IIIF).
+
+    Sans ``sha1_nakala``, le service ne peut pas distinguer un Fichier
+    ColleC réellement apparié à un fichier distant d'un Fichier
+    orphelin. Si on poussait quand même, le fichier distant
+    correspondant serait retiré silencieusement (perte de donnée).
+
+    Workaround : relancer le backfill (``alembic upgrade head`` rejoue
+    `appliquer_backfill`) ou éditer manuellement le Fichier ColleC.
+    """
+
+    def __init__(self, fichiers: list["FichierCompare"]) -> None:
+        self.fichiers = fichiers
+        noms = ", ".join(f"{f.nom_fichier}" for f in fichiers[:5])
+        suffixe = "" if len(fichiers) <= 5 else f" (+ {len(fichiers) - 5} autres)"
+        super().__init__(
+            f"{len(fichiers)} Fichier(s) en nakala_only_sans_local sans "
+            f"sha1_nakala : {noms}{suffixe}. Relancer le backfill ou nettoyer "
+            "manuellement avant de pousser."
+        )
+
+
 @dataclass(frozen=True)
 class FichierCompare:
     """Vue figée d'un Fichier ColleC dans une comparaison.
@@ -150,6 +175,11 @@ class RapportComparaisonFichiers:
     inchanges: list[FichierCompare] = field(default_factory=list)
     nakala_only_sans_local: list[FichierCompare] = field(default_factory=list)
     orphelins_distants: list[FichierOrphelin] = field(default_factory=list)
+    # `modDate` distant capturé pendant le `lire_depot` initial. Permet
+    # au caller (`pousser_fichiers_item`) de détecter une dérive sans
+    # rejouer un second `lire_depot` (le client httpx n'a pas de cache
+    # LRU — chaque appel = un round-trip HTTP réel).
+    mod_date_distant: str | None = None
 
     @property
     def aucun_changement(self) -> bool:
@@ -246,6 +276,7 @@ def comparer_fichiers_item(
 
     rapport = RapportComparaisonFichiers(
         cote_item=item.cote, doi=item.doi_nakala,
+        mod_date_distant=depot.get("modDate"),
     )
 
     # Import paresseux : `resoudre_chemin` charge la config, on évite
@@ -379,6 +410,13 @@ class RapportPushFichiers:
     sha1s_uploades: list[str] = field(default_factory=list)
     # Listes des sha1 distants retirés via PUT (= orphelins exclus).
     sha1s_retires: list[str] = field(default_factory=list)
+    # Drift detection : le `modDate` distant a-t-il avancé depuis le
+    # dernier cache `mettre_en_cache_depot` ? Indicateur consultatif
+    # (n'empêche pas le push), aligné sur `RapportPush.derive` de
+    # `pousser_item` (P3). Vrai = quelqu'un d'autre a poussé entre
+    # notre dernier pull et maintenant — l'utilisateur devrait
+    # re-comparer avant de confirmer.
+    derive: bool = False
 
 
 def _construire_plan(
@@ -486,6 +524,9 @@ def pousser_fichiers_item(
     Raises:
         DepotImpossible: ``item.doi_nakala`` est None.
         ComparaisonImpossible: propagé depuis ``comparer_fichiers_item``.
+        BackfillIncomplet: au moins un Fichier ``nakala_only_sans_local``
+            n'a pas de ``sha1_nakala`` peuplé — risque de perte
+            silencieuse de fichier distant au PUT.
         OrphelinsDetectes: orphelins distants sans flag.
         PushImpossible: ``files_cible == []`` (cas H3).
         ErreurNakala: échec du ``lire_depot``, ``uploader_fichier`` ou
@@ -508,10 +549,35 @@ def pousser_fichiers_item(
         compare=rapport_cmp,
     )
 
+    # Drift detection (consultatif, n'empêche pas le push) — symétrie avec
+    # `pousser_item` P3. Compare `modDate` distant (capturé par
+    # `comparer_fichiers_item`, pas de 2e lire_depot) vs baseline cachée :
+    # si quelqu'un a poussé entre notre dernier pull et maintenant, on
+    # signale. L'utilisateur peut décider de re-comparer ou de pousser
+    # quand même par-dessus.
+    from archives_tool.api.services.nakala_depot import _baseline_moddate
+
+    baseline = _baseline_moddate(db, item.doi_nakala)
+    distant_mod = rapport_cmp.mod_date_distant
+    rapport.derive = bool(baseline and distant_mod and str(distant_mod) > str(baseline))
+
     # 2. Garde-fous métier
     if rapport_cmp.aucun_changement:
         rapport.raison = "aucun_changement"
         return rapport
+
+    # Garde-fou anti-perte silencieuse : un Fichier en
+    # `nakala_only_sans_local` sans `sha1_nakala` connu (legacy pré-P3+a
+    # ou backfill échoué) ne peut pas être réconcilié avec le distant.
+    # Le `_construire_plan` le skipperait silencieusement → au PUT, le
+    # fichier distant correspondant serait retiré sans avertissement.
+    # Refus loud : l'utilisateur doit relancer le backfill ou nettoyer
+    # le Fichier ColleC explicitement.
+    sans_sha1 = [
+        fc for fc in rapport_cmp.nakala_only_sans_local if fc.sha1_distant is None
+    ]
+    if sans_sha1:
+        raise BackfillIncomplet(sans_sha1)
 
     if rapport_cmp.orphelins_distants and not retirer_orphelins:
         raise OrphelinsDetectes(list(rapport_cmp.orphelins_distants))

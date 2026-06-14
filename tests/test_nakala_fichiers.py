@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_fichiers import (
+    BackfillIncomplet,
     ComparaisonImpossible,
     OrphelinsDetectes,
     PushImpossible,
@@ -62,15 +63,22 @@ def _ecrire_binaire(scans: Path, nom: str, contenu: bytes) -> tuple[Path, str]:
 
 class _FakeClientLecture:
     """Stub de `ClientLectureNakala` : `lire_depot(doi)` renvoie un dict
-    avec `files=[{sha1, name}]` configurable."""
+    avec `files=[{sha1, name}]` configurable. `modDate` optionnel pour
+    tester la dérive."""
 
-    def __init__(self, files: list[dict[str, Any]]) -> None:
+    def __init__(
+        self, files: list[dict[str, Any]], *, mod_date: str | None = None,
+    ) -> None:
         self._files = files
+        self._mod_date = mod_date
         self.appels: list[str] = []
 
     def lire_depot(self, doi: str) -> dict[str, Any]:
         self.appels.append(doi)
-        return {"identifier": doi, "files": self._files}
+        depot = {"identifier": doi, "files": self._files}
+        if self._mod_date is not None:
+            depot["modDate"] = self._mod_date
+        return depot
 
 
 def _setup_item_avec_fichiers(
@@ -1122,3 +1130,163 @@ def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
     rename_envoye = next(f for f in files if f["name"] == "nouveau_nom.jpg")
     assert rename_envoye["sha1"] == sha1_renomme
     assert rapport.applique is True
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 4 — BackfillIncomplet + drift detection
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_backfill_incomplet_leve_avant_put(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou J — perte silencieuse de fichier sur scenario legacy mixte.
+
+    Un Fichier ColleC en `nakala_only_sans_local` sans `sha1_nakala`
+    peuplé (cas pré-P3+a, backfill non rejoué) ne peut pas être
+    réconcilié avec le distant. Sans garde-fou, `_construire_plan` le
+    skipperait silencieusement → le fichier distant correspondant
+    serait retiré côté Nakala SANS être listé en orphelin (il était
+    indexé par `sha1_index` mais jamais ajouté à `sha1s_apparies`
+    faute de sha1 connu côté ColleC).
+
+    Le garde-fou refuse le push avec `BackfillIncomplet`, listant
+    les Fichier concernés.
+    """
+    # Fichier A : legacy, sha1_nakala=None, pas de binaire local.
+    # Fichier B : sain, binaire local matche distant.
+    contenu_b = b"sain"
+    sha1_b = _sha1(contenu_b)
+    sha1_a_distant = "aaaaaaaaaaaa" + "0" * 28  # 40 hex chars
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_a_distant, "name": "A.jpg"},
+        {"sha1": sha1_b, "name": "B.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "A.jpg",
+             "contenu": None,  # pas de binaire local
+             "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
+             "sha1_nakala": None},  # LEGACY : backfill pas joué
+            {"ordre": 2, "nom": "B.jpg",
+             "contenu": contenu_b, "sha1_nakala": sha1_b},
+        ])
+        with pytest.raises(BackfillIncomplet) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    # L'exception expose la liste des Fichier concernés.
+    assert len(exc_info.value.fichiers) == 1
+    assert exc_info.value.fichiers[0].nom_fichier == "A.jpg"
+    assert exc_info.value.fichiers[0].sha1_distant is None
+    # Aucun PUT envoyé — refus loud.
+    assert ecriture.puts == []
+    assert ecriture.uploads == []
+
+
+def test_pousser_backfill_incomplet_message_liste_les_fichiers(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Le message d'erreur de BackfillIncomplet liste les noms (≤5)."""
+    lecture = _FakeClientLecture(files=[
+        {"sha1": "aa" + "0" * 38, "name": "A.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "A.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
+             "sha1_nakala": None},
+        ])
+        with pytest.raises(BackfillIncomplet) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False, retirer_orphelins=True,
+            )
+    msg = str(exc_info.value)
+    assert "A.jpg" in msg
+    assert "sha1_nakala" in msg
+    assert "backfill" in msg.lower()
+
+
+def test_pousser_derive_detection_signalee_dans_rapport(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou K — drift detection (symétrie avec `pousser_item` P3).
+
+    Si le `modDate` distant a avancé depuis le dernier cache
+    `RessourceExterne.metadonnees_brutes.modDate`, on signale dans
+    `rapport.derive`. Consultatif : n'empêche pas le push.
+    """
+    from archives_tool.models import RessourceExterne, SourceExterne
+
+    contenu = b"new"
+    sha1_ancien = "bb" + "0" * 38
+
+    # Distant : `modDate` recent (2026-06-14)
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
+        mod_date="2026-06-14T12:00:00",
+    )
+    ecriture = _FakeClientEcriture()
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg",
+             "contenu": contenu, "sha1_nakala": sha1_ancien},
+        ])
+        # Cache RessourceExterne avec modDate ancien.
+        source = SourceExterne(
+            code="nakala",
+            libelle="Nakala test",
+            type_api="rest",
+            url_base="https://api.nakala.fr",
+        )
+        s.add(source)
+        s.flush()
+        s.add(RessourceExterne(
+            source_id=source.id,
+            identifiant_externe=item.doi_nakala,
+            metadonnees_brutes={"modDate": "2026-01-01T08:00:00"},
+        ))
+        s.commit()
+
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=True,
+        )
+
+    # Dérive détectée (distant > baseline).
+    assert rapport.derive is True
+
+
+def test_pousser_pas_de_derive_si_baseline_egale_distant(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Pas de cache ou cache à jour → `derive=False`."""
+    contenu = b"sain"
+    sha1 = _sha1(contenu)
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1, "name": "x.jpg"}],
+        mod_date="2026-01-01T08:00:00",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg",
+             "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        # Pas de RessourceExterne → baseline=None → derive=False
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.derive is False

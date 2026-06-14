@@ -574,3 +574,102 @@ def test_pousser_item_sans_doi_exit_1(
     r = _invoke_pousser(config_nakala, db)
     assert r.exit_code == 1, r.output
     assert "doi_nakala" in r.output.lower() or "deposer" in r.output.lower()
+
+
+def test_pousser_push_impossible_files_cible_vide_exit_1(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Cas extreme : pas de fichiers locaux, tous distants en orphelins
+    + --retirer-orphelins → files_cible == [] → PushImpossible
+    (Nakala ignore silencieusement PUT files=[]).
+
+    La CLI doit exit 1 avec un message clair pointant vers
+    `supprimer_depot`."""
+    sha1_orphan_a = "a" * 40
+    sha1_orphan_b = "b" * 40
+    db = tmp_path / "test.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    with creer_session_factory(engine)() as s:
+        f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
+        item = creer_item(s, FormulaireItem(
+            cote="AS-001", titre="X", fonds_id=f.id,
+        ))
+        item.doi_nakala = "10.34847/nkl.x1"
+        # Aucun Fichier local : tout va devenir orphelin distant
+        s.commit()
+    engine.dispose()
+    _FakeReadClient.files = [
+        {"sha1": sha1_orphan_a, "name": "a.jpg"},
+        {"sha1": sha1_orphan_b, "name": "b.jpg"},
+    ]
+
+    r = _invoke_pousser(config_nakala, db, "--no-dry-run", "--retirer-orphelins")
+    assert r.exit_code == 1, r.output
+    # Le message guide l'utilisateur vers la bonne action
+    assert "files_cible vide" in r.output or "supprimer_depot" in r.output
+
+
+def test_pousser_erreur_nakala_propagee_exit_1(
+    config_nakala: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Si le PUT lève ErreurNakala (404, 500, etc.) → CLI exit 1 avec
+    message clair, pas de traceback Python brut chez l'utilisateur."""
+    from archives_tool.external.nakala.client import ErreurNakala
+
+    contenu = b"local"
+    sha1 = _sha1(contenu)
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=b"new content", sha1_nakala=sha1,
+    )
+    _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
+
+    # Override modifier_depot du stub pour lever
+    def _modifier_qui_leve(self, identifiant, *, metas=None, files=None, status=None):
+        raise ErreurNakala("Simulation 500 cote Nakala")
+
+    monkeypatch.setattr(_FakeWriteClient, "modifier_depot", _modifier_qui_leve)
+
+    r = _invoke_pousser(config_nakala, db, "--no-dry-run")
+    assert r.exit_code == 1, r.output
+    assert "nakala" in r.output.lower()
+    assert "Simulation 500" in r.output
+
+
+def test_pousser_format_json_mode_applique(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """--no-dry-run --format json : sortie JSON complete avec
+    `applique=True`, `sha1s_uploades` peuple, et le `plan` reflete
+    les sha1 PREVISIONNELS (sha1_local capture pre-upload).
+
+    Documente le comportement : en mode applique, le JSON `plan` ne
+    contient PAS les sha1 fraichement uploades (qui sont dans
+    `sha1s_uploades`). Pour SHA-1, les 2 sont identiques en pratique
+    (Nakala calcule le sha1 du binaire envoye), mais le rapport
+    documente la distinction."""
+    import json as _json
+    contenu = b"new content"
+    sha1 = _sha1(contenu)
+    sha1_ancien = "a" * 40
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+    )
+    _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
+
+    r = _invoke_pousser(
+        config_nakala, db, "--no-dry-run", "--format", "json",
+    )
+    assert r.exit_code == 0, r.output
+    data = _json.loads(r.output)
+    assert data["applique"] is True
+    assert data["dry_run"] is False
+    assert data["raison"] is None
+    # 1 upload pour le modifie
+    assert len(data["sha1s_uploades"]) == 1
+    assert data["sha1s_uploades"][0].startswith("upload-")
+    # Plan contient le sha1 PREVISIONNEL (sha1_local = sha1 du binaire),
+    # PAS le sha1 uploade. Documente la convention.
+    assert len(data["plan"]) == 1
+    assert data["plan"][0]["sha1"] == sha1  # sha1 du binaire local

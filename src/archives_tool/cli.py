@@ -2919,45 +2919,62 @@ def cmd_nakala_comparer_fichiers(
     if format_sortie is _FormatRapport.JSON:
         import json
 
+        def _fc(fc):
+            return {
+                "fichier_id": fc.fichier_id,
+                "nom_fichier": fc.nom_fichier,
+                "ordre": fc.ordre,
+                "sha1_local": fc.sha1_local,
+                "sha1_distant": fc.sha1_distant,
+            }
+
         typer.echo(json.dumps({
             "cote_item": rapport.cote_item,
             "doi": rapport.doi,
             "aucun_changement": rapport.aucun_changement,
-            "nouveaux": [
-                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
-                 "sha1_local": fc.sha1_local}
-                for fc in rapport.nouveaux
-            ],
-            "modifies": [
-                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
-                 "sha1_local": fc.sha1_local, "sha1_distant": fc.sha1_distant}
-                for fc in rapport.modifies
-            ],
-            "inchanges": [
-                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
-                 "sha1": fc.sha1_local}
-                for fc in rapport.inchanges
-            ],
+            "nouveaux": [_fc(fc) for fc in rapport.nouveaux],
+            "modifies": [_fc(fc) for fc in rapport.modifies],
+            "inchanges": [_fc(fc) for fc in rapport.inchanges],
             "nakala_only_sans_local": [
-                {"ordre": fc.ordre, "nom_fichier": fc.nom_fichier,
-                 "sha1_distant": fc.sha1_distant}
-                for fc in rapport.nakala_only_sans_local
+                _fc(fc) for fc in rapport.nakala_only_sans_local
             ],
+            "non_actifs_a_retirer": [
+                _fc(fc) for fc in rapport.non_actifs_a_retirer
+            ],
+            "fichiers_fantomes": [_fc(fc) for fc in rapport.fichiers_fantomes],
             "orphelins_distants": [
                 {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
                 for fo in rapport.orphelins_distants
             ],
+            "mod_date_distant": rapport.mod_date_distant,
+            "statut_distant": rapport.statut_distant,
         }, ensure_ascii=False, indent=2))
         return
 
     typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi}")
+    if rapport.statut_distant:
+        typer.echo(f"  Statut distant : {rapport.statut_distant}")
     typer.echo(
         f"  Inchangés : {len(rapport.inchanges)}"
         f" · Modifiés : {len(rapport.modifies)}"
         f" · Nouveaux : {len(rapport.nouveaux)}"
         f" · Orphelins distants : {len(rapport.orphelins_distants)}"
         f" · Nakala-only sans local : {len(rapport.nakala_only_sans_local)}"
+        f" · Non-ACTIF à retirer : {len(rapport.non_actifs_a_retirer)}"
+        f" · Fichiers fantômes : {len(rapport.fichiers_fantomes)}"
     )
+    # Avertissements forts pour les conditions a fixer (diagnostic) ou
+    # a confirmer (consent) - alignes sur les garde-fous du service.
+    if rapport.fichiers_fantomes:
+        typer.echo(
+            "  ✗ Fichiers fantômes détectés : sha1_nakala désynchronisé. "
+            "Re-rapatrier ou nettoyer manuellement avant push."
+        )
+    if rapport.statut_distant == "published":
+        typer.echo(
+            "  ⚠ DANGER : item publié — push modifie les DOIs DataCite, "
+            "casse les citations externes."
+        )
     if rapport.aucun_changement and not rapport.nakala_only_sans_local:
         typer.echo("  ✓ Aucun changement à pousser.")
         return
@@ -2999,6 +3016,22 @@ def cmd_nakala_comparer_fichiers(
         "Orphelins distants (présents Nakala, absents locaux)",
         rapport.orphelins_distants,
         lambda fo: f"{fo.nom_fichier or '(sans nom)'} (sha1: {fo.sha1[:12]}…)",
+    )
+    _detail_liste(
+        "Non-ACTIF avec pendant Nakala (seront retirés au push)",
+        rapport.non_actifs_a_retirer,
+        lambda fc: (
+            f"[{fc.ordre:02d}] {fc.nom_fichier}"
+            + (f" (sha1 distant: {fc.sha1_distant[:12]}…)" if fc.sha1_distant else "")
+        ),
+    )
+    _detail_liste(
+        "Fichiers fantômes (sha1_nakala désynchronisé — bloquent le push)",
+        rapport.fichiers_fantomes,
+        lambda fc: (
+            f"[{fc.ordre:02d}] {fc.nom_fichier}"
+            + (f" (sha1 fantôme: {fc.sha1_distant[:12]}…)" if fc.sha1_distant else "")
+        ),
     )
 
 

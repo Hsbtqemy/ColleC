@@ -224,10 +224,18 @@ def test_text_nakala_only_signale_meme_si_aucun_changement(
 # ---------------------------------------------------------------------------
 
 
-def test_json_serialise_les_5_categories(
+def test_json_serialise_toutes_les_categories(
     config_nakala: Path, tmp_path: Path,
 ) -> None:
-    """Le format json produit une structure parsable + complète."""
+    """Le format json produit une structure parsable + complète.
+
+    **Passe 16/AB** : structure JSON unifiee via helper `_fc` qui expose
+    `fichier_id`/`nom_fichier`/`ordre`/`sha1_local`/`sha1_distant` pour
+    toutes les categories de Fichier. Avant : chaque categorie avait
+    une projection ad-hoc differente (`inchanges` exposait `sha1`,
+    `modifies` exposait `sha1_local`+`sha1_distant`). Incoherence
+    historique corrigee.
+    """
     db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
 
@@ -240,12 +248,71 @@ def test_json_serialise_les_5_categories(
     assert data["doi"] == "10.34847/nkl.x1"
     assert data["aucun_changement"] is True
     assert len(data["inchanges"]) == 1
+    # Structure unifiee : `sha1_local` (pas `sha1`)
     assert data["inchanges"][0]["nom_fichier"] == "x.jpg"
-    assert data["inchanges"][0]["sha1"] == sha1
+    assert data["inchanges"][0]["sha1_local"] == sha1
+    # Toutes les catégories presentes (gardien Trou AB passe 17)
     assert data["nouveaux"] == []
     assert data["modifies"] == []
     assert data["nakala_only_sans_local"] == []
+    assert data["non_actifs_a_retirer"] == []
+    assert data["fichiers_fantomes"] == []
     assert data["orphelins_distants"] == []
+    # Meta du distant
+    assert "mod_date_distant" in data
+    assert "statut_distant" in data
+
+
+def test_json_comparer_expose_7_categories_meme_si_vides(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Trou AB (passe 17) — gardien anti-regression : le format JSON de
+    `comparer-fichiers` doit exposer les 7 categories (5 cote ColleC +
+    2 ajouts récents : non_actifs + fantomes) + orphelins distants +
+    2 meta (statut_distant, mod_date_distant).
+
+    Avant ce fix, les ajouts des passes 6 (non_actifs) et 10 (fantomes)
+    n'apparaissaient PAS en JSON. Un script consommateur ne voyait
+    pas qu'il y avait un fantome a fixer ou des fichiers a retirer.
+    """
+    db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
+    _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
+    r = _invoke(config_nakala, db, "--format", "json")
+    data = json.loads(r.output)
+
+    # 7 categories de Fichier ColleC + 1 categorie cote distant
+    for cat in [
+        "inchanges", "modifies", "nouveaux", "nakala_only_sans_local",
+        "non_actifs_a_retirer", "fichiers_fantomes",
+        "orphelins_distants",
+    ]:
+        assert cat in data, f"Categorie manquante : {cat}"
+
+    # 2 meta du distant
+    assert "mod_date_distant" in data
+    assert "statut_distant" in data
+
+
+def test_text_comparer_expose_fantome_et_non_actifs(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Trou AB — gardien text : la ligne `Compare:` mentionne bien les
+    7 categories. Sans cet expose, un user avec un fantome verrait
+    "0 inchangés, 0 modifiés, ..." mais pas le fantome → croit que
+    tout est bon."""
+    db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
+    _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
+    r = _invoke(config_nakala, db)  # format text par defaut
+    assert r.exit_code == 0
+    # Tous les compteurs de categorie sont exposes (chaine cherche
+    # parmi des labels stables)
+    assert "Inchangés" in r.output
+    assert "Modifiés" in r.output
+    assert "Nouveaux" in r.output
+    assert "Orphelins distants" in r.output
+    assert "Nakala-only sans local" in r.output
+    assert "Non-ACTIF à retirer" in r.output
+    assert "Fichiers fantômes" in r.output
 
 
 # ---------------------------------------------------------------------------

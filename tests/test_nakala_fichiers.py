@@ -2711,3 +2711,248 @@ def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
     assert rapport.raison == "aucun_changement"
     assert rapport.applique is False
     assert ecriture.puts == []
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 15 — Invariants forts non-codifies (gardiens de contrat)
+# ---------------------------------------------------------------------------
+
+
+def test_idempotence_push_modifie_2x_consecutifs(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Contrat : push effectif d'un fichier modifie, puis push immediat
+    (binaire inchange depuis) → 2e push doit etre no-op (aucun_changement).
+
+    Invariant : la mise a jour `sha1_nakala` au commit DOIT etre coherente
+    avec le sha distant resultant du PUT, sinon le 2e push reclassifierait
+    en `modifie` (boucle infinie potentielle).
+
+    Sans ce test, une regression future qui de-synchroniserait sha1_nakala
+    (par exemple un fix qui oublie le `commit()` final) ferait
+    re-uploader les memes fichiers a chaque push.
+
+    Necessite un stub `uploader_fichier` qui retourne le VRAI sha du
+    binaire (contrat reel du client Nakala) - sinon push 2 verrait
+    une desync sha_local ≠ sha_nakala et reclassifierait en modifie.
+    """
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    sha_neuf_attendu = _sha1(contenu_neuf)
+
+    class _LectureMutable:
+        """Reflete le PUT distant entre push 1 et push 2."""
+        def __init__(self, files_initiaux):
+            self.files = list(files_initiaux)
+            self.appels = 0
+
+        def lire_depot(self, doi):
+            self.appels += 1
+            return {"identifier": doi, "files": list(self.files), "status": "pending"}
+
+    class _EcritureRealistePourIdempotence:
+        """Calcule le vrai sha du chemin upload (contrat reel Nakala)
+        au lieu d'un sha sequentiel bidon."""
+        def __init__(self, lecture_mutable):
+            self._lecture = lecture_mutable  # pour synchro distant post-PUT
+            self.uploads = []
+            self.puts = []
+            self.supprimes = []
+
+        def uploader_fichier(self, chemin, nom=None):
+            n = nom or Path(chemin).name
+            sha = _sha1(Path(chemin).read_bytes())  # VRAI sha contenu
+            self.uploads.append(n)
+            return {"sha1": sha, "name": n}
+
+        def modifier_depot(self, identifiant, *, metas=None, files=None,
+                          status=None):
+            self.puts.append({"id": identifiant, "files": files})
+            # Synchronise le distant simule avec ce qui a ete envoye
+            if files is not None:
+                self._lecture.files = [dict(f) for f in files]
+            return {}
+
+        def supprimer_upload(self, sha):
+            self.supprimes.append(sha)
+
+    lecture = _LectureMutable([{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _EcritureRealistePourIdempotence(lecture)
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        # Push 1 reel
+        rapport_1 = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    assert rapport_1.applique is True
+    assert rapport_1.sha1s_uploades == [sha_neuf_attendu]
+    assert len(ecriture.puts) == 1
+
+    # Re-charger l'item depuis la session sache que sha1_nakala est commit
+    with _session(db_path) as s:
+        item_recharge = s.scalar(
+            select(Item).where(Item.cote == "AS-001")
+        )
+        # Push 2 immediat - meme binaire local, sha1_nakala = sha_neuf
+        rapport_2 = pousser_fichiers_item(
+            s, lecture, ecriture, item_recharge,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    # CONTRAT : push 2 est no-op idempotent
+    assert rapport_2.applique is False
+    assert rapport_2.raison == "aucun_changement"
+    # Aucun nouveau PUT envoye (le compteur reste a 1)
+    assert len(ecriture.puts) == 1
+    # Aucun nouveau upload
+    assert len(ecriture.uploads) == 1
+
+
+def test_idempotence_push_dry_run_2x(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Dry-run idempotent : 2 dry-run consecutifs donnent le meme plan,
+    aucun touch DB ni distant. Documente l'invariant : le dry-run est
+    une fonction pure de l'etat DB + distant."""
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])  # nouveau
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        rapport_1 = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+        )
+        rapport_2 = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+        )
+
+    # 2 dry-run donnent les memes catégories de plan (aucune mutation)
+    assert rapport_1.plan == rapport_2.plan
+    assert ecriture.puts == []
+    assert ecriture.uploads == []
+
+
+def test_invariant_cardinalite_distante_scenario_riche(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Invariant de conservation : pour tout `comparer_fichiers_item`,
+
+        len(sha1_distants_initial) =
+            len(consommes par fichier ColleC) + len(orphelins_distants)
+
+    Avec consommes = inchanges + modifies + nakala_only_avec_match +
+    non_actifs_avec_match.
+
+    Pas un property-based test pur (pas d'hypothesis), mais un scenario
+    riche qui couvre 6 categories en meme temps - difficile a fabriquer
+    a la main. Documente l'invariant pour les futures refactos."""
+    # Construction du scenario :
+    # - Fichier 1 : inchange (binaire == distant)
+    # - Fichier 2 : modifie (binaire change, sha_nakala == distant ancien)
+    # - Fichier 3 : nouveau (pas dans distant)
+    # - Fichier 4 : nakala_only_sans_local (pas de binaire local, sha_nakala
+    #   match distant)
+    # - Fichier 5 : non_actif (CORBEILLE, sha_nakala match distant)
+    # - Distant supplementaire : 1 orphelin (sans Fichier ColleC)
+    # - Distant doublon : 2 fichiers avec meme sha (2e en orphelin)
+
+    contenu_1 = b"inchange"
+    sha_1 = _sha1(contenu_1)
+    contenu_2_neuf = b"modifie_neuf"
+    sha_2_ancien = _sha1(b"modifie_ancien")
+    contenu_3 = b"nouveau"
+    sha_4 = "44" + "0" * 38
+    sha_5 = "55" + "0" * 38
+    sha_orphan = "66" + "0" * 38
+    sha_doublon = "77" + "0" * 38
+
+    nb_distants_initial = 7  # cf. liste de 7 files dans la lecture ci-dessous
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "f1.jpg", "contenu": contenu_1, "sha1_nakala": sha_1},
+            {"ordre": 2, "nom": "f2.jpg", "contenu": contenu_2_neuf, "sha1_nakala": sha_2_ancien},
+            {"ordre": 3, "nom": "f3.jpg", "contenu": contenu_3, "sha1_nakala": None},
+            {"ordre": 4, "nom": "f4.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json", "sha1_nakala": sha_4},
+            {"ordre": 5, "nom": "f5.jpg", "contenu": b"x", "sha1_nakala": sha_5},
+        ])
+        # f5 en CORBEILLE
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        fichiers[4].etat = EtatFichier.CORBEILLE.value
+        s.commit()
+
+        rapport = comparer_fichiers_item(
+            s, _FakeClientLecture(files=[
+                {"sha1": sha_1, "name": "f1.jpg"},
+                {"sha1": sha_2_ancien, "name": "f2.jpg"},
+                {"sha1": sha_4, "name": "f4.jpg"},
+                {"sha1": sha_5, "name": "f5.jpg"},
+                {"sha1": sha_orphan, "name": "orphan.jpg"},
+                {"sha1": sha_doublon, "name": "doublon-a.jpg"},
+                {"sha1": sha_doublon, "name": "doublon-b.jpg"},
+            ]), item, racines={"scans": tmp_path / "scans"},
+        )
+
+    # Verifications par categorie
+    assert len(rapport.inchanges) == 1, "f1 inchange"
+    assert len(rapport.modifies) == 1, "f2 modifie"
+    assert len(rapport.nouveaux) == 1, "f3 nouveau"
+    assert len(rapport.nakala_only_sans_local) == 1, "f4 nakala_only"
+    assert len(rapport.non_actifs_a_retirer) == 1, "f5 non_actif"
+    # Orphelins distants = 1 orphan direct + 2 doublons sans match cote
+    # ColleC = 3 total (aucun Fichier ColleC ne porte sha_doublon).
+    assert len(rapport.orphelins_distants) == 3
+
+    # INVARIANT CONSERVATION DISTANTE :
+    # 7 fichiers distants au depart =
+    #   4 consommes (f1, f2, f4, f5 match leur sha distant)
+    # + 3 orphelins distants (orphan + 2 doublons sans match)
+    nb_consommes = (
+        len(rapport.inchanges) + len(rapport.modifies)
+        + len(rapport.nakala_only_sans_local)
+        + len(rapport.non_actifs_a_retirer)
+    )
+    assert nb_consommes == 4
+    # INVARIANT : conservation cardinalite distante
+    assert nb_consommes + len(rapport.orphelins_distants) == nb_distants_initial
+
+
+def test_invariant_aucun_consomme_si_distant_vide(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Cas degenere : distant vide → aucun fichier consomme, aucun
+    orphelin. Documente l'invariant trivial."""
+    client = _FakeClientLecture(files=[])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.orphelins_distants == []
+    # 1 nouveau (binaire local sans pendant distant)
+    assert len(rapport.nouveaux) == 1
+    # 0 consommes (rien a consommer dans un index vide)
+    assert (
+        len(rapport.inchanges) + len(rapport.modifies)
+        + len(rapport.nakala_only_sans_local)
+        + len(rapport.non_actifs_a_retirer)
+    ) == 0

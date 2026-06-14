@@ -1290,3 +1290,130 @@ def test_pousser_pas_de_derive_si_baseline_egale_distant(
             racines={"scans": tmp_path / "scans"},
         )
     assert rapport.derive is False
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 5 — doublons sha1 distants (cas archivistique legitime)
+# ---------------------------------------------------------------------------
+
+
+def test_comparer_preserve_doublons_sha1_distants_inchanges_apparies(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou M — deux fichiers distants ont le même sha1 (cas légitime :
+    deux pages blanches scannees, deux planches vides…).
+
+    Cote ColleC : deux Fichier portant le même binaire local.
+
+    Avant le fix : `sha1_index = dict[sha1, fd]` écrasait le 2e doublon,
+    et la boucle orphelins itérait sur l'index (1 entrée) → le 2e doublon
+    était silencieusement perdu.
+
+    Après le fix : `sha1_index = dict[sha1, list[fd]]` avec consommation
+    par `pop(0)`. Chaque Fichier ColleC consomme 1 entrée distante,
+    le compte final est correct.
+    """
+    contenu = b"page blanche"
+    sha1 = _sha1(contenu)
+    # Distant : 2 fichiers avec le MEME sha1, noms differents.
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "page-blanche-debut.jpg"},
+        {"sha1": sha1, "name": "page-blanche-fin.jpg"},
+    ])
+    with _session(db_path) as s:
+        # Cote ColleC : 2 Fichier avec le meme contenu binaire.
+        # Reutilise le helper en posant 2 binaires de meme contenu.
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "page-blanche-debut.jpg",
+             "contenu": contenu, "sha1_nakala": sha1},
+            {"ordre": 2, "nom": "page-blanche-fin.jpg",
+             "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        rapport = comparer_fichiers_item(
+            s, lecture, item, racines={"scans": tmp_path / "scans"},
+        )
+    # 2 inchanges (1 par Fichier ColleC).
+    assert len(rapport.inchanges) == 2
+    # 0 orphelin : chaque doublon distant a ete consomme.
+    assert rapport.orphelins_distants == []
+    # 0 nouveau, 0 modifie.
+    assert rapport.nouveaux == []
+    assert rapport.modifies == []
+
+
+def test_comparer_doublons_sha1_distants_avec_1_seul_fichier_local_classe_2e_en_orphelin(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Distant a 2 fichiers avec meme sha1, ColleC n'a qu'1 Fichier
+    correspondant. Le 2e doublon distant DOIT ressortir en orphelin
+    (regression test : avant le fix il etait silencieusement perdu)."""
+    contenu = b"page blanche"
+    sha1 = _sha1(contenu)
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "premier.jpg"},
+        {"sha1": sha1, "name": "doublon-perdu.jpg"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "premier.jpg",
+             "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        rapport = comparer_fichiers_item(
+            s, lecture, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.inchanges) == 1
+    # CRITIQUE : le 2e doublon distant ressort en orphelin propre.
+    assert len(rapport.orphelins_distants) == 1
+    assert rapport.orphelins_distants[0].sha1 == sha1
+    # Le nom transporte est celui du doublon non-apparie (le 2e dans
+    # l'ordre Nakala car le 1er a ete consomme par `pop(0)`).
+    assert rapport.orphelins_distants[0].nom_fichier == "doublon-perdu.jpg"
+
+
+def test_pousser_doublons_sha1_distants_preserves_dans_files_cible(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou M scenario push : si distant a 2 fichiers meme sha1 et que
+    ColleC a 2 Fichier appariés, le PUT doit envoyer 2 entrées dans
+    `files[]` avec ce sha1 (Nakala accepte les doublons sha1, H1 confirme
+    que `files[]` est remplacé intégralement). Sinon le 2e serait retiré.
+
+    On declenche un PUT en ajoutant un Fichier modifie en plus.
+    """
+    contenu_doublon = b"identique"
+    sha1_doublon = _sha1(contenu_doublon)
+    contenu_modif = b"a modifier"
+    sha1_ancien = _sha1(b"ancien contenu")  # pre-modif
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_doublon, "name": "a.jpg"},
+        {"sha1": sha1_doublon, "name": "b.jpg"},  # MEME sha1
+        {"sha1": sha1_ancien, "name": "c.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "a.jpg",
+             "contenu": contenu_doublon, "sha1_nakala": sha1_doublon},
+            {"ordre": 2, "nom": "b.jpg",
+             "contenu": contenu_doublon, "sha1_nakala": sha1_doublon},
+            {"ordre": 3, "nom": "c.jpg",
+             "contenu": contenu_modif, "sha1_nakala": sha1_ancien},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    # 1 PUT envoye, 1 upload (pour c.jpg modifie).
+    assert len(ecriture.puts) == 1
+    files_envoyes = ecriture.puts[0]["files"]
+    # 3 entrees dans `files[]` (les 2 doublons + le modifie).
+    assert len(files_envoyes) == 3
+    # Les 2 entrees a.jpg / b.jpg avec sha1_doublon sont preservees.
+    sha1s_envoyes = [f["sha1"] for f in files_envoyes]
+    assert sha1s_envoyes.count(sha1_doublon) == 2
+    noms = [f["name"] for f in files_envoyes]
+    assert "a.jpg" in noms
+    assert "b.jpg" in noms
+    assert rapport.applique is True

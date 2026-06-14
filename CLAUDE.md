@@ -2689,6 +2689,24 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Journaliser les push fichiers Nakala** (principe directeur n°4 :
+      « journaliser toutes les opérations destructives »). Un
+      `PUT /datas/{id}` avec `files[]` réduit RETIRE silencieusement
+      les fichiers absents (H1 — sémantique « remplace intégralement »).
+      `pousser_fichiers_item` peut donc supprimer durablement des
+      fichiers côté Nakala (cas `--retirer-orphelins`, cas
+      `Fichier.etat != ACTIF` filtré, cas doublons sha1) **sans aucune
+      trace** dans `OperationFichier` (qui ne couvre que les opérations
+      sur fichier local : rename / move / delete sur disque). Le
+      `RapportPushFichiers` transporte bien `sha1s_retires` et
+      `sha1s_uploades` au runtime, mais ils sont perdus à la fin du
+      processus — aucune historique consultable, pas d'undo, pas
+      d'audit. **À concevoir** : table dédiée `OperationPushNakala`
+      (snapshot des `files[]` avant/après, sha1s ajoutés/retirés,
+      batch_id, `execute_par`, `execute_le`) analogue à `OperationEntite`
+      V0.9.9. Le pattern de `OperationEntite` (snapshot +
+      cascade_resume + ne pas tenter l'undo MVP) est probablement
+      réutilisable. Probable 1 session.
 - [ ] **Documenter la CLI Nakala dans `docs/guide/cli/nakala.md`.**
       La CLI Nakala compte 14 sous-commandes au total (`montrer`,
       `rapatrier`, `rafraichir`, `rapatrier-collection`,

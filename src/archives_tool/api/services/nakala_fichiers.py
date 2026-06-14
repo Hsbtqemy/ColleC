@@ -253,14 +253,25 @@ def comparer_fichiers_item(
     # `[]` toute valeur non-list.
     files_brut = depot.get("files")
     files_distants = files_brut if isinstance(files_brut, list) else []
-    # Index sha1 → entrée distante. On filtre les sha1 vides (cas
-    # dégénéré côté Nakala, ne devrait pas arriver). **Normalise en
-    # lowercase** : `hexdigest()` côté ColleC produit toujours du
-    # lowercase, et Nakala renvoie le sha1 en lowercase aujourd'hui.
-    # La normalisation est défensive — si Nakala bascule un jour vers
-    # uppercase, le matching continue de fonctionner. On normalise aussi
-    # `f.sha1_nakala` à la comparaison plus bas pour la même raison.
-    sha1_index: dict[str, dict[str, Any]] = {}
+    # Index sha1 → **liste** d'entrées distantes. On filtre les sha1
+    # vides (cas dégénéré côté Nakala, ne devrait pas arriver).
+    # **Normalise en lowercase** : `hexdigest()` côté ColleC produit
+    # toujours du lowercase, et Nakala renvoie le sha1 en lowercase
+    # aujourd'hui. La normalisation est défensive — si Nakala bascule
+    # un jour vers uppercase, le matching continue de fonctionner. On
+    # normalise aussi `f.sha1_nakala` à la comparaison plus bas pour
+    # la même raison.
+    #
+    # **Pourquoi `list[dict]` et pas `dict` simple** : cas légitime des
+    # doublons sha1 distants (deux pages blanches scannées avec contenu
+    # binaire identique, deux planches vides, deux vignettes…). Sans
+    # liste, le 2e doublon était silencieusement écrasé de l'index, son
+    # appariement ne pouvait pas être tracé → au PUT, il était retiré
+    # côté Nakala (cohérent avec H1) parce qu'absent de `files_cible`.
+    # Avec consommation par `pop(0)` au matching, chaque entrée distante
+    # est utilisée au plus une fois ; les restants en fin de boucle sont
+    # de vrais orphelins.
+    sha1_index: dict[str, list[dict[str, Any]]] = {}
     for fd in files_distants:
         # Double couche : skip toute entree non-dict (defense vs liste
         # heterogene `[{...}, "str_in_middle", null]`).
@@ -268,11 +279,7 @@ def comparer_fichiers_item(
             continue
         sha1 = (fd.get("sha1") or "").strip().lower()
         if sha1:
-            sha1_index[sha1] = fd
-
-    # On marque les sha1 distants qui trouvent un appariement, pour
-    # déduire les orphelins en fin de boucle.
-    sha1s_apparies: set[str] = set()
+            sha1_index.setdefault(sha1, []).append(fd)
 
     rapport = RapportComparaisonFichiers(
         cote_item=item.cote, doi=item.doi_nakala,
@@ -331,32 +338,36 @@ def comparer_fichiers_item(
 
         if chemin is None:
             # Nakala-only (ou perdu sur disque) : signal d'attention.
-            # Si sha1_nakala connu, marquer apparié pour ne pas le
-            # considérer comme orphelin distant — il est juste sans
-            # binaire local.
-            if sha1_nakala_norm and sha1_nakala_norm in sha1_index:
-                sha1s_apparies.add(sha1_nakala_norm)
+            # Si sha1_nakala connu, consommer une entrée distante pour
+            # ne pas la classer en orphelin — elle représente ce
+            # Fichier ColleC sans binaire local.
+            if sha1_nakala_norm and sha1_index.get(sha1_nakala_norm):
+                sha1_index[sha1_nakala_norm].pop(0)
             rapport.nakala_only_sans_local.append(compare)
             continue
 
         # Binaire local présent — `sha1_local` est garanti non-None.
         assert compare.sha1_local is not None
-        if compare.sha1_local in sha1_index:
-            sha1s_apparies.add(compare.sha1_local)
+        if sha1_index.get(compare.sha1_local):
+            sha1_index[compare.sha1_local].pop(0)
             rapport.inchanges.append(compare)
-        elif sha1_nakala_norm and sha1_nakala_norm in sha1_index:
+        elif sha1_nakala_norm and sha1_index.get(sha1_nakala_norm):
             # Modifié : on retrouve l'ancien sha1 côté distant, mais
             # le binaire local en porte un nouveau.
-            sha1s_apparies.add(sha1_nakala_norm)
+            sha1_index[sha1_nakala_norm].pop(0)
             rapport.modifies.append(compare)
         else:
             # Nouveau : ni sha1_local ni sha1_nakala (s'il existe) n'est
             # côté distant — ce binaire n'est pas encore connu de Nakala.
             rapport.nouveaux.append(compare)
 
-    # Orphelins : sha1 distants sans appariement.
-    for sha1, fd in sha1_index.items():
-        if sha1 not in sha1s_apparies:
+    # Orphelins : entrées distantes restantes après consommation. Chaque
+    # élément résiduel des listes par sha1 est un orphelin distinct
+    # (préserve les doublons sha1 distants : si 2 fichiers distants
+    # partageaient le même sha1 et qu'un seul Fichier ColleC s'y
+    # appariait, le 2e ressort en orphelin propre).
+    for sha1, fd_list in sha1_index.items():
+        for fd in fd_list:
             rapport.orphelins_distants.append(
                 FichierOrphelin(sha1=sha1, nom_fichier=fd.get("name") or "")
             )

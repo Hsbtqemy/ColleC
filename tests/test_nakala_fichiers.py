@@ -24,6 +24,7 @@ from archives_tool.api.services.nakala_fichiers import (
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
+    ReponseLectureInvalide,
     UploadInvalide,
     comparer_fichiers_item,
     pousser_fichiers_item,
@@ -2471,3 +2472,122 @@ def test_pousser_inchange_n_invalide_pas_derives(
         # Inchange : derive preserve
         assert fichiers[0].derive_genere is True
         assert fichiers[0].vignette_chemin == "/cache/vignette/i.jpg"
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 13 — Trou Y : defense en profondeur sur lire_depot
+# (symetrie avec _valider_sha1_uploade passe 7)
+# ---------------------------------------------------------------------------
+
+
+class _ClientLectureRetour:
+    """Stub `ClientLectureNakala` qui retourne une valeur arbitraire au
+    `lire_depot` (None, str, list, dict, etc.) pour piloter les
+    scenarios de retour client degrade."""
+
+    def __init__(self, retour: object) -> None:
+        self._retour = retour
+        self.appels: list[str] = []
+
+    def lire_depot(self, doi):
+        self.appels.append(doi)
+        return self._retour
+
+
+@pytest.mark.parametrize("retour,motif", [
+    (None, "NoneType"),
+    ("just a string", "str"),
+    (42, "int"),
+    ([1, 2, 3], "list"),
+])
+def test_comparer_lire_depot_retour_non_dict_leve_proprement(
+    db_path: Path, tmp_path: Path, retour, motif,
+) -> None:
+    """`lire_depot` retournant un non-dict → `ReponseLectureInvalide`
+    avec message diagnostique (cite le DOI et le type recu).
+
+    Sans ce filet : AttributeError cryptique au .get() ligne suivante,
+    impossible de savoir QUEL DOI a echoue.
+    """
+    client = _ClientLectureRetour(retour)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+        ])
+        with pytest.raises(ReponseLectureInvalide) as exc_info:
+            comparer_fichiers_item(
+                s, client, item, racines={"scans": tmp_path / "scans"},
+            )
+    msg = str(exc_info.value)
+    # Message cite le DOI + le type recu
+    assert item.doi_nakala in msg
+    assert motif in msg
+
+
+def test_pousser_lire_depot_initial_retour_non_dict_leve_proprement(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Le push utilise `comparer_fichiers_item` en interne — la validation
+    se declenche bien au pull initial (pas seulement dans comparer
+    isole)."""
+    client = _ClientLectureRetour(None)
+
+    class _StubEcriture:
+        def uploader_fichier(self, *a, **kw): pass
+        def modifier_depot(self, *a, **kw): pass
+        def supprimer_upload(self, *a, **kw): pass
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+        ])
+        with pytest.raises(ReponseLectureInvalide):
+            pousser_fichiers_item(
+                s, client, _StubEcriture(), item,
+                racines={"scans": tmp_path / "scans"},
+            )
+
+
+def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Variant subtil : le re-pull APRES le PUT (refresh cache) retourne
+    un non-dict. Le PUT est deja applique cote distant, mais le cache
+    DB ne peut pas etre rafraichi → exception propre au lieu de
+    AttributeError sur `mapper_depot(None)`.
+
+    Cas de regression : sans validation au site #2 (post-PUT), le
+    fix initial (passe 7 sur uploader, passe 13 sur lire pre-PUT)
+    serait incomplet.
+    """
+    contenu = b"a uploader"
+    # Le client fait 2 lire_depot dans pousser_fichiers_item :
+    # 1. pull initial dans comparer_fichiers_item (OK)
+    # 2. refresh cache post-PUT (RETURNS None)
+    # Stub a 2 etats successifs.
+
+    class _LectureDeuxEtats:
+        def __init__(self):
+            self.compteur = 0
+
+        def lire_depot(self, doi):
+            self.compteur += 1
+            if self.compteur == 1:
+                return {"identifier": doi, "files": []}  # pull initial OK
+            return None  # post-PUT KO
+
+    lecture = _LectureDeuxEtats()
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        with pytest.raises(ReponseLectureInvalide):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+    # Le PUT a bien ete tente (le distant est a jour, c'est juste le
+    # refresh cache qui foire). Le user voit une erreur propre.
+    assert len(ecriture.puts) == 1

@@ -82,6 +82,7 @@ from archives_tool.api.services.nakala_fichiers import (
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
+    ReponseLectureInvalide,
     UploadInvalide,
     comparer_fichiers_item,
     pousser_fichiers_item,
@@ -3117,6 +3118,14 @@ def cmd_nakala_pousser_fichiers(
             typer.echo(
                 "Cleanup des uploads precedents tente. Verifier l'etat distant "
                 "via `archives-tool nakala montrer <cote>` avant de relancer.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+        except ReponseLectureInvalide as e:
+            typer.echo(f"Erreur lecture Nakala invalide : {e}", err=True)
+            typer.echo(
+                "Reponse inattendue du client - bug proxy ou changement "
+                "format Nakala ?",
                 err=True,
             )
             raise typer.Exit(1) from None

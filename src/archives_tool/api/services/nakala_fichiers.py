@@ -62,6 +62,25 @@ _LONGUEUR_SHA1_HEX = 40
 _HEX_LOWERCASE = frozenset("0123456789abcdef")
 
 
+def _valider_depot_lu(depot: object, contexte: str) -> dict[str, Any]:
+    """Valide la réponse d'``lire_depot`` et la renvoie typée comme
+    dict.
+
+    Lève ``ReponseLectureInvalide`` si le retour n'est pas un dict.
+    Le contexte (DOI ou opération) est inclus dans le message pour
+    aider au diagnostic — sans ce filet, le code aval planterait avec
+    un ``AttributeError`` sans contexte sur la commande en cours.
+
+    Symétrie avec ``_valider_sha1_uploade`` (Trou P passe 7).
+    """
+    if not isinstance(depot, dict):
+        raise ReponseLectureInvalide(
+            f"lire_depot({contexte!r}) a retourné "
+            f"{type(depot).__name__} au lieu d'un dict."
+        )
+    return depot
+
+
 def _valider_sha1_uploade(desc: object, contexte: str) -> str:
     """Valide la réponse d'`uploader_fichier` et renvoie le sha1
     normalisé.
@@ -228,6 +247,24 @@ class IncoherenceFichierORM(Exception):
     leur message est minimal ; pour un chemin destructif (modifie
     Nakala), on veut une exception explicite quel que soit le mode
     d'exécution.
+    """
+
+
+class ReponseLectureInvalide(Exception):
+    """``client_lecture.lire_depot`` a retourné une réponse inexploitable
+    (None, non-dict, ou type inattendu).
+
+    Cause typique : bug d'un proxy entre ColleC et Nakala qui munge la
+    réponse JSON ; changement non documenté du format Nakala ; ou bug
+    d'implémentation d'un client mock dans les tests.
+
+    Sans cette validation explicite, le code aval planterait avec un
+    ``AttributeError: 'NoneType' object has no attribute 'get'`` au
+    moment d'accéder à ``depot.get("files")`` — message cryptique
+    sans contexte sur le DOI ou la commande en cours.
+
+    Symétrie avec ``_valider_sha1_uploade`` (Trou P passe 7) :
+    défense en profondeur sur les contrats de retour client.
     """
 
 
@@ -445,6 +482,7 @@ def comparer_fichiers_item(
 
     Raises:
         ComparaisonImpossible: ``item.doi_nakala`` est None.
+        ReponseLectureInvalide: ``lire_depot`` retourne un non-dict.
         ErreurNakala: échec du ``lire_depot`` distant (propagé tel quel).
     """
     if not item.doi_nakala:
@@ -453,7 +491,11 @@ def comparer_fichiers_item(
         )
 
     # Pull distant (peut lever ErreurNakala, on laisse propager).
-    depot = client.lire_depot(item.doi_nakala)
+    # Defense en profondeur (Trou Y passe 13) : valider le dict retourne
+    # AVANT d'acceder a ses cles - sinon AttributeError cryptique si
+    # le client mock / proxy bogue retourne None.
+    depot_brut = client.lire_depot(item.doi_nakala)
+    depot = _valider_depot_lu(depot_brut, item.doi_nakala)
     # Validation defensive : Nakala doit retourner un dict avec `files`
     # en list de dicts. Si bug API ou proxy qui munge la reponse (vu
     # `{"files": "not_a_list"}` ou `{"files": {"k": "v"}}`), un truthy-or-
@@ -795,6 +837,8 @@ def pousser_fichiers_item(
         UploadInvalide: ``uploader_fichier`` retourne une réponse
             inexploitable (sha1 vide / malformé / non-string). Cleanup
             best-effort des uploads précédents avant propagation.
+        ReponseLectureInvalide: ``lire_depot`` retourne un non-dict
+            (au pull initial ou au refresh post-PUT du cache).
         ErreurNakala: échec du ``lire_depot``, ``uploader_fichier`` ou
             ``modifier_depot`` (propagé).
     """
@@ -1064,7 +1108,9 @@ def pousser_fichiers_item(
     # apres le PUT. Pattern aligne sur `pousser_item` (P3).
     from archives_tool.api.services.nakala import mettre_en_cache_depot
 
-    brut2 = client_lecture.lire_depot(item.doi_nakala)
+    brut2 = _valider_depot_lu(
+        client_lecture.lire_depot(item.doi_nakala), item.doi_nakala,
+    )
     mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
 
     db.commit()

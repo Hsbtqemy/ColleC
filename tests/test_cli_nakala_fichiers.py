@@ -676,3 +676,64 @@ def test_pousser_format_json_mode_applique(
     # PAS le sha1 uploade. Documente la convention.
     assert len(data["plan"]) == 1
     assert data["plan"][0]["sha1"] == sha1  # sha1 du binaire local
+
+
+# ---------------------------------------------------------------------------
+# Passe 16 — Trou AA : JSON CLI expose compare complet (gardien regression)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_format_json_expose_toutes_categories_compare(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Trou AA — le JSON CLI doit exposer le rapport de comparaison
+    complet (6 categories de Fichier + statut + mod_date) sinon les
+    scripts consommateurs ne voient pas les categories ajoutees aux
+    passes 6/9/10.
+
+    Garde-fou anti-regression : si une nouvelle categorie est ajoutee
+    au rapport sans etre ajoutee au JSON CLI, ce test echoue.
+    """
+    import json as _json
+    contenu = b"a uploader"
+    sha1_ancien = "a" * 40
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+    )
+    _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
+
+    r = _invoke_pousser(config_nakala, db, "--format", "json")  # dry-run
+    assert r.exit_code == 0, r.output
+    data = _json.loads(r.output)
+
+    # `compare` est un dict avec 9 cles attendues (6 categories + 2 meta + ...)
+    assert "compare" in data
+    cmp = data["compare"]
+    assert cmp is not None
+
+    # Les 6 categories de Fichier
+    assert "inchanges" in cmp
+    assert "modifies" in cmp
+    assert "nouveaux" in cmp
+    assert "nakala_only_sans_local" in cmp
+    assert "non_actifs_a_retirer" in cmp
+    assert "fichiers_fantomes" in cmp
+    # Les orphelins distants (cote distant, type different)
+    assert "orphelins_distants" in cmp
+    # Champs meta du depot distant
+    assert "mod_date_distant" in cmp
+    assert "statut_distant" in cmp
+
+    # Le scenario : x.jpg est modifie → categorie "modifies" non-vide
+    assert len(cmp["modifies"]) == 1
+    fc = cmp["modifies"][0]
+    # Structure de FichierCompare exposee
+    assert "fichier_id" in fc
+    assert "nom_fichier" in fc
+    assert "ordre" in fc
+    assert "sha1_local" in fc
+    assert "sha1_distant" in fc
+    assert fc["nom_fichier"] == "x.jpg"
+    assert fc["sha1_distant"] == sha1_ancien
+
+

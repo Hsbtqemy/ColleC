@@ -3150,6 +3150,36 @@ def cmd_nakala_pousser_fichiers(
                 "ordre": p.ordre, "nom_fichier": p.nom_fichier,
                 "categorie": p.categorie, "sha1": p.sha1,
             }
+
+        def _fc(fc):
+            """Serialise un FichierCompare."""
+            return {
+                "fichier_id": fc.fichier_id,
+                "nom_fichier": fc.nom_fichier,
+                "ordre": fc.ordre,
+                "sha1_local": fc.sha1_local,
+                "sha1_distant": fc.sha1_distant,
+            }
+
+        def _fo(fo):
+            """Serialise un FichierOrphelin."""
+            return {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
+
+        compare_json = None
+        if rapport.compare is not None:
+            cmp = rapport.compare
+            compare_json = {
+                "inchanges": [_fc(fc) for fc in cmp.inchanges],
+                "modifies": [_fc(fc) for fc in cmp.modifies],
+                "nouveaux": [_fc(fc) for fc in cmp.nouveaux],
+                "nakala_only_sans_local": [_fc(fc) for fc in cmp.nakala_only_sans_local],
+                "non_actifs_a_retirer": [_fc(fc) for fc in cmp.non_actifs_a_retirer],
+                "fichiers_fantomes": [_fc(fc) for fc in cmp.fichiers_fantomes],
+                "orphelins_distants": [_fo(fo) for fo in cmp.orphelins_distants],
+                "mod_date_distant": cmp.mod_date_distant,
+                "statut_distant": cmp.statut_distant,
+            }
+
         typer.echo(json.dumps({
             "cote_item": rapport.cote_item,
             "doi": rapport.doi,
@@ -3160,6 +3190,7 @@ def cmd_nakala_pousser_fichiers(
             "plan": [_entree(p) for p in rapport.plan],
             "sha1s_uploades": rapport.sha1s_uploades,
             "sha1s_retires": rapport.sha1s_retires,
+            "compare": compare_json,
         }, ensure_ascii=False, indent=2))
         return
 

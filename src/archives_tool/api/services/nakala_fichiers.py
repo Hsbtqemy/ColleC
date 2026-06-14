@@ -34,10 +34,12 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from archives_tool.external.nakala.client import ClientLectureNakala
+from archives_tool.external.nakala.mapper import mapper_depot
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.models import Fichier, Item
 from archives_tool.models.enums import EtatFichier
@@ -453,8 +455,10 @@ def pousser_fichiers_item(
         retirer_orphelins: requis pour confirmer le retrait silencieux
             de fichiers présents côté Nakala mais absents en local.
             Sans ce flag, lève ``OrphelinsDetectes``.
-        modifie_par: tracé sur le futur cache de la ressource. Non
-            propagé au format ``files[]`` (Nakala n'a pas ce champ).
+        modifie_par: propagé à ``mettre_en_cache_depot`` (champ
+            ``cree_par`` de la ressource cachée) après le PUT réussi.
+            Non propagé au format ``files[]`` (Nakala n'a pas de champ
+            par-fichier pour l'auteur de la modification).
 
     Returns:
         ``RapportPushFichiers`` — riche en métadonnées d'exécution
@@ -566,12 +570,26 @@ def pousser_fichiers_item(
     rapport.sha1s_uploades = sha1s_uploades
 
     # 8. Met à jour Fichier.sha1_nakala pour modifies + nouveaux.
+    # Pose `modifie_le` pour tracer la mutation et incrémente `version`
+    # (sans verrou optimiste actif sur Fichier — cf. dette signalee
+    # CLAUDE.md, mais on respecte le pattern).
+    maintenant = datetime.now()
     for fichier_id, sha1_neuf in nouveaux_sha1_par_fichier.items():
         fichier = db.get(Fichier, fichier_id)
         if fichier is not None:
             fichier.sha1_nakala = sha1_neuf
-            if modifie_par:
-                fichier.ajoute_par = fichier.ajoute_par or modifie_par
+            fichier.modifie_le = maintenant
+            fichier.version = (fichier.version or 1) + 1
+
+    # 9. Cache invalidation : rafraichir `RessourceExterne.metadonnees
+    # _brutes` + `LienExterneItem.recupere_le` pour que les autres
+    # consommateurs (route web, autres CLI) ne lisent pas un cache stale
+    # apres le PUT. Pattern aligne sur `pousser_item` (P3).
+    from archives_tool.api.services.nakala import mettre_en_cache_depot
+
+    brut2 = client_lecture.lire_depot(item.doi_nakala)
+    mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
+
     db.commit()
 
     rapport.applique = True

@@ -862,6 +862,62 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
         assert fichiers[2].sha1_nakala.startswith("upload-")  # nouveau
 
 
+def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Passe revue P3+c.1 : verifier la tracabilite de la mutation.
+
+    Apres un push effectif :
+    - `Fichier.modifie_le` est pose (non-None) pour modifies + nouveaux
+    - `Fichier.version` est incremente (etait 1, devient 2)
+    - Les `inchanges` NE sont PAS touches (modifie_le inchange,
+      version inchange)
+    """
+    contenu_inchange = b"unchanged"
+    sha1_inchange = _sha1(contenu_inchange)
+    contenu_nouveau = b"brand new"
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_inchange, "name": "i.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "i.jpg", "contenu": contenu_inchange,
+             "sha1_nakala": sha1_inchange},
+            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
+             "sha1_nakala": None},
+        ])
+        # Snapshot avant push
+        avant = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        version_i_avant = avant[0].version
+        version_n_avant = avant[1].version
+        modifie_le_i_avant = avant[0].modifie_le
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    # Apres push : verif tracabilite
+    with _session(db_path) as s:
+        apres = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Inchange : non touche
+        assert apres[0].modifie_le == modifie_le_i_avant
+        assert apres[0].version == version_i_avant
+        # Nouveau : modifie_le pose + version incrementee
+        assert apres[1].modifie_le is not None
+        assert apres[1].version == version_n_avant + 1
+
+
 def test_pousser_cleanup_uploads_si_put_echoue(
     db_path: Path, tmp_path: Path,
 ) -> None:

@@ -876,34 +876,40 @@ def pousser_fichiers_item(
         rapport.raison = "aucun_changement"
         return rapport
 
-    # Garde-fou anti-rupture-citation : un item publié a un DOI
-    # DataCite minté ; toute modification de `files[]` casse
-    # l'intégrité des citations externes. Refus loud, opt-in via
-    # `forcer_publie=True`. Cf. Trou T passe 9.
-    statut = rapport_cmp.statut_distant
-    if statut == "published" and not forcer_publie:
-        raise DepotPublie(item.cote, item.doi_nakala, statut)
+    # Ordre des garde-fous (Trou Z passe 14) : DIAGNOSTICS d'abord
+    # (problemes a fixer, sans opt-in possible), puis CONSENTS
+    # (actions a risque a confirmer via flag).
+    #
+    # Sans cet ordre, un item publie avec un fantome aurait leve
+    # `DepotPublie` en premier - le user aurait passe `--force-published`
+    # avant de decouvrir que le vrai probleme etait le fantome.
+    # Diagnostic d'abord = un seul aller-retour user.
 
-    # Garde-fou anti-fantome (Trou U passe 10) : un Fichier ColleC sans
-    # binaire local porte un `sha1_nakala` qui ne matche plus aucun
-    # sha1 distant. Inclure ce sha1 fantôme dans `files[]` ferait
-    # planter le PUT avec H4 (404 sha1 inconnu) — refus loud.
+    # DIAGNOSTIC : sha1_nakala pointant vers du fantome distant.
+    # Inclure ce sha1 dans `files[]` ferait planter le PUT en H4
+    # (404 sha1 inconnu). Refus loud. Cf. Trou U passe 10.
     if rapport_cmp.fichiers_fantomes:
         raise FichierFantomeDistant(list(rapport_cmp.fichiers_fantomes))
 
-    # Garde-fou anti-perte silencieuse : un Fichier en
-    # `nakala_only_sans_local` sans `sha1_nakala` connu (legacy pré-P3+a
-    # ou backfill échoué) ne peut pas être réconcilié avec le distant.
-    # Le `_construire_plan` le skipperait silencieusement → au PUT, le
-    # fichier distant correspondant serait retiré sans avertissement.
-    # Refus loud : l'utilisateur doit relancer le backfill ou nettoyer
-    # le Fichier ColleC explicitement.
+    # DIAGNOSTIC : Fichier `nakala_only_sans_local` sans `sha1_nakala`
+    # peuple (legacy pre-P3+a ou backfill echoue) → impossible de
+    # reconcilier. Le `_construire_plan` le skipperait silencieusement
+    # → au PUT, le fichier distant correspondant serait retire sans
+    # avertissement. Refus loud. Cf. Trou J passe 4.
     sans_sha1 = [
         fc for fc in rapport_cmp.nakala_only_sans_local if fc.sha1_distant is None
     ]
     if sans_sha1:
         raise BackfillIncomplet(sans_sha1)
 
+    # CONSENT : item published → opt-in via `forcer_publie` car
+    # modifier les fichiers casse les citations externes (DOIs
+    # DataCite mintes). Cf. Trou T passe 9.
+    statut = rapport_cmp.statut_distant
+    if statut == "published" and not forcer_publie:
+        raise DepotPublie(item.cote, item.doi_nakala, statut)
+
+    # CONSENT : orphelins distants → opt-in via `retirer_orphelins`.
     if rapport_cmp.orphelins_distants and not retirer_orphelins:
         raise OrphelinsDetectes(list(rapport_cmp.orphelins_distants))
 

@@ -2591,3 +2591,123 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
     # Le PUT a bien ete tente (le distant est a jour, c'est juste le
     # refresh cache qui foire). Le user voit une erreur propre.
     assert len(ecriture.puts) == 1
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 14 — Trou Z : ordre des garde-fous diagnostic > consent
+# ---------------------------------------------------------------------------
+
+
+def test_garde_fou_fantome_precede_published(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou Z — si item published ET fichier fantome, c'est le fantome
+    qui doit etre signale en premier (diagnostic > consent).
+
+    Sans cet ordre : le user passe `--force-published`, croit que c'est
+    juste un opt-in, puis decouvre que le vrai probleme est le fantome
+    → double aller-retour.
+    """
+    sha1_fantome = "abc" + "0" * 37
+    lecture = _FakeClientLecture(
+        files=[],  # distant vide, sha1_nakala="abc" est fantome
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "f.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": sha1_fantome},
+        ])
+        # FichierFantomeDistant en premier (DIAGNOSTIC), pas DepotPublie
+        # (CONSENT)
+        with pytest.raises(FichierFantomeDistant):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+
+def test_garde_fou_backfill_precede_published(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie : backfill incomplet est aussi un DIAGNOSTIC, doit
+    preceder DepotPublie (CONSENT)."""
+    lecture = _FakeClientLecture(
+        files=[{"sha1": "x" + "0" * 39, "name": "X.jpg"}],
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "X.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": None},  # backfill incomplet (sha1 absent)
+        ])
+        # BackfillIncomplet en premier (DIAGNOSTIC), pas DepotPublie
+        with pytest.raises(BackfillIncomplet):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+
+def test_garde_fou_published_precede_orphelins(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Entre 2 CONSENTS (published + orphelins), published vient en
+    premier car il est plus dangereux (DOI DataCite minte vs orphelin
+    a retirer)."""
+    sha1_orphelin = "or" + "1" * 38
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1_orphelin, "name": "orphan.jpg"}],
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        # Pas de Fichier ColleC → tout sha1 distant = orphelin
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[])
+        # DepotPublie en premier (consent plus dangereux), pas
+        # OrphelinsDetectes
+        with pytest.raises(DepotPublie):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+
+def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Cas important : un item published mais SANS changement (push
+    no-op idempotent) ne doit PAS lever DepotPublie - rien ne va
+    etre modifie cote distant, l'opt-in n'a pas de raison d'etre
+    declenche.
+
+    Documente la convention : `aucun_changement` court-circuite
+    AVANT les garde-fous metiers (le no-op idempotent est silencieux,
+    pas bloque)."""
+    contenu = b"identique"
+    sha = _sha1(contenu)
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha, "name": "i.jpg"}],
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+        ])
+        # Aucun changement → return early. DepotPublie PAS leve.
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    assert rapport.raison == "aucun_changement"
+    assert rapport.applique is False
+    assert ecriture.puts == []

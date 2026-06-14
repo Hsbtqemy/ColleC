@@ -2689,6 +2689,25 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Tester `alembic downgrade` dans la CI.** Aucun test
+      n'exerce `command.downgrade` actuellement — les `downgrade()`
+      des migrations sont écrits mais jamais validés. Si on doit
+      rollback en production (bug post-release, ou retour V0.x.y →
+      V0.x.y-1), on découvre les bugs à ce moment-là. Coût : un test
+      qui applique `upgrade head` puis `downgrade base` puis re-upgrade
+      et vérifie l'idempotence. Dette historique, pas spécifique à
+      un chantier — à ouvrir comme amélioration CI.
+- [ ] **Pattern obligatoire pour les futures migrations `add_column`.**
+      Toute migration qui ajoute une colonne sur une table déjà
+      touchée par un `batch_alter_table` antérieur **doit** utiliser
+      le guard idempotent (`if "X" not in inspect(bind).get_columns(...)`)
+      + `batch_alter_table` au lieu de `op.add_column` direct. Cf.
+      pattern `n2r3s4t5u6v7::upgrade` / `s7w8x9y0z1a2::upgrade`. Sans
+      ce guard, les tests `test_migration.py` (parité metadata vs
+      migrations) plantent car `target_metadata + render_as_batch`
+      reconstruit la table avec le modèle final dans les migrations
+      antérieures. À documenter dans `developpeurs/contribuer.md` une
+      fois le ticket pris.
 - [ ] Nom définitif du projet et du package Python.
 - [ ] Choix précis de l'empaquetage final (PyInstaller, Briefcase,
       simple scripts run.bat/run.sh ?).

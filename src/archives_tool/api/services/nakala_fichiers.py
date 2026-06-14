@@ -202,14 +202,25 @@ def comparer_fichiers_item(
         if f.etat != EtatFichier.ACTIF.value:
             continue
 
-        # Binaire local résolvable ?
+        # Binaire local résolvable et lisible ?
+        # On élargit le try/except au calcul SHA-1 lui-même :
+        # - `KeyError` : racine absente du dict de config
+        # - `ValueError` : `resoudre_chemin` rejette le chemin (path
+        #   traversal, racine vide, etc.)
+        # - `OSError` (parent de FileNotFoundError, PermissionError,
+        #   IsADirectoryError) : TOCTOU entre `is_file()` et `open()`,
+        #   ou permissions refusées, ou NFS down. Le fichier n'est pas
+        #   utilisable → on le traite comme Nakala-only sans local
+        #   (sémantique correcte : pas de binaire local exploitable).
         chemin: Path | None = None
+        sha1_local: str | None = None
         if f.racine and f.chemin_relatif:
             try:
                 resolu = resoudre_chemin(racines, f.racine, f.chemin_relatif)
                 if resolu.is_file():
+                    sha1_local = _sha1_du_binaire(resolu)
                     chemin = resolu
-            except (KeyError, ValueError):
+            except (KeyError, ValueError, OSError):
                 pass
 
         compare = FichierCompare(
@@ -217,7 +228,7 @@ def comparer_fichiers_item(
             cote_item=item.cote,
             nom_fichier=f.nom_fichier,
             ordre=f.ordre,
-            sha1_local=_sha1_du_binaire(chemin) if chemin else None,
+            sha1_local=sha1_local,
             sha1_distant=f.sha1_nakala,
         )
 

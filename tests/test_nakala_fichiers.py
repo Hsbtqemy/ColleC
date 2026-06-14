@@ -409,6 +409,54 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
     assert rapport.modifies[0].sha1_local == nouveau_sha1
 
 
+def test_oserror_pendant_lecture_binaire_traite_comme_nakala_only(
+    db_path: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Si le binaire local existe à `is_file()` mais que la lecture
+    elle-même lève `OSError` (TOCTOU : fichier supprimé entre check
+    et open, ou PermissionError, ou NFS down, ou IsADirectoryError),
+    le service catch et classe le fichier en `nakala_only_sans_local`
+    (sémantique : pas de binaire local exploitable). Pas de crash, pas
+    de traceback brut chez l'utilisateur.
+
+    Le seul moyen portable de tester ça (Windows + Linux + macOS) est
+    de monkeypatch `_sha1_du_binaire` pour lever, en gardant la racine
+    et le chemin valides côté `is_file()`."""
+    from archives_tool.api.services import nakala_fichiers as nf_mod
+
+    contenu = b"binary content"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
+
+    def _sha1_qui_leve(chemin):
+        raise PermissionError(f"simulated read-denied on {chemin}")
+
+    monkeypatch.setattr(nf_mod, "_sha1_du_binaire", _sha1_qui_leve)
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        # Le binaire existe à `is_file()` (`_setup_item_avec_fichiers`
+        # l'a créé via `_ecrire_binaire`), mais `_sha1_du_binaire` lève.
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+
+    # Pas de crash → catché par le `except OSError`.
+    # Fichier classé en `nakala_only_sans_local` (pas de binaire local
+    # exploitable), pas en `inchanges` ni `nouveau` ni `modifies`.
+    assert len(rapport.nakala_only_sans_local) == 1
+    assert rapport.nakala_only_sans_local[0].sha1_local is None
+    assert rapport.inchanges == []
+    assert rapport.modifies == []
+    assert rapport.nouveaux == []
+    # Le sha1_nakala connu apparie le distant (pas orphelin) — cohérent
+    # avec le cas Nakala-only nominal.
+    assert rapport.orphelins_distants == []
+
+
 def test_fichiers_non_actif_sont_ignores(
     db_path: Path, tmp_path: Path,
 ) -> None:

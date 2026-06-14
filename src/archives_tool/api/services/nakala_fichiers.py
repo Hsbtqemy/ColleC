@@ -354,7 +354,12 @@ class PlanPushFichier:
     fichier_id: int | None  # None pour Nakala-only et orphelins préservés
     nom_fichier: str
     sha1: str
-    categorie: str  # "inchange" | "rename" | "nouveau" | "modifie" | "nakala_only"
+    # Catégories émises par `_construire_plan` (depuis `RapportComparaison
+    # Fichiers`). Le rename gratuit (H7) n'a PAS de catégorie dédiée :
+    # un Fichier inchangé dont `nom_fichier` local diffère du nom distant
+    # tombe en "inchange" et son nouveau nom est propagé via le `name`
+    # du `files[i]` envoyé au PUT.
+    categorie: str  # "inchange" | "nouveau" | "modifie" | "nakala_only"
     ordre: int  # rang d'affichage cohérent ColleC ↔ Nakala
 
 

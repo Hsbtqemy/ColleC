@@ -3006,8 +3006,15 @@ def cmd_nakala_pousser_fichiers(
     ),
     retirer_orphelins: bool = typer.Option(
         False, "--retirer-orphelins",
-        help="Autoriser le retrait des orphelins distants (irréversible "
-             "pour pending : versionning automatique sur published).",
+        help="Autoriser le retrait des orphelins distants. Sur dépôt "
+             "`pending` : retrait effectif (le dépôt entier reste "
+             "supprimable via `supprimer_depot`). Sur `published` : "
+             "versioning automatique côté Nakala — l'ancienne version "
+             "(avec les fichiers retirés) reste accessible.",
+    ),
+    utilisateur: str | None = typer.Option(
+        None, "--utilisateur",
+        help="Surcharge `config.utilisateur` pour tracer la modification.",
     ),
     format_sortie: _FormatRapport = typer.Option(
         _FormatRapport.TEXT, "--format",
@@ -3054,7 +3061,7 @@ def cmd_nakala_pousser_fichiers(
                 session, lecture, ecriture, item, racines=racines,
                 dry_run=not no_dry_run,
                 retirer_orphelins=retirer_orphelins,
-                modifie_par=config.utilisateur,
+                modifie_par=utilisateur or config.utilisateur,
             )
         except DepotImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)

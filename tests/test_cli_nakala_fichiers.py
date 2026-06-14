@@ -528,6 +528,35 @@ def test_pousser_format_json(
     assert "plan" in data
 
 
+def test_pousser_avec_utilisateur_surcharge_config(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """--utilisateur surcharge `config.utilisateur` et est propagé à
+    `pousser_fichiers_item` (visible via `mettre_en_cache_depot`).
+
+    Pattern aligne sur les autres CLI Nakala qui exposent --utilisateur
+    pour tracer une operation sous un autre nom que celui de la config
+    locale."""
+    contenu_nouveau = b"new local"
+    sha1_orphan = "e" * 40
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu_nouveau, sha1_nakala=None,
+    )
+    _FakeReadClient.files = [{"sha1": sha1_orphan, "name": "perdu.jpg"}]
+
+    r = runner.invoke(app, [
+        "nakala", "pousser-fichiers", "AS-001", "--fonds", "AS",
+        "--no-dry-run", "--retirer-orphelins",
+        "--utilisateur", "explorateur-test",
+        "--config", str(config_nakala), "--db-path", str(db),
+    ])
+    assert r.exit_code == 0, r.output
+    # Le PUT a bien ete envoye (utilisateur surcharge n'a pas casse
+    # le flux normal).
+    inst = _FakeWriteClient.instances[0]
+    assert len(inst.puts) == 1
+
+
 def test_pousser_item_sans_doi_exit_1(
     config_nakala: Path, tmp_path: Path,
 ) -> None:

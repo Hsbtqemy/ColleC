@@ -35,6 +35,7 @@ from .journal import (
     OperationEntite,
     OperationFichier,
     OperationImport,
+    OperationPushNakala,
 )
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
@@ -57,6 +58,7 @@ __all__ = [
     "ValeurControlee",
     "OperationFichier",
     "OperationEntite",
+    "OperationPushNakala",
     "ModificationItem",
     "OperationImport",
     "PreferencesAffichage",

@@ -126,6 +126,66 @@ class OperationEntite(Base):
     )
 
 
+class OperationPushNakala(Base):
+    """Journal des push vers Nakala (fichiers, V0.10+).
+
+    Comble le trou du principe directeur n°4 sur les opérations
+    destructives **côté distant** : un ``PUT /datas/{id}`` avec
+    ``files[]`` réduit RETIRE silencieusement les fichiers absents
+    (H1 — sémantique « remplace intégralement »). ``OperationFichier``
+    ne couvre que les opérations sur disque local. Sans journal
+    dédié, un push qui retire des fichiers (orphelins, non-ACTIF,
+    doublons) ne laisse aucune trace consultable.
+
+    Pas de FK vers le Fichier (les sha1 distants retirés n'ont pas
+    forcément un Fichier ColleC correspondant à conserver). On
+    stocke à plat :
+
+    - ``cote_item`` + ``fonds_cote`` : désambiguïsation contextuelle.
+    - ``doi`` : DOI Nakala impacté.
+    - ``type_operation`` : `push_fichiers` (extensible : `push_metas`
+      en V2+ si besoin).
+    - ``snapshot_avant`` : liste JSON des fichiers distants AVANT
+      le PUT (sha1, name, taille, mime). Source : ``lire_depot``.
+    - ``snapshot_apres`` : liste JSON des fichiers distants ATTENDUS
+      après le PUT (sha1, name). Source : ``files[]`` envoyé.
+    - ``sha1s_uploades`` / ``sha1s_retires`` : extraits du
+      ``RapportPushFichiers`` pour audit rapide.
+    - ``batch_id`` : UUID pour grouper si un push collection
+      enchaîne plusieurs push items (alignement avec
+      `OperationFichier` / `OperationImport`).
+
+    L'écriture est journalisée **dans la même transaction** que la
+    mise à jour `Fichier.sha1_nakala` du service push — atomique avec
+    la mutation locale (les deux ou rien).
+    """
+
+    __tablename__ = "operation_push_nakala"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    type_operation: Mapped[str] = mapped_column(String(30), nullable=False)
+    cote_item: Mapped[str] = mapped_column(Text, nullable=False)
+    fonds_cote: Mapped[str | None] = mapped_column(Text)
+    doi: Mapped[str] = mapped_column(Text, nullable=False)
+
+    snapshot_avant: Mapped[str | None] = mapped_column(Text)
+    snapshot_apres: Mapped[str | None] = mapped_column(Text)
+    sha1s_uploades: Mapped[str | None] = mapped_column(Text)
+    sha1s_retires: Mapped[str | None] = mapped_column(Text)
+
+    execute_le: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    execute_par: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_op_push_nakala_batch", "batch_id"),
+        Index("ix_op_push_nakala_doi", "doi"),
+        Index("ix_op_push_nakala_date", "execute_le"),
+    )
+
+
 class ModificationItem(Base):
     __tablename__ = "modification_item"
 

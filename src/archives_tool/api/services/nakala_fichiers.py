@@ -377,6 +377,11 @@ class RapportComparaisonFichiers:
     orphelins_distants: list[FichierOrphelin] = field(default_factory=list)
     non_actifs_a_retirer: list[FichierCompare] = field(default_factory=list)
     fichiers_fantomes: list[FichierCompare] = field(default_factory=list)
+    #: Snapshot brut des `files[]` distants (filtré via isinstance dict).
+    #: Préservé pour la journalisation `OperationPushNakala` (passe 24)
+    #: — snapshot AVANT le PUT. Pas re-lu par le service push (qui
+    #: utilise les catégories ci-dessus).
+    files_distants_snapshot: list[dict[str, Any]] = field(default_factory=list)
     # `modDate` distant capturé pendant le `lire_depot` initial. Permet
     # au caller (`pousser_fichiers_item`) de détecter une dérive sans
     # rejouer un second `lire_depot` (le client httpx n'a pas de cache
@@ -504,10 +509,26 @@ def comparer_fichiers_item(
         if sha1:
             sha1_index.setdefault(sha1, []).append(fd)
 
+    # Snapshot brut filtré (uniquement les dicts, sha1 vide écarté) —
+    # utilisé pour le journal `OperationPushNakala` au push (passe 24).
+    # On réduit aux 4 champs identifiants utiles pour audit (sha1, name,
+    # size, mime) sans embedder embargo / puid (bruit pour la traçabilité).
+    snapshot_distants: list[dict[str, Any]] = [
+        {
+            "sha1": (fd.get("sha1") or "").strip().lower(),
+            "name": fd.get("name"),
+            "size": fd.get("size"),
+            "mime": fd.get("mime"),
+        }
+        for fd in files_distants
+        if isinstance(fd, dict) and (fd.get("sha1") or "").strip()
+    ]
+
     rapport = RapportComparaisonFichiers(
         cote_item=item.cote, doi=item.doi_nakala,
         mod_date_distant=depot.get("modDate"),
         statut_distant=depot.get("status"),
+        files_distants_snapshot=snapshot_distants,
     )
 
     # Import paresseux : `resoudre_chemin` charge la config, on évite
@@ -1028,6 +1049,11 @@ def pousser_fichiers_item(
     rapport.sha1s_uploades = sha1s_uploades
 
     # 8. Met à jour Fichier.sha1_nakala pour modifies + nouveaux.
+    # Re-caracterisation binaire (passe 25, dette signalee passe 12) :
+    # recalcule hash_sha256 (SHA-256 distinct du sha1 Nakala) et
+    # taille_octets pour les fichiers dont le binaire a change.
+    # `format`/`largeur_px`/`hauteur_px` (PIL) restent obsoletes — V2+
+    # avec calcul asynchrone si dimensions deviennent un blocage UX.
     # Pose `modifie_le` pour tracer la mutation et incrémente `version`
     # (sans verrou optimiste actif sur Fichier — cf. dette signalee
     # CLAUDE.md, mais on respecte le pattern).
@@ -1051,6 +1077,7 @@ def pousser_fichiers_item(
     #   contenu → vignette desynchro affichee dans l'UI. Pattern de
     #   `renamer/execution._invalider_derives` (deja teste).
     from archives_tool.files.nakala import remplacer_sha
+    from archives_tool.files.paths import hash_sha256, resoudre_chemin as _rc
 
     maintenant = datetime.now()
     for fichier_id, sha1_neuf in nouveaux_sha1_par_fichier.items():
@@ -1061,6 +1088,23 @@ def pousser_fichiers_item(
                 fichier.iiif_url_nakala = remplacer_sha(
                     fichier.iiif_url_nakala, sha1_neuf,
                 )
+            # Re-caracterisation binaire (passe 25, dette pass 12)
+            # Recalcule sur le chemin local actuel : hash_sha256 +
+            # taille. Defense en profondeur : si le chemin n'est plus
+            # resolvable (binaire deplace entre upload et commit),
+            # on swallow et garde les valeurs precedentes (legerement
+            # obsoletes mais pas critique - le sha1_nakala canonique
+            # est correct).
+            if fichier.racine and fichier.chemin_relatif:
+                try:
+                    chemin_local = _rc(
+                        racines, fichier.racine, fichier.chemin_relatif,
+                    )
+                    if chemin_local.is_file():
+                        fichier.hash_sha256 = hash_sha256(chemin_local)
+                        fichier.taille_octets = chemin_local.stat().st_size
+                except (KeyError, ValueError, OSError):
+                    pass
             # Trou W : metadonnees["sha1"] miroir
             if isinstance(fichier.metadonnees, dict) and "sha1" in fichier.metadonnees:
                 # SQLAlchemy ne detecte pas les mutations in-place sur JSON :
@@ -1080,7 +1124,38 @@ def pousser_fichiers_item(
             fichier.modifie_le = maintenant
             fichier.version = (fichier.version or 1) + 1
 
-    # 9. Cache invalidation : rafraichir `RessourceExterne.metadonnees
+    # 9. Journal `OperationPushNakala` (passe 24, dette principe
+    # directeur n°4 bouclee) : snapshot avant/apres + sha1 uploades
+    # /retires. Insertion DANS la meme transaction que les mutations
+    # ci-dessus → atomique avec le commit final.
+    #
+    # On determine `fonds_cote` defensivement : si l'Item est detaché
+    # de sa session ou si `item.fonds` n'a pas ete eager-loaded, on
+    # met None plutot que de planter (l'audit fonctionne sans le
+    # contexte fonds, juste moins lisible).
+    from archives_tool.api.services.operations_push_nakala import (
+        journaliser_push_fichiers,
+        nouveau_batch_id,
+    )
+
+    try:
+        fonds_cote_journal = item.fonds.cote if item.fonds else None
+    except Exception:  # noqa: BLE001 — defensif sur session detachée
+        fonds_cote_journal = None
+    journaliser_push_fichiers(
+        db,
+        batch_id=nouveau_batch_id(),
+        cote_item=item.cote,
+        fonds_cote=fonds_cote_journal,
+        doi=item.doi_nakala,
+        snapshot_avant=rapport_cmp.files_distants_snapshot,
+        snapshot_apres=files_cible,
+        sha1s_uploades=sha1s_uploades,
+        sha1s_retires=list(rapport.sha1s_retires),
+        execute_par=modifie_par,
+    )
+
+    # 10. Cache invalidation : rafraichir `RessourceExterne.metadonnees
     # _brutes` + `LienExterneItem.recupere_le` pour que les autres
     # consommateurs (route web, autres CLI) ne lisent pas un cache stale
     # apres le PUT. Pattern aligne sur `pousser_item` (P3).

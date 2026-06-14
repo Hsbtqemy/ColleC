@@ -2594,6 +2594,314 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
 
 
 # ---------------------------------------------------------------------------
+# Passe 24 — Journal OperationPushNakala (dette principe directeur n°4 bouclee)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_journalise_operation_push_nakala(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Apres un push reel, une ligne `OperationPushNakala` est inseree
+    dans la meme transaction (atomique avec les mutations DB)."""
+    from archives_tool.models import OperationPushNakala
+
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False, modifie_par="hugo",
+        )
+
+    # Une ligne en base
+    with _session(db_path) as s:
+        ops = s.scalars(select(OperationPushNakala)).all()
+        assert len(ops) == 1
+        op = ops[0]
+        assert op.type_operation == "push_fichiers"
+        assert op.cote_item == "AS-001"
+        assert op.fonds_cote == "AS"
+        assert op.doi == "10.34847/nkl.x1"
+        assert op.execute_par == "hugo"
+        # Snapshot avant : 1 fichier distant (sha_ancien)
+        import json as _json
+        avant = _json.loads(op.snapshot_avant)
+        assert len(avant) == 1
+        assert avant[0]["sha1"] == sha_ancien
+        assert avant[0]["name"] == "x.jpg"
+        # Snapshot apres : 1 fichier cible (sha_neuf uploade)
+        apres = _json.loads(op.snapshot_apres)
+        assert len(apres) == 1
+        assert apres[0]["name"] == "x.jpg"
+        # sha1s_uploades reflete l'upload effectif
+        uploades = _json.loads(op.sha1s_uploades)
+        assert len(uploades) == 1
+
+
+def test_pousser_journalise_sha1s_retires_orphelins(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si des orphelins distants sont retires (avec flag), ils
+    apparaissent dans `sha1s_retires` du journal."""
+    from archives_tool.models import OperationPushNakala
+
+    contenu = b"local"
+    sha = _sha1(contenu)
+    sha_orphan = "or" + "1" * 38
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha, "name": "x.jpg"},
+        {"sha1": sha_orphan, "name": "orphan.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False, retirer_orphelins=True,
+        )
+
+    import json as _json
+    with _session(db_path) as s:
+        op = s.scalars(select(OperationPushNakala)).first()
+        retires = _json.loads(op.sha1s_retires)
+        assert sha_orphan in retires
+
+
+def test_pousser_dry_run_n_inscrit_aucun_journal(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Le journal ne doit etre ecrit qu'au push reel (pas en dry-run)."""
+    from archives_tool.models import OperationPushNakala
+
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=True,  # ← dry-run
+        )
+
+    with _session(db_path) as s:
+        assert s.scalars(select(OperationPushNakala)).first() is None
+
+
+def test_pousser_aucun_changement_n_inscrit_aucun_journal(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """No-op idempotent (rien a pousser) → pas de ligne journal
+    inutile."""
+    from archives_tool.models import OperationPushNakala
+
+    contenu = b"identique"
+    sha = _sha1(contenu)
+    lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        assert s.scalars(select(OperationPushNakala)).first() is None
+
+
+# ---------------------------------------------------------------------------
+# Passe 25 — Re-caracterisation binaire post-push (dette signalee passe 12)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Apres push d'un fichier modifie, `hash_sha256` (SHA-256 disque,
+    distinct du sha1 Nakala) et `taille_octets` sont recalcules sur
+    le binaire courant.
+
+    Sans cette propagation, le QA `controler` detecterait incoherences
+    (hash_sha256 stocke != re-calcul).
+    """
+    import hashlib
+
+    contenu_ancien = b"ancien"
+    sha1_ancien_nakala = _sha1(contenu_ancien)
+    # Le contenu_neuf a un sha256 different du contenu_ancien
+    contenu_neuf = b"contenu nouveau (taille differente)"
+    sha256_neuf_attendu = hashlib.sha256(contenu_neuf).hexdigest()
+    taille_attendue = len(contenu_neuf)
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_ancien_nakala, "name": "x.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha1_ancien_nakala},
+        ])
+        # Pose des valeurs OBSOLETES sur hash_sha256 + taille_octets
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].hash_sha256 = "obsolete" + "0" * 56  # 64 chars
+        fichiers[0].taille_octets = 999_999  # valeur fausse
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    with _session(db_path) as s:
+        f = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).first()
+        # hash_sha256 recalcule = vrai SHA-256 du contenu_neuf
+        assert f.hash_sha256 == sha256_neuf_attendu
+        # taille_octets recalcule = vraie taille
+        assert f.taille_octets == taille_attendue
+
+
+def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie : un Fichier inchange (sha local == sha distant) garde
+    son `hash_sha256` ET `taille_octets` precedents. Seuls les
+    fichiers dont le binaire a effectivement change sont
+    re-caracterises."""
+    contenu = b"identique"
+    sha = _sha1(contenu)
+    # Declenche un PUT via un 2e Fichier nouveau
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": None},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Pose un hash_sha256 connu sur l'inchange
+        fichiers[0].hash_sha256 = "preserve" + "0" * 56
+        fichiers[0].taille_octets = 42
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Inchange : hash_sha256 + taille preserves
+        assert fichiers[0].hash_sha256 == "preserve" + "0" * 56
+        assert fichiers[0].taille_octets == 42
+
+
+def test_lister_push_nakala_filtre_par_doi(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """`lister_push_nakala(doi=…)` retourne les ops du DOI cible."""
+    from archives_tool.api.services.operations_push_nakala import (
+        journaliser_push_fichiers, lister_push_nakala, nouveau_batch_id,
+    )
+
+    with _session(db_path) as s:
+        # 2 ops sur 2 DOIs differents
+        journaliser_push_fichiers(
+            s, batch_id=nouveau_batch_id(), cote_item="A-001",
+            fonds_cote="A", doi="10.34847/nkl.A",
+            snapshot_avant=[], snapshot_apres=[],
+            sha1s_uploades=[], sha1s_retires=[], execute_par="hugo",
+        )
+        journaliser_push_fichiers(
+            s, batch_id=nouveau_batch_id(), cote_item="B-001",
+            fonds_cote="B", doi="10.34847/nkl.B",
+            snapshot_avant=[], snapshot_apres=[],
+            sha1s_uploades=[], sha1s_retires=[], execute_par="hugo",
+        )
+        s.commit()
+
+        ops_A = lister_push_nakala(s, doi="10.34847/nkl.A")
+        ops_B = lister_push_nakala(s, doi="10.34847/nkl.B")
+    assert len(ops_A) == 1 and ops_A[0].cote_item == "A-001"
+    assert len(ops_B) == 1 and ops_B[0].cote_item == "B-001"
+
+
+def test_cli_montrer_push_nakala_json(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """`archives-tool montrer push-nakala --format json` retourne la
+    liste des operations journalisees."""
+    import json as _json
+    from typer.testing import CliRunner
+
+    from archives_tool.api.services.operations_push_nakala import (
+        journaliser_push_fichiers, nouveau_batch_id,
+    )
+    from archives_tool.cli import app as cli_app
+
+    # Setup : poser au moins 1 ligne
+    with _session(db_path) as s:
+        journaliser_push_fichiers(
+            s, batch_id=nouveau_batch_id(), cote_item="X-001",
+            fonds_cote="X", doi="10.34847/nkl.test",
+            snapshot_avant=[{"sha1": "a" * 40, "name": "x.jpg"}],
+            snapshot_apres=[{"sha1": "b" * 40, "name": "x.jpg"}],
+            sha1s_uploades=["b" * 40], sha1s_retires=[],
+            execute_par="alice",
+        )
+        s.commit()
+
+    runner = CliRunner()
+    r = runner.invoke(
+        cli_app,
+        ["montrer", "push-nakala", "--db-path", str(db_path),
+         "--format", "json"],
+    )
+    assert r.exit_code == 0, r.output
+    data = _json.loads(r.output)
+    assert len(data) == 1
+    op = data[0]
+    assert op["cote_item"] == "X-001"
+    assert op["doi"] == "10.34847/nkl.test"
+    assert op["execute_par"] == "alice"
+    assert op["sha1s_uploades"] == ["b" * 40]
+    assert op["snapshot_avant"][0]["name"] == "x.jpg"
+
+
+
+# ---------------------------------------------------------------------------
 # P3+c.2 passe 14 — Trou Z : ordre des garde-fous diagnostic > consent
 # ---------------------------------------------------------------------------
 

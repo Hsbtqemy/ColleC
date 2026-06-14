@@ -56,6 +56,7 @@ from archives_tool.api.services.fonds import (
     supprimer_fonds,
 )
 from archives_tool.api.services.operations_entite import lister_suppressions
+from archives_tool.api.services.operations_push_nakala import lister_push_nakala
 from archives_tool.api.services.nakala import (
     RafraichissementImpossible,
     RapatriementInvalide,
@@ -833,6 +834,83 @@ def cmd_montrer_suppressions(
                 o.fonds_cote or "—",
                 o.execute_par or "—",
                 _resume_cascade_court(o.type_entite, cascade),
+            )
+        console_mod.console.print(table)
+
+
+@montrer.command("push-nakala")
+def cmd_montrer_push_nakala(
+    doi: str | None = typer.Option(
+        None, "--doi", help="Filtrer par DOI distant (10.34847/nkl.…)."
+    ),
+    cote_item: str | None = typer.Option(
+        None, "--cote", help="Filtrer par cote d'item ColleC."
+    ),
+    limite: int = typer.Option(
+        50, "--limite", "-n", help="Nombre maximum de lignes."
+    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Lister les push fichiers Nakala journalisés (les plus récents
+    d'abord).
+
+    Source : table `operation_push_nakala` (passe 24). Audit
+    post-mortem de tout `PUT /datas/{id}` qui a uploadé ou retiré
+    des fichiers côté Nakala. Snapshot avant/après PUT préservé
+    pour reconstitution.
+    """
+    import json
+
+    with _ouvrir_session_existante(db_path) as session:
+        ops = lister_push_nakala(
+            session, doi=doi, cote_item=cote_item, limite=limite,
+        )
+
+        if format_sortie is _FormatRapport.JSON:
+            charge = [
+                {
+                    "id": o.id,
+                    "batch_id": o.batch_id,
+                    "type_operation": o.type_operation,
+                    "cote_item": o.cote_item,
+                    "fonds_cote": o.fonds_cote,
+                    "doi": o.doi,
+                    "execute_le": o.execute_le.isoformat() if o.execute_le else None,
+                    "execute_par": o.execute_par,
+                    "snapshot_avant": json.loads(o.snapshot_avant) if o.snapshot_avant else None,
+                    "snapshot_apres": json.loads(o.snapshot_apres) if o.snapshot_apres else None,
+                    "sha1s_uploades": json.loads(o.sha1s_uploades) if o.sha1s_uploades else [],
+                    "sha1s_retires": json.loads(o.sha1s_retires) if o.sha1s_retires else [],
+                }
+                for o in ops
+            ]
+            typer.echo(json.dumps(charge, ensure_ascii=False, indent=2))
+            return
+
+        if not ops:
+            typer.echo("Aucun push fichiers Nakala journalisé.")
+            return
+
+        table = Table(title="Push fichiers Nakala journalisés")
+        table.add_column("Date")
+        table.add_column("Cote")
+        table.add_column("Fonds")
+        table.add_column("DOI", overflow="fold")
+        table.add_column("↑ uploads", justify="right")
+        table.add_column("↓ retraits", justify="right")
+        table.add_column("Par")
+        for o in ops:
+            uploades = json.loads(o.sha1s_uploades) if o.sha1s_uploades else []
+            retires = json.loads(o.sha1s_retires) if o.sha1s_retires else []
+            table.add_row(
+                o.execute_le.strftime("%Y-%m-%d %H:%M") if o.execute_le else "—",
+                o.cote_item,
+                o.fonds_cote or "—",
+                o.doi,
+                str(len(uploades)),
+                str(len(retires)),
+                o.execute_par or "—",
             )
         console_mod.console.print(table)
 

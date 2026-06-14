@@ -78,6 +78,7 @@ from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
     BackfillIncomplet,
     DepotPublie,
+    FichierFantomeDistant,
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
@@ -3088,6 +3089,9 @@ def cmd_nakala_pousser_fichiers(
                 "repasser avec --force-published.",
                 err=True,
             )
+            raise typer.Exit(1) from None
+        except FichierFantomeDistant as e:
+            typer.echo(f"Erreur de cohérence DB ↔ Nakala : {e}", err=True)
             raise typer.Exit(1) from None
         except BackfillIncomplet as e:
             typer.echo(f"Erreur : {e}", err=True)

@@ -132,6 +132,51 @@ class PushImpossible(Exception):
     """
 
 
+class FichierFantomeDistant(Exception):
+    """Refus du push : un ou plusieurs Fichier ColleC sans binaire local
+    portent un ``sha1_nakala`` qui ne matche plus aucun sha1 distant
+    actuel.
+
+    Causes plausibles :
+
+    - **Désynchronisation cache** : un autre opérateur a modifié le
+      dépôt côté Nakala (push, suppression de fichier, versioning)
+      sans que ColleC ait re-pull entre-temps.
+    - **Maintenance Nakala** : opération côté Huma-Num qui re-hashe
+      les fichiers (rare mais possible).
+    - **Push précédent partiellement échoué** : le ``sha1_nakala``
+      d'un Fichier a été mis à jour avant que le PUT distant ne soit
+      effectivement appliqué (race condition ou commit DB sans PUT
+      réussi).
+
+    Sans refus, le service inclurait ce sha1 fantôme dans ``files[]``
+    cible → ``PUT`` retourne HTTP 404 cryptique (H4 : sha1 inconnu)
+    sans contexte côté user.
+
+    Workaround : re-rapatrier l'item (``archives-tool nakala
+    rapatrier <doi> --no-dry-run`` re-pulle l'état distant courant et
+    met à jour les ``sha1_nakala``) ou nettoyer manuellement le
+    Fichier ColleC concerné.
+
+    L'attribut ``fichiers`` liste les Fichier concernés (avec leur
+    ``sha1_distant`` fantôme).
+    """
+
+    def __init__(self, fichiers: list["FichierCompare"]) -> None:
+        self.fichiers = fichiers
+        noms = ", ".join(
+            f"{f.nom_fichier} (sha1: {(f.sha1_distant or '')[:12]}…)"
+            for f in fichiers[:5]
+        )
+        suffixe = "" if len(fichiers) <= 5 else f" (+ {len(fichiers) - 5} autres)"
+        super().__init__(
+            f"{len(fichiers)} Fichier(s) ColleC pointant vers un sha1 "
+            f"fantôme côté Nakala : {noms}{suffixe}. Re-rapatrier l'item "
+            "(`archives-tool nakala rapatrier`) pour resynchroniser, ou "
+            "nettoyer manuellement le Fichier ColleC."
+        )
+
+
 class DepotPublie(Exception):
     """Refus du push fichiers : l'item ciblé est ``status=published``
     côté Nakala.
@@ -288,6 +333,16 @@ class RapportComparaisonFichiers:
       correspondant. Cas typique : fichier supprimé localement. Au
       push, **refusés par défaut** ; flag `retirer_orphelins=True`
       requis pour confirmer leur retrait côté Nakala.
+    - **fichiers_fantomes** : Fichier ColleC sans binaire local dont le
+      ``sha1_nakala`` était posé mais ne matche plus aucun fichier
+      distant actuel. Cas typique : désynchronisation cache (le distant
+      a été modifié hors ColleC, ou Nakala maintenance a re-hashé), ou
+      `sha1_nakala` ancien restant après un push partiellement échoué
+      (le sha1 distant a changé sans que ColleC l'apprenne). **Refus
+      au push** : `pousser_fichiers_item` lève `FichierFantomeDistant`
+      car inclure un sha1 fantôme dans `files[]` cible cause une
+      HTTP 404 cryptique côté Nakala (H4 : sha1 inconnu). User doit
+      re-rapatrier l'item ou nettoyer le Fichier ColleC manuellement.
     - **non_actifs_a_retirer** : Fichier ColleC en `etat != ACTIF`
       (REMPLACE ou CORBEILLE) dont le `sha1_nakala` matche un sha1
       distant. Le filtre `etat != ACTIF` exclut ces Fichier du plan
@@ -312,6 +367,7 @@ class RapportComparaisonFichiers:
     nakala_only_sans_local: list[FichierCompare] = field(default_factory=list)
     orphelins_distants: list[FichierOrphelin] = field(default_factory=list)
     non_actifs_a_retirer: list[FichierCompare] = field(default_factory=list)
+    fichiers_fantomes: list[FichierCompare] = field(default_factory=list)
     # `modDate` distant capturé pendant le `lire_depot` initial. Permet
     # au caller (`pousser_fichiers_item`) de détecter une dérive sans
     # rejouer un second `lire_depot` (le client httpx n'a pas de cache
@@ -326,16 +382,24 @@ class RapportComparaisonFichiers:
 
     @property
     def aucun_changement(self) -> bool:
-        """Vrai si pousser ne ferait rien : pas de nouveaux, pas de
-        modifs, pas d'orphelins à retirer, pas de Fichier non-ACTIF
-        avec pendant distant. Les ``nakala_only_sans_local`` ne
-        comptent pas comme un changement — ils sont seulement un
-        signal d'attention pour le palier c."""
+        """Vrai si pousser serait un no-op propre : pas de nouveaux,
+        pas de modifs, pas d'orphelins à retirer, pas de Fichier
+        non-ACTIF avec pendant distant, **pas de fantôme**.
+
+        Les ``nakala_only_sans_local`` ne comptent pas comme un
+        changement — ils sont seulement un signal d'attention pour
+        le palier c (préservés au PUT avec leur sha1 connu).
+
+        Les ``fichiers_fantomes`` comptent comme un état non-no-op :
+        il y a un problème à fixer (désynchronisation DB ↔ Nakala),
+        donc le push doit refuser loud plutôt que return early en
+        no-op silencieux."""
         return (
             not self.nouveaux
             and not self.modifies
             and not self.orphelins_distants
             and not self.non_actifs_a_retirer
+            and not self.fichiers_fantomes
         )
 
 
@@ -501,12 +565,25 @@ def comparer_fichiers_item(
 
         if chemin is None:
             # Nakala-only (ou perdu sur disque) : signal d'attention.
-            # Si sha1_nakala connu, consommer une entrée distante pour
-            # ne pas la classer en orphelin — elle représente ce
-            # Fichier ColleC sans binaire local.
-            if sha1_nakala_norm and sha1_index.get(sha1_nakala_norm):
-                sha1_index[sha1_nakala_norm].pop(0)
-            rapport.nakala_only_sans_local.append(compare)
+            # Trois cas distinguer (Trou U passe 10) :
+            # 1. sha1_nakala posé ET matche le distant → cas légitime
+            #    (consomme du sha1_index, classe en nakala_only_sans_local).
+            # 2. sha1_nakala posé MAIS absent du distant → fantôme
+            #    (désynchro DB ↔ Nakala). Inclure dans `files[]` au
+            #    push ferait planter avec H4 (404 sha1 inconnu).
+            #    Catégorie dédiée + refus loud côté push.
+            # 3. sha1_nakala absent ET binaire local absent → backfill
+            #    incomplet (Trou J), catégorie `nakala_only_sans_local`
+            #    avec sha1_distant=None, garde-fou `BackfillIncomplet`
+            #    au push.
+            if sha1_nakala_norm:
+                if sha1_index.get(sha1_nakala_norm):
+                    sha1_index[sha1_nakala_norm].pop(0)
+                    rapport.nakala_only_sans_local.append(compare)
+                else:
+                    rapport.fichiers_fantomes.append(compare)
+            else:
+                rapport.nakala_only_sans_local.append(compare)
             continue
 
         # Binaire local présent — `sha1_local` est garanti non-None.
@@ -706,6 +783,10 @@ def pousser_fichiers_item(
         ComparaisonImpossible: propagé depuis ``comparer_fichiers_item``.
         DepotPublie: item ``status=published`` côté Nakala sans flag
             ``forcer_publie`` (risque de casser des citations externes).
+        FichierFantomeDistant: au moins un Fichier ColleC pointe vers
+            un ``sha1_nakala`` qui n'est plus côté distant (désynchro
+            cache ou push partiellement échoué) — éviterait une 404
+            cryptique au PUT.
         BackfillIncomplet: au moins un Fichier ``nakala_only_sans_local``
             n'a pas de ``sha1_nakala`` peuplé — risque de perte
             silencieuse de fichier distant au PUT.
@@ -758,6 +839,13 @@ def pousser_fichiers_item(
     statut = rapport_cmp.statut_distant
     if statut == "published" and not forcer_publie:
         raise DepotPublie(item.cote, item.doi_nakala, statut)
+
+    # Garde-fou anti-fantome (Trou U passe 10) : un Fichier ColleC sans
+    # binaire local porte un `sha1_nakala` qui ne matche plus aucun
+    # sha1 distant. Inclure ce sha1 fantôme dans `files[]` ferait
+    # planter le PUT avec H4 (404 sha1 inconnu) — refus loud.
+    if rapport_cmp.fichiers_fantomes:
+        raise FichierFantomeDistant(list(rapport_cmp.fichiers_fantomes))
 
     # Garde-fou anti-perte silencieuse : un Fichier en
     # `nakala_only_sans_local` sans `sha1_nakala` connu (legacy pré-P3+a

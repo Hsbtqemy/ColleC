@@ -20,6 +20,7 @@ from archives_tool.api.services.nakala_fichiers import (
     BackfillIncomplet,
     ComparaisonImpossible,
     DepotPublie,
+    FichierFantomeDistant,
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
@@ -2000,3 +2001,145 @@ def test_pousser_statut_absent_du_distant_ne_refuse_pas(
         )
     assert rapport.applique is True
     assert rapport.compare.statut_distant is None
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 10 — Trou U : sha1_nakala fantome (desync DB ↔ Nakala)
+# ---------------------------------------------------------------------------
+
+
+def test_comparer_classe_fichier_fantome_distinct_de_nakala_only(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Fichier ColleC sans binaire local avec `sha1_nakala="abc"` ET
+    distant ne contient plus "abc" (mais "def" autre fichier) →
+    categorie `fichiers_fantomes` propre, PAS `nakala_only_sans_local`.
+
+    Distingue 3 cas (post-Trou U) :
+    - sha1_nakala MATCHE distant → nakala_only_sans_local (legitime)
+    - sha1_nakala SANS MATCH → fichiers_fantomes (desync)
+    - sha1_nakala absent (None) → nakala_only_sans_local (backfill
+      incomplet, sera attrape par BackfillIncomplet au push)
+    """
+    sha1_fantome = "abc" + "0" * 37
+    sha1_present = "def" + "0" * 37
+    client = _FakeClientLecture(files=[
+        # Distant a "def" mais pas "abc".
+        {"sha1": sha1_present, "name": "actuel.jpg"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # Fichier ColleC : sha1_nakala=fantome, pas de binaire local.
+            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": sha1_fantome},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+
+    # Classe en fantome, pas en nakala_only_sans_local
+    assert len(rapport.fichiers_fantomes) == 1
+    assert rapport.fichiers_fantomes[0].nom_fichier == "fantome.jpg"
+    assert rapport.fichiers_fantomes[0].sha1_distant == sha1_fantome
+    assert rapport.nakala_only_sans_local == []
+    # Le "def" du distant ressort en orphelin (cote Nakala non
+    # reconcilie avec un Fichier ColleC).
+    assert len(rapport.orphelins_distants) == 1
+    assert rapport.orphelins_distants[0].sha1 == sha1_present
+
+
+def test_pousser_refuse_si_fichiers_fantomes(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Au push, lever `FichierFantomeDistant` avant tout PUT.
+
+    Sans ce garde-fou : le plan contiendrait `{sha1: fantome, name: X}`,
+    le PUT recevrait H4 (sha1 inconnu) → HTTP 404 cryptique cote user.
+    """
+    sha1_fantome = "abc" + "0" * 37
+    lecture = _FakeClientLecture(files=[])  # distant vide, fantome confirmé
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": sha1_fantome},
+        ])
+        with pytest.raises(FichierFantomeDistant) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    # L'exception expose la liste
+    assert len(exc_info.value.fichiers) == 1
+    assert exc_info.value.fichiers[0].nom_fichier == "fantome.jpg"
+    # Le message d'erreur cite le sha1 tronque et propose rapatrier
+    assert "rapatrier" in str(exc_info.value).lower()
+    assert sha1_fantome[:12] in str(exc_info.value)
+    # Aucun upload ni PUT (echec amont)
+    assert ecriture.uploads == []
+    assert ecriture.puts == []
+
+
+def test_pousser_garde_fou_fantome_precede_garde_fou_backfill(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si on a a la fois fantomes ET backfill incomplet, le garde-fou
+    fantome se declenche en premier (ordre dans pousser_fichiers_item).
+
+    Documente la priorite des garde-fous : on signale d'abord la
+    desync (plus pernicieuse) avant le backfill (qui est juste un
+    nettoyage de donnees legacy).
+    """
+    sha1_fantome = "abc" + "0" * 37
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # Fichier 1 : fantome
+            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": sha1_fantome},
+            # Fichier 2 : backfill incomplet
+            {"ordre": 2, "nom": "backfill.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": None},
+        ])
+        # Le fantome est leve en premier (BackfillIncomplet jamais atteint)
+        with pytest.raises(FichierFantomeDistant):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+    assert ecriture.puts == []
+
+
+def test_comparer_aucun_changement_avec_fantome_seul_est_false(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Un fantome IMPOSE `aucun_changement = False` (mise a jour
+    semantique passe 10) : il y a un probleme a fixer (desync DB ↔
+    Nakala), le push ne peut pas se contenter d'un no-op silencieux.
+
+    Sans cette inclusion, le service court-circuiterait le garde-fou
+    `FichierFantomeDistant` via le return early sur aucun_changement.
+    """
+    sha1_fantome = "abc" + "0" * 37
+    client = _FakeClientLecture(files=[])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "f.jpg", "contenu": None,
+             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+             "sha1_nakala": sha1_fantome},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    # CRITIQUE : fantome force aucun_changement=False (sinon push
+    # silencieux ne signale rien).
+    assert rapport.aucun_changement is False
+    assert len(rapport.fichiers_fantomes) == 1

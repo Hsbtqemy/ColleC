@@ -77,6 +77,7 @@ from archives_tool.api.services.nakala_depot import (
 from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
     BackfillIncomplet,
+    DepotPublie,
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
@@ -3015,6 +3016,13 @@ def cmd_nakala_pousser_fichiers(
              "versioning automatique côté Nakala — l'ancienne version "
              "(avec les fichiers retirés) reste accessible.",
     ),
+    forcer_publie: bool = typer.Option(
+        False, "--force-published",
+        help="Forcer la modification des fichiers d'un item déjà publié "
+             "(status=published). DANGEREUX : casse l'intégrité des "
+             "citations externes (DOIs DataCite des fichiers déjà mintés). "
+             "Sans ce flag, l'item publié est refusé.",
+    ),
     utilisateur: str | None = typer.Option(
         None, "--utilisateur",
         help="Surcharge `config.utilisateur` pour tracer la modification.",
@@ -3064,6 +3072,7 @@ def cmd_nakala_pousser_fichiers(
                 session, lecture, ecriture, item, racines=racines,
                 dry_run=not no_dry_run,
                 retirer_orphelins=retirer_orphelins,
+                forcer_publie=forcer_publie,
                 modifie_par=utilisateur or config.utilisateur,
             )
         except DepotImpossible as e:
@@ -3071,6 +3080,14 @@ def cmd_nakala_pousser_fichiers(
             raise typer.Exit(1) from None
         except ComparaisonImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except DepotPublie as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            typer.echo(
+                "Pour confirmer (DANGEREUX, casse les citations externes), "
+                "repasser avec --force-published.",
+                err=True,
+            )
             raise typer.Exit(1) from None
         except BackfillIncomplet as e:
             typer.echo(f"Erreur : {e}", err=True)
@@ -3143,6 +3160,14 @@ def cmd_nakala_pousser_fichiers(
         typer.echo(
             "  ⚠ Dérive détectée : le dépôt distant a changé depuis le "
             "dernier pull cache. Re-comparer recommandé avant push."
+        )
+
+    # Avertissement si l'item est publié et qu'on force le push (sans
+    # ce flag, DepotPublie aurait été levé en amont).
+    if rapport.compare is not None and rapport.compare.statut_distant == "published":
+        typer.echo(
+            "  ⚠ DANGER : item publié — modifier les fichiers casse "
+            "l'intégrité des citations externes (DOIs DataCite mintés)."
         )
 
     if rapport.raison == "aucun_changement":

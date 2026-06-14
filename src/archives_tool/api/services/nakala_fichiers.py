@@ -132,6 +132,40 @@ class PushImpossible(Exception):
     """
 
 
+class DepotPublie(Exception):
+    """Refus du push fichiers : l'item ciblé est ``status=published``
+    côté Nakala.
+
+    Un item publié a un DOI DataCite minté, et chacun de ses fichiers
+    devient citable individuellement (URLs IIIF persistantes). Toute
+    modification de ``files[]`` :
+
+    - **modifie le sha1** d'un fichier déjà cité (l'URL IIIF de tile
+      change) → casse l'intégrité documentaire de toute citation
+      externe pointant vers ce fichier ;
+    - **retire un fichier** publié → 404 sur les citations externes
+      (perte de donnée référencée publiquement).
+
+    Par défaut, le service refuse. Le caller peut forcer via
+    ``forcer_publie=True`` (équivalent du flag ``retirer_orphelins``
+    pour les orphelins : opt-in explicite pour une action à risque).
+
+    L'attribut ``statut`` permet à la CLI / l'UI d'afficher le statut
+    exact détecté.
+    """
+
+    def __init__(self, cote: str, doi: str, statut: str) -> None:
+        self.cote = cote
+        self.doi = doi
+        self.statut = statut
+        super().__init__(
+            f"Item {cote!r} (DOI {doi}) est publié (status={statut!r}) côté "
+            f"Nakala. Toute modification des fichiers casse l'intégrité des "
+            f"citations externes. Pour confirmer, repasser avec "
+            f"forcer_publie=True (CLI : --force-published)."
+        )
+
+
 class IncoherenceFichierORM(Exception):
     """Le Fichier ORM attendu pour un upload a été muté ou supprimé
     entre la phase ``comparer_fichiers_item`` et la phase de push.
@@ -283,6 +317,12 @@ class RapportComparaisonFichiers:
     # rejouer un second `lire_depot` (le client httpx n'a pas de cache
     # LRU — chaque appel = un round-trip HTTP réel).
     mod_date_distant: str | None = None
+    # Statut distant ("pending" / "published"). Capturé pour permettre
+    # au caller de refuser un push destructif sur un item publié sans
+    # un 2e appel (cf. Trou T passe 9 : DOIs DataCite mintés sur les
+    # fichiers d'un item publié → toute modification rompt l'intégrité
+    # des citations externes).
+    statut_distant: str | None = None
 
     @property
     def aucun_changement(self) -> bool:
@@ -389,6 +429,7 @@ def comparer_fichiers_item(
     rapport = RapportComparaisonFichiers(
         cote_item=item.cote, doi=item.doi_nakala,
         mod_date_distant=depot.get("modDate"),
+        statut_distant=depot.get("status"),
     )
 
     # Import paresseux : `resoudre_chemin` charge la config, on évite
@@ -615,6 +656,7 @@ def pousser_fichiers_item(
     racines: Mapping[str, Path],
     dry_run: bool = True,
     retirer_orphelins: bool = False,
+    forcer_publie: bool = False,
     modifie_par: str | None = None,
 ) -> RapportPushFichiers:
     """Pousse les fichiers locaux d'un Item vers son dépôt Nakala existant.
@@ -645,6 +687,11 @@ def pousser_fichiers_item(
         retirer_orphelins: requis pour confirmer le retrait silencieux
             de fichiers présents côté Nakala mais absents en local.
             Sans ce flag, lève ``OrphelinsDetectes``.
+        forcer_publie: requis pour confirmer une modification de
+            ``files[]`` sur un item ``status=published`` côté Nakala.
+            Sans ce flag, lève ``DepotPublie``. Cas à risque :
+            modifier un fichier publié casse l'intégrité des citations
+            externes (DOIs DataCite mintés).
         modifie_par: propagé à ``mettre_en_cache_depot`` (champ
             ``cree_par`` de la ressource cachée) après le PUT réussi.
             Non propagé au format ``files[]`` (Nakala n'a pas de champ
@@ -657,6 +704,8 @@ def pousser_fichiers_item(
     Raises:
         DepotImpossible: ``item.doi_nakala`` est None.
         ComparaisonImpossible: propagé depuis ``comparer_fichiers_item``.
+        DepotPublie: item ``status=published`` côté Nakala sans flag
+            ``forcer_publie`` (risque de casser des citations externes).
         BackfillIncomplet: au moins un Fichier ``nakala_only_sans_local``
             n'a pas de ``sha1_nakala`` peuplé — risque de perte
             silencieuse de fichier distant au PUT.
@@ -701,6 +750,14 @@ def pousser_fichiers_item(
     if rapport_cmp.aucun_changement:
         rapport.raison = "aucun_changement"
         return rapport
+
+    # Garde-fou anti-rupture-citation : un item publié a un DOI
+    # DataCite minté ; toute modification de `files[]` casse
+    # l'intégrité des citations externes. Refus loud, opt-in via
+    # `forcer_publie=True`. Cf. Trou T passe 9.
+    statut = rapport_cmp.statut_distant
+    if statut == "published" and not forcer_publie:
+        raise DepotPublie(item.cote, item.doi_nakala, statut)
 
     # Garde-fou anti-perte silencieuse : un Fichier en
     # `nakala_only_sans_local` sans `sha1_nakala` connu (legacy pré-P3+a

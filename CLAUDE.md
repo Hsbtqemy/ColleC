@@ -2689,6 +2689,28 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Logging structuré transversal sur `nakala_depot.py`** (~7 services
+      écriture : `deposer_item`, `deposer_collection`, `pousser_item`,
+      `publier_item`, `pousser_metadonnees_collection`, `pousser_collection`,
+      `publier_collection`). `pousser_fichiers_item` a reçu le pattern en
+      passe 8 (logger `archives_tool.api.services.nakala_fichiers` avec
+      events INFO/DEBUG/WARNING : `START`, `PUT OK`, `COMMIT`, `ECHEC`,
+      `cleanup KO`). Ces 7 services manquent du même traitement — un
+      `publier_item` qui échoue en prod laisse zéro trace post-mortem
+      sur un appel **irréversible et payant** (DOI DataCite minté).
+      Pattern à porter mécaniquement (1 logger module + 4-6 events par
+      service). Probable 1 session.
+- [ ] **Cohérence cross-service du garde-fou item publié** (Trou T
+      passe 9 sur `pousser_fichiers_item` uniquement). Le service
+      `pousser_item` (métadonnées) ne vérifie pas non plus le statut
+      distant. Modifier les `metas` d'un item publié change les DOIs
+      DataCite (titre, créateurs…) — moins critique que retirer un
+      fichier mais reste douteux pour des citations stables. À
+      reproduire : ajouter `forcer_publie` dans la signature, garde-fou
+      `DepotPublie` (peut être déplacée en module partagé `nakala_garde`),
+      flag CLI `--force-published` sur `pousser` / `pousser-collection`.
+      Discussion : faut-il aussi garde-fouer `publier_item` (re-publier
+      un déjà publié) ? Probablement no-op côté Nakala mais à valider.
 - [ ] **Journaliser les push fichiers Nakala** (principe directeur n°4 :
       « journaliser toutes les opérations destructives »). Un
       `PUT /datas/{id}` avec `files[]` réduit RETIRE silencieusement

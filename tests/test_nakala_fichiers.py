@@ -19,6 +19,7 @@ from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_fichiers import (
     BackfillIncomplet,
     ComparaisonImpossible,
+    DepotPublie,
     IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
@@ -69,10 +70,13 @@ class _FakeClientLecture:
     tester la dérive."""
 
     def __init__(
-        self, files: list[dict[str, Any]], *, mod_date: str | None = None,
+        self, files: list[dict[str, Any]], *,
+        mod_date: str | None = None,
+        statut: str | None = None,
     ) -> None:
         self._files = files
         self._mod_date = mod_date
+        self._statut = statut
         self.appels: list[str] = []
 
     def lire_depot(self, doi: str) -> dict[str, Any]:
@@ -80,6 +84,8 @@ class _FakeClientLecture:
         depot = {"identifier": doi, "files": self._files}
         if self._mod_date is not None:
             depot["modDate"] = self._mod_date
+        if self._statut is not None:
+            depot["status"] = self._statut
         return depot
 
 
@@ -1845,3 +1851,152 @@ def test_pousser_emet_log_warning_au_cleanup(
     assert any("ECHEC" in m and "cleanup=1" in m for m in messages)
     # Cleanup effectivement tente
     assert ecriture.supprimes == [f"{1:040x}"]
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 9 — Trou T : item published refuse par defaut (DOI DataCite)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_refuse_item_publie_par_defaut(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Un item `status=published` cote Nakala a des DOIs DataCite mintes
+    sur ses fichiers. Toute modif de `files[]` casse l'integrite des
+    citations externes. Sans `forcer_publie=True`, refus loud."""
+    contenu_neuf = b"a uploader"
+    sha1_ancien = _sha1(b"ancien contenu")
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
+        statut="published",  # PUBLIE → DOI DataCite minté
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # binaire modifie
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha1_ancien},
+        ])
+        with pytest.raises(DepotPublie) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    # L'exception expose le contexte
+    assert exc_info.value.statut == "published"
+    assert exc_info.value.cote == "AS-001"
+    assert "citation" in str(exc_info.value).lower()
+    # Aucun upload ni PUT (refus avant)
+    assert ecriture.uploads == []
+    assert ecriture.puts == []
+
+
+def test_pousser_avec_forcer_publie_passe_quand_meme(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Avec `forcer_publie=True`, le user a explicitement accepte le
+    risque. Le push procede normalement (= upload + PUT)."""
+    contenu_neuf = b"a uploader"
+    sha1_ancien = _sha1(b"ancien contenu")
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha1_ancien},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+            forcer_publie=True,
+        )
+
+    assert rapport.applique is True
+    assert len(ecriture.uploads) == 1
+    assert len(ecriture.puts) == 1
+    # Le rapport expose le statut pour traçabilité user.
+    assert rapport.compare is not None
+    assert rapport.compare.statut_distant == "published"
+
+
+def test_pousser_dry_run_publie_pas_de_refus_pas_de_lievre(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Dry-run sur item publié : refus quand meme (l'exception sert
+    aussi d'aperçu - le user comprend qu'il faut `--force-published`
+    AVANT de lancer le `--no-dry-run`)."""
+    contenu = b"x"
+    sha1 = _sha1(contenu)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(
+        files=[{"sha1": sha1, "name": "x.jpg"}],
+        statut="published",
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # binaire modifie pour declencher push
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha1},
+        ])
+        # Refus en dry-run aussi (sans flag) - dry-run ne contourne pas
+        # les garde-fous metiers, seulement les ecritures distantes.
+        with pytest.raises(DepotPublie):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=True,
+            )
+
+
+def test_pousser_pending_ne_refuse_pas(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie : sur item `pending` (defaut Nakala apres depot),
+    pas de refus, comportement normal."""
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(
+        files=[],
+        statut="pending",  # ← non-published
+    )
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    assert rapport.applique is True
+    assert rapport.compare.statut_distant == "pending"
+
+
+def test_pousser_statut_absent_du_distant_ne_refuse_pas(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si Nakala omet le champ `status` (cas degenere ou ancien format),
+    on ne refuse pas - on traite comme non-publié (precaution
+    asymetrique : refuser sur la base d'une absence serait gener
+    inutilement le user)."""
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])  # pas de statut
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    assert rapport.applique is True
+    assert rapport.compare.statut_distant is None

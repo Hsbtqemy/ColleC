@@ -759,3 +759,198 @@ def test_deposer_collection_progress_collection_vide(
     assert rapport.collection_creee is True
     assert rapport.deposes == [] and rapport.sautes == []
     assert rapport.non_deposables == [] and rapport.erreurs == []
+
+
+# ---------------------------------------------------------------------------
+# Passe 21 — Dette logging transverse sur nakala_depot.py
+# Pattern aligne sur passe 8 (`nakala_fichiers`). Garde-fous minimaux :
+# les events critiques sont bien emis pour debug post-mortem.
+# ---------------------------------------------------------------------------
+
+
+class _FakeReadClient:
+    """Stub client lecture pour les tests pousser/publier.
+
+    Retourne un depot minimal avec les metas locales d'AS-001 deja
+    presentes pour produire un diff vide par defaut. Les tests qui
+    modifient l'item le declenchent en changeant titre / autre champ.
+    """
+
+    def lire_depot(self, doi):
+        return {
+            "identifier": doi,
+            "modDate": "2026-01-01T00:00:00",
+            "status": "pending",
+            "metas": [],  # vide → tout local apparait en "ajout"
+            "files": [],
+        }
+
+
+class _FakeWriteClientP3(_FakeWriteClient):
+    """Etend `_FakeWriteClient` avec `modifier_depot` (PUT) - utilise
+    pour les tests pousser_item / publier_item passe 21."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.puts: list[dict] = []
+
+    def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
+        self.puts.append({"id": identifiant, "metas": metas, "files": files,
+                          "status": status})
+        return {}
+
+
+def test_deposer_item_logging_dry_run(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """Dry-run emet INFO 'depot item dry-run' avec compteurs."""
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=True)
+
+    messages = [r.message for r in caplog.records
+                if r.name == "archives_tool.api.services.nakala_depot"]
+    assert any("depot item dry-run" in m for m in messages)
+    assert any("AS-001" in m for m in messages)
+
+
+def test_deposer_item_logging_commit_reel(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """Reel : emet START + COMMIT (au moins)."""
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=False)
+
+    messages = [r.message for r in caplog.records
+                if r.name == "archives_tool.api.services.nakala_depot"]
+    assert any("depot item START" in m for m in messages)
+    assert any("depot item COMMIT" in m for m in messages)
+
+
+def test_deposer_item_logging_echec_cleanup(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """Echec du POST /datas : warning explicite avec cleanup compteur."""
+    import logging as _logging
+    caplog.set_level(_logging.WARNING, logger="archives_tool.api.services.nakala_depot")
+
+    from archives_tool.api.services.nakala_depot import ErreurNakala
+
+    class _ClientFlop(_FakeWriteClient):
+        def creer_depot(self, **kwargs):
+            raise ErreurNakala("simule")
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        with pytest.raises(ErreurNakala):
+            deposer_item(s, _ClientFlop(), item, racines=racines, dry_run=False)
+
+    messages = [r.message for r in caplog.records
+                if r.name == "archives_tool.api.services.nakala_depot"]
+    assert any("depot item ECHEC" in m and "cleanup=1" in m for m in messages)
+
+
+def test_publier_item_logging_warning_irreversible(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """`publier_item` reel emet un WARNING explicite IRREVERSIBLE -
+    differencie d'un INFO normal car appel paiyant et non-annulable.
+    """
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
+
+    from archives_tool.api.services.nakala_depot import publier_item
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        # Depose d'abord pour avoir doi_nakala
+        deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=False)
+        caplog.clear()
+
+        # Maintenant publie
+        publier_item(
+            s, _FakeReadClient(), _FakeWriteClientP3(), item, dry_run=False,
+        )
+
+    records = [r for r in caplog.records
+               if r.name == "archives_tool.api.services.nakala_depot"]
+    # WARNING IRREVERSIBLE emis
+    warnings_irr = [r for r in records if r.levelno == _logging.WARNING
+                    and "IRREVERSIBLE" in r.message]
+    assert len(warnings_irr) >= 1
+    # INFO publication OK emis aussi
+    assert any("publication item OK" in r.message for r in records)
+
+
+def test_deposer_collection_logging_start_end(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """`deposer_collection` emet START au debut et END a la fin avec
+    compteurs des 4 categories de resultat."""
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
+
+    from archives_tool.api.services.nakala_depot import deposer_collection
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        # Setup : collection libre + item avec fichier local
+        item = _item_avec_fichier_local(s, tmp_path)
+        from archives_tool.api.services.collections import (
+            FormulaireCollection, creer_collection_libre,
+        )
+        col = creer_collection_libre(s, FormulaireCollection(
+            cote="AS-COLLE", titre="C", fonds_id=item.fonds_id,
+        ))
+        col.items.append(item)
+        s.commit()
+
+        deposer_collection(s, _FakeWriteClient(), col, racines=racines,
+                          dry_run=True)
+
+    messages = [r.message for r in caplog.records
+                if r.name == "archives_tool.api.services.nakala_depot"]
+    assert any("depot collection START" in m for m in messages)
+    assert any("depot collection END" in m for m in messages)
+
+
+def test_pousser_item_logging_dry_run_vs_commit(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """`pousser_item` emet dry-run ou no-op selon scenario, COMMIT en
+    cas de push reel."""
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
+
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    racines = {"scans": tmp_path / "scans"}
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=False)
+        caplog.clear()
+
+        # Modifier titre pour forcer un diff
+        item.titre = "Nouveau titre"
+        s.commit()
+
+        pousser_item(
+            s, _FakeReadClient(), _FakeWriteClientP3(), item, dry_run=False,
+        )
+
+    messages = [r.message for r in caplog.records
+                if r.name == "archives_tool.api.services.nakala_depot"]
+    assert any("push item metas START" in m for m in messages)
+    assert any("push item metas COMMIT" in m for m in messages)
+

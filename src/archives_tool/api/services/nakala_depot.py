@@ -19,6 +19,7 @@ orphelins si le `POST /datas` échoue après upload ; **dry-run par défaut**
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -45,6 +46,18 @@ from archives_tool.external.nakala.write_client import (
     extraire_doi,
 )
 from archives_tool.models import Collection, Fichier, Item, RessourceExterne
+
+#: Logger structure pour le service depot Nakala (deposer / pousser /
+#: publier item ET collection). Pattern aligne sur
+#: `nakala_fichiers.logger` (passe 8) : INFO sur les events metiers
+#: (START, OK, COMMIT, ECHEC), WARNING sur les conditions degradees
+#: (cleanup, derive, fichier non-deposable), DEBUG sur le detail
+#: (upload par fichier, item dans une boucle de collection).
+#:
+#: Sans ce logging, un `publier_item` qui foire en prod sur un appel
+#: IRREVERSIBLE (DOI DataCite minte) laisse zero trace post-mortem.
+#: Critique pour le debug et l'audit (notamment sur PF 173 items).
+logger = logging.getLogger(__name__)
 
 #: Licence par défaut si l'item n'en porte pas (alignée sur l'export CSV).
 LICENCE_DEFAUT = "CC-BY-NC-ND-4.0"
@@ -195,6 +208,10 @@ def deposer_item(
       sans écrire. Réel → upload + `POST /datas` + pose `Item.doi_nakala`.
     """
     if item.doi_nakala:
+        logger.info(
+            "depot item SAUTE (deja depose) cote=%s doi=%s",
+            item.cote, item.doi_nakala,
+        )
         return RapportDepot(
             cote=item.cote, dry_run=dry_run, deja_depose=True, doi=item.doi_nakala
         )
@@ -211,6 +228,10 @@ def deposer_item(
     metas, avertissements = preflight_appliquer(metas)  # peut lever MetaInvalide
 
     if dry_run:
+        logger.info(
+            "depot item dry-run cote=%s nb_fichiers=%d nb_metas=%d nb_avert=%d",
+            item.cote, len(locaux), len(metas), len(avertissements),
+        )
         return RapportDepot(
             cote=item.cote, dry_run=True, doi=None,
             nb_fichiers=len(locaux), fichiers=[nom for _, nom, _ in locaux],
@@ -218,6 +239,10 @@ def deposer_item(
         )
 
     # Réel : upload des fichiers puis création du dépôt.
+    logger.info(
+        "depot item START cote=%s nb_fichiers=%d statut=%s collection=%s",
+        item.cote, len(locaux), statut, collection_doi or "—",
+    )
     # On capture le sha1 retourné par Nakala dans `Fichier.sha1_nakala`
     # — identifiant canonique côté Nakala pour le versioning (P3+a, cf.
     # `nakala-depot-future.md` difficulté #4). Persisté dans le même
@@ -231,6 +256,10 @@ def deposer_item(
             uploades.append({"sha1": sha1, "name": desc.get("name") or nom})
             sha1s.append(sha1)
             fichier_orm.sha1_nakala = sha1
+            logger.debug(
+                "depot item upload OK cote=%s nom=%s sha1=%s…",
+                item.cote, nom, sha1[:12],
+            )
         reponse = client.creer_depot(
             metas=metas, files=uploades, status=statut,
             collections_ids=[collection_doi] if collection_doi else None,
@@ -240,11 +269,17 @@ def deposer_item(
         # Les `Fichier.sha1_nakala` éventuellement posés en mémoire ne
         # sont pas commités (db.commit() plus bas) — la session SQLAlchemy
         # les expire au rollback implicite.
+        logger.warning(
+            "depot item ECHEC cote=%s cleanup=%d uploads",
+            item.cote, len(sha1s),
+        )
         for sha1 in sha1s:
             try:
                 client.supprimer_upload(sha1)
-            except ErreurNakala:
-                pass
+            except ErreurNakala as exc:
+                logger.warning(
+                    "depot item cleanup KO sha1=%s… : %s", sha1[:12], exc,
+                )
         raise
 
     doi = extraire_doi(reponse)
@@ -252,6 +287,10 @@ def deposer_item(
     item.modifie_par = cree_par
     item.modifie_le = datetime.now()
     db.commit()
+    logger.info(
+        "depot item COMMIT cote=%s doi=%s nb_uploades=%d",
+        item.cote, doi, len(uploades),
+    )
 
     return RapportDepot(
         cote=item.cote, dry_run=False, doi=doi,
@@ -352,6 +391,12 @@ def deposer_collection(
         collection_doi=collection.doi_nakala,
     )
 
+    total = len(collection.items)
+    logger.info(
+        "depot collection START cote=%s dry_run=%s nb_items=%d doi_existant=%s",
+        collection.cote, dry_run, total, collection.doi_nakala or "—",
+    )
+
     # Cible collection : existante, créée (réel), ou prévue (dry-run).
     if not collection.doi_nakala and not dry_run:
         reponse = client.creer_collection(
@@ -361,8 +406,11 @@ def deposer_collection(
         rapport.collection_creee = True
         collection.doi_nakala = rapport.collection_doi
         db.commit()
+        logger.info(
+            "depot collection ENTITE CREEE cote=%s doi=%s statut=%s",
+            collection.cote, rapport.collection_doi, statut_collection,
+        )
 
-    total = len(collection.items)
     for index, item in enumerate(collection.items, start=1):
         try:
             r = deposer_item(
@@ -386,6 +434,12 @@ def deposer_collection(
         # in-memory sans I/O — pas de cas d'echec realiste.
         if progress is not None:
             progress(item.cote, index, total)
+
+    logger.info(
+        "depot collection END cote=%s deposes=%d sautes=%d non_deposables=%d erreurs=%d",
+        collection.cote, len(rapport.deposes), len(rapport.sautes),
+        len(rapport.non_deposables), len(rapport.erreurs),
+    )
     return rapport
 
 
@@ -540,13 +594,26 @@ def pousser_item(
         diffs=diffs, derive=derive,
     )
     if dry_run or not diffs:
+        logger.info(
+            "push item metas %s cote=%s doi=%s diffs=%d derive=%s",
+            "dry-run" if dry_run else "no-op",
+            item.cote, item.doi_nakala, len(diffs), derive,
+        )
         return rapport
 
+    logger.info(
+        "push item metas START cote=%s doi=%s diffs=%d derive=%s",
+        item.cote, item.doi_nakala, len(diffs), derive,
+    )
     client_ecriture.modifier_depot(item.doi_nakala, metas=metas_locales)
     # Rafraîchit la baseline (recupere_le + metadonnees_brutes) pour le prochain push.
     brut2 = client_lecture.lire_depot(item.doi_nakala)
     mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
     rapport.applique = True
+    logger.info(
+        "push item metas COMMIT cote=%s doi=%s diffs=%d",
+        item.cote, item.doi_nakala, len(diffs),
+    )
     return rapport
 
 
@@ -578,7 +645,15 @@ def publier_item(
         )
     rapport = RapportPublication(cote=item.cote, doi=item.doi_nakala, dry_run=dry_run)
     if dry_run:
+        logger.info(
+            "publication item dry-run cote=%s doi=%s",
+            item.cote, item.doi_nakala,
+        )
         return rapport
+    logger.warning(
+        "publication item IRREVERSIBLE START cote=%s doi=%s",
+        item.cote, item.doi_nakala,
+    )
     metas_locales = _metas_locales(item, licence_defaut)
     client_ecriture.modifier_depot(
         item.doi_nakala, metas=metas_locales, status="published"
@@ -586,6 +661,10 @@ def publier_item(
     brut2 = client_lecture.lire_depot(item.doi_nakala)
     mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
     rapport.applique = True
+    logger.info(
+        "publication item OK cote=%s doi=%s (DOI DataCite minte)",
+        item.cote, item.doi_nakala,
+    )
     return rapport
 
 
@@ -630,11 +709,24 @@ def pousser_metadonnees_collection(
         cote=collection.cote, doi=collection.doi_nakala, dry_run=dry_run, diffs=diffs,
     )
     if dry_run or not diffs:
+        logger.info(
+            "push entite collection %s cote=%s doi=%s diffs=%d",
+            "dry-run" if dry_run else "no-op",
+            collection.cote, collection.doi_nakala, len(diffs),
+        )
         return rapport
+    logger.info(
+        "push entite collection START cote=%s doi=%s diffs=%d",
+        collection.cote, collection.doi_nakala, len(diffs),
+    )
     client_ecriture.modifier_collection(
         collection.doi_nakala, metas=fusionnees, status=statut
     )
     rapport.applique = True
+    logger.info(
+        "push entite collection COMMIT cote=%s doi=%s",
+        collection.cote, collection.doi_nakala,
+    )
     return rapport
 
 
@@ -667,6 +759,11 @@ def pousser_collection(
     `non_lies` ; sans diff → `inchanges` ; échec → `erreurs` (n'arrête pas
     le lot)."""
     rapport = RapportPushCollection(collection_cote=collection.cote, dry_run=dry_run)
+    nb_items = len(collection.items)
+    logger.info(
+        "push collection START cote=%s dry_run=%s nb_items=%d doi_collection=%s",
+        collection.cote, dry_run, nb_items, collection.doi_nakala or "—",
+    )
     if collection.doi_nakala:
         try:
             rapport.meta_collection = pousser_metadonnees_collection(
@@ -690,6 +787,11 @@ def pousser_collection(
             rapport.pousses.append(r)
         else:
             rapport.inchanges.append(item.cote)
+    logger.info(
+        "push collection END cote=%s pousses=%d inchanges=%d non_lies=%d erreurs=%d",
+        collection.cote, len(rapport.pousses), len(rapport.inchanges),
+        len(rapport.non_lies), len(rapport.erreurs),
+    )
     return rapport
 
 
@@ -719,6 +821,17 @@ def publier_collection(
     rapport = RapportPublicationCollection(
         collection_cote=collection.cote, dry_run=dry_run
     )
+    nb_items = len(collection.items)
+    if not dry_run:
+        logger.warning(
+            "publication collection IRREVERSIBLE START cote=%s nb_items=%d",
+            collection.cote, nb_items,
+        )
+    else:
+        logger.info(
+            "publication collection dry-run cote=%s nb_items=%d",
+            collection.cote, nb_items,
+        )
     for item in collection.items:
         if not item.doi_nakala:
             rapport.non_lies.append(item.cote)
@@ -732,4 +845,9 @@ def publier_collection(
             rapport.erreurs.append((item.cote, str(exc)))
             continue
         rapport.publies.append(item.cote)
+    logger.info(
+        "publication collection END cote=%s publies=%d non_lies=%d erreurs=%d",
+        collection.cote, len(rapport.publies),
+        len(rapport.non_lies), len(rapport.erreurs),
+    )
     return rapport

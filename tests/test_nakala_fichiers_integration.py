@@ -150,6 +150,114 @@ def test_comparer_fichiers_live(tmp_path: Path) -> None:
         lecture.fermer()
 
 
+def test_pousser_fichiers_live_avec_retirer_orphelins(tmp_path: Path) -> None:
+    """Smoke d'intégration P3+c — cas `--retirer-orphelins` réel.
+
+    Cycle :
+    1. Déposer item avec 2 fichiers (alpha + beta)
+    2. Supprimer le Fichier ColleC beta (sans toucher au binaire)
+    3. comparer → beta apparait en orphelin distant
+    4. pousser_fichiers sans flag → OrphelinsDetectes
+    5. pousser_fichiers avec retirer_orphelins=True → PUT, beta retire
+    6. lire_depot distant → confirme 1 seul fichier restant (alpha)
+    7. Cleanup
+
+    Valide bout-en-bout H1 (retrait par exclusion de files[]) + la
+    garde-fou `retirer_orphelins` requis."""
+    from archives_tool.api.services.nakala_fichiers import OrphelinsDetectes
+    from sqlalchemy import delete
+
+    db = _amorcer_db(tmp_path)
+    scans = tmp_path / "scans"
+    scans.mkdir(exist_ok=True)
+    (scans / "alpha.jpg").write_bytes(b"\xff\xd8\xff ALPHA smoke orph")
+    (scans / "beta.jpg").write_bytes(b"\xff\xd8\xff BETA smoke orph")
+
+    racines = {"scans": scans}
+    ecriture = NakalaEcritureClient(HOTE, api_key=CLE, timeout=60)
+    lecture = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
+    doi: str | None = None
+    try:
+        # 1. Setup item avec 2 fichiers locaux + dépôt
+        with _session(db) as s:
+            f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS smoke orph"))
+            item = creer_item(s, FormulaireItem(
+                cote="AS-001", titre="Orph smoke", fonds_id=f.id, date="1984",
+                langue="spa", description="Smoke orph", type_coar=_TYPE_LIVRE,
+                metadonnees={"createurs": ["Test, H."]},
+            ))
+            for i, nom in enumerate(["alpha.jpg", "beta.jpg"], start=1):
+                s.add(Fichier(
+                    item_id=item.id, nom_fichier=nom, racine="scans",
+                    chemin_relatif=nom, ordre=i,
+                ))
+            s.commit()
+            rapport_depot = deposer_item(
+                s, ecriture, item, racines=racines,
+                dry_run=False, cree_par="smoke-orph",
+            )
+        doi = rapport_depot.doi
+        assert doi
+
+        # 2. Supprimer le Fichier ColleC beta (sans toucher au binaire)
+        with _session(db) as s:
+            s.execute(
+                delete(Fichier).where(
+                    Fichier.item_id == s.scalar(
+                        select(Item.id).where(Item.cote == "AS-001")
+                    ),
+                    Fichier.nom_fichier == "beta.jpg",
+                )
+            )
+            s.commit()
+
+        # 3. Comparer : beta apparait en orphelin distant
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            cmp_avant = comparer_fichiers_item(
+                s, lecture, item, racines=racines,
+            )
+        assert len(cmp_avant.orphelins_distants) == 1
+        assert cmp_avant.orphelins_distants[0].nom_fichier == "beta.jpg"
+
+        # 4. Pousser sans flag → OrphelinsDetectes
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            with pytest.raises(OrphelinsDetectes):
+                pousser_fichiers_item(
+                    s, lecture, ecriture, item, racines=racines,
+                    dry_run=False, retirer_orphelins=False,
+                )
+
+        # 5. Pousser avec retirer_orphelins=True → PUT, beta retire
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            rapport_push = pousser_fichiers_item(
+                s, lecture, ecriture, item, racines=racines,
+                dry_run=False, retirer_orphelins=True,
+            )
+        assert rapport_push.applique is True
+        # 0 upload (alpha est inchange), beta sera retire au PUT
+        assert rapport_push.sha1s_uploades == []
+        # Le rapport documente le retrait
+        assert len(rapport_push.sha1s_retires) == 1
+
+        # 6. Lire_depot distant : 1 seul fichier restant (alpha)
+        apres = lecture.lire_depot(doi)
+        files_apres = apres.get("files") or []
+        assert len(files_apres) == 1, files_apres
+        assert files_apres[0].get("name") == "alpha.jpg"
+
+    finally:
+        if doi:
+            try:
+                ecriture.supprimer_depot(doi)
+            except Exception:  # noqa: BLE001
+                pass
+        ecriture.fermer()
+        lecture.fermer()
+
+
 def test_pousser_fichiers_live(tmp_path: Path) -> None:
     """Smoke d'intégration P3+c — cycle complet pousser_fichiers_item :
 

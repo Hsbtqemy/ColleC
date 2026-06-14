@@ -2689,6 +2689,21 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Documenter la CLI Nakala dans `docs/guide/cli/nakala.md`.**
+      La CLI Nakala compte 14 sous-commandes au total (`montrer`,
+      `rapatrier`, `rafraichir`, `rapatrier-collection`,
+      `rafraichir-collection`, `exporter-tableur`, `deposer`,
+      `deposer-collection`, `pousser`, `publier`,
+      `pousser-collection`, `publier-collection`, `comparer-fichiers`,
+      `pousser-fichiers`). **Aucune n'a de page guide utilisateur** :
+      seules les 10 commandes non-Nakala (`importer`, `fonds`,
+      `collections`, `items`, `exporter`, `controler`, `montrer`,
+      `renommer`, `deriver`, etc.) sont documentées dans
+      `docs/guide/cli/`. L'utilisateur découvre les commandes Nakala
+      par `--help` seulement. Chantier dédié : créer `nakala.md`
+      structurée par flux (lecture, rapatriement, dépôt, push, push
+      fichiers, publication), nav `mkdocs.yml` à étendre, références
+      croisées vers `nakala-depot-future.md`. Probable 1 session.
 - [ ] **`Fichier.description_externe` : transcription par fichier.**
       Cas d'usage stratégique pour ColleC : pour chaque scan d'une
       collection (revue numérisée, correspondance, manuscrits,

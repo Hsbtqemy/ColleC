@@ -862,6 +862,69 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
         assert fichiers[2].sha1_nakala.startswith("upload-")  # nouveau
 
 
+def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Passe revue P3+c.1 : le plan envoye au PUT respecte
+    `Fichier.ordre`, pas l'ordre des categories.
+
+    H5 validee contre apitest confirme que Nakala preserve l'ordre du
+    `files[]` envoye. Sans tri explicite, le plan serait : inchanges
+    puis modifies puis nouveaux puis nakala_only → perte de coherence
+    d'affichage ColleC ↔ Nakala.
+
+    Cas test : 4 fichiers ordres 1/2/3/4 repartis dans differentes
+    categories. Verifie que le plan ET le PUT envoye respectent
+    l'ordre 1/2/3/4."""
+    contenu_inchange = b"unchanged at order 2"
+    sha1_inchange = _sha1(contenu_inchange)
+    contenu_modifie = b"new content at order 1"
+    sha1_modifie_ancien = "z" * 40
+    contenu_nouveau = b"new file at order 4"
+    sha1_nakala_only = "y" * 40
+
+    # Distant : sha1_inchange + sha1_modifie_ancien + sha1_nakala_only
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_modifie_ancien, "name": "ordre1.jpg"},
+        {"sha1": sha1_inchange, "name": "ordre2.jpg"},
+        {"sha1": sha1_nakala_only, "name": "ordre3.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # ordre=1 : modifie (binaire change + sha1_nakala ancien connu)
+            {"ordre": 1, "nom": "ordre1.jpg", "contenu": contenu_modifie,
+             "sha1_nakala": sha1_modifie_ancien},
+            # ordre=2 : inchange (sha1 matche distant)
+            {"ordre": 2, "nom": "ordre2.jpg", "contenu": contenu_inchange,
+             "sha1_nakala": sha1_inchange},
+            # ordre=3 : nakala-only (binaire local absent)
+            {"ordre": 3, "nom": "ordre3.jpg", "contenu": None,
+             "iiif_url_nakala": "https://x/y",
+             "sha1_nakala": sha1_nakala_only},
+            # ordre=4 : nouveau (jamais depose)
+            {"ordre": 4, "nom": "ordre4.jpg", "contenu": contenu_nouveau,
+             "sha1_nakala": None},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    # Le plan respecte l'ordre Fichier (1-2-3-4)
+    assert [p.ordre for p in rapport.plan] == [1, 2, 3, 4]
+    assert [p.nom_fichier for p in rapport.plan] == [
+        "ordre1.jpg", "ordre2.jpg", "ordre3.jpg", "ordre4.jpg",
+    ]
+    # Et le PUT envoye preserve aussi cet ordre (H5)
+    files_envoyes = ecriture.puts[0]["files"]
+    assert [f["name"] for f in files_envoyes] == [
+        "ordre1.jpg", "ordre2.jpg", "ordre3.jpg", "ordre4.jpg",
+    ]
+
+
 def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
     db_path: Path, tmp_path: Path,
 ) -> None:

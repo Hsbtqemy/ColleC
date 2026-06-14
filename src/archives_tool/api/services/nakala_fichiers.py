@@ -345,12 +345,17 @@ class PlanPushFichier:
     Concentre les 3 sources possibles : un Fichier déjà connu de Nakala
     (inchangé, ou inchangé renommé via H7), un fichier uploadé pendant
     le push (nouveau ou modifié), un Fichier Nakala-only sans local.
+
+    L'attribut ``ordre`` (depuis ``Fichier.ordre`` de ColleC) est utilisé
+    pour trier le plan avant le PUT — H5 confirme que Nakala préserve
+    l'ordre envoyé. Cohérence d'affichage ColleC ↔ Nakala garantie.
     """
 
     fichier_id: int | None  # None pour Nakala-only et orphelins préservés
     nom_fichier: str
     sha1: str
     categorie: str  # "inchange" | "rename" | "nouveau" | "modifie" | "nakala_only"
+    ordre: int  # rang d'affichage cohérent ColleC ↔ Nakala
 
 
 @dataclass
@@ -392,18 +397,21 @@ def _construire_plan(
             fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
             sha1=fc.sha1_local or "",  # garanti non-None côté inchanges
             categorie="inchange",
+            ordre=fc.ordre,
         ))
     for fc in rapport_cmp.modifies:
         plan.append(PlanPushFichier(
             fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
             sha1=fc.sha1_local or "",  # sera ré-uploadé
             categorie="modifie",
+            ordre=fc.ordre,
         ))
     for fc in rapport_cmp.nouveaux:
         plan.append(PlanPushFichier(
             fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
             sha1=fc.sha1_local or "",  # sera uploadé
             categorie="nouveau",
+            ordre=fc.ordre,
         ))
     for fc in rapport_cmp.nakala_only_sans_local:
         # Préservés : on les inclut avec leur sha1_nakala connu.
@@ -412,7 +420,13 @@ def _construire_plan(
                 fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
                 sha1=fc.sha1_distant,
                 categorie="nakala_only",
+                ordre=fc.ordre,
             ))
+    # Tri par `Fichier.ordre` : Nakala respecte l'ordre du `files[]`
+    # envoyé (H5 validée). Sans ce tri, le PUT mettrait inchanges en
+    # premier puis modifies puis nouveaux puis nakala_only, perdant
+    # la cohérence d'affichage entre ColleC et Nakala.
+    plan.sort(key=lambda p: p.ordre)
     return plan
 
 

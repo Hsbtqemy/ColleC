@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
@@ -275,6 +276,77 @@ def test_orphelin_distant_quand_fichier_local_absent(
     assert rapport.orphelins_distants[0].sha1 == sha1_orphan
     assert rapport.orphelins_distants[0].nom_fichier == "perdu.jpg"
     assert not rapport.aucun_changement
+
+
+def test_distant_avec_sha1_vide_est_ignore(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Cas dégénéré côté Nakala : un `files[i]` distant sans sha1 (ou
+    avec sha1 vide). Le code défensif `if sha1:` skip cette entrée du
+    sha1_index — ne provoque ni crash, ni faux match. Le test garantit
+    que l'entrée dégénérée n'apparaît pas en orphelin et que le reste
+    de la comparaison fonctionne normalement."""
+    contenu = b"hello"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "a.jpg"},
+        {"sha1": "", "name": "degenere.jpg"},      # sha1 vide
+        {"sha1": None, "name": "null.jpg"},        # sha1 absent
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    # Le fichier valide est inchangé. Les 2 distants dégénérés ne
+    # remontent pas en orphelins (ils ne font pas partie du sha1_index).
+    assert len(rapport.inchanges) == 1
+    assert rapport.orphelins_distants == []
+    assert rapport.aucun_changement
+
+
+def test_racine_inconnue_dans_config_traite_comme_nakala_only(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Cas réaliste : la config locale a une racine manquante pour ce
+    poste. `resoudre_chemin` lève `KeyError` — le code catch silencieux
+    et classe le fichier en `nakala_only_sans_local` (pas crash, pas
+    classification erronée).
+
+    Cas typique : un fichier ColleC a `racine='scans_serveur'` mais
+    la config locale d'un dev n'a pas configuré cette racine — on
+    veut quand même pouvoir comparer les autres."""
+    sha1 = "abc" * 13 + "f"  # 40 hex
+    client = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
+    with _session(db_path) as s:
+        # Setup avec iiif_url_nakala pour passer le CHECK
+        # `ck_fichier_source_au_moins_une`, puis on override racine/
+        # chemin_relatif après insertion pour pointer sur une racine
+        # absente de la config — situation qu'on rencontre quand un
+        # dev a une config_local.yaml partielle.
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": None,
+             "iiif_url_nakala": "https://x/y", "sha1_nakala": sha1},
+        ])
+        fichier = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).one()
+        fichier.racine = "racine_qui_nexiste_pas"
+        fichier.chemin_relatif = "fichier_quelconque.jpg"
+        s.commit()
+        # Racines de config ne contiennent PAS "racine_qui_nexiste_pas"
+        # → resoudre_chemin lève KeyError, catché par le service.
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    # Le KeyError est catché → fichier traité comme Nakala-only
+    # (pas de binaire local résolvable).
+    assert len(rapport.nakala_only_sans_local) == 1
+    assert rapport.nakala_only_sans_local[0].sha1_local is None
+    # Le sha1 distant est apparié au nakala_only (pas orphelin).
+    assert rapport.orphelins_distants == []
 
 
 def test_combinaison_des_5_categories_simultanees(

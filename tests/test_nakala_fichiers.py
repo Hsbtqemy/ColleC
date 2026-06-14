@@ -21,6 +21,7 @@ from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
     OrphelinsDetectes,
     PushImpossible,
+    UploadInvalide,
     comparer_fichiers_item,
     pousser_fichiers_item,
 )
@@ -698,7 +699,10 @@ class _FakeClientEcriture:
     def uploader_fichier(self, chemin, nom=None):
         n = nom or Path(chemin).name
         self.uploads.append(n)
-        sha1 = f"upload-{len(self.uploads)}"
+        # Format sha1 hex 40 chars (valide _valider_sha1_uploade passe 7).
+        # Sequence : "0000…001", "0000…002", … pour traçabilité dans
+        # les asserts.
+        sha1 = f"{len(self.uploads):040x}"
         self.uploads_sha1s.append(sha1)
         return {"name": n, "sha1": sha1}
 
@@ -861,11 +865,13 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
     # L'inchange garde son sha1
     inchange_envoye = next(f for f in files if f["name"] == "i.jpg")
     assert inchange_envoye["sha1"] == sha1_inchange
-    # Le modifie + nouveau ont leur sha1 fraichement uploade
+    # Le modifie + nouveau ont leur sha1 fraichement uploade par le
+    # stub (format hex 40 chars, cf. _FakeClientEcriture). On verifie
+    # qu'ils sont dans la liste des sha1s capturees par le stub.
     modifie_envoye = next(f for f in files if f["name"] == "m.jpg")
-    assert modifie_envoye["sha1"].startswith("upload-")
+    assert modifie_envoye["sha1"] in ecriture.uploads_sha1s
     nouveau_envoye = next(f for f in files if f["name"] == "n.jpg")
-    assert nouveau_envoye["sha1"].startswith("upload-")
+    assert nouveau_envoye["sha1"] in ecriture.uploads_sha1s
     # 2 sha1s capturés
     assert len(rapport.sha1s_uploades) == 2
 
@@ -877,8 +883,8 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
             .order_by(Fichier.ordre)
         ).all()
         assert fichiers[0].sha1_nakala == sha1_inchange  # inchange
-        assert fichiers[1].sha1_nakala.startswith("upload-")  # modifie
-        assert fichiers[2].sha1_nakala.startswith("upload-")  # nouveau
+        assert fichiers[1].sha1_nakala in ecriture.uploads_sha1s  # modifie
+        assert fichiers[2].sha1_nakala in ecriture.uploads_sha1s  # nouveau
 
 
 def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
@@ -1027,8 +1033,9 @@ def test_pousser_cleanup_uploads_si_put_echoue(
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
-    # Cleanup : 1 sha1 supprime cote Nakala
-    assert ecriture.supprimes == ["upload-1"]
+    # Cleanup : 1 sha1 supprime cote Nakala (le seul uploade avant
+    # l'echec PUT, formate par le stub en hex 40 chars).
+    assert ecriture.supprimes == [f"{1:040x}"]
     # `sha1_nakala` non commite (rollback de fait via absence de commit)
     with _session(db_path) as s:
         fichier = s.scalars(
@@ -1543,3 +1550,131 @@ def test_comparer_dry_run_aucun_changement_si_seul_non_actif_existe(
         )
     assert len(rapport.non_actifs_a_retirer) == 1
     assert not rapport.aucun_changement
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 7 — Trou P : defense en profondeur sur le retour
+# uploader_fichier (sha1 vide / malforme / non-string)
+# ---------------------------------------------------------------------------
+
+
+class _FakeClientEcritureUploadMalforme:
+    """Stub `NakalaEcritureClient` qui retourne une reponse degradee
+    sur `uploader_fichier`. Le `pattern_reponse` controle le scenario."""
+
+    def __init__(self, pattern_reponse: dict | None | str) -> None:
+        self.pattern = pattern_reponse
+        self.uploads: list[str] = []
+        self.puts: list[dict] = []
+        self.supprimes: list[str] = []
+
+    def uploader_fichier(self, chemin, nom=None):
+        n = nom or Path(chemin).name
+        self.uploads.append(n)
+        return self.pattern
+
+    def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
+        self.puts.append({"id": identifiant, "metas": metas, "files": files,
+                          "status": status})
+        return {}
+
+    def supprimer_upload(self, sha1):
+        self.supprimes.append(sha1)
+
+
+@pytest.mark.parametrize("reponse,motif", [
+    (None, "dict"),  # pas un dict
+    ({}, "absent"),  # sha1 absent
+    ({"sha1": None}, "non-string"),  # sha1 None
+    ({"sha1": ""}, "longueur 0"),  # sha1 vide
+    ({"sha1": "   "}, "longueur 0"),  # sha1 whitespace
+    ({"sha1": "abc"}, "longueur 3"),  # sha1 trop court
+    ({"sha1": "z" * 40}, "non-hex"),  # 40 chars mais non-hex
+])
+def test_pousser_upload_invalide_leve_exception_propre(
+    db_path: Path, tmp_path: Path, reponse, motif,
+) -> None:
+    """Toute reponse degradee d'`uploader_fichier` doit lever
+    `UploadInvalide` AVANT le PUT, pas planter en KeyError / TypeError /
+    AttributeError au coeur du code.
+    """
+    contenu = b"nouveau fichier"
+    lecture = _FakeClientLecture(files=[])  # distant vide → tout est nouveau
+    ecriture = _FakeClientEcritureUploadMalforme(reponse)
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        with pytest.raises(UploadInvalide) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    # Le message d'erreur cite la cause (motif partiel attendu)
+    assert motif in str(exc_info.value).lower() or motif in str(exc_info.value)
+    # Aucun PUT envoye (echec avant)
+    assert ecriture.puts == []
+
+
+def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si on a N fichiers a uploader et que le 2e retourne un sha1
+    invalide, le 1er upload reussi doit etre nettoye via
+    `supprimer_upload` (best-effort) avant que l'exception propage.
+
+    Defense en profondeur contre les fuites d'uploads orphelins cote
+    Nakala. Le cleanup ne nettoie QUE les sha1 valides accumules avant
+    l'echec - le sha1 invalide n'est jamais ajoute a `sha1s_uploades`
+    (validation prealable).
+    """
+
+    class _StubAvecPremierOK:
+        def __init__(self):
+            self.compteur_upload = 0
+            self.uploads: list[str] = []
+            self.puts: list[dict] = []
+            self.supprimes: list[str] = []
+
+        def uploader_fichier(self, chemin, nom=None):
+            self.compteur_upload += 1
+            self.uploads.append(nom or Path(chemin).name)
+            if self.compteur_upload == 1:
+                # 1er upload : sha1 valide
+                return {"sha1": "a" * 40, "name": nom}
+            # 2e upload : sha1 vide → UploadInvalide
+            return {"sha1": ""}
+
+        def modifier_depot(self, identifiant, *, metas=None, files=None,
+                          status=None):
+            self.puts.append({"id": identifiant})
+            return {}
+
+        def supprimer_upload(self, sha1):
+            self.supprimes.append(sha1)
+
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _StubAvecPremierOK()
+
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "premier.jpg",
+             "contenu": b"premier", "sha1_nakala": None},
+            {"ordre": 2, "nom": "second.jpg",
+             "contenu": b"second", "sha1_nakala": None},
+        ])
+        with pytest.raises(UploadInvalide):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    # Le 1er upload reussi est nettoye, le 2e (invalide) ne l'est pas
+    # (jamais ajoute a `sha1s_uploades`).
+    assert ecriture.supprimes == ["a" * 40]
+    # Aucun PUT envoye (echec apres upload du 2e, avant PUT)
+    assert ecriture.puts == []

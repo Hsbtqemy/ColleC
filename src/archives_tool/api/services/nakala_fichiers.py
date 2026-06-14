@@ -47,6 +47,47 @@ from archives_tool.models.enums import EtatFichier
 #: Taille de chunk pour le streaming SHA-1 — 8 KiB.
 _TAILLE_CHUNK_SHA1 = 8192
 
+#: Longueur exacte d'un SHA-1 en hex lowercase (160 bits / 4 bits par
+#: caractère = 40). Sert à valider les sha1 retournés par
+#: `uploader_fichier` avant de les envoyer au `PUT /datas/{id}`.
+_LONGUEUR_SHA1_HEX = 40
+#: Caractères valides pour un sha1 hex après normalisation lowercase.
+_HEX_LOWERCASE = frozenset("0123456789abcdef")
+
+
+def _valider_sha1_uploade(desc: object, contexte: str) -> str:
+    """Valide la réponse d'`uploader_fichier` et renvoie le sha1
+    normalisé.
+
+    Lève `UploadInvalide` si la réponse est inexploitable. Le contexte
+    (nom du fichier qu'on uploadait) est inclus dans le message pour
+    aider au diagnostic — un upload réussi techniquement mais avec un
+    sha1 invalide n'est pas immédiatement visible côté logs sinon.
+    """
+    if not isinstance(desc, dict):
+        raise UploadInvalide(
+            f"uploader_fichier({contexte!r}) a retourné "
+            f"{type(desc).__name__} au lieu d'un dict."
+        )
+    sha1_brut = desc.get("sha1")
+    if not isinstance(sha1_brut, str):
+        raise UploadInvalide(
+            f"uploader_fichier({contexte!r}) : champ 'sha1' absent ou "
+            f"non-string (type={type(sha1_brut).__name__})."
+        )
+    sha1_norm = sha1_brut.strip().lower()
+    if len(sha1_norm) != _LONGUEUR_SHA1_HEX:
+        raise UploadInvalide(
+            f"uploader_fichier({contexte!r}) : sha1 de longueur "
+            f"{len(sha1_norm)} (attendu {_LONGUEUR_SHA1_HEX})."
+        )
+    if not all(c in _HEX_LOWERCASE for c in sha1_norm):
+        raise UploadInvalide(
+            f"uploader_fichier({contexte!r}) : sha1 contient des "
+            f"caractères non-hex."
+        )
+    return sha1_norm
+
 
 class ComparaisonImpossible(Exception):
     """Item sans `doi_nakala` : pas de dépôt distant à comparer."""
@@ -81,6 +122,26 @@ class PushImpossible(Exception):
     que ``PUT files=[]`` est silencieusement ignoré côté Nakala —
     la liste cible ne peut pas être vide. Pour vider un dépôt, passer
     par ``supprimer_depot`` puis re-déposer.
+    """
+
+
+class UploadInvalide(Exception):
+    """`client_ecriture.uploader_fichier` a retourné une réponse
+    inexploitable (sha1 absent / vide / non-string / longueur ≠ 40 /
+    caractères non-hex).
+
+    Cause typique : bug d'un proxy entre ColleC et Nakala qui munge la
+    réponse JSON ; ou changement non documenté du format Nakala ; ou
+    bug d'implémentation d'un client mock dans les tests.
+
+    Pourquoi loud : sans validation, on enverrait ce sha1 invalide tel
+    quel au ``PUT /datas/{id}`` → Nakala lèverait HTTP 404 (H4 : sha1
+    inconnu), le cleanup des uploads précédents pourrait à son tour
+    planter sur ``supprimer_upload("")`` selon l'implémentation client
+    → fuite d'uploads orphelins côté Nakala et état incohérent local.
+
+    Le service catche l'exception au niveau du ``try`` global et
+    déclenche le cleanup best-effort des uploads précédemment réussis.
     """
 
 
@@ -574,6 +635,9 @@ def pousser_fichiers_item(
             silencieuse de fichier distant au PUT.
         OrphelinsDetectes: orphelins distants sans flag.
         PushImpossible: ``files_cible == []`` (cas H3).
+        UploadInvalide: ``uploader_fichier`` retourne une réponse
+            inexploitable (sha1 vide / malformé / non-string). Cleanup
+            best-effort des uploads précédents avant propagation.
         ErreurNakala: échec du ``lire_depot``, ``uploader_fichier`` ou
             ``modifier_depot`` (propagé).
     """
@@ -682,7 +746,9 @@ def pousser_fichiers_item(
                 racines, fichier_orm.racine, fichier_orm.chemin_relatif,
             )
             desc = client_ecriture.uploader_fichier(chemin, fc.nom_fichier)
-            sha1_neuf = desc["sha1"].strip().lower()
+            # Defense en profondeur : valider la reponse avant de
+            # l'envoyer au PUT. Sha1 vide / malforme = trou P passe 7.
+            sha1_neuf = _valider_sha1_uploade(desc, fc.nom_fichier)
             sha1s_uploades.append(sha1_neuf)
             nouveaux_sha1_par_fichier[fc.fichier_id] = sha1_neuf
 

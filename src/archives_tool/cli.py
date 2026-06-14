@@ -79,6 +79,7 @@ from archives_tool.api.services.nakala_fichiers import (
     BackfillIncomplet,
     OrphelinsDetectes,
     PushImpossible,
+    UploadInvalide,
     comparer_fichiers_item,
     pousser_fichiers_item,
 )
@@ -3088,6 +3089,14 @@ def cmd_nakala_pousser_fichiers(
             raise typer.Exit(1) from None
         except PushImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except UploadInvalide as e:
+            typer.echo(f"Erreur upload Nakala invalide : {e}", err=True)
+            typer.echo(
+                "Cleanup des uploads precedents tente. Verifier l'etat distant "
+                "via `archives-tool nakala montrer <cote>` avant de relancer.",
+                err=True,
+            )
             raise typer.Exit(1) from None
         except ErreurNakala as e:
             typer.echo(f"Erreur Nakala : {e}", err=True)

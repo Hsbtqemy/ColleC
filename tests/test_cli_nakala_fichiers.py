@@ -388,7 +388,8 @@ class _FakeWriteClient:
         from pathlib import Path as _P
         n = nom or _P(chemin).name
         self.uploads.append(n)
-        sha1 = f"upload-{len(self.uploads)}"
+        # Format hex 40 chars (cf. _valider_sha1_uploade passe 7).
+        sha1 = f"{len(self.uploads):040x}"
         self.uploads_sha1s.append(sha1)
         return {"name": n, "sha1": sha1}
 
@@ -666,9 +667,11 @@ def test_pousser_format_json_mode_applique(
     assert data["applique"] is True
     assert data["dry_run"] is False
     assert data["raison"] is None
-    # 1 upload pour le modifie
+    # 1 upload pour le modifie (sha1 hex 40 chars valide _valider_sha1_uploade)
     assert len(data["sha1s_uploades"]) == 1
-    assert data["sha1s_uploades"][0].startswith("upload-")
+    sha1_uploade = data["sha1s_uploades"][0]
+    assert len(sha1_uploade) == 40
+    assert all(c in "0123456789abcdef" for c in sha1_uploade)
     # Plan contient le sha1 PREVISIONNEL (sha1_local = sha1 du binaire),
     # PAS le sha1 uploade. Documente la convention.
     assert len(data["plan"]) == 1

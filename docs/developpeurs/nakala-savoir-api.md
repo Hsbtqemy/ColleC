@@ -1,0 +1,357 @@
+# Nakala — comportement réel de l'API (savoir validé)
+
+> Document interne, exclu du build MkDocs. **Référence opérationnelle** :
+> ce que ColleC a *découvert et testé en live* contre l'API Nakala, par
+> opposition au document de **conception/architecture**
+> [`nakala-depot-future.md`](nakala-depot-future.md) (le « pourquoi » et le
+> phasage) et au **guide d'usage** [`../guide/cli/nakala.md`](../guide/cli/nakala.md)
+> (le « comment s'en servir »). Ici on consigne le **« comment l'API se
+> comporte vraiment »** — endpoints, payloads, quirks, bugs rencontrés.
+>
+> Origine du savoir : sondes live `scripts/explorer_put_files_nakala.py`
+> (hypothèses H1-H11 contre `apitest.nakala.fr`), les 5 tests d'intégration
+> opt-in `tests/test_nakala_*_integration.py`, le code client
+> `src/archives_tool/external/nakala/`, et les découvertes accumulées dans
+> `CLAUDE.md`. Validé pour la dernière fois contre apitest le **2026-06-14**.
+
+---
+
+## En bref
+
+ColleC possède son propre chemin Nakala **lecture + écriture** (sans
+couplage madbot), couvrant le cycle complet :
+**lire → rapatrier → déposer → pousser métadonnées → pousser fichiers →
+publier**. Trois découvertes ont coûté du sang :
+
+1. **Bug langue #422** — Nakala type `dcterms:language` en RFC5646 (ISO
+   639-1, `es`) alors que ColleC stocke en ISO 639-3 (`spa`) → dépôt/push
+   rejeté en 422.
+2. **Canonicalisation des créateurs** — Nakala enrichit les créateurs au
+   stockage, créant de faux diffs à chaque push si on ne canonicalise pas.
+3. **`PUT /datas` remplace intégralement `files[]`** — sémantique
+   « remplace », pas « ajoute » ; omettre un fichier le supprime.
+
+---
+
+## 1. Instances & authentification
+
+| | Test | Production |
+|---|---|---|
+| Hôte | `https://apitest.nakala.fr` (alias `api-test.nakala.fr`) | `https://api.nakala.fr` |
+| DOI | réservables, **aucun mint DataCite** | DOI réels minés |
+| Publication | réversible (cleanup possible) | **irréversible** |
+| Cleanup | `DELETE` sur pending/private | idem mais publié = définitif |
+
+- **Header d'auth : `X-API-KEY`** (la clé est passée dans l'en-tête HTTP).
+- **Lecture** : clé *facultative* pour les dépôts publiés, *obligatoire*
+  pour privé / pending / sous embargo.
+- **Écriture** : clé *obligatoire* — `NakalaEcritureClient` échoue à la
+  construction si elle manque (fail-fast).
+- **Compte de test public Huma-Num** (non secret, pour apitest) :
+  `01234567-89ab-cdef-0123-456789abcdef`.
+- **Config ColleC** : section `nakala: { base_url, api_key, timeout }`.
+- **Variables d'env de test** : `NAKALA_API_KEY`, `NAKALA_HOST`,
+  `NAKALA_ALLOW_PUBLISH=1` (garde la publication irréversible derrière un
+  flag pour ne pas minter à chaque run de test).
+- **Timeouts retenus** : **30 s en lecture**, **60 s en écriture** (Nakala
+  est lent sur cache froid ; les uploads sont longs).
+
+## 2. Endpoints
+
+### Lecture
+
+| Endpoint | Rôle | Notes |
+|---|---|---|
+| `GET /datas/{id}` | Lire un dépôt | renvoie `metas`, `files`, `status`, `identifier`, `version` |
+| `GET /collections/{id}` | Lire une collection | `metas`, `status` (`private`/`public`) |
+| `GET /collections/{id}/datas?page=N&limit=M` | Lister les données d'une collection (paginé) | renvoie **déjà les `files` complets → pas de N+1** |
+| `POST /users/datas/{scope}` | Lister ce que la clé voit | **POST qui lit**, corps `{}` ; `scope` = readable/owned/deposited |
+| `POST /users/collections/{scope}` | Idem pour les collections | idem |
+
+### Écriture
+
+| Endpoint | Rôle | Notes |
+|---|---|---|
+| `POST /datas/uploads` | Upload multipart (champ `file`) | renvoie `{name, sha1}` — le sha1 est la poignée du fichier |
+| `POST /datas` | Créer un dépôt | corps `{status, files:[{sha1,name}], metas:[…], collectionsIds?}` |
+| `PUT /datas/{id}` | Modifier un dépôt | chaque clé optionnelle ; **omise = préservée** |
+| `POST /collections` | Créer une collection | corps `{status, metas:[], datas?:[doi…]}` |
+| `PUT /collections/{id}` | Modifier une collection | **renvoie 204** |
+| `POST /datas/{id}/collections` | Rattacher un dépôt à des collections | additif (corps = liste de DOI) |
+| `DELETE /datas/{id}` | Supprimer un dépôt | **pending uniquement** |
+| `DELETE /collections/{id}` | Supprimer une collection | private/pending |
+| `DELETE /datas/uploads/{sha1}` | Nettoyer un upload orphelin | du stockage temporaire (cleanup best-effort) |
+
+### Pièges de structure de réponse
+
+- **DOI à la création** : `POST /datas` peut renvoyer le DOI sous
+  plusieurs formes (`payload.id`, `payload.identifier`, ou `identifier`
+  au premier niveau) → extracteur tolérant requis (`extraire_doi`).
+- **Listing paginé** : `{ data: […], page, limit, lastPage }` — la clé est
+  **`data` au singulier**, pas `datas`. Pagination 1-based, `limit` max
+  100 (ColleC utilise 25 en lecture, 50 dans l'itérateur de collection).
+  L'itérateur borne le bouclage par `lastPage` lu sur la 1ʳᵉ page
+  (anti-boucle infinie).
+
+## 3. Modèle de données
+
+### Donnée (data) vs Fichier (file)
+
+Une **donnée** Nakala = un **Item** ColleC ; elle porte **N fichiers**. La
+granularité donnée/fichier n'est qu'une option d'aplatissement du tableur
+d'export ; un pull en base produit toujours **1 Item portant N Fichier**
+(granularité native ColleC).
+
+### Structure d'une « meta » (cœur du modèle)
+
+```json
+{
+  "propertyUri": "http://nakala.fr/terms#title",
+  "value": "…",        // str | dict | null
+  "lang": "fr",         // optionnel — multilingue, RFC5646 / ISO 639-1
+  "typeUri": "…"        // optionnel — W3CDTF, Period, Point, Box…
+}
+```
+
+PropertyUri repérés :
+
+- **Obligatoires Nakala (`nkl:*`)** :
+  `http://nakala.fr/terms#type` (type COAR), `#title`, `#creator`,
+  `#created`, `#license`.
+- **Dublin Core (`dcterms:*`)** :
+  `http://purl.org/dc/terms/description`, `/subject`, `/language`,
+  `/spatial`, `/temporal`, `/contributor`, `/relation`, etc.
+
+La **carte de vérité** côté ColleC est `SLUG_TO_NAKALA` (**57 champs**)
+dans `external/nakala/depot_mapper.py` (portée du plugin madbot puis
+découplée). Lecture inverse : `PROPERTY_URI_TO_SLUG` dans `mapper.py`.
+
+### Créateur
+
+Objet `{surname, givenname, orcid?}` ou chaîne `"Nom, Prénom [ORCID]"`.
+Sentinelles anonymes (`[s.n.]`, `anonyme`) → `null`.
+
+**Cascade preflight** (`external/nakala/preflight.py`) : si `nkl:creator`
+résout à null, ColleC tente de le promouvoir depuis `dcterms:creator` bien
+formé ; à défaut exige au moins un `dcterms:creator`/`dcterms:contributor`,
+sinon `MetaInvalide`. → créateur **de facto obligatoire**. Même logique
+pour la date (`nkl:created` ← `dcterms:date` W3CDTF valide).
+
+### Fichier (dans une réponse `GET /datas`)
+
+```json
+{
+  "name": "scan_0001.jpg",
+  "sha1": "da39a3ee…",          // 40 hex — poignée du fichier
+  "size": 12345,                 // octets
+  "mime_type": "image/jpeg",     // API expose "mime_type" (code accepte aussi "mime")
+  "embargoed": "2025-12-31T…"|null,
+  "extension": "jpg",
+  "puid": "fmt/43",              // Pronom (optionnel)
+  "format": "JPEG",             // Pronom label (optionnel)
+  "description": "…"            // optionnel (cf. H11)
+}
+```
+
+### Dates
+
+Format **W3CDTF** : `YYYY`, `YYYY-MM`, `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM:SS`
+avec timezone `Z`/`±HH:MM`. Sentinelle `[s.d.]`/`inconnue` → null.
+
+### DOI / identifiant
+
+Format `10.34847/nkl.xxxxxxxx` (registrant Huma-Num), variante versionnée
+`…​.vN`. `normaliser_identifiant_nakala` extrait le DOI d'une URL
+(`nakala.fr/collection/…`), d'un `doi:…` ou d'un DOI nu (regex
+`10\.\d+/[^\s/?#]+`) ; best-effort, sinon saisie rendue telle quelle (404
+propre en aval).
+
+## 4. Vocabulaires — impédances de schéma
+
+### Langues ⚠️ (origine du bug #422)
+
+- **Nakala** type `dcterms:language` en **RFC5646 / ISO 639-1** pour les
+  majeurs (`fr`, `en`, `es`) + 639-3 pour la longue traîne.
+- **ColleC** stocke en **ISO 639-3** (`fra`, `eng`, `spa`).
+- Pont nécessaire dans les deux sens :
+  - écriture : `depot_mapper.langue_vers_nakala` (639-3 → 639-1), appliqué
+    à la **valeur** ET à l'attribut **`lang`** des littéraux multilingues
+    dans `item_vers_slugs` ;
+  - lecture : table `_ISO1_VERS_ISO3` dans `mapper.py`.
+
+### Types COAR
+
+Le set accepté au dépôt Nakala = **29 types**. Un audit a révélé **9 URIs
+ColleC fausses sur 15** — notamment `c_12cd` étiqueté « Vidéo » alors que
+c'est « carte géographique » (la vidéo = `c_12ce`). Corrigé en V0.9.10 :
+
+- vocabulaire interne riche (**32 types** = 29 Nakala + 3 extras :
+  Chapitre de livre, Document de travail, Photographie) ;
+- projection `COAR_INTERNE_VERS_NAKALA` + `type_coar_pour_nakala()` qui
+  ramène les 3 extras vers une cible Nakala à l'export ;
+- migration `r6v7w8x9y0z1` (remap de l'existant, non bijective, pas de
+  downgrade).
+
+### Licences
+
+`licenses.json` vendorisé ressemble à la liste SPDX complète (~620), **pas
+forcément** au sous-ensemble accepté par Nakala. À confirmer avant d'en
+faire un vocabulaire d'export contraint.
+
+## 5. Les 4 difficultés structurelles (et parades)
+
+1. **Conflit / fraîcheur** — Nakala **n'expose pas de verrou optimiste**.
+   Parade : `fetched_at` + **diff & confirmation avant overwrite** (dry-run
+   par défaut sur toute écriture) ; à défaut, last-writer-wins explicite.
+2. **Publié vs pending** — sur publié, métadonnées éditables, fichiers via
+   versioning, mais **pas de dé-publication**. Parade : statut modélisé +
+   garde-fou `DepotPublie` (flag `--force-published`).
+3. **Fidélité du round-trip** — une carte unique lecture+écriture
+   (`SLUG_TO_NAKALA`), validée par round-trip idempotent.
+4. **Identité fichiers** — réconciliation par **SHA-1** (Nakala = SHA-1 ;
+   `Fichier.hash_sha256` = SHA-256, algos différents) → colonne dédiée
+   `Fichier.sha1_nakala` (migration `s7w8x9y0z1a2`, backfill idempotent).
+
+## 6. Découvertes empiriques validées en live ⭐
+
+`scripts/explorer_put_files_nakala.py` a sondé `PUT /datas` contre apitest.
+Conclusions **confirmées** :
+
+| # | Question testée | Comportement réel de Nakala |
+|---|---|---|
+| **H1** | `PUT` avec un seul fichier dans `files[]` | **Remplace intégralement** le tableau — l'autre fichier est retiré. Sémantique « remplace », pas « append » |
+| **H2A** | `PUT` sans clé `metas` | Métadonnées **préservées** (les clés omises du corps ne sont pas touchées). ColleC s'appuie là-dessus au push de fichiers : `modifier_depot` **omet** `metas` quand seul `files` change |
+| **H3** | `PUT files=[]` (liste vide) | **Silencieusement ignoré** — impossible de vider un dépôt de ses fichiers via PUT ; il faut `DELETE` (garde-fou `PushImpossible` côté ColleC) |
+| **H4** | `PUT` avec un sha1 inconnu (jamais uploadé, ou « fantôme ») | **HTTP 404 explicite** → cleanup des uploads orphelins en cas d'échec, et validation que chaque sha1 vient d'un upload réussi de la session. C'est aussi pourquoi un `sha1_nakala` désynchronisé (« fichier fantôme ») bloque le push en amont (sinon 404 cryptique) |
+| **H5** | Ordre des fichiers dans `files[]` | **Préservé** tel qu'envoyé → ColleC contrôle l'ordre d'affichage côté Nakala (push ordonné par `Fichier.ordre`) |
+| **H6** | Re-`PUT` identique | **Idempotent**, no-op silencieux → reprise après crash sans risque de doublon |
+| **H7** | Même sha1, `name` différent | **Renommage gratuit** : Nakala propage le nouveau nom sans re-upload du binaire |
+| **H10** | Lecture immédiate après `PUT` | **Consistant** (read-after-write) → on peut chaîner `PUT` → `lire_depot` sans sleep |
+| **H11** | Champ `description` par fichier | **Accepté, préservé, restitué** au `POST` et au `PUT` → ouvre la voie aux transcriptions par fichier (backlog) |
+
+Confirmé en plus par les tests d'intégration :
+
+- **Round-trip métadonnées idempotent** sur dépôts ET collections :
+  `diff_push(distant, envoyé) == []` après dépôt et après modif.
+- **`PUT /collections/{id}` → 204** ; les collections **n'ont pas de
+  `modDate`** (pas de détection de dérive) ; Nakala **remet `typeUri` à
+  null** au stockage des metas de collection (ignoré par `diff_push`).
+- **Statuts** : `pending` (dépôt brouillon, modifiable/supprimable),
+  `private` (collection brouillon), `published` (irréversible, DOI
+  DataCite minté, non supprimable).
+
+## 7. Quirks & bugs rencontrés
+
+- **Bug #422 — langue** (voir §4). Latent car aucun test ne déposait de
+  langue jusqu'à la validation live. **Reliquat connu** :
+  `exporters/nakala.py` (CSV bulk, chemin manuel séparé) émet encore la
+  langue brute — même classe de bug, à corriger.
+- **Canonicalisation des créateurs** : Nakala enrichit au stockage
+  `{givenname, surname}` → `{authorId, fullName, givenname, orcid:null,
+  surname}`. Sans parade, **chaque push voyait un faux changement**.
+  `diff_push` canonicalise sur `surname/givenname/orcid` non-nul seuls.
+- **`files[]` = remplacement total** (H1) : omettre un fichier le supprime.
+  D'où le garde-fou `OrphelinsDetectes` / flag `--retirer-orphelins`, et la
+  notion de **« fichiers fantômes »** (`sha1_nakala` désynchronisé) qui
+  bloque le push.
+- **Push de fichiers non journalisé** (dette) : un `PUT` qui réduit
+  `files[]` retire durablement des fichiers côté Nakala **sans trace** dans
+  `OperationFichier` (qui ne couvre que le disque local). Table
+  `OperationPushNakala` en chantier (migration `t8x9y0z1a2b3`).
+- **IIIF images uniquement** : Nakala ne sert l'IIIF Image API que pour les
+  images (`jpg/png/tif/webp/jp2/…`) ; pour un PDF, une URL
+  `/iiif/.../info.json` renvoie 404 → garde sur l'extension à l'import.
+- **Fusion (pas remplacement) des metas de collection** : ColleC ne gère
+  que titre + description → préserve les metas Nakala non modélisées
+  (sujet, créateur de collection…) au lieu de les écraser.
+
+## 8. Helpers IIIF / URLs (`files/nakala.py`)
+
+Reconnaissance **stricte** du hostname (`<alphanum-->*.nakala.fr` — bloque
+`evil-nakala.fr`, préserve test vs prod). Transformations depuis une URL
+Nakala :
+
+| Helper | Produit | Usage |
+|---|---|---|
+| `vers_iiif_info_json` | `/iiif/<doi>/<sha>/info.json` | source OpenSeadragon |
+| `vers_thumb` | `/iiif/<doi>/<sha>/full/!200,200/0/default.jpg` | vignette carrée |
+| `vers_data` | `/data/<doi>/<sha>` | téléchargement binaire |
+| `remplacer_sha` | même URL, sha remplacé | recalage après push fichiers |
+| `construire_source_fichier_nakala` | info.json (image) ou /data (autre) | au rapatriement (on a DOI+sha) |
+
+## 9. Ce qu'on peut faire — les 14 commandes CLI
+
+Toutes les écritures sont en **dry-run par défaut** (`--no-dry-run` pour
+appliquer), avec `--format text|json` et codes de sortie **0** (succès /
+no-op idempotent), **1** (erreur métier ou garde-fou), **2** (config
+`nakala:` absente).
+
+| Flux | Commandes |
+|---|---|
+| Lecture | `montrer`, `rapatrier`, `rafraichir`, `rapatrier-collection`, `rafraichir-collection` |
+| Export | `exporter-tableur` (CSV `;`/UTF-8-BOM ou xlsx ; granularité donnée\|fichier) |
+| Dépôt | `deposer`, `deposer-collection` (reprise idempotente : items déjà déposés sautés) |
+| Push métadonnées | `pousser`, `pousser-collection` |
+| Push / diff fichiers | `comparer-fichiers` (classe en catégories), `pousser-fichiers` |
+| Publication | `publier`, `publier-collection` (irréversible) |
+
+**`comparer-fichiers`** classe les fichiers d'un item vs le dépôt distant
+en **7 catégories** (`RapportComparaisonFichiers`) : les 5 de base
+`nouveaux`, `modifies`, `inchanges`, `nakala_only_sans_local`,
+`orphelins_distants`, plus 2 catégories de diagnostic/refus —
+`non_actifs_a_retirer` (Fichier en CORBEILLE/REMPLACE, exclu du plan →
+serait retiré du distant ; consultatif tant que la corbeille UI n'existe
+pas) et `fichiers_fantomes` (`sha1_nakala` ne matche plus aucun fichier
+distant → **refus** `FichierFantomeDistant`, sinon 404 au push). La
+réconciliation est prioritaire par SHA-1 recalculé à la volée, fallback
+sur `sha1_nakala` stocké. Garde-fou supplémentaire : `BackfillIncomplet`
+si un `nakala_only_sans_local` n'a pas de `sha1_nakala` peuplé.
+
+**Décision P2** : les fichiers ne montent **qu'à la création** du dépôt
+(`deposer`) ; le push de fichiers ultérieur passe par `pousser-fichiers`
+(palier P3+c). On n'inscrit pas les DOI dans les métadonnées (« DOI =
+adresse »).
+
+## 10. Exemples réels testés
+
+| Collection | Volume | Validé sur |
+|---|---|---|
+| José Mora Guarnido | 65 données → 155 fichiers | `exporter-tableur`, `rapatrier-collection` |
+| Fernando Aínsa | 6163 données | export xlsx (`write_only`), CSV en flux |
+| Armonía Somers / Julio Cortázar | collections | dépôt / push |
+| Por Favor (PF) | 173 items, 7454 scans Nakala-only | import, IIIF, recherche |
+
+## 11. Tâches de fond (dépôt collection)
+
+Première tâche de fond du projet : **`threading.Thread` daemon + registre
+mémoire thread-safe**, **pas de broker** (cf. CLAUDE.md *Tâches de fond :
+runner mémoire + reprise idempotente*). Une tâche concurrente à la fois
+(`JobConcurrent`). **Sûreté par reprise idempotente** : les DOI sont
+persistés au fil de l'eau → un crash mid-run laisse les items créés
+intacts, et relancer saute ceux qui ont déjà un DOI. État volatile : un
+restart du processus perd le registre (page de suivi 404 sur job inconnu)
+mais la base reste cohérente.
+
+## 12. Observabilité
+
+- Loggers : `archives_tool.api.services.nakala_depot` et
+  `…​.nakala_fichiers` (events INFO / WARNING / DEBUG ; sha1 tronqués,
+  aucun secret ni PII). `publier_item` logge un WARNING (appel
+  **irréversible et payant**).
+- Dette identifiée : les 7 autres services d'écriture de `nakala_depot.py`
+  n'ont pas encore le logging structuré (cf. CLAUDE.md *Questions
+  ouvertes*).
+
+## 13. Où vit ce savoir
+
+| Sujet | Fichier |
+|---|---|
+| Conception / architecture / phasage | [`nakala-depot-future.md`](nakala-depot-future.md) |
+| Backlog niveau collection | [`backlog-nakala-collection.md`](backlog-nakala-collection.md) |
+| Guide d'usage CLI | [`../guide/cli/nakala.md`](../guide/cli/nakala.md) |
+| Client lecture / écriture / mappers | `src/archives_tool/external/nakala/` |
+| Services dépôt / fichiers | `src/archives_tool/api/services/nakala_depot.py`, `nakala_fichiers.py` |
+| Helpers IIIF | `src/archives_tool/files/nakala.py` |
+| **Sondes live** | `scripts/explorer_put_files_nakala.py` |
+| Tests d'intégration (opt-in `-m integration`) | `tests/test_nakala_*_integration.py` |
+| Découvertes accumulées | section Nakala de `CLAUDE.md` |

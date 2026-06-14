@@ -73,6 +73,15 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   — intégration Zotero (export BibTeX/RIS en V2/V3, import
   différé sur demande). Mapping centralisé, pas de sync
   bidirectionnel.
+- [`nakala-savoir-api.md`](docs/developpeurs/nakala-savoir-api.md)
+  — **référence du comportement réel de l'API Nakala** : endpoints,
+  payloads, quirks et bugs validés en live contre `apitest.nakala.fr`
+  (sondes H1-H11 de `scripts/explorer_put_files_nakala.py` + tests
+  d'intégration). Le « comment l'API se comporte vraiment », par
+  opposition au « pourquoi » (`nakala-depot-future.md`) et au
+  « comment s'en servir » (`docs/guide/cli/nakala.md`). Consolide le
+  savoir auparavant éparpillé (bug langue #422, canonicalisation des
+  créateurs, `PUT files[]` = remplacement total, etc.).
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /
@@ -2689,95 +2698,49 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
-- [ ] **Ajouter `--format json` sur les commandes Nakala destructives**.
-      Aujourd'hui, 4/14 commandes Nakala exposent `--format json`
-      (`montrer`, `comparer-fichiers`, `pousser-fichiers`,
-      `exporter-tableur`). Les 10 autres (`rapatrier`, `rafraichir`,
-      `rapatrier-collection`, `rafraichir-collection`, `deposer`,
-      `deposer-collection`, `pousser`, `publier`, `pousser-collection`,
-      `publier-collection`) n'ont qu'un rendu text Rich. Pour un script
-      d'automatisation (CI batch, ETL Por Favor sur 173 items, audit
-      Nakala périodique), parser le text est fragile. Pattern à porter :
-      `_FormatRapport` + branche `if format_sortie is JSON: typer.echo
-      (json.dumps({...}))`. Helper sérialiseur partagé pour les
-      structures communes (RapportRapatriement, RapportPush, etc.).
-      Probable 1 session pour tout porter d'un coup + tests gardiens
-      par commande (anti-régression style passe 16/17).
-- [ ] **Re-caractérisation du binaire après `pousser_fichiers_item`**.
-      La passe 12 (commit à venir) propage sha1_nakala et invalide les
-      dérivés locaux. Mais d'autres champs caractérisent le binaire et
-      restent obsolètes après push d'un fichier modifié :
-      - `Fichier.hash_sha256` : SHA-256 disque (intégrité QA). Algos
-        différents (SHA-1 vs SHA-256), donc pas substituable depuis le
-        sha Nakala. Option (a) nuller pour forcer recalcul au prochain
-        `controler`. Option (b) recalculer immédiatement (cycle stream
-        + hashlib comme `_sha1_du_binaire`, ~50 ms par fichier 10 Mo).
-        Préférer (b) — le binaire est déjà ouvert pour upload, ajouter
-        un hash double n'ajoute pas d'I/O critique.
-      - `Fichier.taille_octets` : trivial (`chemin.stat().st_size`).
-      - `Fichier.format` / `largeur_px` / `hauteur_px` : nécessitent
-        PIL. Si l'extension n'a pas changé, format reste valable. Pour
-        l'instant ces champs sont calculés à l'import seulement. Au
-        push, ils peuvent diverger si le user a re-traité un scan
-        (recadrage ScanTailor → dimensions changent).
-      À combiner avec la dette « journal des push fichiers » (table
-      `OperationPushNakala`) — le re-snapshot des champs caractéristiques
-      avant/après est utile pour audit. Probable 1 session combinée.
-- [ ] **Logging structuré transversal sur `nakala_depot.py`** (~7 services
-      écriture : `deposer_item`, `deposer_collection`, `pousser_item`,
-      `publier_item`, `pousser_metadonnees_collection`, `pousser_collection`,
-      `publier_collection`). `pousser_fichiers_item` a reçu le pattern en
-      passe 8 (logger `archives_tool.api.services.nakala_fichiers` avec
-      events INFO/DEBUG/WARNING : `START`, `PUT OK`, `COMMIT`, `ECHEC`,
-      `cleanup KO`). Ces 7 services manquent du même traitement — un
-      `publier_item` qui échoue en prod laisse zéro trace post-mortem
-      sur un appel **irréversible et payant** (DOI DataCite minté).
-      Pattern à porter mécaniquement (1 logger module + 4-6 events par
-      service). Probable 1 session.
-- [ ] **Cohérence cross-service du garde-fou item publié** (Trou T
-      passe 9 sur `pousser_fichiers_item` uniquement). Le service
-      `pousser_item` (métadonnées) ne vérifie pas non plus le statut
-      distant. Modifier les `metas` d'un item publié change les DOIs
-      DataCite (titre, créateurs…) — moins critique que retirer un
-      fichier mais reste douteux pour des citations stables. À
-      reproduire : ajouter `forcer_publie` dans la signature, garde-fou
-      `DepotPublie` (peut être déplacée en module partagé `nakala_garde`),
-      flag CLI `--force-published` sur `pousser` / `pousser-collection`.
-      Discussion : faut-il aussi garde-fouer `publier_item` (re-publier
-      un déjà publié) ? Probablement no-op côté Nakala mais à valider.
-- [ ] **Journaliser les push fichiers Nakala** (principe directeur n°4 :
-      « journaliser toutes les opérations destructives »). Un
-      `PUT /datas/{id}` avec `files[]` réduit RETIRE silencieusement
-      les fichiers absents (H1 — sémantique « remplace intégralement »).
-      `pousser_fichiers_item` peut donc supprimer durablement des
-      fichiers côté Nakala (cas `--retirer-orphelins`, cas
-      `Fichier.etat != ACTIF` filtré, cas doublons sha1) **sans aucune
-      trace** dans `OperationFichier` (qui ne couvre que les opérations
-      sur fichier local : rename / move / delete sur disque). Le
-      `RapportPushFichiers` transporte bien `sha1s_retires` et
-      `sha1s_uploades` au runtime, mais ils sont perdus à la fin du
-      processus — aucune historique consultable, pas d'undo, pas
-      d'audit. **À concevoir** : table dédiée `OperationPushNakala`
-      (snapshot des `files[]` avant/après, sha1s ajoutés/retirés,
-      batch_id, `execute_par`, `execute_le`) analogue à `OperationEntite`
-      V0.9.9. Le pattern de `OperationEntite` (snapshot +
-      cascade_resume + ne pas tenter l'undo MVP) est probablement
-      réutilisable. Probable 1 session.
-- [ ] **Documenter la CLI Nakala dans `docs/guide/cli/nakala.md`.**
-      La CLI Nakala compte 14 sous-commandes au total (`montrer`,
-      `rapatrier`, `rafraichir`, `rapatrier-collection`,
-      `rafraichir-collection`, `exporter-tableur`, `deposer`,
-      `deposer-collection`, `pousser`, `publier`,
-      `pousser-collection`, `publier-collection`, `comparer-fichiers`,
-      `pousser-fichiers`). **Aucune n'a de page guide utilisateur** :
-      seules les 10 commandes non-Nakala (`importer`, `fonds`,
-      `collections`, `items`, `exporter`, `controler`, `montrer`,
-      `renommer`, `deriver`, etc.) sont documentées dans
-      `docs/guide/cli/`. L'utilisateur découvre les commandes Nakala
-      par `--help` seulement. Chantier dédié : créer `nakala.md`
-      structurée par flux (lecture, rapatriement, dépôt, push, push
-      fichiers, publication), nav `mkdocs.yml` à étendre, références
-      croisées vers `nakala-depot-future.md`. Probable 1 session.
+- [x] **Ajouter `--format json` sur les commandes Nakala destructives**
+      — **résolu passes 19+20 P3+c.2** : les 10 commandes destructives
+      (`rapatrier`, `rafraichir`, `rapatrier-collection`,
+      `rafraichir-collection`, `deposer`, `deposer-collection`,
+      `pousser`, `publier`, `pousser-collection`, `publier-collection`)
+      ont reçu `--format json` avec helper `_payload_push_json` partagé
+      et 7 tests gardiens. **14/14 commandes Nakala ont JSON**.
+- [x] **Re-caractérisation du binaire après `pousser_fichiers_item`**
+      — **partiellement résolu passe 25 P3+c.2** : `hash_sha256` (SHA-256
+      disque, distinct du sha1 Nakala) et `taille_octets` recalculés sur
+      le binaire courant pour modifies/nouveaux. **Reliquat** : `format`,
+      `largeur_px`, `hauteur_px` (PIL) restent obsolètes — V2+ avec
+      calcul asynchrone si dimensions deviennent un blocage UX. À
+      combiner avec module OCR ou thumbnails async.
+- [x] **Logging structuré transversal sur `nakala_depot.py`** — **résolu
+      passe 21 P3+c.2** : les 7 services écriture (`deposer_item`,
+      `deposer_collection`, `pousser_item`, `publier_item`,
+      `pousser_metadonnees_collection`, `pousser_collection`,
+      `publier_collection`) ont reçu le pattern logger structuré
+      (INFO/WARNING/DEBUG) avec events `START`, `OK`, `COMMIT`, `END`,
+      `ECHEC`, `IRREVERSIBLE START` pour les publications. **8/8
+      services ont logger**.
+- [x] **Cohérence cross-service du garde-fou item publié** (Trou T
+      passe 9 sur `pousser_fichiers_item` uniquement) — **résolu passe
+      22 P3+c.2** : `DepotPublie` déplacée dans `nakala_depot.py`
+      (couche plus basse), check ajouté à `pousser_item` (metas) avec
+      `forcer_publie=False` par défaut + court-circuit si aucun
+      changement. CLI `--force-published` sur `pousser` et
+      `pousser-collection`. Propagation dans la boucle collection.
+- [x] **Journaliser les push fichiers Nakala** (principe directeur n°4)
+      — **résolu passe 24 P3+c.2** : table `operation_push_nakala`
+      (analogue `OperationEntite` V0.9.9) avec `batch_id`, `cote_item`,
+      `doi`, `snapshot_avant/apres` JSON, `sha1s_uploades/retires` JSON.
+      Service `journaliser_push_fichiers` insère dans la même transaction
+      que les mutations DB (atomique). CLI `archives-tool montrer
+      push-nakala` pour consultation post-mortem.
+- [x] **Documenter la CLI Nakala dans `docs/guide/cli/nakala.md`** —
+      **résolu passe 23 P3+c.2** : page guide structurée en 7 flux
+      (Lecture / Rapatriement / Export tableur / Dépôt / Push
+      métadonnées / Synchronisation fichiers / Publication). 14
+      commandes documentées avec exemples concrets, garde-fous, format
+      JSON, codes de sortie, observabilité. Nav `mkdocs.yml` à jour,
+      `mkdocs build --strict` OK.
 - [ ] **`Fichier.description_externe` : transcription par fichier.**
       Cas d'usage stratégique pour ColleC : pour chaque scan d'une
       collection (revue numérisée, correspondance, manuscrits,
@@ -2808,25 +2771,27 @@ dédiée avec URI + label, pas en dur dans le code.
       du verrou. **Risque** : activer `version_id_col` casse les tests
       qui n'incrémentent pas `version` à l'écriture — audit complet
       requis avant. Voir pattern dans `models/item.py:46-47`.
-- [ ] **Tester `alembic downgrade` dans la CI.** Aucun test
-      n'exerce `command.downgrade` actuellement — les `downgrade()`
-      des migrations sont écrits mais jamais validés. Si on doit
-      rollback en production (bug post-release, ou retour V0.x.y →
-      V0.x.y-1), on découvre les bugs à ce moment-là. Coût : un test
-      qui applique `upgrade head` puis `downgrade base` puis re-upgrade
-      et vérifie l'idempotence. Dette historique, pas spécifique à
-      un chantier — à ouvrir comme amélioration CI.
-- [ ] **Pattern obligatoire pour les futures migrations `add_column`.**
-      Toute migration qui ajoute une colonne sur une table déjà
-      touchée par un `batch_alter_table` antérieur **doit** utiliser
-      le guard idempotent (`if "X" not in inspect(bind).get_columns(...)`)
-      + `batch_alter_table` au lieu de `op.add_column` direct. Cf.
-      pattern `n2r3s4t5u6v7::upgrade` / `s7w8x9y0z1a2::upgrade`. Sans
-      ce guard, les tests `test_migration.py` (parité metadata vs
-      migrations) plantent car `target_metadata + render_as_batch`
-      reconstruit la table avec le modèle final dans les migrations
-      antérieures. À documenter dans `developpeurs/contribuer.md` une
-      fois le ticket pris.
+- [x] **Tester `alembic downgrade` dans la CI** — **résolu passe 26
+      P3+c.2** : 2 nouveaux tests dans `tests/test_migration.py` :
+      `test_migration_downgrade_apres_refonte_v090_puis_upgrade_head_est_idempotent`
+      valide le cycle complet upgrade head → downgrade jusqu'à la
+      refonte V0.9.0-alpha → upgrade head sur toutes les migrations
+      postérieures à la refonte (borne `_BORNE_DOWNGRADE = "g7l8m9n0o1p2"`
+      — la refonte reste appliquée, décision documentée non-réversible).
+      `test_migration_downgrade_traverse_refonte_v090_leve_explicitement`
+      garde-fou si quelqu'un implémente un jour la downgrade() de la
+      refonte (V2+ ?).
+- [x] **Pattern obligatoire pour les futures migrations `add_column`**
+      — **résolu passe 26 P3+c.2** : 3 règles documentées dans
+      [`docs/developpeurs/contribuer.md`](docs/developpeurs/contribuer.md)
+      section « Migrations Alembic » :
+      1. Idempotence `create_table` (skip si table existe)
+      2. `batch_alter_table` + guard pour `add_column` sur table déjà
+         touchée (sinon parité metadata vs migrations casse)
+      3. `downgrade()` fonctionnelle pour toute migration post-refonte
+         (validée par le test ajouté ci-dessus).
+      Exemples de référence : `q5u6v7w8x9y0_operation_entite`,
+      `t8x9y0z1a2b3_operation_push_nakala`.
 - [ ] Nom définitif du projet et du package Python.
 - [ ] Choix précis de l'empaquetage final (PyInstaller, Briefcase,
       simple scripts run.bat/run.sh ?).

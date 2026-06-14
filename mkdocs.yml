@@ -68,6 +68,7 @@ exclude_docs: |
   developpeurs/vocabulaire-scoping-future.md
   developpeurs/nakala-depot-future.md
   developpeurs/backlog-nakala-collection.md
+  developpeurs/nakala-savoir-api.md
 
 markdown_extensions:
   - admonition

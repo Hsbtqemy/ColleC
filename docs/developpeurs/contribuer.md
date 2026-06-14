@@ -38,6 +38,74 @@ ColleC suit quelques patterns systématiques :
 Avant d'ajouter du code, regarder le pattern correspondant dans
 le module concerné.
 
+### Migrations Alembic
+
+Deux patterns obligatoires :
+
+**1. Idempotence sur `create_table`.** Toute migration qui crée
+une table doit pouvoir s'exécuter sur une base déjà créée via
+`Base.metadata.create_all` (cas tests / startup applicatif où
+l'engine est créé en parallèle des migrations). Pattern :
+
+```python
+def upgrade() -> None:
+    if "ma_nouvelle_table" in inspect(op.get_bind()).get_table_names():
+        return  # idempotent
+    op.create_table(...)
+```
+
+Exemples : `q5u6v7w8x9y0_operation_entite`,
+`t8x9y0z1a2b3_operation_push_nakala`.
+
+**2. `batch_alter_table` + guard pour `add_column` sur table
+existante.** Toute migration qui ajoute une colonne à une table
+déjà touchée par un `batch_alter_table` antérieur **doit**
+utiliser le guard idempotent + `batch_alter_table` au lieu de
+`op.add_column` direct :
+
+```python
+def upgrade() -> None:
+    bind = op.get_bind()
+    if "ma_colonne" in {c["name"] for c in inspect(bind).get_columns("ma_table")}:
+        return  # idempotent
+    with op.batch_alter_table("ma_table") as batch_op:
+        batch_op.add_column(sa.Column("ma_colonne", sa.String(40)))
+```
+
+Sans ce guard, les tests `test_migration.py` (parité metadata vs
+migrations) plantent car `target_metadata + render_as_batch`
+reconstruit la table avec le modèle final dans les migrations
+antérieures. Exemples : `n2r3s4t5u6v7`, `s7w8x9y0z1a2`.
+
+**3. `downgrade()` fonctionnelle pour toute migration
+post-refonte V0.9.0-alpha.** La refonte (`g7l8m9n0o1p2`) est
+non-réversible (décision documentée). Mais toute migration
+postérieure DOIT avoir une `downgrade()` propre — validé par
+`test_migration_downgrade_apres_refonte_v090_puis_upgrade_head_est_idempotent`
+qui parcourt le cycle complet `upgrade head → downgrade
+g7l8m9n0o1p2 → upgrade head` et compare les tables résultantes.
+
+Pattern minimal :
+
+```python
+def upgrade() -> None:
+    op.create_table(...)
+    op.create_index(...)
+
+def downgrade() -> None:
+    op.drop_index(..., table_name=...)
+    op.drop_table(...)
+```
+
+Pour un `add_column`, le `downgrade()` doit utiliser le même
+`batch_alter_table` :
+
+```python
+def downgrade() -> None:
+    with op.batch_alter_table("ma_table") as batch_op:
+        batch_op.drop_column("ma_colonne")
+```
+
 ## Niveau de stabilité
 
 V0.9.0 est en release candidate. Le modèle de données est stable,

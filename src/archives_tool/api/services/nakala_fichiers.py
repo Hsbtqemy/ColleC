@@ -133,11 +133,14 @@ class RapportComparaisonFichiers:
     - **inchanges** : sha1_local matche directement un sha1 distant
       présent. Au push, conservé tel quel (juste passer dans `files[]`).
     - **nakala_only_sans_local** : Fichier ColleC pullé depuis Nakala
-      mais sans binaire local résolvable. Au push, **danger** : ces
-      fichiers seraient perdus côté Nakala si non préservés dans la
-      liste cible.
+      mais sans binaire local résolvable. **Préservés par défaut au
+      push** (P3+c.1) : `pousser_fichiers_item` les inclut dans
+      `files[]` cible avec leur `sha1_nakala` connu, évitant qu'ils
+      soient retirés côté distant.
     - **orphelins_distants** : sha1 côté Nakala sans Fichier ColleC
-      correspondant. Cas typique : fichier supprimé localement.
+      correspondant. Cas typique : fichier supprimé localement. Au
+      push, **refusés par défaut** ; flag `retirer_orphelins=True`
+      requis pour confirmer leur retrait côté Nakala.
     """
 
     cote_item: str
@@ -370,7 +373,6 @@ class RapportPushFichiers:
 
 def _construire_plan(
     rapport_cmp: RapportComparaisonFichiers,
-    *, retirer_orphelins: bool,
 ) -> list[PlanPushFichier]:
     """Calcule le plan d'exécution (hors uploads) à partir du rapport
     de comparaison. Les entrées `nouveau` et `modifie` portent le
@@ -378,9 +380,11 @@ def _construire_plan(
     remplacé par le sha1 retourné par `uploader_fichier` au moment de
     l'application réelle.
 
-    Les `orphelins_distants` sont exclus du plan : ne pas les inclure
-    dans `files[]` cible les retire automatiquement (cohérent avec H1 +
-    flag explicite).
+    Les `orphelins_distants` sont **toujours** exclus du plan : ne pas
+    les inclure dans `files[]` cible les retire automatiquement
+    (cohérent avec H1). Le garde-fou métier (`retirer_orphelins`
+    requis) est appliqué en amont par l'appelant — ce helper ne
+    re-vérifie pas.
     """
     plan: list[PlanPushFichier] = []
     for fc in rapport_cmp.inchanges:
@@ -409,10 +413,6 @@ def _construire_plan(
                 sha1=fc.sha1_distant,
                 categorie="nakala_only",
             ))
-    # Note : `retirer_orphelins` n'affecte pas le plan (les orphelins
-    # sont SIMPLEMENT exclus de files[]). On garde le param pour la
-    # symétrie d'API et un usage futur (logging, audit).
-    _ = retirer_orphelins
     return plan
 
 
@@ -498,7 +498,7 @@ def pousser_fichiers_item(
         raise OrphelinsDetectes(list(rapport_cmp.orphelins_distants))
 
     # 3. Plan d'exécution (hors uploads)
-    rapport.plan = _construire_plan(rapport_cmp, retirer_orphelins=retirer_orphelins)
+    rapport.plan = _construire_plan(rapport_cmp)
 
     # 4. Garde-fou H3 : files cible vide → Nakala ignorerait silencieusement
     if not rapport.plan:

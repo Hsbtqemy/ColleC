@@ -409,6 +409,88 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
     assert rapport.modifies[0].sha1_local == nouveau_sha1
 
 
+@pytest.mark.parametrize(
+    "files_malforme",
+    [
+        "not_a_list",       # string : iter sur chars
+        {"k": "v"},         # dict : iter sur keys
+        None,               # null
+        42,                 # int
+    ],
+    ids=["str", "dict", "null", "int"],
+)
+def test_files_distants_non_list_ne_crashe_pas(
+    tmp_path: Path, files_malforme,
+) -> None:
+    """Defense contre une API Nakala / proxy qui retourne un `files`
+    non-list — ne doit pas crash en `AttributeError: 'X' object has
+    no attribute 'get'`.
+
+    Cas reproduits par run direct du service :
+    - `{"files": "non_array"}` → iteration sur chars → crash sur
+      `"n".get("sha1")`
+    - `{"files": {"k": "v"}}` → iteration sur keys → crash idem
+
+    Comportement attendu : traiter comme `files=[]` (cote distant
+    vide) → tous les fichiers locaux deviennent `nouveaux`."""
+    contenu = b"local only"
+    sha1_local = _sha1(contenu)
+    # Une DB par run (parametrize → 4 runs distincts) pour eviter le
+    # cleanup foireux (Fonds + miroir + CHECK constraint).
+    db = tmp_path / f"test_{type(files_malforme).__name__}.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    engine.dispose()
+
+    class StubAvecFilesMalforme:
+        def lire_depot(self, doi):
+            return {"identifier": doi, "files": files_malforme}
+
+    factory = creer_session_factory(creer_engine(db))
+    with factory() as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        # Pas de crash, classification cote distant vide.
+        rapport = comparer_fichiers_item(
+            s, StubAvecFilesMalforme(), item,
+            racines={"scans": tmp_path / "scans"},
+        )
+        assert len(rapport.nouveaux) == 1
+        assert rapport.nouveaux[0].sha1_local == sha1_local
+        assert rapport.orphelins_distants == []
+
+
+def test_fd_individuel_non_dict_ignore(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Defense double : si la liste `files` est valide mais contient
+    des entrees heterogenes (`[{...}, "str_in_middle", null, ...]`),
+    skip les non-dict sans crash."""
+    contenu = b"hello"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "a.jpg"},
+        "string_at_index_1",  # entree degenere
+        None,                  # null au milieu
+        {"sha1": "b" * 40, "name": "b.jpg"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "a.jpg", "contenu": contenu,
+             "sha1_nakala": sha1},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    # Le fichier valide cote local matche le 1er distant → inchange.
+    assert len(rapport.inchanges) == 1
+    # Le 4e distant (b.jpg) est orphelin (pas de pendant local) ;
+    # les 2 entrees degenerees (str, null) sont skipped silencieusement.
+    assert len(rapport.orphelins_distants) == 1
+    assert rapport.orphelins_distants[0].nom_fichier == "b.jpg"
+
+
 def test_oserror_pendant_lecture_binaire_traite_comme_nakala_only(
     db_path: Path, tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

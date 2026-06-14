@@ -165,7 +165,14 @@ def comparer_fichiers_item(
 
     # Pull distant (peut lever ErreurNakala, on laisse propager).
     depot = client.lire_depot(item.doi_nakala)
-    files_distants = depot.get("files") or []
+    # Validation defensive : Nakala doit retourner un dict avec `files`
+    # en list de dicts. Si bug API ou proxy qui munge la reponse (vu
+    # `{"files": "not_a_list"}` ou `{"files": {"k": "v"}}`), un truthy-or-
+    # default `or []` ne suffit pas : la boucle itererait sur les chars
+    # / keys et `fd.get` planterait en AttributeError. On normalise a
+    # `[]` toute valeur non-list.
+    files_brut = depot.get("files")
+    files_distants = files_brut if isinstance(files_brut, list) else []
     # Index sha1 → entrée distante. On filtre les sha1 vides (cas
     # dégénéré côté Nakala, ne devrait pas arriver). **Normalise en
     # lowercase** : `hexdigest()` côté ColleC produit toujours du
@@ -175,6 +182,10 @@ def comparer_fichiers_item(
     # `f.sha1_nakala` à la comparaison plus bas pour la même raison.
     sha1_index: dict[str, dict[str, Any]] = {}
     for fd in files_distants:
+        # Double couche : skip toute entree non-dict (defense vs liste
+        # heterogene `[{...}, "str_in_middle", null]`).
+        if not isinstance(fd, dict):
+            continue
         sha1 = (fd.get("sha1") or "").strip().lower()
         if sha1:
             sha1_index[sha1] = fd

@@ -166,10 +166,15 @@ def comparer_fichiers_item(
     depot = client.lire_depot(item.doi_nakala)
     files_distants = depot.get("files") or []
     # Index sha1 → entrée distante. On filtre les sha1 vides (cas
-    # dégénéré côté Nakala, ne devrait pas arriver).
+    # dégénéré côté Nakala, ne devrait pas arriver). **Normalise en
+    # lowercase** : `hexdigest()` côté ColleC produit toujours du
+    # lowercase, et Nakala renvoie le sha1 en lowercase aujourd'hui.
+    # La normalisation est défensive — si Nakala bascule un jour vers
+    # uppercase, le matching continue de fonctionner. On normalise aussi
+    # `f.sha1_nakala` à la comparaison plus bas pour la même raison.
     sha1_index: dict[str, dict[str, Any]] = {}
     for fd in files_distants:
-        sha1 = (fd.get("sha1") or "").strip()
+        sha1 = (fd.get("sha1") or "").strip().lower()
         if sha1:
             sha1_index[sha1] = fd
 
@@ -205,13 +210,18 @@ def comparer_fichiers_item(
             sha1_distant=f.sha1_nakala,
         )
 
+        # Normalise `f.sha1_nakala` en lowercase pour le matching
+        # (défensif vs. base legacy avec sha1 uppercase ; cf. note
+        # ci-dessus sur l'index distant).
+        sha1_nakala_norm = f.sha1_nakala.lower() if f.sha1_nakala else None
+
         if chemin is None:
             # Nakala-only (ou perdu sur disque) : signal d'attention.
             # Si sha1_nakala connu, marquer apparié pour ne pas le
             # considérer comme orphelin distant — il est juste sans
             # binaire local.
-            if f.sha1_nakala and f.sha1_nakala in sha1_index:
-                sha1s_apparies.add(f.sha1_nakala)
+            if sha1_nakala_norm and sha1_nakala_norm in sha1_index:
+                sha1s_apparies.add(sha1_nakala_norm)
             rapport.nakala_only_sans_local.append(compare)
             continue
 
@@ -220,10 +230,10 @@ def comparer_fichiers_item(
         if compare.sha1_local in sha1_index:
             sha1s_apparies.add(compare.sha1_local)
             rapport.inchanges.append(compare)
-        elif f.sha1_nakala and f.sha1_nakala in sha1_index:
+        elif sha1_nakala_norm and sha1_nakala_norm in sha1_index:
             # Modifié : on retrouve l'ancien sha1 côté distant, mais
             # le binaire local en porte un nouveau.
-            sha1s_apparies.add(f.sha1_nakala)
+            sha1s_apparies.add(sha1_nakala_norm)
             rapport.modifies.append(compare)
         else:
             # Nouveau : ni sha1_local ni sha1_nakala (s'il existe) n'est

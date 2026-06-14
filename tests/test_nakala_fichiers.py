@@ -349,6 +349,65 @@ def test_racine_inconnue_dans_config_traite_comme_nakala_only(
     assert rapport.orphelins_distants == []
 
 
+def test_sha1_normalise_lowercase_cote_distant_et_stockage(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Garde-fou défensif : si Nakala renvoie un sha1 en uppercase
+    (changement futur improbable) OU si la base legacy a un
+    `sha1_nakala` en uppercase, le matching doit fonctionner quand
+    même — on normalise tout en lowercase à la comparaison.
+
+    Sans cette normalisation, le bug serait silencieux et
+    catastrophique : tous les items déjà déposés apparaîtraient en
+    "nouveau" ou "modifié" → un push effectif ré-uploaderait inutilement
+    (ou pire, perdrait des fichiers via le retrait orphelins)."""
+    contenu = b"hello uppercase"
+    sha1_lower = _sha1(contenu)
+    sha1_upper = sha1_lower.upper()
+
+    # Cas 1 : sha1 distant en UPPER, sha1_nakala stocké en lower.
+    # `hexdigest()` du binaire local = lower ; doit matcher.
+    client_distant_upper = _FakeClientLecture(files=[
+        {"sha1": sha1_upper, "name": "x.jpg"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu,
+             "sha1_nakala": sha1_lower},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client_distant_upper, item,
+            racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.inchanges) == 1
+    assert rapport.aucun_changement
+
+    # Cas 2 : sha1 distant en lower, sha1_nakala stocké en UPPER (legacy).
+    # Le matching doit fonctionner via la normalisation `.lower()`.
+    db2 = tmp_path / "case2.db"
+    engine = creer_engine(db2)
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    client_distant_lower = _FakeClientLecture(files=[
+        {"sha1": sha1_lower, "name": "x.jpg"},
+    ])
+    nouveau_contenu = b"contenu_modifie"
+    nouveau_sha1 = _sha1(nouveau_contenu)
+    with _session(db2) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "y.jpg", "contenu": nouveau_contenu,
+             "sha1_nakala": sha1_upper},  # stocké UPPER (legacy)
+        ])
+        rapport = comparer_fichiers_item(
+            s, client_distant_lower, item,
+            racines={"scans": tmp_path / "scans"},
+        )
+    # Le sha1_local (lower) != sha1_distant. Mais sha1_nakala (upper)
+    # normalisé matche le sha1_distant → classification "modifié".
+    assert len(rapport.modifies) == 1
+    assert rapport.modifies[0].sha1_local == nouveau_sha1
+
+
 def test_combinaison_des_5_categories_simultanees(
     db_path: Path, tmp_path: Path,
 ) -> None:

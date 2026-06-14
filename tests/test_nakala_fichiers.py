@@ -22,6 +22,7 @@ from archives_tool.api.services.nakala_fichiers import (
 )
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.models import Base, Fichier, Item
+from archives_tool.models.enums import EtatFichier
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +407,74 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
     # normalisé matche le sha1_distant → classification "modifié".
     assert len(rapport.modifies) == 1
     assert rapport.modifies[0].sha1_local == nouveau_sha1
+
+
+def test_fichiers_non_actif_sont_ignores(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Cohérence projet : `comparer_fichiers_item` ignore les Fichier
+    dont `etat != ACTIF` (REMPLACE, CORBEILLE). Pattern aligne sur
+    `derivatives/generateur.py` et `renamer/plan.py` qui filtrent
+    explicitement `Fichier.etat == EtatFichier.ACTIF.value`.
+
+    Sans ce filtre, un fichier mis en CORBEILLE par l'utilisateur :
+    - apparaîtrait en `inchanges` (si binaire dispo) → resterait sur
+      Nakala au push, contredisant l'intention utilisateur ;
+    - ou en `nouveau` (si binaire retiré) → serait re-uploadé.
+
+    Avec le filtre, le fichier corbeille n'apparaît pas → au push, le
+    PUT Nakala ne l'inclut pas → suppression effective côté distant
+    (sémantique correcte de la corbeille ColleC)."""
+    contenu_actif = b"actif content"
+    sha1_actif = _sha1(contenu_actif)
+    contenu_remplace = b"remplace content"
+    sha1_remplace = _sha1(contenu_remplace)
+    contenu_corbeille = b"corbeille content"
+    sha1_corbeille = _sha1(contenu_corbeille)
+
+    # Distant connaît les 3 sha1.
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1_actif, "name": "actif.jpg"},
+        {"sha1": sha1_remplace, "name": "remplace.jpg"},
+        {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "actif.jpg", "contenu": contenu_actif,
+             "sha1_nakala": sha1_actif},
+            {"ordre": 2, "nom": "remplace.jpg", "contenu": contenu_remplace,
+             "sha1_nakala": sha1_remplace},
+            {"ordre": 3, "nom": "corbeille.jpg", "contenu": contenu_corbeille,
+             "sha1_nakala": sha1_corbeille},
+        ])
+        # Pose les états non-ACTIF sur les fichiers 2 et 3.
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        fichiers[1].etat = EtatFichier.REMPLACE.value
+        fichiers[2].etat = EtatFichier.CORBEILLE.value
+        s.commit()
+
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+
+    # Seul le fichier ACTIF est dans `inchanges`.
+    assert len(rapport.inchanges) == 1
+    assert rapport.inchanges[0].nom_fichier == "actif.jpg"
+    # Les fichiers REMPLACE et CORBEILLE sont **absents** des autres
+    # catégories aussi (ils ne participent pas du tout).
+    assert rapport.modifies == []
+    assert rapport.nouveaux == []
+    assert rapport.nakala_only_sans_local == []
+    # Les sha1 distants correspondants deviennent orphelins (intention
+    # correcte : le palier c les retirera du distant).
+    sha1s_orphelins = {fo.sha1 for fo in rapport.orphelins_distants}
+    assert sha1_remplace in sha1s_orphelins
+    assert sha1_corbeille in sha1s_orphelins
+    # `aucun_changement` est False car il y a des orphelins distants.
+    assert not rapport.aucun_changement
 
 
 def test_combinaison_des_5_categories_simultanees(

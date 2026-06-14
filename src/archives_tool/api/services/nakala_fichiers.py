@@ -27,6 +27,7 @@ from typing import Any
 
 from archives_tool.external.nakala.client import ClientLectureNakala
 from archives_tool.models import Item
+from archives_tool.models.enums import EtatFichier
 
 #: Taille de chunk pour le streaming SHA-1 — 8 KiB.
 _TAILLE_CHUNK_SHA1 = 8192
@@ -191,6 +192,16 @@ def comparer_fichiers_item(
     from archives_tool.files.paths import resoudre_chemin
 
     for f in sorted(item.fichiers, key=lambda x: x.ordre):
+        # Filtre `etat=ACTIF` : un Fichier en `REMPLACE` ou `CORBEILLE`
+        # ne participe pas à la comparaison (cohérence avec
+        # `derivatives/generateur.py:166` et `renamer/plan.py:108`).
+        # Au futur push (palier c), ces Fichier ne seront pas envoyés
+        # — le PUT Nakala les retirera donc côté distant (cohérent avec
+        # la sémantique de la corbeille : suppression effective au
+        # prochain dépôt).
+        if f.etat != EtatFichier.ACTIF.value:
+            continue
+
         # Binaire local résolvable ?
         chemin: Path | None = None
         if f.racine and f.chemin_relatif:

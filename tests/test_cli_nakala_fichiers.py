@@ -73,7 +73,13 @@ def config_nakala(tmp_path: Path) -> Path:
 
 
 def _ecrire_binaire(tmp_path: Path, nom: str, contenu: bytes) -> str:
-    """Écrit un binaire dans scans/, renvoie son sha1."""
+    """Écrit un binaire dans scans/, renvoie son sha1.
+
+    Crée `scans/` s'il n'existe pas — la fixture `config_nakala` le
+    crée habituellement, mais certains tests n'utilisent pas cette
+    fixture (config ad-hoc) tout en appelant `_db_avec_item_depose`
+    en amont du `runner.invoke`."""
+    (tmp_path / "scans").mkdir(exist_ok=True)
     (tmp_path / "scans" / nom).write_bytes(contenu)
     return _sha1(contenu)
 
@@ -293,3 +299,59 @@ def test_fonds_inconnu_exit1(
         "--config", str(config_nakala), "--db-path", str(db),
     ])
     assert r.exit_code == 1
+
+
+def test_config_sans_section_nakala_exit2(tmp_path: Path) -> None:
+    """Config locale sans section `nakala:` → exit 2 (saisie invalide)
+    avec message clair. Pattern aligne sur `_client_nakala_ou_sortie`.
+
+    Important : exit 2 (vs exit 1 pour les erreurs metier) signale
+    une config a corriger, pas un cas d'erreur a gerer dans un
+    pipeline."""
+    db, _ = _db_avec_item_depose(tmp_path)
+    cfg = tmp_path / "sans_nakala.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "utilisateur": "T",
+        "racines": {"scans": str(tmp_path / "scans")},
+        # PAS de section `nakala:`
+    }), encoding="utf-8")
+
+    r = runner.invoke(app, [
+        "nakala", "comparer-fichiers", "AS-001", "--fonds", "AS",
+        "--config", str(cfg), "--db-path", str(db),
+    ])
+    assert r.exit_code == 2, r.output
+    assert "nakala" in r.output.lower()
+
+
+def test_config_sans_api_key_n_exit_pas_au_demarrage(tmp_path: Path) -> None:
+    """Note de pattern projet : `_client_nakala_ou_sortie` (lecture) ne
+    valide PAS `api_key`. Comportement aligné sur Nakala : les dépôts
+    publics se lisent sans auth. Une 401 surviendra à `lire_depot` si
+    le dépôt est pending/private.
+
+    Ce test verrouille le pattern : la commande **ne quitte pas au
+    démarrage** si api_key manque. Au futur, si on veut valider api_key
+    pour comparer-fichiers (puisqu'on opère sur des dépôts utilisateur
+    souvent pending), aligner aussi `nakala rafraichir` /
+    `nakala montrer` pour cohérence — chantier transverse, pas
+    spécifique à P3+b. Cf. dette signalee en commit message."""
+    db, _ = _db_avec_item_depose(tmp_path)
+    cfg = tmp_path / "sans_api_key.yaml"
+    cfg.write_text(yaml.safe_dump({
+        "utilisateur": "T",
+        "racines": {"scans": str(tmp_path / "scans")},
+        "nakala": {"base_url": "https://apitest.nakala.fr"},  # api_key manquant
+    }), encoding="utf-8")
+
+    r = runner.invoke(app, [
+        "nakala", "comparer-fichiers", "AS-001", "--fonds", "AS",
+        "--config", str(cfg), "--db-path", str(db),
+    ])
+    # PAS d'exit 2 (= validation api_key au démarrage), contrairement à
+    # `_client_ecriture_nakala_ou_sortie`. La commande continue avec le
+    # client lecture sans auth — en prod, lèverait 401 à `lire_depot`.
+    assert r.exit_code != 2
+    # Avec notre stub `_FakeReadClient`, le lire_depot reussit (pas
+    # de check auth dans le mock) et la commande exit 0 normalement.
+    assert r.exit_code == 0

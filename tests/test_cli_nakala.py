@@ -251,3 +251,114 @@ def test_rafraichir_sans_item_lie_exit1(
     ])
     assert r.exit_code == 1
     assert "Aucun item" in r.output or "rapatrier" in r.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Passe 19 — Dette AD : --format json sur commandes destructives Item
+# ---------------------------------------------------------------------------
+
+
+def test_rapatrier_format_json_dry_run(
+    config_nakala: Path, db_avec_fonds: Path
+) -> None:
+    """`rapatrier --format json` (dry-run) : 8 cles minimum."""
+    r = runner.invoke(app, [
+        "nakala", "rapatrier", _DOI, "--fonds", "PF", "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
+    ])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data["doi"] == _DOI
+    assert data["cote"] == "abcdef12"  # derivee du DOI
+    assert data["fonds_cote"] == "PF"
+    assert data["dry_run"] is True
+    assert data["deja_existant"] is False
+    assert data["item_id"] is None
+    assert data["nb_fichiers"] == 0
+
+
+def test_rapatrier_format_json_reel(
+    config_nakala: Path, db_avec_fonds: Path
+) -> None:
+    """`rapatrier --no-dry-run --format json` : item_id pose, nb_fichiers
+    reflet de la materialisation."""
+    r = runner.invoke(app, [
+        "nakala", "rapatrier", _DOI, "--fonds", "PF",
+        "--no-dry-run", "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
+    ])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data["dry_run"] is False
+    assert data["item_id"] is not None
+    # `_DEPOT_JSON.files` contient 1 fichier → materialise
+    assert data["nb_fichiers"] == 1
+
+
+def test_rafraichir_format_json_dry_run_montre_diff(
+    config_nakala: Path, db_avec_fonds: Path
+) -> None:
+    """`rafraichir --format json` : structure de diff complete."""
+    with _session(db_avec_fonds) as s:
+        f = lire_fonds_par_cote(s, "PF")
+        item = creer_item(
+            s, FormulaireItem(cote="abcdef12", titre="Ancien", fonds_id=f.id)
+        )
+        item.doi_nakala = _DOI
+        s.commit()
+
+    r = runner.invoke(app, [
+        "nakala", "rafraichir", _DOI, "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
+    ])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data["doi"] == _DOI
+    assert data["item_cote"] == "abcdef12"
+    assert data["dry_run"] is True
+    assert data["applique"] is False
+    assert data["a_des_changements"] is True
+    # Diffs sont une liste de {champ, avant, apres}
+    assert isinstance(data["diffs"], list)
+    assert len(data["diffs"]) > 0
+    diff_titre = next(
+        (d for d in data["diffs"] if d["champ"] == "titre"), None
+    )
+    assert diff_titre is not None
+    assert diff_titre["avant"] == "Ancien"
+    assert diff_titre["apres"] == "Titre Nakala"
+
+
+# ---------------------------------------------------------------------------
+# pousser (metas) + publier — necessitent client ECRITURE en plus
+# Le mock du client ecriture n'est pas dans test_cli_nakala.py - on
+# documente que la couverture est dans test_nakala_web_push pour les
+# routes web et serait dupliquee inutilement ici. Garde-fou minimal :
+# verifier que --format est accepte sans crash sur dry-run.
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_format_accepte(config_nakala: Path, db_avec_fonds: Path) -> None:
+    """Garde-fou minimal : `pousser --format json` est accepte (parse
+    de l'option). Le scenario complet est couvert par les tests
+    services + web."""
+    # Sans item lie au DOI → exit 1 mais le parse de --format passe
+    r = runner.invoke(app, [
+        "nakala", "pousser", "PF-001", "--fonds", "PF", "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
+    ])
+    # Exit 1 attendu (item introuvable) - ce qui compte : pas de
+    # crash sur --format inconnue.
+    assert r.exit_code == 1
+    # L'option n'a pas leve d'erreur Click
+    assert "Invalid value" not in r.output
+
+
+def test_publier_format_accepte(config_nakala: Path, db_avec_fonds: Path) -> None:
+    """Symetrie : `publier --format json` accepte (parse OK)."""
+    r = runner.invoke(app, [
+        "nakala", "publier", "PF-001", "--fonds", "PF", "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
+    ])
+    assert r.exit_code == 1
+    assert "Invalid value" not in r.output

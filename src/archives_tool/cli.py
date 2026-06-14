@@ -2196,6 +2196,10 @@ def cmd_nakala_rapatrier(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Créer réellement (sinon : aperçu)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2228,6 +2232,20 @@ def cmd_nakala_rapatrier(
             )
             raise typer.Exit(1) from None
 
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "doi": doi,
+            "cote": rapport.cote,
+            "fonds_id": rapport.fonds_id,
+            "fonds_cote": fonds,
+            "dry_run": rapport.dry_run,
+            "deja_existant": rapport.deja_existant,
+            "item_id": rapport.item_id,
+            "nb_fichiers": rapport.nb_fichiers,
+        }, ensure_ascii=False, indent=2))
+        return
+
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     if rapport.deja_existant:
         typer.echo(
@@ -2251,6 +2269,10 @@ def cmd_nakala_rafraichir(
     doi: str = typer.Argument(..., help="DOI d'un dépôt déjà rapatrié."),
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Appliquer l'overwrite (sinon : diff seul)."
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
@@ -2276,6 +2298,23 @@ def cmd_nakala_rafraichir(
             # Ex. dépôt sans titre → l'overwrite serait invalide.
             typer.echo(f"Erreur : overwrite invalide ({e.erreurs}).", err=True)
             raise typer.Exit(1) from None
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "doi": doi,
+            "item_cote": rapport.item_cote,
+            "item_id": rapport.item_id,
+            "dry_run": not no_dry_run,
+            "applique": rapport.applique,
+            "a_des_changements": rapport.a_des_changements,
+            "metadonnees_modifiees": rapport.metadonnees_modifiees,
+            "diffs": [
+                {"champ": d.champ, "avant": d.avant, "apres": d.apres}
+                for d in rapport.diffs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
 
     if not rapport.a_des_changements:
         typer.echo(f"Item {rapport.item_cote!r} déjà à jour (aucun changement).")
@@ -2667,6 +2706,29 @@ def _nom_court_propriete(uri: str) -> str:
     return uri
 
 
+def _payload_push_json(rapport, no_dry_run: bool) -> dict:
+    """Serialise `RapportPush` (pousser / pousser-collection items)
+    pour la sortie JSON. Partage la structure entre les commandes
+    qui consomment ce dataclass."""
+    return {
+        "cote": rapport.cote,
+        "doi": rapport.doi,
+        "dry_run": not no_dry_run,
+        "applique": rapport.applique,
+        "derive": rapport.derive,
+        "a_des_changements": rapport.a_des_changements,
+        "diffs": [
+            {
+                "property_uri": d.property_uri,
+                "nom_court": _nom_court_propriete(d.property_uri),
+                "avant": list(d.avant),
+                "apres": list(d.apres),
+            }
+            for d in rapport.diffs
+        ],
+    }
+
+
 def _afficher_diff_push(rapport, mode: str, no_dry_run: bool) -> None:
     """Sortie commune des commandes de push (diff + dérive)."""
     if rapport.derive:
@@ -2696,6 +2758,10 @@ def cmd_nakala_pousser(
     fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
@@ -2732,6 +2798,14 @@ def cmd_nakala_pousser(
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)
 
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps(
+            _payload_push_json(rapport, no_dry_run),
+            ensure_ascii=False, indent=2,
+        ))
+        return
+
     _afficher_diff_push(rapport, "RÉEL" if no_dry_run else "DRY-RUN", no_dry_run)
 
 
@@ -2741,6 +2815,10 @@ def cmd_nakala_publier(
     fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
@@ -2775,6 +2853,17 @@ def cmd_nakala_publier(
             raise typer.Exit(1) from None
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "cote": rapport.cote,
+            "doi": rapport.doi,
+            "dry_run": not no_dry_run,
+            "applique": rapport.applique,
+            "irreversible": True,
+        }, ensure_ascii=False, indent=2))
+        return
 
     if rapport.applique:
         typer.echo(f"✓ Dépôt {rapport.doi} publié (DOI minté — irréversible).")

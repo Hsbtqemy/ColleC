@@ -178,7 +178,28 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   cause documentées dans la section *Décisions d'architecture notables*
   ci-dessous. Avertissements de durée tiérisés dans l'aperçu (≥10 /
   ≥50 / ≥200 items) avec commande CLI pré-remplie pour les très gros
-  fonds. Reste **futur** : versioning fichiers (#4 SHA-1).
+  fonds.
+  **P3+a livré (fondations versioning fichiers)** : colonne dédiée
+  `Fichier.sha1_nakala` (String(40), indexée) + migration
+  `s7w8x9y0z1a2` (backfill idempotent depuis `metadonnees["sha1"]` pour
+  les fichiers déjà matérialisés via `rapatrier`). Capture du sha1 au
+  retour d'`uploader_fichier` dans `deposer_item` (persisté avec
+  `doi_nakala`) et au pull dans `materialiser_fichiers_nakala` (colonne
+  + compat retro `metadonnees["sha1"]`). **Distinct de `hash_sha256`**
+  (SHA-256 intégrité disque, algos différents).
+  **P3+b livré (détection lecture seule)** : `services/nakala_fichiers.py
+  ::comparer_fichiers_item` classe les fichiers d'un item vs le dépôt
+  distant en 5 catégories — `nouveaux`, `modifies`, `inchanges`,
+  `nakala_only_sans_local`, `orphelins_distants`. Réconciliation
+  prioritaire par SHA-1 recalculé on the fly (`hashlib` streaming),
+  fallback sur `sha1_nakala` connu pour détecter une modification. CLI
+  `archives-tool nakala comparer-fichiers <cote> --fonds X
+  [--format text|json]`. Aucune écriture base ni distante. **Smoke
+  live opt-in apitest** : `test_nakala_fichiers_integration.py` valide
+  le cycle complet a+b (dépôt → comparer inchangé → modif binaire local
+  → comparer modifié → cleanup) en 8.10s. **Reste futur** : P3+c push
+  effectif (`PUT /datas/{id}` avec garde-fous orphelins/Nakala-only) +
+  P3+d UI bouton fiche item.
 - [`idees-ui-vrac.md`](docs/developpeurs/idees-ui-vrac.md)
   — réserve d'idées UX non formalisées (étiquettes colorées,
   command palette, édition inline étendue, historique navigable,

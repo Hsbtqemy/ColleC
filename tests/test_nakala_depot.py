@@ -299,6 +299,13 @@ def test_deposer_collection_reel_cree_et_pose_doi(db_path: Path, tmp_path: Path)
     assert len(rapport.deposes) == 1
     with _session(db_path) as s:
         assert _collection_miroir(s, "AS").doi_nakala == "10.34847/nkl.colNEW"
+        # P3+a : la propagation via `deposer_collection → deposer_item`
+        # doit aussi capturer `sha1_nakala` sur les fichiers. Garantit
+        # qu'un dépôt par collection reste couvert (pas seulement par
+        # le test direct `test_reel_upload_et_cree_depot`).
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        fichier = next(iter(item.fichiers))
+        assert fichier.sha1_nakala == "sha-1"
 
 
 def _NKL_T(v: str, lang: str | None = None) -> dict:

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect
 
 revision: str = "s7w8x9y0z1a2"
 down_revision: str | None = "r6v7w8x9y0z1"
@@ -59,20 +60,31 @@ def appliquer_backfill(conn) -> None:
 
 
 def upgrade() -> None:
-    # Colonne nullable — pas de défaut serveur (chaque écriture pose la
-    # valeur depuis Nakala). String(40) pour 40 hex chars d'un SHA-1.
-    op.add_column(
-        "fichier",
-        sa.Column("sha1_nakala", sa.String(length=40), nullable=True),
-    )
-    op.create_index(
-        "ix_fichier_sha1_nakala", "fichier", ["sha1_nakala"], unique=False,
-    )
-    appliquer_backfill(op.get_bind())
+    # Idempotent : skip l'ajout de colonne si elle existe déjà — cas
+    # d'une base recréée via `Base.metadata.create_all` (tests, startup
+    # app) en parallèle de l'application des migrations. Pattern projet,
+    # cf. `n2r3s4t5u6v7::upgrade`. Le backfill reste toujours appliqué :
+    # il est intrinsèquement idempotent (WHERE sha1_nakala IS NULL).
+    bind = op.get_bind()
+    cols = {c["name"] for c in inspect(bind).get_columns("fichier")}
+    if "sha1_nakala" not in cols:
+        with op.batch_alter_table("fichier") as batch:
+            batch.add_column(
+                sa.Column("sha1_nakala", sa.String(length=40), nullable=True),
+            )
+            batch.create_index(
+                "ix_fichier_sha1_nakala", ["sha1_nakala"], unique=False,
+            )
+    appliquer_backfill(bind)
 
 
 def downgrade() -> None:
     # La colonne dropped ne touche pas `metadonnees` — le backfill
     # initial reste lisible via `metadonnees->>'sha1'`.
-    op.drop_index("ix_fichier_sha1_nakala", table_name="fichier")
-    op.drop_column("fichier", "sha1_nakala")
+    bind = op.get_bind()
+    cols = {c["name"] for c in inspect(bind).get_columns("fichier")}
+    if "sha1_nakala" not in cols:
+        return
+    with op.batch_alter_table("fichier") as batch:
+        batch.drop_index("ix_fichier_sha1_nakala")
+        batch.drop_column("sha1_nakala")

@@ -605,16 +605,27 @@ def test_fichiers_non_actif_sont_ignores(
     assert len(rapport.inchanges) == 1
     assert rapport.inchanges[0].nom_fichier == "actif.jpg"
     # Les fichiers REMPLACE et CORBEILLE sont **absents** des autres
-    # catégories aussi (ils ne participent pas du tout).
+    # catégories ordinaires (ils ne participent pas du tout au matching).
     assert rapport.modifies == []
     assert rapport.nouveaux == []
     assert rapport.nakala_only_sans_local == []
-    # Les sha1 distants correspondants deviennent orphelins (intention
-    # correcte : le palier c les retirera du distant).
+    # Trou O (passe 6) : les Fichier non-ACTIF avec `sha1_nakala` qui
+    # matche un sha1 distant sortent en `non_actifs_a_retirer` (PAS en
+    # orphelin anonyme) — traçabilité explicite du retrait à venir au
+    # PUT (le user voit que ces fichiers ColleC sont la raison du
+    # retrait, pas un mystère).
+    assert len(rapport.non_actifs_a_retirer) == 2
+    noms_non_actifs = {nac.nom_fichier for nac in rapport.non_actifs_a_retirer}
+    assert noms_non_actifs == {"remplace.jpg", "corbeille.jpg"}
+    sha1s_non_actifs = {nac.sha1_distant for nac in rapport.non_actifs_a_retirer}
+    assert sha1_remplace in sha1s_non_actifs
+    assert sha1_corbeille in sha1s_non_actifs
+    # Les sha1 distants correspondants NE sont PAS dans orphelins (ils
+    # ont été consommés du sha1_index par le Fichier ColleC non-ACTIF).
     sha1s_orphelins = {fo.sha1 for fo in rapport.orphelins_distants}
-    assert sha1_remplace in sha1s_orphelins
-    assert sha1_corbeille in sha1s_orphelins
-    # `aucun_changement` est False car il y a des orphelins distants.
+    assert sha1_remplace not in sha1s_orphelins
+    assert sha1_corbeille not in sha1s_orphelins
+    # `aucun_changement` est False car il y a des non-actifs à retirer.
     assert not rapport.aucun_changement
 
 
@@ -1417,3 +1428,118 @@ def test_pousser_doublons_sha1_distants_preserves_dans_files_cible(
     assert "a.jpg" in noms
     assert "b.jpg" in noms
     assert rapport.applique is True
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 6 — Trou O : Fichier non-ACTIF explicites au lieu de
+# silence ("orphelins anonymes")
+# ---------------------------------------------------------------------------
+
+
+def test_comparer_fichier_corbeille_sans_pendant_distant_pas_de_categorie(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Un Fichier CORBEILLE sans `sha1_nakala` posé OU sans matching
+    distant n'apparait dans aucune categorie - il n'y a rien a retirer
+    de Nakala.
+
+    (Filet de regression : eviter qu'on ajoute par erreur ces Fichier
+    a `non_actifs_a_retirer` sans verifier qu'ils ont vraiment un
+    pendant distant.)
+    """
+    client = _FakeClientLecture(files=[])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "deja_supprime.jpg",
+             "contenu": b"x", "sha1_nakala": None},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].etat = EtatFichier.CORBEILLE.value
+        s.commit()
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.non_actifs_a_retirer == []
+    assert rapport.aucun_changement
+
+
+def test_pousser_non_actifs_inclus_dans_sha1s_retires_au_put(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Un Fichier CORBEILLE avec sha1_nakala matchant le distant est
+    retire au PUT (exclus de `files_cible`) ET trace dans
+    `sha1s_retires` (au lieu d'un retrait silencieux).
+
+    Couvre la jonction Trou O (passe 6) + traçabilité utilisateur.
+    Combine avec un Fichier ACTIF modifie pour declencher le PUT.
+    """
+    contenu_corbeille = b"a supprimer"
+    sha1_corbeille = _sha1(contenu_corbeille)
+    contenu_actif_neuf = b"modifie"
+    sha1_actif_ancien = _sha1(b"ancien actif")
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
+        {"sha1": sha1_actif_ancien, "name": "actif.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "actif.jpg",
+             "contenu": contenu_actif_neuf, "sha1_nakala": sha1_actif_ancien},
+            {"ordre": 2, "nom": "corbeille.jpg",
+             "contenu": contenu_corbeille, "sha1_nakala": sha1_corbeille},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        fichiers[1].etat = EtatFichier.CORBEILLE.value
+        s.commit()
+
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    # Le fichier corbeille est trace dans non_actifs_a_retirer
+    assert rapport.compare is not None
+    assert len(rapport.compare.non_actifs_a_retirer) == 1
+    assert rapport.compare.non_actifs_a_retirer[0].nom_fichier == "corbeille.jpg"
+    # sha1_corbeille est listee dans sha1s_retires (traçabilité user)
+    assert sha1_corbeille.lower() in rapport.sha1s_retires
+    # PUT envoye, files_cible ne contient PAS le sha1 corbeille
+    assert len(ecriture.puts) == 1
+    files_envoyes = ecriture.puts[0]["files"]
+    sha1s_envoyes = [f["sha1"] for f in files_envoyes]
+    assert sha1_corbeille.lower() not in sha1s_envoyes
+    # Les autres traitements normaux (modif actif) ont eu lieu
+    assert rapport.applique is True
+
+
+def test_comparer_dry_run_aucun_changement_si_seul_non_actif_existe(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Item ne contenant QUE des Fichier non-ACTIF avec pendant distant
+    → `aucun_changement` est False (un retrait est planifie)."""
+    contenu = b"x"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg",
+             "contenu": contenu, "sha1_nakala": sha1},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].etat = EtatFichier.CORBEILLE.value
+        s.commit()
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.non_actifs_a_retirer) == 1
+    assert not rapport.aucun_changement

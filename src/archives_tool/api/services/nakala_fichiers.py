@@ -166,6 +166,20 @@ class RapportComparaisonFichiers:
       correspondant. Cas typique : fichier supprimé localement. Au
       push, **refusés par défaut** ; flag `retirer_orphelins=True`
       requis pour confirmer leur retrait côté Nakala.
+    - **non_actifs_a_retirer** : Fichier ColleC en `etat != ACTIF`
+      (REMPLACE ou CORBEILLE) dont le `sha1_nakala` matche un sha1
+      distant. Le filtre `etat != ACTIF` exclut ces Fichier du plan
+      de push → au PUT, Nakala les retire (H1 — `files[]` remplace
+      intégralement). **Distinct des orphelins** : le user a une trace
+      ColleC explicite de l'intention de retrait (Fichier en corbeille),
+      contrairement à un vrai orphelin (juste un sha1 distant inconnu).
+      Surfacé séparément pour que la CLI/UI puisse l'expliciter au lieu
+      du silence. **Sémantique CORBEILLE en attente** : le mécanisme
+      « mettre à la corbeille » n'est pas encore implémenté côté UI
+      (V1.x). Tant qu'il dort, cette catégorie reste vide. Quand il
+      arrivera, il faudra trancher : (a) refuser le push tant que
+      des Fichier corbeille existent, ou (b) garder le comportement
+      consultatif actuel. Pour l'instant : signaler sans bloquer.
     """
 
     cote_item: str
@@ -175,6 +189,7 @@ class RapportComparaisonFichiers:
     inchanges: list[FichierCompare] = field(default_factory=list)
     nakala_only_sans_local: list[FichierCompare] = field(default_factory=list)
     orphelins_distants: list[FichierOrphelin] = field(default_factory=list)
+    non_actifs_a_retirer: list[FichierCompare] = field(default_factory=list)
     # `modDate` distant capturé pendant le `lire_depot` initial. Permet
     # au caller (`pousser_fichiers_item`) de détecter une dérive sans
     # rejouer un second `lire_depot` (le client httpx n'a pas de cache
@@ -184,13 +199,15 @@ class RapportComparaisonFichiers:
     @property
     def aucun_changement(self) -> bool:
         """Vrai si pousser ne ferait rien : pas de nouveaux, pas de
-        modifs, pas d'orphelins à retirer. Les ``nakala_only_sans_local``
-        ne comptent pas comme un changement — ils sont seulement un
+        modifs, pas d'orphelins à retirer, pas de Fichier non-ACTIF
+        avec pendant distant. Les ``nakala_only_sans_local`` ne
+        comptent pas comme un changement — ils sont seulement un
         signal d'attention pour le palier c."""
         return (
             not self.nouveaux
             and not self.modifies
             and not self.orphelins_distants
+            and not self.non_actifs_a_retirer
         )
 
 
@@ -292,13 +309,30 @@ def comparer_fichiers_item(
 
     for f in sorted(item.fichiers, key=lambda x: x.ordre):
         # Filtre `etat=ACTIF` : un Fichier en `REMPLACE` ou `CORBEILLE`
-        # ne participe pas à la comparaison (cohérence avec
+        # ne participe pas à la comparaison principale (cohérence avec
         # `derivatives/generateur.py:166` et `renamer/plan.py:108`).
-        # Au futur push (palier c), ces Fichier ne seront pas envoyés
-        # — le PUT Nakala les retirera donc côté distant (cohérent avec
-        # la sémantique de la corbeille : suppression effective au
-        # prochain dépôt).
+        # Au push (palier c), ces Fichier ne seront pas envoyés dans
+        # `files[]` → le PUT Nakala les retire côté distant (H1 —
+        # remplace intégralement).
+        #
+        # Si le Fichier a un `sha1_nakala` qui matche un sha1 distant,
+        # on **consomme l'entrée distante** dans `sha1_index` (pour
+        # qu'elle ne ressorte pas en orphelin anonyme sans contexte)
+        # et on l'ajoute à `non_actifs_a_retirer` pour traçabilité
+        # explicite. Le push pourra ainsi expliciter le retrait dans
+        # son rapport (au lieu du silence).
         if f.etat != EtatFichier.ACTIF.value:
+            sha1_nakala_norm_na = f.sha1_nakala.lower() if f.sha1_nakala else None
+            if sha1_nakala_norm_na and sha1_index.get(sha1_nakala_norm_na):
+                sha1_index[sha1_nakala_norm_na].pop(0)
+                rapport.non_actifs_a_retirer.append(FichierCompare(
+                    fichier_id=f.id,
+                    cote_item=item.cote,
+                    nom_fichier=f.nom_fichier,
+                    ordre=f.ordre,
+                    sha1_local=None,
+                    sha1_distant=f.sha1_nakala,
+                ))
             continue
 
         # Binaire local résolvable et lisible ?
@@ -604,8 +638,21 @@ def pousser_fichiers_item(
             "un dépôt, utiliser `supprimer_depot` + redéposer."
         )
 
-    # Pré-calcul des sha1 distants pour le rapport `sha1s_retires`.
-    rapport.sha1s_retires = [o.sha1 for o in rapport_cmp.orphelins_distants]
+    # Pré-calcul des sha1 distants retirés au PUT. Deux origines :
+    # 1. orphelins distants (sha1 connu de Nakala mais sans Fichier
+    #    ColleC apparié, retrait sous `--retirer-orphelins`),
+    # 2. Fichier ColleC non-ACTIF (corbeille/remplacé) dont le
+    #    `sha1_nakala` matchait un sha1 distant — retrait acté par
+    #    l'état du Fichier (cf. Trou O passe 6 : explicite au lieu
+    #    de silencieux).
+    rapport.sha1s_retires = (
+        [o.sha1 for o in rapport_cmp.orphelins_distants]
+        + [
+            (nac.sha1_distant or "").strip().lower()
+            for nac in rapport_cmp.non_actifs_a_retirer
+            if nac.sha1_distant
+        ]
+    )
 
     # 5. Dry-run : on ne touche pas au distant.
     if dry_run:

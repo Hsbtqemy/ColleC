@@ -3139,11 +3139,31 @@ def cmd_nakala_pousser_fichiers(
             f" · {len(cmp.nouveaux)} nouveau(x)"
             f" · {len(cmp.nakala_only_sans_local)} Nakala-only"
             f" · {len(cmp.orphelins_distants)} orphelin(s) distant(s)"
+            f" · {len(cmp.non_actifs_a_retirer)} non-ACTIF avec pendant Nakala"
         )
+
+        # Avertissement explicite si des Fichier non-ACTIF (corbeille
+        # ou remplacés) vont être retirés. Le mécanisme corbeille UI
+        # n'existe pas encore en V0.10 — si cette ligne se déclenche,
+        # un user a posé l'état manuellement (CLI / API directe).
+        if cmp.non_actifs_a_retirer:
+            typer.echo(
+                "  ⚠ Fichier ColleC non-ACTIF (corbeille/remplacé) seront "
+                "retirés côté Nakala :"
+            )
+            for nac in cmp.non_actifs_a_retirer[:5]:
+                typer.echo(
+                    f"      [{nac.ordre:02d}] {nac.nom_fichier} "
+                    f"(sha1: {(nac.sha1_distant or '')[:12]}…)"
+                )
+            if len(cmp.non_actifs_a_retirer) > 5:
+                typer.echo(
+                    f"      (+ {len(cmp.non_actifs_a_retirer) - 5} autres)"
+                )
 
     if rapport.sha1s_retires:
         typer.echo(
-            f"  Orphelins à retirer : {len(rapport.sha1s_retires)} fichier(s)"
+            f"  Total retraits Nakala : {len(rapport.sha1s_retires)} fichier(s)"
         )
 
     # Detail plan

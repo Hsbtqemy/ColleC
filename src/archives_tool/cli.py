@@ -2860,6 +2860,13 @@ def cmd_nakala_pousser(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
     ),
+    forcer_publie: bool = typer.Option(
+        False, "--force-published",
+        help="Forcer le push sur un item déjà publié (status=published). "
+             "DANGEREUX : modifier les métadonnées d'un item publié change "
+             "ce qu'une citation externe reflète (titre, créateurs…). "
+             "Sans ce flag, l'item publié est refusé.",
+    ),
     format_sortie: _FormatRapport = typer.Option(
         _FormatRapport.TEXT, "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
@@ -2871,7 +2878,13 @@ def cmd_nakala_pousser(
 
     Diff par défaut (dry-run) ; `--no-dry-run` applique le `PUT` (remplace les
     métadonnées). Signale une dérive si le distant a changé depuis le pull.
+
+    **Garde-fou published** (passe 22) : refus par défaut si l'item est
+    publié côté Nakala (DOI DataCite minté). Repasser avec
+    `--force-published` pour confirmer.
     """
+    from archives_tool.api.services.nakala_depot import DepotPublie
+
     config = _charger_config_ou_sortie(config_path)
     with (
         _client_nakala_ou_sortie(config) as lecture,
@@ -2888,10 +2901,19 @@ def cmd_nakala_pousser(
         try:
             rapport = pousser_item(
                 session, lecture, ecriture, item,
-                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+                dry_run=not no_dry_run, forcer_publie=forcer_publie,
+                modifie_par=config.utilisateur,
             )
         except DepotImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except DepotPublie as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            typer.echo(
+                "Pour confirmer (DANGEREUX, modifie les citations externes), "
+                "repasser avec --force-published.",
+                err=True,
+            )
             raise typer.Exit(1) from None
         except MetaInvalide as e:
             typer.echo(f"Erreur : métadonnées insuffisantes — {e}", err=True)
@@ -2984,6 +3006,13 @@ def cmd_nakala_pousser_collection(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
     ),
+    forcer_publie: bool = typer.Option(
+        False, "--force-published",
+        help="Forcer le push même sur les items déjà publiés. "
+             "DANGEREUX : modifier les métadonnées d'un item publié change "
+             "ce qu'une citation externe reflète. Les items publiés sont "
+             "refusés (collectés dans `erreurs`) sans ce flag.",
+    ),
     format_sortie: _FormatRapport = typer.Option(
         _FormatRapport.TEXT, "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
@@ -3002,7 +3031,8 @@ def cmd_nakala_pousser_collection(
         try:
             rapport = pousser_collection(
                 session, lecture, ecriture, collection,
-                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+                dry_run=not no_dry_run, forcer_publie=forcer_publie,
+                modifie_par=config.utilisateur,
             )
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)

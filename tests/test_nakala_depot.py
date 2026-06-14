@@ -319,16 +319,18 @@ class _FakeRWClient:
     """Client combiné lecture+écriture pour les tests de push."""
 
     def __init__(self, metas_distantes: list[dict], mod_date: str = "2024-01-01",
-                 metas_collection: list[dict] | None = None) -> None:
+                 metas_collection: list[dict] | None = None,
+                 status: str = "pending") -> None:
         self._metas = metas_distantes
         self._mod = mod_date
         self._metas_col = metas_collection if metas_collection is not None else []
+        self._status = status
         self.put: dict | None = None
         self.put_collection: dict | None = None
 
     def lire_depot(self, doi: str) -> dict:
         return {"identifier": doi, "metas": self._metas, "modDate": self._mod,
-                "files": [], "status": "pending"}
+                "files": [], "status": self._status}
 
     def modifier_depot(self, identifiant, *, metas, status=None):
         self.put = {"metas": metas, "status": status}
@@ -428,7 +430,148 @@ def test_pousser_item_sans_diff_n_ecrit_pas(db_path: Path, tmp_path: Path) -> No
         client = _FakeRWClient(_metas_locales(item))
         rapport = pousser_item(s, client, client, item, dry_run=False)
     assert not rapport.a_des_changements and not rapport.applique
+
+
+# ---------------------------------------------------------------------------
+# Passe 22 — Dette T-cousine bouclee : check published sur pousser_item
+# (symetrie avec pousser_fichiers_item passe 9 Trou T)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_item_published_refuse_par_defaut(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou T-cousine — item publie cote Nakala + diff metas → refus
+    `DepotPublie`. Symetrie avec pousser_fichiers_item."""
+    from archives_tool.api.services.nakala_depot import DepotPublie, pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        # Distant publie + titre different → diff non vide → refus
+        client = _FakeRWClient(
+            [_NKL_T("Titre distant", lang="spa")],
+            status="published",
+        )
+        with pytest.raises(DepotPublie) as exc_info:
+            pousser_item(s, client, client, item, dry_run=False)
+    # L'exception expose le contexte
+    assert exc_info.value.statut == "published"
+    assert exc_info.value.cote == "AS-001"
+    assert "citation" in str(exc_info.value).lower()
+    # Aucun PUT envoye
     assert client.put is None
+
+
+def test_pousser_item_published_avec_forcer_publie_passe(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Avec `forcer_publie=True`, le push procede normalement."""
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        client = _FakeRWClient(
+            [_NKL_T("Titre distant", lang="spa")],
+            status="published",
+        )
+        rapport = pousser_item(
+            s, client, client, item, dry_run=False, forcer_publie=True,
+        )
+    assert rapport.applique is True
+    assert client.put is not None
+
+
+def test_pousser_item_published_aucun_changement_ne_leve_pas(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Item publie SANS diff metas → no-op idempotent, PAS de
+    DepotPublie. Le garde-fou est court-circuite par
+    `aucun_changement` (cohérent avec pousser-fichiers passe 14
+    Trou Z).
+
+    Sans cette protection, un script qui pousse 2x consecutifs sur
+    un item publie sans modification reveillerait inutilement le
+    garde-fou.
+    """
+    from archives_tool.api.services.nakala_depot import _metas_locales, pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        # Distant = metas locales exactes → diff vide
+        client = _FakeRWClient(_metas_locales(item), status="published")
+        rapport = pousser_item(s, client, client, item, dry_run=False)
+    # Pas d'exception. Pas de PUT.
+    assert not rapport.a_des_changements
+    assert not rapport.applique
+    assert client.put is None
+
+
+def test_pousser_item_pending_n_active_pas_le_garde_fou(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie negative : status=pending ne declenche pas le
+    garde-fou (comportement existant prejudice 22)."""
+    from archives_tool.api.services.nakala_depot import pousser_item
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        client = _FakeRWClient(
+            [_NKL_T("Titre distant", lang="spa")],
+            status="pending",
+        )
+        rapport = pousser_item(s, client, client, item, dry_run=False)
+    assert rapport.applique is True
+
+
+def test_pousser_collection_propage_forcer_publie(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """`pousser_collection` propage `forcer_publie` à `pousser_item`
+    dans la boucle. Sans flag, items publies → erreur collectee
+    (n'arrete pas le lot)."""
+    from archives_tool.api.services.nakala_depot import pousser_collection
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+    from archives_tool.api.services.collections import (
+        FormulaireCollection, creer_collection_libre,
+    )
+
+    with _session(db_path) as s:
+        item = _item_depose(s, tmp_path, titre="Titre local")
+        f = lire_fonds_par_cote(s, "AS")
+        col = creer_collection_libre(s, FormulaireCollection(
+            cote="AS-PUB", titre="C", fonds_id=f.id,
+        ))
+        col.items.append(item)
+        s.commit()
+
+        client = _FakeRWClient(
+            [_NKL_T("Titre distant", lang="spa")],
+            status="published",
+        )
+        # Sans flag : item publie collecte en erreur (n'arrete pas la
+        # boucle)
+        rapport = pousser_collection(
+            s, client, client, col, dry_run=False, forcer_publie=False,
+        )
+    assert len(rapport.erreurs) == 1
+    assert "AS-001" in rapport.erreurs[0][0]
+    assert "publié" in rapport.erreurs[0][1] or "published" in rapport.erreurs[0][1]
+
+
+def test_depot_publie_re_export_depuis_nakala_fichiers(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Compat retro : `DepotPublie` reste importable depuis
+    nakala_fichiers (re-export). Garde-fou anti-régression sur la
+    relocation passe 22."""
+    from archives_tool.api.services.nakala_fichiers import (
+        DepotPublie as DP_fichiers,
+    )
+    from archives_tool.api.services.nakala_depot import (
+        DepotPublie as DP_depot,
+    )
+    # Meme classe (re-export)
+    assert DP_fichiers is DP_depot
 
 
 def test_publier_item_reel(db_path: Path, tmp_path: Path) -> None:

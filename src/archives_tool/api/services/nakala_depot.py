@@ -68,6 +68,49 @@ class DepotImpossible(Exception):
     aucun fichier local déposable, ou métadonnées insuffisantes)."""
 
 
+class DepotPublie(Exception):
+    """Refus du push : l'item ciblé est ``status=published`` côté Nakala.
+
+    Un item publié a un DOI DataCite **minté définitivement**. Toute
+    modification :
+
+    - **des métadonnées** (titre, créateurs, date…) → change les
+      données qu'une citation externe reflète (« cité comme »), même
+      si le DOI lui-même persiste. Casse l'intégrité documentaire des
+      références (ex. notice bibliographique externe qui renvoie un
+      titre obsolète) ;
+    - **des fichiers** (`files[]`) → soit modifie le sha1 d'un fichier
+      cité, soit le retire → 404 sur les URLs IIIF persistantes
+      (perte de donnée référencée publiquement).
+
+    Par défaut, les services concernés (``pousser_item`` pour les
+    métadonnées, ``pousser_fichiers_item`` pour les fichiers) refusent.
+    Le caller peut forcer via ``forcer_publie=True`` (opt-in explicite
+    pour une action à risque, analogue aux flags ``retirer_orphelins``
+    et ``--force-published`` CLI).
+
+    L'attribut ``statut`` permet à la CLI / l'UI d'afficher le statut
+    exact détecté.
+
+    **Historique** : exception créée passe 9 P3+c.2 (dans
+    ``nakala_fichiers.py``) pour ``pousser_fichiers_item``. Déplacée
+    passe 22 dans ``nakala_depot.py`` (couche plus basse) pour permettre
+    son usage par ``pousser_item`` (metadonnées) sans dépendance
+    circulaire — symétrie cross-service de la dette T-cousine.
+    """
+
+    def __init__(self, cote: str, doi: str, statut: str) -> None:
+        self.cote = cote
+        self.doi = doi
+        self.statut = statut
+        super().__init__(
+            f"Item {cote!r} (DOI {doi}) est publié (status={statut!r}) côté "
+            f"Nakala. Toute modification (métadonnées ou fichiers) casse "
+            f"l'intégrité des citations externes. Pour confirmer, repasser "
+            f"avec forcer_publie=True (CLI : --force-published)."
+        )
+
+
 def _liste(valeur: Any) -> list[str]:
     """Normalise une valeur metadonnees (str | list | None) en liste de str."""
     if valeur is None:
@@ -565,6 +608,7 @@ def pousser_item(
     item: Item,
     *,
     dry_run: bool = True,
+    forcer_publie: bool = False,
     modifie_par: str | None = None,
     licence_defaut: str = LICENCE_DEFAUT,
 ) -> RapportPush:
@@ -575,6 +619,12 @@ def pousser_item(
     drapeau de **dérive** (le distant a-t-il changé depuis notre dernier
     fetch ?). Dry-run (défaut) → renvoie le diff sans écrire. Réel →
     `PUT /datas/{id}` (remplace les metas) puis rafraîchit le cache.
+
+    **Garde-fou published** (Trou T-cousine, passe 22) : refus par défaut
+    si l'item est ``status=published`` côté Nakala (DOI DataCite minté,
+    modifier les metas change ce qu'une citation externe reflète). Le
+    caller passe ``forcer_publie=True`` pour confirmer. Le check est
+    court-circuité s'il n'y a aucun changement (idempotent silencieux).
     """
     if not item.doi_nakala:
         raise DepotImpossible(
@@ -593,6 +643,15 @@ def pousser_item(
         cote=item.cote, doi=item.doi_nakala, dry_run=dry_run,
         diffs=diffs, derive=derive,
     )
+
+    # Garde-fou published (passe 22, dette T-cousine bouclee). Court-
+    # circuit si aucun changement (idempotent silencieux : push 2x sans
+    # modif ne reveille pas le garde-fou). Symetrie avec
+    # `pousser_fichiers_item` (passe 9 Trou T).
+    statut = brut.get("status")
+    if diffs and statut == "published" and not forcer_publie:
+        raise DepotPublie(item.cote, item.doi_nakala, statut)
+
     if dry_run or not diffs:
         logger.info(
             "push item metas %s cote=%s doi=%s diffs=%d derive=%s",
@@ -749,6 +808,7 @@ def pousser_collection(
     collection: Collection,
     *,
     dry_run: bool = True,
+    forcer_publie: bool = False,
     modifie_par: str | None = None,
     licence_defaut: str = LICENCE_DEFAUT,
 ) -> RapportPushCollection:
@@ -757,7 +817,10 @@ def pousser_collection(
     L'entité collection (titre/description) est poussée si elle a un
     `doi_nakala` (`meta_collection`). Puis chaque item : sans DOI →
     `non_lies` ; sans diff → `inchanges` ; échec → `erreurs` (n'arrête pas
-    le lot)."""
+    le lot).
+
+    `forcer_publie` propage à `pousser_item` (passe 22 : garde-fou
+    published cross-service)."""
     rapport = RapportPushCollection(collection_cote=collection.cote, dry_run=dry_run)
     nb_items = len(collection.items)
     logger.info(
@@ -778,8 +841,12 @@ def pousser_collection(
         try:
             r = pousser_item(
                 db, client_lecture, client_ecriture, item,
-                dry_run=dry_run, modifie_par=modifie_par, licence_defaut=licence_defaut,
+                dry_run=dry_run, forcer_publie=forcer_publie,
+                modifie_par=modifie_par, licence_defaut=licence_defaut,
             )
+        except DepotPublie as exc:
+            rapport.erreurs.append((item.cote, str(exc)))
+            continue
         except (MetaInvalide, ErreurNakala) as exc:
             rapport.erreurs.append((item.cote, str(exc)))
             continue

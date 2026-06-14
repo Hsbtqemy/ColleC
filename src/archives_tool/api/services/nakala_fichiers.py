@@ -196,38 +196,10 @@ class FichierFantomeDistant(Exception):
         )
 
 
-class DepotPublie(Exception):
-    """Refus du push fichiers : l'item ciblé est ``status=published``
-    côté Nakala.
-
-    Un item publié a un DOI DataCite minté, et chacun de ses fichiers
-    devient citable individuellement (URLs IIIF persistantes). Toute
-    modification de ``files[]`` :
-
-    - **modifie le sha1** d'un fichier déjà cité (l'URL IIIF de tile
-      change) → casse l'intégrité documentaire de toute citation
-      externe pointant vers ce fichier ;
-    - **retire un fichier** publié → 404 sur les citations externes
-      (perte de donnée référencée publiquement).
-
-    Par défaut, le service refuse. Le caller peut forcer via
-    ``forcer_publie=True`` (équivalent du flag ``retirer_orphelins``
-    pour les orphelins : opt-in explicite pour une action à risque).
-
-    L'attribut ``statut`` permet à la CLI / l'UI d'afficher le statut
-    exact détecté.
-    """
-
-    def __init__(self, cote: str, doi: str, statut: str) -> None:
-        self.cote = cote
-        self.doi = doi
-        self.statut = statut
-        super().__init__(
-            f"Item {cote!r} (DOI {doi}) est publié (status={statut!r}) côté "
-            f"Nakala. Toute modification des fichiers casse l'intégrité des "
-            f"citations externes. Pour confirmer, repasser avec "
-            f"forcer_publie=True (CLI : --force-published)."
-        )
+#: `DepotPublie` est defini dans `nakala_depot.py` (couche plus basse).
+#: Re-exporte ici pour preserver les imports existants
+#: (`from archives_tool.api.services.nakala_fichiers import DepotPublie`).
+from archives_tool.api.services.nakala_depot import DepotPublie  # noqa: E402, F401
 
 
 class IncoherenceFichierORM(Exception):

@@ -152,3 +152,72 @@ def test_construire_source_non_image_donne_data() -> None:
     )
     # base_url avec slash final toléré ; non-image → data binaire.
     assert url == f"https://api.nakala.fr/data/{DOI}/{SHA}"
+
+
+# ---------------------------------------------------------------------------
+# Trou V (passe 11 P3+c.2) — remplacer_sha sur URLs Nakala
+# ---------------------------------------------------------------------------
+
+
+def test_remplacer_sha_sur_url_iiif_info_json() -> None:
+    """Cas typique : URL stockée par `comparer` après import → IIIF
+    info.json. Apres push qui change le sha, on recalcule."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    nouveau = "fedcba9876543210fedcba9876543210fedcba98"
+    url = f"https://api.nakala.fr/iiif/{DOI}/{SHA}/info.json"
+    assert remplacer_sha(url, nouveau) == (
+        f"https://api.nakala.fr/iiif/{DOI}/{nouveau}/info.json"
+    )
+
+
+def test_remplacer_sha_sur_url_data() -> None:
+    """URL de telechargement binaire — sha aussi present, doit etre
+    remplace (PDF, audio, video stockes en `data`)."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    nouveau = "fedcba9876543210fedcba9876543210fedcba98"
+    url = f"https://api.nakala.fr/data/{DOI}/{SHA}"
+    assert remplacer_sha(url, nouveau) == (
+        f"https://api.nakala.fr/data/{DOI}/{nouveau}"
+    )
+
+
+def test_remplacer_sha_sur_url_thumb() -> None:
+    """Pattern thumb avec suffixe `/full/!200,200/0/default.jpg` — le
+    suffixe doit etre preserve."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    nouveau = "fedcba9876543210fedcba9876543210fedcba98"
+    url = f"https://api.nakala.fr/iiif/{DOI}/{SHA}/full/!200,200/0/default.jpg"
+    assert remplacer_sha(url, nouveau) == (
+        f"https://api.nakala.fr/iiif/{DOI}/{nouveau}/full/!200,200/0/default.jpg"
+    )
+
+
+def test_remplacer_sha_preserve_hostname_test() -> None:
+    """`api-test.nakala.fr` reste sur api-test (cohérent avec
+    `vers_iiif_info_json`)."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    nouveau = "fedcba9876543210fedcba9876543210fedcba98"
+    url = f"https://api-test.nakala.fr/iiif/{DOI}/{SHA}/info.json"
+    assert remplacer_sha(url, nouveau) == (
+        f"https://api-test.nakala.fr/iiif/{DOI}/{nouveau}/info.json"
+    )
+
+
+def test_remplacer_sha_sur_url_non_nakala_retourne_inchangee() -> None:
+    """Pattern non-Nakala (gallica, peri vues…) : retourne tel quel."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    url = "https://gallica.bnf.fr/iiif/ark:/12148/bpt6k1234567/manifest.json"
+    assert remplacer_sha(url, "abc") == url
+
+
+def test_remplacer_sha_sur_url_malformee_retourne_inchangee() -> None:
+    """URL Nakala-like mais hors pattern : pas modifiée."""
+    from archives_tool.files.nakala import remplacer_sha
+
+    url = "https://api.nakala.fr/foo/bar"
+    assert remplacer_sha(url, "abc") == url

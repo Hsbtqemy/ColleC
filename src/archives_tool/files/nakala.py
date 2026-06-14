@@ -66,6 +66,27 @@ def vers_iiif_info_json(url: str) -> str:
     return f"{m['scheme']}://{m['host']}/iiif/{m['doi']}/{m['sha']}/info.json"
 
 
+def remplacer_sha(url: str, nouveau_sha: str) -> str:
+    """Substitue le SHA d'une URL Nakala par ``nouveau_sha``, en
+    préservant scheme/host/endpoint/DOI/suffixe.
+
+    Cas typique (Trou V passe 11) : après un push fichiers qui
+    change le sha côté Nakala (upload de nouveau binaire), l'URL
+    IIIF stockée sur ``Fichier.iiif_url_nakala`` (qui contient le
+    sha dans son chemin) doit être recalée — sinon le viewer
+    OpenSeadragon hérite d'un 404 silencieux.
+
+    Retourne ``url`` inchangée si elle ne matche pas le pattern
+    Nakala (préserve le comportement neutre du module : on ne
+    touche pas aux URLs non reconnues).
+    """
+    m = PATTERN_URL_NAKALA.match(url)
+    if m is None:
+        return url
+    debut, fin = m.span("sha")
+    return url[:debut] + nouveau_sha + url[fin:]
+
+
 def vers_thumb(url: str, taille_max: int = 200) -> str | None:
     """Transforme une URL Nakala en URL de vignette IIIF carrée.
 

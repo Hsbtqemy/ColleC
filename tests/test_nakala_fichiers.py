@@ -2143,3 +2143,126 @@ def test_comparer_aucun_changement_avec_fantome_seul_est_false(
     # silencieux ne signale rien).
     assert rapport.aucun_changement is False
     assert len(rapport.fichiers_fantomes) == 1
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 11 — Trou V : iiif_url_nakala recale apres push
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Apres un push qui change le sha cote Nakala (upload binaire
+    modifie), `Fichier.iiif_url_nakala` doit etre recalee — sinon
+    l'URL pointe vers l'ancien sha → 404 sur tout viewer ColleC.
+
+    Le service met a jour sha1_nakala + iiif_url_nakala en parallele
+    via `remplacer_sha` (Trou V passe 11).
+    """
+    contenu_ancien = b"ancien contenu"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"contenu modifie"
+    DOI = "10.34847/nkl.abc"
+    iiif_url_ancienne = f"https://api-test.nakala.fr/iiif/{DOI}/{sha_ancien}/info.json"
+
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha_ancien, "name": "x.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien,
+             "iiif_url_nakala": iiif_url_ancienne},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    # Le sha a change via stub (format 40 hex), recupere du rapport
+    assert len(rapport.sha1s_uploades) == 1
+    sha_neuf = rapport.sha1s_uploades[0]
+
+    # iiif_url_nakala doit pointer vers le nouveau sha
+    with _session(db_path) as s:
+        f = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).first()
+        assert f is not None
+        assert sha_neuf in f.iiif_url_nakala
+        assert sha_ancien not in f.iiif_url_nakala
+        # Host preserve (api-test reste api-test)
+        assert "api-test.nakala.fr" in f.iiif_url_nakala
+        # sha1_nakala parallelement mis a jour
+        assert f.sha1_nakala == sha_neuf
+
+
+def test_pousser_ne_touche_pas_iiif_url_si_pas_pose(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si `iiif_url_nakala` est None (Fichier sans URL pré-existante),
+    le service n'invente pas d'URL. iiif_url_nakala reste None apres push."""
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None,
+             "iiif_url_nakala": None},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        f = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).first()
+        assert f.iiif_url_nakala is None
+
+
+def test_pousser_inchange_ne_recale_pas_iiif_url(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie negative : si le Fichier est inchange (sha matche
+    distant), aucun upload, donc nouveaux_sha1_par_fichier vide, donc
+    pas de touch a iiif_url_nakala. L'URL reste celle d'origine.
+
+    Documente la convention : seuls les Fichier dont le sha a vraiment
+    change sont recales."""
+    contenu = b"inchange"
+    sha = _sha1(contenu)
+    DOI = "10.34847/nkl.abc"
+    url = f"https://api-test.nakala.fr/iiif/{DOI}/{sha}/info.json"
+
+    # On declenche un PUT en ajoutant un 2e Fichier nouveau
+    contenu_nouveau = b"nouveau"
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha, "name": "i.jpg"},
+    ])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha,
+             "iiif_url_nakala": url},
+            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
+             "sha1_nakala": None, "iiif_url_nakala": None},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Fichier i (inchange) : url inchangee
+        assert fichiers[0].iiif_url_nakala == url
+        # Fichier n (nouveau) : pas d'URL pre-existante, reste None
+        assert fichiers[1].iiif_url_nakala is None

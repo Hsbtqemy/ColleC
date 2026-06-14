@@ -1009,11 +1009,23 @@ def pousser_fichiers_item(
     # Pose `modifie_le` pour tracer la mutation et incrémente `version`
     # (sans verrou optimiste actif sur Fichier — cf. dette signalee
     # CLAUDE.md, mais on respecte le pattern).
+    #
+    # Trou V (passe 11) : `iiif_url_nakala` contient le sha dans son
+    # chemin (`/iiif/<doi>/<sha>/info.json`). Apres un upload qui
+    # change le sha, l'URL stockee pointe vers l'ancien sha → 404
+    # sur tout viewer ColleC. Recalcul automatique via `remplacer_sha`
+    # qui preserve scheme/host/DOI/endpoint/suffixe.
+    from archives_tool.files.nakala import remplacer_sha
+
     maintenant = datetime.now()
     for fichier_id, sha1_neuf in nouveaux_sha1_par_fichier.items():
         fichier = db.get(Fichier, fichier_id)
         if fichier is not None:
             fichier.sha1_nakala = sha1_neuf
+            if fichier.iiif_url_nakala:
+                fichier.iiif_url_nakala = remplacer_sha(
+                    fichier.iiif_url_nakala, sha1_neuf,
+                )
             fichier.modifie_le = maintenant
             fichier.version = (fichier.version or 1) + 1
 

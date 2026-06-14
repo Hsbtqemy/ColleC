@@ -2266,3 +2266,208 @@ def test_pousser_inchange_ne_recale_pas_iiif_url(
         assert fichiers[0].iiif_url_nakala == url
         # Fichier n (nouveau) : pas d'URL pre-existante, reste None
         assert fichiers[1].iiif_url_nakala is None
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 12 — Trous W + X : cohérence cross-champs post-push
+# (metadonnees["sha1"] miroir + derives locaux invalides)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_met_a_jour_metadonnees_sha1_miroir(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou W — `materialiser_fichiers_nakala` (rapatrier) ecrit le sha1
+    en miroir dans `metadonnees["sha1"]` pour compat retro
+    (consommateurs qui lisaient la avant P3+a). Apres push qui change
+    `sha1_nakala`, le miroir doit etre sync — sinon `sha1_nakala`
+    (canonique) et `metadonnees["sha1"]` (miroir) divergent silencieusement.
+    """
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        # Pose le miroir compat retro
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].metadonnees = {"sha1": sha_ancien, "size": 123, "embargoed": None}
+        s.commit()
+
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    sha_neuf = rapport.sha1s_uploades[0]
+    with _session(db_path) as s:
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
+        # `sha1_nakala` (canonique) = `metadonnees["sha1"]` (miroir).
+        assert f.sha1_nakala == sha_neuf
+        assert f.metadonnees["sha1"] == sha_neuf
+        # Les AUTRES cles de metadonnees sont preservees (pas wipe complet).
+        assert f.metadonnees["size"] == 123
+        assert "embargoed" in f.metadonnees
+
+
+def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si `metadonnees["sha1"]` n'existe pas, le service ne l'invente
+    pas (semantique neutre : un Fichier importe via tableur n'a pas
+    forcement ce miroir compat retro, on n'ajoute pas une cle qui
+    n'existait pas).
+    """
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        # metadonnees vide (cas typique import tableur)
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].metadonnees = {"autre": "valeur"}
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
+        # `sha1` n'est PAS apparue dans metadonnees
+        assert "sha1" not in f.metadonnees
+        # L'autre cle est preservee
+        assert f.metadonnees["autre"] == "valeur"
+
+
+def test_pousser_metadonnees_None_pas_d_erreur(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Si `Fichier.metadonnees is None` (jamais initialise), le service
+    ne plante pas. Filet de robustesse anti-AttributeError."""
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].metadonnees = None  # cas degenere
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
+        # metadonnees reste None (pas invente)
+        assert f.metadonnees is None
+
+
+def test_pousser_invalide_derives_locaux_apres_changement_binaire(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Trou X — apres un push qui change le binaire local (categorie
+    `modifie`), les derives locaux (vignette, apercu, DZI) generes
+    depuis l'ancien binaire sont obsoletes. Pattern aligne sur
+    `renamer/execution._invalider_derives` (deja teste pour rename).
+    """
+    contenu_ancien = b"ancien"
+    sha_ancien = _sha1(contenu_ancien)
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": sha_ancien},
+        ])
+        # Pose des derives "deja generes" du contenu ancien
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+        ).all()
+        fichiers[0].derive_genere = True
+        fichiers[0].apercu_chemin = "/cache/apercu/x.jpg"
+        fichiers[0].vignette_chemin = "/cache/vignette/x.jpg"
+        fichiers[0].dzi_chemin = "/cache/dzi/x.dzi"
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
+        # Derives invalides (force regeneration au prochain `deriver appliquer`)
+        assert f.derive_genere is False
+        assert f.apercu_chemin is None
+        assert f.vignette_chemin is None
+        assert f.dzi_chemin is None
+
+
+def test_pousser_inchange_n_invalide_pas_derives(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Symetrie negative : Fichier inchange (sha local == sha distant)
+    ne voit pas ses derives invalides (le binaire n'a pas change, la
+    vignette reste valide). Documente la convention : invalidation
+    SEULEMENT pour modifies + nouveaux (= ceux qui ont declenche un
+    upload donc une mutation effective)."""
+    contenu = b"identique"
+    sha = _sha1(contenu)
+    # Distant a meme sha → categorie inchange. Declenche un PUT via un
+    # 2e Fichier "nouveau"
+    contenu_neuf = b"nouveau"
+    lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_neuf,
+             "sha1_nakala": None},
+        ])
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Pose un derive sur l'inchange uniquement
+        fichiers[0].derive_genere = True
+        fichiers[0].vignette_chemin = "/cache/vignette/i.jpg"
+        s.commit()
+
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+    with _session(db_path) as s:
+        fichiers = s.scalars(
+            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            .order_by(Fichier.ordre)
+        ).all()
+        # Inchange : derive preserve
+        assert fichiers[0].derive_genere is True
+        assert fichiers[0].vignette_chemin == "/cache/vignette/i.jpg"

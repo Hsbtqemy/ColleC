@@ -2689,6 +2689,26 @@ dédiée avec URI + label, pas en dur dans le code.
 
 (Mettre à jour au fil du projet.)
 
+- [ ] **Re-caractérisation du binaire après `pousser_fichiers_item`**.
+      La passe 12 (commit à venir) propage sha1_nakala et invalide les
+      dérivés locaux. Mais d'autres champs caractérisent le binaire et
+      restent obsolètes après push d'un fichier modifié :
+      - `Fichier.hash_sha256` : SHA-256 disque (intégrité QA). Algos
+        différents (SHA-1 vs SHA-256), donc pas substituable depuis le
+        sha Nakala. Option (a) nuller pour forcer recalcul au prochain
+        `controler`. Option (b) recalculer immédiatement (cycle stream
+        + hashlib comme `_sha1_du_binaire`, ~50 ms par fichier 10 Mo).
+        Préférer (b) — le binaire est déjà ouvert pour upload, ajouter
+        un hash double n'ajoute pas d'I/O critique.
+      - `Fichier.taille_octets` : trivial (`chemin.stat().st_size`).
+      - `Fichier.format` / `largeur_px` / `hauteur_px` : nécessitent
+        PIL. Si l'extension n'a pas changé, format reste valable. Pour
+        l'instant ces champs sont calculés à l'import seulement. Au
+        push, ils peuvent diverger si le user a re-traité un scan
+        (recadrage ScanTailor → dimensions changent).
+      À combiner avec la dette « journal des push fichiers » (table
+      `OperationPushNakala`) — le re-snapshot des champs caractéristiques
+      avant/après est utile pour audit. Probable 1 session combinée.
 - [ ] **Logging structuré transversal sur `nakala_depot.py`** (~7 services
       écriture : `deposer_item`, `deposer_collection`, `pousser_item`,
       `publier_item`, `pousser_metadonnees_collection`, `pousser_collection`,

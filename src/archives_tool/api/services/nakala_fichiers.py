@@ -1010,11 +1010,24 @@ def pousser_fichiers_item(
     # (sans verrou optimiste actif sur Fichier — cf. dette signalee
     # CLAUDE.md, mais on respecte le pattern).
     #
-    # Trou V (passe 11) : `iiif_url_nakala` contient le sha dans son
-    # chemin (`/iiif/<doi>/<sha>/info.json`). Apres un upload qui
-    # change le sha, l'URL stockee pointe vers l'ancien sha → 404
-    # sur tout viewer ColleC. Recalcul automatique via `remplacer_sha`
-    # qui preserve scheme/host/DOI/endpoint/suffixe.
+    # Plusieurs champs dépendent du sha — sans propagation, désync
+    # silencieuse à mille endroits :
+    #
+    # - **Trou V** (passe 11) : `iiif_url_nakala` contient le sha dans
+    #   son chemin (`/iiif/<doi>/<sha>/info.json`). Recale via
+    #   `remplacer_sha` qui preserve scheme/host/DOI/endpoint/suffixe.
+    # - **Trou W** (passe 12) : `metadonnees["sha1"]` est ecrit en miroir
+    #   par `materialiser_fichiers_nakala` (rapatrier) en compat retro
+    #   pour les consommateurs qui le lisaient la (exports, scripts
+    #   ad-hoc). Apres push, sans propagation, `sha1_nakala`
+    #   (canonique) et `metadonnees["sha1"]` (miroir) divergent. Sync
+    #   defensif si la cle existe (sinon on ne l'invente pas).
+    # - **Trou X** (passe 12) : `derive_genere` + `apercu_chemin` +
+    #   `vignette_chemin` + `dzi_chemin` sont les derives LOCAUX du
+    #   binaire. Le binaire a change (categorie `modifie`), donc les
+    #   derives generes precedemment correspondent a l'ancien
+    #   contenu → vignette desynchro affichee dans l'UI. Pattern de
+    #   `renamer/execution._invalider_derives` (deja teste).
     from archives_tool.files.nakala import remplacer_sha
 
     maintenant = datetime.now()
@@ -1026,6 +1039,22 @@ def pousser_fichiers_item(
                 fichier.iiif_url_nakala = remplacer_sha(
                     fichier.iiif_url_nakala, sha1_neuf,
                 )
+            # Trou W : metadonnees["sha1"] miroir
+            if isinstance(fichier.metadonnees, dict) and "sha1" in fichier.metadonnees:
+                # SQLAlchemy ne detecte pas les mutations in-place sur JSON :
+                # copier + reassigner pour declencher le flush.
+                meta = dict(fichier.metadonnees)
+                meta["sha1"] = sha1_neuf
+                fichier.metadonnees = meta
+            # Trou X : invalider les derives locaux du binaire
+            if fichier.derive_genere:
+                fichier.derive_genere = False
+            if fichier.apercu_chemin is not None:
+                fichier.apercu_chemin = None
+            if fichier.vignette_chemin is not None:
+                fichier.vignette_chemin = None
+            if fichier.dzi_chemin is not None:
+                fichier.dzi_chemin = None
             fichier.modifie_le = maintenant
             fichier.version = (fichier.version or 1) + 1
 

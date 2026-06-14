@@ -166,3 +166,65 @@ def test_rafraichir_collection_applique_overwrite(
     with _session(db_vide) as s:
         item = s.scalar(select(Item).where(Item.doi_nakala == "10.34847/nkl.aaa1"))
         assert item.titre == "Titre RÉVISÉ"
+
+
+# ---------------------------------------------------------------------------
+# Passe 20 — Dette AD : --format json sur commandes collection
+# ---------------------------------------------------------------------------
+
+
+def test_rapatrier_collection_format_json(
+    config_nakala: Path, db_vide: Path,
+) -> None:
+    """`rapatrier-collection --format json` : structure complete."""
+    import json
+    r = runner.invoke(app, [
+        "nakala", "rapatrier-collection", _DOI_COL, "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_vide),
+    ])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data["doi_collection"] == _DOI_COL
+    assert data["dry_run"] is True
+    # En dry-run, fonds n'est pas reellement cree (seulement projete)
+    assert data["fonds_cree"] is False
+    assert isinstance(data["crees"], list)
+    assert len(data["crees"]) == 2
+    assert data["deja_existants"] == []
+    assert data["erreurs"] == []
+
+
+def test_rafraichir_collection_format_json(
+    config_nakala: Path, db_vide: Path,
+) -> None:
+    """`rafraichir-collection --format json` : structure complete avec
+    diffs imbriques."""
+    import json
+    # Setup : créer un item lié au DOI pour qu'il y ait un rapport
+    with _session(db_vide) as s:
+        from archives_tool.api.services.fonds import (
+            FormulaireFonds, creer_fonds,
+        )
+        from archives_tool.api.services.items import (
+            FormulaireItem, creer_item,
+        )
+        f = creer_fonds(s, FormulaireFonds(cote="X", titre="X"))
+        item = creer_item(s, FormulaireItem(
+            cote="X-aaa1", titre="Ancien", fonds_id=f.id,
+        ))
+        item.doi_nakala = "10.34847/nkl.aaa1"
+        s.commit()
+
+    r = runner.invoke(app, [
+        "nakala", "rafraichir-collection", _DOI_COL, "--format", "json",
+        "--config", str(config_nakala), "--db-path", str(db_vide),
+    ])
+    assert r.exit_code == 0, r.output
+    data = json.loads(r.output)
+    assert data["doi_collection"] == _DOI_COL
+    assert data["dry_run"] is True
+    # Au moins 1 item modifie (titre)
+    assert isinstance(data["modifies"], list)
+    assert "inchanges" in data
+    assert "non_lies" in data
+    assert "erreurs" in data

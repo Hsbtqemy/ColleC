@@ -2422,6 +2422,10 @@ def cmd_nakala_rapatrier_collection(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Rapatrier réellement (sinon : aperçu)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2458,6 +2462,23 @@ def cmd_nakala_rapatrier_collection(
                 typer.echo(f"Erreur Nakala : {e}", err=True)
                 raise typer.Exit(1) from None
 
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "doi_collection": rapport.doi_collection,
+            "fonds_cote": rapport.fonds_cote,
+            "fonds_cree": rapport.fonds_cree,
+            "dry_run": rapport.dry_run,
+            "crees": list(rapport.crees),
+            "deja_existants": list(rapport.deja_existants),
+            "fichiers_crees": rapport.fichiers_crees,
+            "erreurs": [
+                {"doi": doi_err, "detail": detail}
+                for doi_err, detail in rapport.erreurs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
+
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     cible = (
         f"fonds {rapport.fonds_cote!r}"
@@ -2486,6 +2507,10 @@ def cmd_nakala_rafraichir_collection(
     doi: str = typer.Argument(..., help="DOI/identifiant de la collection Nakala."),
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Appliquer les overwrites (sinon : diff seul)."
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
@@ -2520,6 +2545,34 @@ def cmd_nakala_rafraichir_collection(
             except ErreurNakala as e:
                 typer.echo(f"Erreur Nakala : {e}", err=True)
                 raise typer.Exit(1) from None
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        modifies = rapport.modifies
+        typer.echo(json.dumps({
+            "doi_collection": rapport.doi_collection,
+            "dry_run": rapport.dry_run,
+            "modifies": [
+                {
+                    "item_cote": r.item_cote,
+                    "item_id": r.item_id,
+                    "applique": r.applique,
+                    "metadonnees_modifiees": r.metadonnees_modifiees,
+                    "diffs": [
+                        {"champ": d.champ, "avant": d.avant, "apres": d.apres}
+                        for d in r.diffs
+                    ],
+                }
+                for r in modifies
+            ],
+            "inchanges": [r.item_cote for r in rapport.inchanges],
+            "non_lies": list(rapport.non_lies),
+            "erreurs": [
+                {"doi": doi_err, "detail": detail}
+                for doi_err, detail in rapport.erreurs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     modifies = rapport.modifies
@@ -2594,6 +2647,10 @@ def cmd_nakala_deposer(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2628,6 +2685,20 @@ def cmd_nakala_deposer(
             except ErreurNakala as e:
                 _sortie_erreur_nakala_ecriture(e)
 
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "cote": rapport.cote,
+            "dry_run": rapport.dry_run,
+            "deja_depose": rapport.deja_depose,
+            "doi": rapport.doi,
+            "statut": statut,
+            "nb_fichiers": rapport.nb_fichiers,
+            "fichiers": list(rapport.fichiers),
+            "avertissements": list(rapport.avertissements),
+        }, ensure_ascii=False, indent=2))
+        return
+
     if rapport.deja_depose:
         typer.echo(f"Item {rapport.cote!r} déjà déposé → {rapport.doi}.")
     elif no_dry_run:
@@ -2658,6 +2729,10 @@ def cmd_nakala_deposer_collection(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2675,6 +2750,32 @@ def cmd_nakala_deposer_collection(
                 )
             except ErreurNakala as e:
                 _sortie_erreur_nakala_ecriture(e)
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "collection_cote": rapport.collection_cote,
+            "dry_run": rapport.dry_run,
+            "collection_doi": rapport.collection_doi,
+            "collection_creee": rapport.collection_creee,
+            "statut_donnee": statut_donnee,
+            "statut_collection": statut_collection,
+            "deposes": [
+                {
+                    "cote": r.cote, "doi": r.doi, "nb_fichiers": r.nb_fichiers,
+                    "deja_depose": r.deja_depose,
+                    "avertissements": list(r.avertissements),
+                }
+                for r in rapport.deposes
+            ],
+            "sautes": list(rapport.sautes),
+            "non_deposables": list(rapport.non_deposables),
+            "erreurs": [
+                {"cote": c, "detail": detail}
+                for c, detail in rapport.erreurs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     cible = rapport.collection_doi or "(à créer)"
@@ -2883,6 +2984,10 @@ def cmd_nakala_pousser_collection(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2901,6 +3006,27 @@ def cmd_nakala_pousser_collection(
             )
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        mc = rapport.meta_collection
+        typer.echo(json.dumps({
+            "collection_cote": collection.cote,
+            "dry_run": not no_dry_run,
+            "meta_collection": (
+                _payload_push_json(mc, no_dry_run) if mc is not None else None
+            ),
+            "pousses": [
+                _payload_push_json(r, no_dry_run) for r in rapport.pousses
+            ],
+            "inchanges": [r.cote for r in rapport.inchanges],
+            "non_lies": list(rapport.non_lies),
+            "erreurs": [
+                {"cote": c, "detail": detail}
+                for c, detail in rapport.erreurs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     # Entité collection (titre/description) d'abord.
@@ -2946,6 +3072,10 @@ def cmd_nakala_publier_collection(
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
     ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -2967,6 +3097,27 @@ def cmd_nakala_publier_collection(
             )
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+        typer.echo(json.dumps({
+            "collection_cote": collection.cote,
+            "dry_run": not no_dry_run,
+            "irreversible": True,
+            "publies": [
+                {
+                    "cote": r.cote, "doi": r.doi,
+                    "applique": r.applique,
+                }
+                for r in rapport.publies
+            ],
+            "non_lies": list(rapport.non_lies),
+            "erreurs": [
+                {"cote": c, "detail": detail}
+                for c, detail in rapport.erreurs
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
     verbe = "publié(s)" if no_dry_run else "à publier"

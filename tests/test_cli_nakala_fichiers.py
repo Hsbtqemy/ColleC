@@ -355,3 +355,193 @@ def test_config_sans_api_key_n_exit_pas_au_demarrage(tmp_path: Path) -> None:
     # Avec notre stub `_FakeReadClient`, le lire_depot reussit (pas
     # de check auth dans le mock) et la commande exit 0 normalement.
     assert r.exit_code == 0
+
+
+# ===========================================================================
+# CLI `nakala pousser-fichiers` (P3+c.2)
+# ===========================================================================
+
+
+class _FakeWriteClient:
+    """Stub `NakalaEcritureClient` pour la CLI `pousser-fichiers`.
+
+    Capture les uploads + PUT pour assertion. Renvoie un sha1 séquentiel
+    `upload-N`. Auto-mocke via fixture `_mock_write_client` qui patche
+    aussi `_client_ecriture_nakala_ou_sortie` (validation api_key)."""
+
+    instances: list["_FakeWriteClient"] = []
+
+    def __init__(self, *a, **k) -> None:
+        self.uploads: list[str] = []
+        self.uploads_sha1s: list[str] = []
+        self.puts: list[dict] = []
+        self.supprimes: list[str] = []
+        _FakeWriteClient.instances.append(self)
+
+    def __enter__(self) -> "_FakeWriteClient":
+        return self
+
+    def __exit__(self, *a) -> bool:
+        return False
+
+    def uploader_fichier(self, chemin, nom=None):
+        from pathlib import Path as _P
+        n = nom or _P(chemin).name
+        self.uploads.append(n)
+        sha1 = f"upload-{len(self.uploads)}"
+        self.uploads_sha1s.append(sha1)
+        return {"name": n, "sha1": sha1}
+
+    def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
+        self.puts.append({"id": identifiant, "files": files, "metas": metas,
+                          "status": status})
+        return {}
+
+    def supprimer_upload(self, sha1):
+        self.supprimes.append(sha1)
+
+
+@pytest.fixture(autouse=True)
+def _mock_write_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    _FakeWriteClient.instances.clear()
+    monkeypatch.setattr(cli_mod, "NakalaEcritureClient", _FakeWriteClient)
+
+
+def _invoke_pousser(config: Path, db: Path, *args: str):
+    return runner.invoke(app, [
+        "nakala", "pousser-fichiers", "AS-001", "--fonds", "AS",
+        *args,
+        "--config", str(config), "--db-path", str(db),
+    ])
+
+
+def test_pousser_dry_run_par_defaut(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Dry-run par défaut : pas d'écriture distante, plan affiché.
+
+    Cas "modifié" : sha1_nakala stocké = sha1 distant connu, binaire
+    local porte un sha1 différent → classé en modifié → plan rempli,
+    pas d'orphelin (pas de refus)."""
+    sha1_ancien = "a" * 40
+    # Binaire local actuel != sha1_ancien stocké → modifié
+    contenu = b"newer content"
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+    )
+    _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
+
+    r = _invoke_pousser(config_nakala, db)
+    assert r.exit_code == 0, r.output
+    assert "DRY-RUN" in r.output
+    assert "Plan" in r.output
+    assert "Relancer avec --no-dry-run" in r.output
+    # Aucun upload, aucun PUT
+    assert _FakeWriteClient.instances == [] or _FakeWriteClient.instances[0].puts == []
+    assert _FakeWriteClient.instances == [] or _FakeWriteClient.instances[0].uploads == []
+
+
+def test_pousser_aucun_changement_no_op_exit_0(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Aucun changement → no-op clair, exit 0."""
+    contenu = b"unchanged"
+    sha1 = _sha1(contenu)
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1,
+    )
+    _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
+
+    r = _invoke_pousser(config_nakala, db)
+    assert r.exit_code == 0, r.output
+    assert "Aucun changement" in r.output
+
+
+def test_pousser_orphelins_sans_flag_exit_1(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Orphelins distants sans --retirer-orphelins → exit 1 + message."""
+    contenu = b"local"
+    sha1 = _sha1(contenu)
+    sha1_orphan = "f" * 40
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1,
+    )
+    _FakeReadClient.files = [
+        {"sha1": sha1, "name": "x.jpg"},
+        {"sha1": sha1_orphan, "name": "perdu.jpg"},
+    ]
+
+    r = _invoke_pousser(config_nakala, db)
+    assert r.exit_code == 1, r.output
+    assert "orphelin" in r.output.lower()
+    assert "--retirer-orphelins" in r.output
+
+
+def test_pousser_avec_flag_orphelins_no_dry_run_effectue_put(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """--retirer-orphelins + --no-dry-run → upload nouveaux + PUT envoye."""
+    # Item local avec 1 nouveau fichier, distant a 1 orphelin
+    contenu_nouveau = b"new local"
+    sha1_orphan = "e" * 40
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu_nouveau, sha1_nakala=None,
+    )
+    _FakeReadClient.files = [
+        {"sha1": sha1_orphan, "name": "perdu.jpg"},
+    ]
+
+    r = _invoke_pousser(
+        config_nakala, db, "--no-dry-run", "--retirer-orphelins",
+    )
+    assert r.exit_code == 0, r.output
+    assert "APPLIQUÉ" in r.output
+    # 1 upload (le nouveau), 1 PUT envoye
+    inst = _FakeWriteClient.instances[0]
+    assert inst.uploads == ["x.jpg"]
+    assert len(inst.puts) == 1
+    # files cible ne contient que le nouveau (l'orphelin est exclu)
+    files_envoyes = inst.puts[0]["files"]
+    sha1s_envoyes = [f["sha1"] for f in files_envoyes]
+    assert sha1_orphan not in sha1s_envoyes
+
+
+def test_pousser_format_json(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """--format json → sortie JSON parsable."""
+    import json as _json
+    contenu = b"unchanged"
+    sha1 = _sha1(contenu)
+    db, _ = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=sha1,
+    )
+    _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
+
+    r = _invoke_pousser(config_nakala, db, "--format", "json")
+    assert r.exit_code == 0, r.output
+    data = _json.loads(r.output)
+    assert data["cote_item"] == "AS-001"
+    assert data["dry_run"] is True
+    assert data["raison"] == "aucun_changement"
+    assert "plan" in data
+
+
+def test_pousser_item_sans_doi_exit_1(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """Item sans doi_nakala → DepotImpossible → exit 1."""
+    db = tmp_path / "test.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    with creer_session_factory(engine)() as s:
+        f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
+        creer_item(s, FormulaireItem(cote="AS-001", titre="X", fonds_id=f.id))
+        # doi_nakala reste None
+        s.commit()
+    engine.dispose()
+
+    r = _invoke_pousser(config_nakala, db)
+    assert r.exit_code == 1, r.output
+    assert "doi_nakala" in r.output.lower() or "deposer" in r.output.lower()

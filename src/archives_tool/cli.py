@@ -76,7 +76,10 @@ from archives_tool.api.services.nakala_depot import (
 )
 from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
+    OrphelinsDetectes,
+    PushImpossible,
     comparer_fichiers_item,
+    pousser_fichiers_item,
 )
 from archives_tool.external.nakala.depot_mapper import MetaInvalide
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
@@ -2991,6 +2994,152 @@ def cmd_nakala_comparer_fichiers(
         rapport.orphelins_distants,
         lambda fo: f"{fo.nom_fichier or '(sans nom)'} (sha1: {fo.sha1[:12]}…)",
     )
+
+
+@nakala_app.command("pousser-fichiers")
+def cmd_nakala_pousser_fichiers(
+    cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run",
+        help="Appliquer effectivement le push (sinon : aperçu sans écriture).",
+    ),
+    retirer_orphelins: bool = typer.Option(
+        False, "--retirer-orphelins",
+        help="Autoriser le retrait des orphelins distants (irréversible "
+             "pour pending : versionning automatique sur published).",
+    ),
+    format_sortie: _FormatRapport = typer.Option(
+        _FormatRapport.TEXT, "--format",
+        help="Format de sortie (text Rich par défaut, json pour scripts).",
+    ),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Pousser les fichiers d'un item ColleC vers son dépôt Nakala (P3+c).
+
+    Pipeline : compare (palier b) → garde-fous → upload nouveaux/modifies
+    → `PUT /datas/{id}` avec `files[]` cible → mise à jour de
+    `Fichier.sha1_nakala`. **Dry-run par défaut** : affiche le plan
+    sans toucher au distant. ``--no-dry-run`` applique.
+
+    **Garde-fous** :
+
+    - Si l'item n'a pas de `doi_nakala` → erreur (utiliser `nakala
+      deposer` d'abord).
+    - Si aucun changement détecté → no-op (exit 0).
+    - Si des orphelins distants sont détectés (fichiers présents sur
+      Nakala mais absents en local) → refus, ré-essayer avec
+      ``--retirer-orphelins``.
+    - Si le plan cible serait vide après retrait des orphelins (cas
+      extrême) → refus (PUT files=[] est silencieusement ignoré
+      par Nakala — utiliser ``supprimer_depot`` + redéposer).
+    """
+    config = _charger_config_ou_sortie(config_path)
+    racines = dict(config.racines)
+    with (
+        _client_nakala_ou_sortie(config) as lecture,
+        _client_ecriture_nakala_ou_sortie(config) as ecriture,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+            raise typer.Exit(1) from None
+        try:
+            rapport = pousser_fichiers_item(
+                session, lecture, ecriture, item, racines=racines,
+                dry_run=not no_dry_run,
+                retirer_orphelins=retirer_orphelins,
+                modifie_par=config.utilisateur,
+            )
+        except DepotImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except ComparaisonImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except OrphelinsDetectes as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            typer.echo(
+                "Repasser avec --retirer-orphelins pour confirmer le retrait.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+        except PushImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except ErreurNakala as e:
+            typer.echo(f"Erreur Nakala : {e}", err=True)
+            raise typer.Exit(1) from None
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        def _entree(p):
+            return {
+                "ordre": p.ordre, "nom_fichier": p.nom_fichier,
+                "categorie": p.categorie, "sha1": p.sha1,
+            }
+        typer.echo(json.dumps({
+            "cote_item": rapport.cote_item,
+            "doi": rapport.doi,
+            "dry_run": rapport.dry_run,
+            "applique": rapport.applique,
+            "raison": rapport.raison,
+            "plan": [_entree(p) for p in rapport.plan],
+            "sha1s_uploades": rapport.sha1s_uploades,
+            "sha1s_retires": rapport.sha1s_retires,
+        }, ensure_ascii=False, indent=2))
+        return
+
+    # Format text
+    mode = "DRY-RUN" if rapport.dry_run else (
+        "APPLIQUÉ" if rapport.applique else "NO-OP"
+    )
+    typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi} : push fichiers [{mode}]")
+
+    if rapport.raison == "aucun_changement":
+        typer.echo("  ✓ Aucun changement à pousser.")
+        return
+
+    # Compte par categorie
+    if rapport.compare is not None:
+        cmp = rapport.compare
+        typer.echo(
+            f"  Compare : {len(cmp.inchanges)} inchangé(s)"
+            f" · {len(cmp.modifies)} modifié(s)"
+            f" · {len(cmp.nouveaux)} nouveau(x)"
+            f" · {len(cmp.nakala_only_sans_local)} Nakala-only"
+            f" · {len(cmp.orphelins_distants)} orphelin(s) distant(s)"
+        )
+
+    if rapport.sha1s_retires:
+        typer.echo(
+            f"  Orphelins à retirer : {len(rapport.sha1s_retires)} fichier(s)"
+        )
+
+    # Detail plan
+    if rapport.plan:
+        typer.echo("  Plan (ordre Fichier respecté côté Nakala) :")
+        for p in rapport.plan:
+            sha_court = p.sha1[:12] + "…" if p.sha1 else "(pending upload)"
+            typer.echo(
+                f"    [{p.ordre:02d}] {p.nom_fichier:<30} "
+                f"{p.categorie:<12} sha1={sha_court}"
+            )
+
+    if rapport.applique:
+        n_uploads = len(rapport.sha1s_uploades)
+        typer.echo(
+            f"  ✓ PUT envoyé. {n_uploads} upload(s), "
+            f"{len(rapport.plan)} entrée(s) dans files[]."
+        )
+    elif rapport.dry_run:
+        typer.echo("  Relancer avec --no-dry-run pour appliquer.")
 
 
 def main() -> None:

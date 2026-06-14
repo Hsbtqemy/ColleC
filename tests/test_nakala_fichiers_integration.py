@@ -23,7 +23,10 @@ from sqlalchemy import select
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
 from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_depot import deposer_item
-from archives_tool.api.services.nakala_fichiers import comparer_fichiers_item
+from archives_tool.api.services.nakala_fichiers import (
+    comparer_fichiers_item,
+    pousser_fichiers_item,
+)
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.external.nakala.client import ClientLectureNakala
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
@@ -138,6 +141,99 @@ def test_comparer_fichiers_live(tmp_path: Path) -> None:
         assert rapport2.orphelins_distants == []
     finally:
         # Cleanup pending dépôt.
+        if doi:
+            try:
+                ecriture.supprimer_depot(doi)
+            except Exception:  # noqa: BLE001
+                pass
+        ecriture.fermer()
+        lecture.fermer()
+
+
+def test_pousser_fichiers_live(tmp_path: Path) -> None:
+    """Smoke d'intégration P3+c — cycle complet pousser_fichiers_item :
+
+        déposer → comparer (inchangé) → modifier binaire local →
+        pousser_fichiers (no-dry-run) → upload + PUT → re-comparer →
+        tout inchangé (sha1_nakala mis à jour, distant aligné).
+
+    Valide bout-en-bout :
+    - signature étendue ``modifier_depot(files=...)`` réelle
+    - H1 : remplacement de files[] côté Nakala
+    - H10 : ``lire_depot`` immédiat post-PUT reflète bien
+    - ``Fichier.sha1_nakala`` mis à jour en base
+    - cache ``RessourceExterne`` invalidé (consommateurs lisent à jour)
+    """
+    db = _amorcer_db(tmp_path)
+    scans = tmp_path / "scans"
+    contenu_initial = b"\xff\xd8\xff smoke push initial"
+    sha1_initial = _sha1(contenu_initial)
+    _seed(db, scans, contenu_initial)
+
+    racines = {"scans": scans}
+    ecriture = NakalaEcritureClient(HOTE, api_key=CLE, timeout=60)
+    lecture = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
+    doi: str | None = None
+    try:
+        # 1. Dépôt initial.
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            rapport_depot = deposer_item(
+                s, ecriture, item, racines=racines,
+                dry_run=False, cree_par="smoke-push",
+            )
+        doi = rapport_depot.doi
+        assert doi
+
+        # 2. Modifier le binaire local — sha1 change.
+        contenu_modifie = b"\xff\xd8\xff smoke push MODIFIE"
+        sha1_modifie = _sha1(contenu_modifie)
+        assert sha1_modifie != sha1_initial
+        (scans / "as001.jpg").write_bytes(contenu_modifie)
+
+        # 3. Verif via comparer : 1 modifié détecté
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            cmp_avant = comparer_fichiers_item(
+                s, lecture, item, racines=racines,
+            )
+        assert len(cmp_avant.modifies) == 1
+        assert cmp_avant.modifies[0].sha1_local == sha1_modifie
+        assert cmp_avant.modifies[0].sha1_distant == sha1_initial
+
+        # 4. PUSH effectif : upload + PUT
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            rapport_push = pousser_fichiers_item(
+                s, lecture, ecriture, item, racines=racines,
+                dry_run=False, modifie_par="smoke-push",
+            )
+        assert rapport_push.applique is True
+        assert len(rapport_push.sha1s_uploades) == 1
+
+        # 5. Vérif base : Fichier.sha1_nakala mis à jour
+        with _session(db) as s:
+            fichier = s.scalar(
+                select(Fichier).join(Item).where(Item.cote == "AS-001")
+            )
+            assert fichier.sha1_nakala == sha1_modifie
+            assert fichier.modifie_le is not None
+
+        # 6. Re-comparer : tout inchangé (distant aligné, base à jour)
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+            cmp_apres = comparer_fichiers_item(
+                s, lecture, item, racines=racines,
+            )
+        assert cmp_apres.aucun_changement, (
+            f"Attendu aucun_changement après push, vu : "
+            f"nouveaux={len(cmp_apres.nouveaux)}, "
+            f"modifies={len(cmp_apres.modifies)}, "
+            f"orphelins={len(cmp_apres.orphelins_distants)}"
+        )
+        assert len(cmp_apres.inchanges) == 1
+        assert cmp_apres.inchanges[0].sha1_local == sha1_modifie
+    finally:
         if doi:
             try:
                 ecriture.supprimer_depot(doi)

@@ -19,6 +19,7 @@ from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_fichiers import (
     BackfillIncomplet,
     ComparaisonImpossible,
+    IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
     UploadInvalide,
@@ -1678,3 +1679,169 @@ def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
     assert ecriture.supprimes == ["a" * 40]
     # Aucun PUT envoye (echec apres upload du 2e, avant PUT)
     assert ecriture.puts == []
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 8 — Trou Q : assertions → exceptions propres
+# (race conditions Fichier ORM entre comparer et pousser)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Race condition : une autre session supprime un Fichier entre
+    `comparer_fichiers_item` (qui le classe en "nouveau") et le
+    re-fetch dans `pousser_fichiers_item`. Avant Trou Q : `assert
+    fichier_orm is not None` → AssertionError mince. Apres :
+    `IncoherenceFichierORM` avec message diagnostique.
+
+    Simule en patchant `db.get(Fichier, ...)` pour qu'il retourne None.
+    """
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        # Patche db.get pour simuler une suppression concurrente.
+        original_get = s.get
+
+        def get_qui_simule_suppression(model_class, ident, **kwargs):
+            if model_class is Fichier:
+                return None  # simule Fichier supprime
+            return original_get(model_class, ident, **kwargs)
+
+        s.get = get_qui_simule_suppression  # type: ignore[method-assign]
+
+        with pytest.raises(IncoherenceFichierORM) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    assert "supprime" in str(exc_info.value).lower()
+    assert "race" in str(exc_info.value).lower()
+    # Aucun upload ni PUT (echec avant)
+    assert ecriture.uploads == []
+    assert ecriture.puts == []
+
+
+def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Race condition variant : le Fichier existe encore mais a perdu
+    sa `racine` ou son `chemin_relatif` (une autre session a bascule
+    en CORBEILLE et reset les chemins, par exemple). Detection +
+    `IncoherenceFichierORM` propre."""
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        # Patche db.get pour retourner un Fichier mute (racine effacee).
+        # On garde le Fichier ORM original mais on simule la perte de
+        # racine APRES le comparer.
+        from sqlalchemy.orm import attributes
+
+        original_get = s.get
+
+        def get_qui_simule_perte_racine(model_class, ident, **kwargs):
+            obj = original_get(model_class, ident, **kwargs)
+            if model_class is Fichier and obj is not None:
+                # Force racine = None sans toucher en DB
+                attributes.set_attribute(obj, "racine", None)
+            return obj
+
+        s.get = get_qui_simule_perte_racine  # type: ignore[method-assign]
+
+        with pytest.raises(IncoherenceFichierORM) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    assert "racine" in str(exc_info.value).lower() or "perdu" in str(exc_info.value).lower()
+    assert ecriture.uploads == []
+    assert ecriture.puts == []
+
+
+# ---------------------------------------------------------------------------
+# P3+c.2 passe 8 — Trou R : observabilité runtime (logging structuré)
+# ---------------------------------------------------------------------------
+
+
+def test_pousser_emet_log_info_au_demarrage_et_commit(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """Verifie qu'un push reel emet bien les logs INFO de demarrage et
+    de COMMIT. Niveau minimum pour debug post-mortem en prod."""
+    import logging as _logging
+    caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_fichiers")
+
+    contenu = b"a uploader"
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _FakeClientEcriture()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
+        )
+
+    messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
+    assert any("push fichiers START" in m for m in messages)
+    assert any("push fichiers PUT OK" in m for m in messages)
+    assert any("push fichiers COMMIT" in m for m in messages)
+
+
+def test_pousser_emet_log_warning_au_cleanup(
+    db_path: Path, tmp_path: Path, caplog,
+) -> None:
+    """Si le PUT echoue apres uploads reussis, log WARNING explicite +
+    cleanup tente."""
+    import logging as _logging
+    caplog.set_level(_logging.WARNING, logger="archives_tool.api.services.nakala_fichiers")
+
+    class _StubPUTKO:
+        def __init__(self):
+            self.uploads: list[str] = []
+            self.supprimes: list[str] = []
+
+        def uploader_fichier(self, chemin, nom=None):
+            self.uploads.append(nom or Path(chemin).name)
+            return {"sha1": f"{len(self.uploads):040x}", "name": nom}
+
+        def modifier_depot(self, identifiant, **kwargs):
+            from archives_tool.external.nakala.client import ErreurNakala
+            raise ErreurNakala("PUT simule KO")
+
+        def supprimer_upload(self, sha1):
+            self.supprimes.append(sha1)
+
+    lecture = _FakeClientLecture(files=[])
+    ecriture = _StubPUTKO()
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+        ])
+        from archives_tool.external.nakala.client import ErreurNakala
+        with pytest.raises(ErreurNakala):
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+
+    messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
+    assert any("ECHEC" in m and "cleanup=1" in m for m in messages)
+    # Cleanup effectivement tente
+    assert ecriture.supprimes == [f"{1:040x}"]

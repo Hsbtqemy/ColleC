@@ -77,6 +77,7 @@ from archives_tool.api.services.nakala_depot import (
 from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
     BackfillIncomplet,
+    IncoherenceFichierORM,
     OrphelinsDetectes,
     PushImpossible,
     UploadInvalide,
@@ -3095,6 +3096,15 @@ def cmd_nakala_pousser_fichiers(
             typer.echo(
                 "Cleanup des uploads precedents tente. Verifier l'etat distant "
                 "via `archives-tool nakala montrer <cote>` avant de relancer.",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+        except IncoherenceFichierORM as e:
+            typer.echo(f"Erreur de cohérence (race condition) : {e}", err=True)
+            typer.echo(
+                "Un Fichier ColleC a probablement été muté par une autre "
+                "session entre comparer et pousser. Relancer la commande "
+                "pour re-comparer avec l'état courant.",
                 err=True,
             )
             raise typer.Exit(1) from None

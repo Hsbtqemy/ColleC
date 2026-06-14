@@ -32,6 +32,7 @@ Les hypothèses Nakala validées contre apitest (script
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -43,6 +44,12 @@ from archives_tool.external.nakala.mapper import mapper_depot
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.models import Fichier, Item
 from archives_tool.models.enums import EtatFichier
+
+#: Logger structure pour le service push fichiers. Le service mute un
+#: etat distant (Nakala) ET local (DB) — sans logging, un push qui
+#: foire en prod laisse zero trace. INFO sur les events metiers
+#: (debut, PUT, commit, cleanup), DEBUG sur le detail upload/file.
+logger = logging.getLogger(__name__)
 
 #: Taille de chunk pour le streaming SHA-1 — 8 KiB.
 _TAILLE_CHUNK_SHA1 = 8192
@@ -122,6 +129,26 @@ class PushImpossible(Exception):
     que ``PUT files=[]`` est silencieusement ignoré côté Nakala —
     la liste cible ne peut pas être vide. Pour vider un dépôt, passer
     par ``supprimer_depot`` puis re-déposer.
+    """
+
+
+class IncoherenceFichierORM(Exception):
+    """Le Fichier ORM attendu pour un upload a été muté ou supprimé
+    entre la phase ``comparer_fichiers_item`` et la phase de push.
+
+    Race condition typique : une autre session a supprimé le Fichier,
+    a basculé son ``etat`` en CORBEILLE, a effacé sa ``racine`` /
+    ``chemin_relatif``, ou a déplacé le binaire. Le re-fetch
+    ``db.get(Fichier, id)`` au moment de l'upload détecte ces cas.
+
+    Le service catche au niveau du ``try`` global et déclenche le
+    cleanup best-effort des uploads précédemment réussis.
+
+    **Pourquoi pas une simple `AssertionError`** : les `assert` Python
+    sont supprimés sous `python -O` (rare en prod mais possible) et
+    leur message est minimal ; pour un chemin destructif (modifie
+    Nakala), on veut une exception explicite quel que soit le mode
+    d'exécution.
     """
 
 
@@ -720,9 +747,26 @@ def pousser_fichiers_item(
 
     # 5. Dry-run : on ne touche pas au distant.
     if dry_run:
+        logger.info(
+            "push fichiers dry-run cote=%s doi=%s plan=%d nouveaux=%d "
+            "modifies=%d inchanges=%d nakala_only=%d orphelins=%d "
+            "non_actifs=%d derive=%s",
+            item.cote, item.doi_nakala, len(rapport.plan),
+            len(rapport_cmp.nouveaux), len(rapport_cmp.modifies),
+            len(rapport_cmp.inchanges), len(rapport_cmp.nakala_only_sans_local),
+            len(rapport_cmp.orphelins_distants),
+            len(rapport_cmp.non_actifs_a_retirer), rapport.derive,
+        )
         return rapport
 
     # 6. Réel : upload des nouveaux + modifies.
+    logger.info(
+        "push fichiers START cote=%s doi=%s plan=%d nouveaux=%d "
+        "modifies=%d retraits=%d derive=%s",
+        item.cote, item.doi_nakala, len(rapport.plan),
+        len(rapport_cmp.nouveaux), len(rapport_cmp.modifies),
+        len(rapport.sha1s_retires), rapport.derive,
+    )
     # Map fichier_id → sha1 fraîchement uploadé, pour mettre à jour
     # `Fichier.sha1_nakala` après le PUT réussi.
     nouveaux_sha1_par_fichier: dict[int, str] = {}
@@ -732,16 +776,27 @@ def pousser_fichiers_item(
     try:
         for fc in list(rapport_cmp.nouveaux) + list(rapport_cmp.modifies):
             if fc.fichier_id is None:
-                continue  # ne devrait pas arriver (catégories à fichier local)
-            # Récupère le binaire local (le service a déjà calculé son
-            # sha1 dans la phase de comparaison, mais on re-upload depuis
-            # le binaire actuel — pas de cache).
-            # Le Fichier ORM doit toujours avoir `racine` et
-            # `chemin_relatif` valides à ce stade (sinon il aurait été
-            # classé en Nakala-only par la comparaison).
+                # Catégories nouveau/modifie ont toujours un fichier_id par
+                # construction de `comparer_fichiers_item`. Si on tombe ici,
+                # bug du composeur — invariant violé.
+                raise IncoherenceFichierORM(
+                    f"Fichier {fc.nom_fichier!r} en catégorie "
+                    f"nouveau/modifie sans fichier_id — invariant viole."
+                )
+            # Récupère le Fichier ORM (peut avoir été muté par une autre
+            # session entre `comparer` et ici : race condition).
             fichier_orm = db.get(Fichier, fc.fichier_id)
-            assert fichier_orm is not None
-            assert fichier_orm.racine and fichier_orm.chemin_relatif
+            if fichier_orm is None:
+                raise IncoherenceFichierORM(
+                    f"Fichier id={fc.fichier_id} ({fc.nom_fichier!r}) "
+                    "supprime entre comparer et pousser (race condition)."
+                )
+            if not (fichier_orm.racine and fichier_orm.chemin_relatif):
+                raise IncoherenceFichierORM(
+                    f"Fichier id={fc.fichier_id} ({fc.nom_fichier!r}) "
+                    "a perdu racine/chemin_relatif entre comparer et "
+                    "pousser (race condition ou mutation tierce)."
+                )
             chemin = resoudre_chemin(
                 racines, fichier_orm.racine, fichier_orm.chemin_relatif,
             )
@@ -751,6 +806,10 @@ def pousser_fichiers_item(
             sha1_neuf = _valider_sha1_uploade(desc, fc.nom_fichier)
             sha1s_uploades.append(sha1_neuf)
             nouveaux_sha1_par_fichier[fc.fichier_id] = sha1_neuf
+            logger.debug(
+                "push fichiers upload OK nom=%s sha1=%s…",
+                fc.nom_fichier, sha1_neuf[:12],
+            )
 
         # Construire le `files[]` final avec les sha1 fraîchement uploadés
         # pour `nouveau` et `modifie`. Les `inchange`/`rename`/`nakala_only`
@@ -759,21 +818,44 @@ def pousser_fichiers_item(
         for entree in rapport.plan:
             sha1 = entree.sha1
             if entree.categorie in ("nouveau", "modifie"):
-                # Override avec sha1 fraîchement uploadé
-                assert entree.fichier_id is not None
+                # Override avec sha1 fraîchement uploadé. fichier_id
+                # garanti non-None par `_construire_plan` pour ces
+                # catégories — sinon bug interne.
+                if entree.fichier_id is None:
+                    raise IncoherenceFichierORM(
+                        f"Plan : entrée {entree.nom_fichier!r} en "
+                        f"catégorie {entree.categorie} sans fichier_id."
+                    )
                 sha1 = nouveaux_sha1_par_fichier[entree.fichier_id]
             files_cible.append({"sha1": sha1, "name": entree.nom_fichier})
 
         # 7. PUT
         client_ecriture.modifier_depot(item.doi_nakala, files=files_cible)
+        logger.info(
+            "push fichiers PUT OK cote=%s doi=%s files_cible=%d",
+            item.cote, item.doi_nakala, len(files_cible),
+        )
 
     except Exception:
         # Cleanup uploads orphelins (best-effort).
+        if sha1s_uploades:
+            logger.warning(
+                "push fichiers ECHEC cote=%s doi=%s cleanup=%d uploads",
+                item.cote, item.doi_nakala, len(sha1s_uploades),
+            )
+        else:
+            logger.warning(
+                "push fichiers ECHEC cote=%s doi=%s cleanup=0",
+                item.cote, item.doi_nakala,
+            )
         for sha1 in sha1s_uploades:
             try:
                 client_ecriture.supprimer_upload(sha1)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "push fichiers cleanup KO sha1=%s… : %s",
+                    sha1[:12], exc,
+                )
         raise
 
     rapport.sha1s_uploades = sha1s_uploades
@@ -800,6 +882,11 @@ def pousser_fichiers_item(
     mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
 
     db.commit()
+    logger.info(
+        "push fichiers COMMIT cote=%s doi=%s uploades=%d retires=%d",
+        item.cote, item.doi_nakala, len(sha1s_uploades),
+        len(rapport.sha1s_retires),
+    )
 
     rapport.applique = True
     return rapport

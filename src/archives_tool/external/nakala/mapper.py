@@ -106,9 +106,27 @@ def _pick_label(metas: list[dict], property_uri: str, prefer_lang: str = "fr") -
     return None
 
 
+def normaliser_orcid(orcid: Any) -> str | None:
+    """ORCID en forme **nue** (`0000-0001-2345-6789`).
+
+    Nakala stocke l'ORCID en **URL canonique** (`https://orcid.org/0000-…`) ;
+    ColleC le dépose et l'affiche nu. Sans cette normalisation, un créateur
+    rapatrié diffère de sa forme déposée (vérifié live 2026-06-15 par le
+    round-trip end-to-end) et le `diff_push` voyait un faux changement.
+    Source unique partagée par la lecture (`_format_createur`) et la
+    comparaison de diff (`nakala_depot._canon_valeur`). `None`/vide → `None`."""
+    if not orcid:
+        return None
+    s = str(orcid).strip()
+    for prefixe in ("https://orcid.org/", "http://orcid.org/", "orcid.org/"):
+        if s.lower().startswith(prefixe):
+            return s[len(prefixe):] or None
+    return s or None
+
+
 def _format_createur(value: Any) -> str | None:
     """Rend un créateur Nakala (`{givenname, surname, orcid}` ou str)
-    en chaîne lisible. `None`/anonyme → None (ignoré)."""
+    en chaîne lisible `"Nom, Prénom [ORCID nu]"`. `None`/anonyme → None."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -116,7 +134,7 @@ def _format_createur(value: Any) -> str | None:
     if isinstance(value, dict):
         surname = (value.get("surname") or "").strip()
         given = (value.get("givenname") or "").strip()
-        orcid = value.get("orcid")
+        orcid = normaliser_orcid(value.get("orcid"))  # Nakala renvoie l'URL
         base = ", ".join(p for p in (surname, given) if p)
         if not base:
             return None

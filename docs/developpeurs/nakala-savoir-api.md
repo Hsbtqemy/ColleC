@@ -776,12 +776,15 @@ de non-régression (`tests/test_nakala_vocabulaires_integration.py`).
   `dcterms:language` + `langTitle`).
 - **Canonicalisation des créateurs** (Partie I §8) : `diff_push`
   canonicalise sur `surname/givenname/orcid` non-nul seuls → plus de faux
-  diff au push. ✅ **Étendu (2026-06-15)** : Nakala normalise aussi l'**ORCID
-  en URL** (`https://orcid.org/…`) ; sans normalisation, tout créateur avec
-  ORCID donnait un faux diff à *chaque* push (round-trip jamais idempotent —
-  reproduit puis corrigé live). `_normaliser_orcid` ramène à la forme nue
-  avant comparaison. Le réordonnancement des créateurs par Nakala est
-  inoffensif (diff multiset, ordre-insensible).
+  diff au push. ✅ **ORCID normalisé (2026-06-15)** : Nakala normalise l'ORCID
+  en **URL** (`https://orcid.org/…`) ; ColleC le dépose/affiche **nu**.
+  `mapper.normaliser_orcid` ramène à la forme nue — **source unique partagée**
+  par la lecture (`_format_createur` → un créateur rapatrié garde l'ORCID nu)
+  ET la comparaison (`diff_push` → plus de faux diff au push). Sans ça, tout
+  créateur avec ORCID cassait l'idempotence du push **et** divergeait au
+  round-trip (reproduit puis corrigé live). Le **réordonnancement** des
+  créateurs par Nakala (tri par nom) est inoffensif au push (diff multiset)
+  mais reste visible à la lecture (l'ordre d'origine est perdu côté Nakala).
 - **`files[]` = remplacement total** (H1) : d'où le garde-fou
   `OrphelinsDetectes` / flag `--retirer-orphelins`, et la notion de
   **« fichiers fantômes »** (`sha1_nakala` désynchronisé) qui bloque le push.
@@ -868,6 +871,15 @@ n'inscrit pas les DOI dans les métadonnées (« DOI = adresse »).
 | Fernando Aínsa | 6163 données | export xlsx (`write_only`), CSV en flux |
 | Armonía Somers / Julio Cortázar | collections | dépôt / push |
 | Por Favor (PF) | 173 items, 7454 scans Nakala-only | import, IIIF, recherche |
+
+**Round-trip end-to-end via les services ColleC (2026-06-15)** — capstone :
+`deposer_item` (Item + 2 fichiers locaux → apitest) → `rapatrier` (DB fraîche,
+`base_url` → matérialise les fichiers) → comparaison de l'Item reconstruit.
+**Fidèle sur tout** : titre, date (`1984-03`), langue (`spa`→`es`→`spa`),
+description, type_coar, sujets, **2 fichiers** avec URLs IIIF `info.json`
+correctes. Seule divergence : l'**ordre des créateurs** (Nakala réordonne par
+nom, irrécupérable — sans impact sur l'idempotence du push). L'ORCID, lui,
+round-trip nu après le fix `mapper.normaliser_orcid` (§13).
 
 ## 17. Tâches de fond (dépôt collection)
 

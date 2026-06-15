@@ -5,6 +5,7 @@ from __future__ import annotations
 from archives_tool.external.nakala.mapper import (
     langue_vers_iso639_3,
     mapper_depot,
+    normaliser_orcid,
 )
 
 _NKL = "http://nakala.fr/terms#"
@@ -58,6 +59,25 @@ def test_mapper_createurs_dict_str_et_anonyme() -> None:
     d = mapper_depot(_DEPOT)
     # dict structuré rendu "Nom, Prénom [ORCID]" ; str gardé ; None ignoré.
     assert d.createurs == ["Topor, Roland [0000-0002]", "Reiser"]
+
+
+def test_normaliser_orcid_url_vers_nu() -> None:
+    """Nakala stocke l'ORCID en URL ; on le ramène à la forme nue (cohérence
+    dépôt↔lecture, vérifié au round-trip end-to-end 2026-06-15)."""
+    assert normaliser_orcid("https://orcid.org/0000-0001-2345-6789") == "0000-0001-2345-6789"
+    assert normaliser_orcid("http://orcid.org/0000-0001-2345-6789") == "0000-0001-2345-6789"
+    assert normaliser_orcid("0000-0001-2345-6789") == "0000-0001-2345-6789"  # déjà nu
+    assert normaliser_orcid(None) is None and normaliser_orcid("") is None
+
+
+def test_mapper_createur_orcid_url_rendu_nu() -> None:
+    """Un créateur dont l'ORCID est en URL (forme de stockage Nakala) est
+    rendu avec l'ORCID nu — cohérent avec la forme déposée par ColleC."""
+    depot = mapper_depot({"identifier": "10.34847/nkl.x", "metas": [
+        {"propertyUri": f"{_NKL}creator", "value": {
+            "surname": "Cortázar", "givenname": "Julio",
+            "orcid": "https://orcid.org/0000-0001-2345-6789"}}]})
+    assert depot.createurs == ["Cortázar, Julio [0000-0001-2345-6789]"]
 
 
 def test_mapper_sujets_et_langue_iso3() -> None:

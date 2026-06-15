@@ -475,24 +475,34 @@ La machinerie de versions est présente côté Nakala :
   `{total, currentPage, lastPage, limit, data:[{version, versionIdentifier,
   creDate, modDate}]}`).
 
-**Mais ce qui *déclenche* une version reste partiellement inconnu :**
+**Déclencheur — résolu en live (cycle complet 2026-06-15, dépôt sacrifié
+`10.34847/nkl.66bc6vvi`) :**
 
-- **Éditer un dépôt `pending` n'en crée pas** : après deux `PUT` (fichiers
-  puis metas), `/versions` ne contient toujours qu'**une** entrée
-  (`version=1`). Les `PUT` écrasent **en place**.
-- **Publier n'en crée pas non plus** (sonde gatée, dépôt publié sacrifié
-  `10.34847/nkl.f3354s85`) : 1 version (`.v1`) avant **et** après
-  publication. La publication bascule le statut en place, elle ne mint pas
-  de `.vN`.
-- ⚠️ **Reste ouvert** : la machinerie `.vN` doit relever d'un **autre
-  déclencheur** — hypothèse : éditer un dépôt **déjà publié**. Non exploré.
-  C'est le maillon qui manque pour tout futur « éditer proprement un dépôt
-  publié avec historique ».
+| Opération | Crée une version ? |
+|---|---|
+| Éditer un dépôt `pending` (fichiers ou metas) | ❌ écrase en place, reste `v1` |
+| Publier (`pending → published`) | ❌ bascule le statut en place |
+| **Modifier les metas d'un dépôt publié** (`PUT /datas {metas}`) | ❌ mutation **en place** (200) |
+| **Muter les fichiers d'un dépôt publié** (`POST`/`DELETE …/files`) | ✅ **+1 version** à chaque opération |
 
-> **→ côté ColleC** : ColleC ne pilote pas le versioning ; il édite en place
-> (`pousser_fichiers_item`, `pousser_item`). La réconciliation fichier
-> ColleC ↔ fichier Nakala se fait par SHA-1. Cf. Partie II §12 (difficulté
-> #4).
+Sur le cycle observé : ajout d'un fichier → `version` 1→**2** ; suppression
+d'un fichier → 2→**3**. Le champ `version` = le numéro de version-fichiers
+courant ; `/versions` les liste toutes.
+
+⚠️ **Nuance majeure : les versions snapshotent les FICHIERS, pas les
+métadonnées.** Résoudre `.v1`/`.v2`/`.v3` renvoie pour chacune un **jeu de
+fichiers distinct** (l'état figé à ce moment), mais **les mêmes métadonnées
+courantes** (le titre modifié après coup apparaît sur *toutes* les versions,
+y compris `.v1`). Donc : fichiers = versionnés et immuables par version ;
+métadonnées = partagées et mutables sur l'ensemble des versions.
+
+> **→ côté ColleC** : conséquence pour `pousser_fichiers_item` sur un dépôt
+> **publié** (sous `--force-published`) : son pipeline granulaire (POST +
+> DELETE + PUT de réordonnancement) crée **une version par opération** →
+> potentiellement plusieurs `.vN` pour un seul push (vs un seul `PUT files[]`
+> = 1 version). C'est une raison de plus de garder le garde-fou `DepotPublie`
+> par défaut. ColleC ne pilote pas l'historique des versions ; la
+> réconciliation fichier ColleC ↔ Nakala reste par SHA-1. Cf. Partie II §12.
 
 ## 8. Comportements d'écriture validés en live ⭐
 
@@ -555,7 +565,7 @@ existe mais n'est pas (encore) exploité :
 | **Citation** | ✅ sondée (S4) | `GET /datas/{id}/citation` → **chaîne JSON** (citation bibliographique prête à l'emploi). Dépôt **pending** → `"Test deposit, therefore not citable."`. Consommée par ColleC : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
 | **Publication via `PUT …/status/{status}`** | ✅ sondée (S5) | `PUT /datas/{id}/status/published` (sans corps) → **204**, publie et **préserve les metas** (`av.metas == ap.metas`). Découple publication / écriture de metas, contrairement à `publier_item` qui re-pousse les metas locales (choix ColleC, principe n°1). ColleC garde l'approche actuelle (cf. §7) |
 | **`GET /users/me`, `/resourceprocessing/{id}`** | ✅ existent | identité de la clé ; état d'indexation ElasticSearch + DataCite (latence post-publication) — non sondés |
-| **Versioning (DOI `…​.vN`)** | ⚠️ existe, déclencheur flou | cf. §7 : ni `pending` ni la publication ne mintent de `.vN` |
+| **Versioning (DOI `…​.vN`)** | ✅ déclencheur résolu | cf. §7 : **mutation de fichiers sur dépôt publié** = +1 version ; metas/pending/publication = en place. Versions = snapshot des **fichiers** (metas partagées) |
 
 ### Non testé / non testable
 

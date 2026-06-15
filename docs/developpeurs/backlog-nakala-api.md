@@ -288,6 +288,28 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
 
 ---
 
+## #4 Versioning fichiers — caractérisé (pas de chantier ColleC)
+
+Le « versioning fichiers » longtemps listé comme chantier ouvert est
+**résolu par l'observation** (cycle live 2026-06-15, dépôt sacrifié
+`10.34847/nkl.66bc6vvi`) : **Nakala versionne automatiquement**. Sur un
+dépôt **publié**, chaque mutation de fichier (`POST`/`DELETE …/files`) crée
+une version `.vN` (`version` incrémenté, `/versions` enrichi) ; les éditions
+de **metas** mutent en place (pas de version) ; sur **pending**, rien ne
+versionne. Les versions snapshotent les **fichiers** (les metas sont
+partagées sur toutes les versions). Détail : savoir-api §7.
+
+**Conséquence** : ColleC n'a **pas** à construire de gestion de versions —
+Nakala s'en charge. Le seul point d'attention est que `pousser_fichiers_item`
+en mode granulaire crée **une version par opération** (POST + DELETE + PUT
+réordonnancement) sur un dépôt publié → le garde-fou `DepotPublie` (défaut)
+évite la prolifération de `.vN`. **Améliorations possibles si besoin réel**
+(non prioritaires) : exposer l'historique `/versions` en lecture sur la
+fiche item ; sur le chemin `--force-published`, regrouper en un seul
+`PUT files[]` pour ne créer qu'une version.
+
+---
+
 ## Référence
 
 - Savoir API complet (constats, endpoints, vocabulaires) :

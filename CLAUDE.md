@@ -92,7 +92,10 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   (réconciliation `collectionsIds` au pull), **S4** (citation : client +
   CLI `nakala citer` + fiche web HTMX) livrés ; **S5** (endpoint
   `status/{status}`) sondé → décision : garder `publier_item` (re-push
-  metas, aligné principe n°1). Reste le versioning fichiers (#4).
+  metas, aligné principe n°1). **Versioning fichiers (#4) caractérisé en
+  live** : Nakala versionne automatiquement (mutation de fichiers sur dépôt
+  publié = +1 `.vN` ; metas en place ; versions = snapshot des fichiers) →
+  pas de chantier ColleC. Backlog Nakala soldé.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

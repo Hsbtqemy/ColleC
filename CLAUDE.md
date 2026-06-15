@@ -82,6 +82,12 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   « comment s'en servir » (`docs/guide/cli/nakala.md`). Consolide le
   savoir auparavant éparpillé (bug langue #422, canonicalisation des
   créateurs, `PUT files[]` = remplacement total, etc.).
+- [`backlog-nakala-api.md`](docs/developpeurs/backlog-nakala-api.md)
+  — **backlog exécutable** issu du sondage live de l'API : 3 tickets
+  spécifiés (T1 clarifier obligation créateur/date = règle ColleC ≠
+  Nakala ; T2 push fichiers granulaire `POST/DELETE …/files` au lieu du
+  `PUT files[]` remplaçant ; T3 surfacer `payload.validationErrors`) +
+  opportunités secondaires. Aucun commencé.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

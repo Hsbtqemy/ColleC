@@ -595,6 +595,7 @@ ColleC de toute façon (garde-fou `DepotPublie` sur le push de fichiers).
 | Sujet | Fichier |
 |---|---|
 | Conception / architecture / phasage | [`nakala-depot-future.md`](nakala-depot-future.md) |
+| **Backlog actionnable (issu de ce savoir)** | [`backlog-nakala-api.md`](backlog-nakala-api.md) |
 | Backlog niveau collection | [`backlog-nakala-collection.md`](backlog-nakala-collection.md) |
 | Guide d'usage CLI | [`../guide/cli/nakala.md`](../guide/cli/nakala.md) |
 | Client lecture / écriture / mappers | `src/archives_tool/external/nakala/` |

@@ -91,7 +91,17 @@ publier**. Trois découvertes ont coûté du sang :
   **`data` au singulier**, pas `datas`. Pagination 1-based, `limit` max
   100 (ColleC utilise 25 en lecture, 50 dans l'itérateur de collection).
   L'itérateur borne le bouclage par `lastPage` lu sur la 1ʳᵉ page
-  (anti-boucle infinie).
+  (anti-boucle infinie). (Le listing `/versions` a un dialecte légèrement
+  différent : `{total, currentPage, lastPage, limit, data}` — cf. §13.)
+- **`GET /datas/{id}` est bien plus riche que ce que ColleC en lit** :
+  réponse complète ≈ 21 champs (relevé live 2026-06-15) — `identifier`,
+  `uri`, `status`, `version`, `metas`, `files`, `collectionsIds`,
+  `relations`, `creDate`, `modDate`, `fileEmbargoed`, `owner`, `depositor`,
+  les flags de droits `isAdmin`/`isDepositor`/`isEditor`/`isOwner`, et le
+  workflow de modération (`lastModerator`, `lastModerationDate`,
+  `lastModerationRequestDate`, `moderationRequester`). Le `mapper` ColleC
+  n'en consomme que **4** (`metas`, `files`, `status`, `identifier`) ; le
+  reste (droits, modération, relations, embargo niveau donnée) est ignoré.
 
 ## 3. Modèle de données
 
@@ -414,17 +424,38 @@ honnêtement ce qui existe mais n'est pas (encore) utilisé :
 | **SPARQL** | ❌ absent | `GET /sparql` → 404. Pas d'endpoint SPARQL public (du moins à ce chemin) |
 | **Embargo par fichier au dépôt** | ✅ accepté | sonde écriture sur apitest : `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée à la relecture avec un champ compagnon `humanReadableEmbargoedDelay`. ColleC ne pose pas encore d'embargo (le flux `deposer_item` n'envoie que `{sha1, name}`) |
 | **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers envoyés en ordre **inversé** → 20/20 conservés, **ordre inverse préservé** (H5 vaut aussi au POST, pas seulement au PUT). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
+| **Versioning (DOI `…​.vN`)** | ⚠️ existe, mais pending = écrase en place | machinerie présente côté Nakala (cf. ci-dessous), mais **éditer un dépôt `pending` n'en crée pas de version** : `PUT` (fichiers ou metas) écrase en place, `version` reste `1`, le DOI ne change pas. C'est le cas que `pousser_fichiers_item` traite (il refuse les publiés par défaut) |
+
+### Versioning Nakala — ce qui existe (sondé 2026-06-15)
+
+La machinerie de versions est bien présente, même si ColleC ne la pilote
+pas :
+
+- chaque version porte un **`versionIdentifier`** = `{doi}.vN` ;
+- `GET /datas/{doi}.vN` résout une **version précise** (200) ; un `.vN`
+  inexistant → 404 ;
+- `GET /datas/{doi}/versions` **liste** les versions (paginé) :
+  `{total, currentPage, lastPage, limit, data:[{version, versionIdentifier,
+  creDate, modDate}]}`.
+
+Sur un dépôt `pending`, après deux `PUT` (fichiers puis metas), `/versions`
+ne contient toujours qu'**une** entrée (`version=1`). La création d'une
+nouvelle version `.vN` relève très probablement de la **publication**
+(sémantique DataCite) — **non vérifié** : publier sur apitest est
+irréversible et un dépôt publié n'est plus supprimable (`DELETE` réservé au
+`pending`), ça polluerait durablement le serveur de test. Faible enjeu pour
+ColleC de toute façon (garde-fou `DepotPublie` sur le push de fichiers).
 
 ### Non testé / non testable
 
+- **Versioning sur dépôt PUBLIÉ** : voir ci-dessus — non testé (publication
+  irréversible + non supprimable sur apitest).
 - **Plafond dur du nombre de fichiers** par dépôt / par `PUT files[]` : non
   recherché volontairement (impliquerait des centaines d'uploads sur un
   serveur de test partagé). On sait que ≥ 20 passe sans souci.
 - **Taille max d'upload, rate limiting** : non testables proprement (il
   faudrait soit uploader un binaire énorme, soit marteler l'API) — à
   documenter depuis la doc Huma-Num plutôt que par sonde.
-- **Versioning de fichiers** (DOI `…​.vN`, difficulté #4) : hors scope MVP,
-  jamais exercé.
 
 ## 14. Où vit ce savoir
 

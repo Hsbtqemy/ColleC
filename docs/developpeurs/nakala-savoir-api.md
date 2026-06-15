@@ -320,6 +320,14 @@ Jeu complet des 10 champs confirmé live (relecture `GET /datas`, 2026-06-15) :
 }
 ```
 
+**`description` par fichier — round-trip validé (2026-06-15)** : envoyée au
+`POST /datas {files:[{sha1, name, description}]}`, elle est **préservée à
+l'identique** à la relecture (unicode/accents/guillemets compris). →
+**confirme la viabilité du backlog « transcription par fichier »**
+(`Fichier.description_externe`) : Nakala accepte, stocke et restitue un texte
+de transcription par scan. Le corps `File` accepte aussi `embargoed` par
+fichier (cf. §6).
+
 ### Dates
 
 Format **W3CDTF** : `YYYY`, `YYYY-MM`, `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM:SS`
@@ -435,10 +443,14 @@ fausses ou mal étiquetées — p.ex. `c_12cd` = « carte géographique », pas
 ### Licences
 
 `GET /vocabularies/licenses` → **620 entrées** = **liste SPDX intégrale**
-(confirmé live, cf. §9), pas un sous-ensemble propre à Nakala. ⚠️ **Ouvert** :
-on ne sait pas *lesquelles* Nakala accepte réellement sur `nkl:license` au
-dépôt — à sonder en écriture avant d'en faire un vocabulaire d'export
-contraint.
+(confirmé live, cf. §9), pas un sous-ensemble propre à Nakala. ✅ **Résolu
+(sonde écriture 2026-06-15)** : `nkl:license` est **validé contre le set
+SPDX** — `CC-BY-4.0`, `MIT`, `CC0-1.0`, `etalab-2.0`, `GPL-3.0-only` acceptés
+au dépôt ; un code bidon (`NOT-A-LICENSE-XYZ`) ou vide → **422
+« unauthorized »**. Nuance : la licence **omise** passe (non requise, cf.
+§4) ; **présente mais invalide** → rejet. Donc ColleC peut contraindre son
+vocabulaire d'export aux codes SPDX en sécurité (son défaut `CC-BY-4.0` est
+valide).
 
 ## 6. Statuts & cycle de vie
 
@@ -693,9 +705,16 @@ de non-régression (`tests/test_nakala_vocabulaires_integration.py`).
 ## 12. Les 4 difficultés structurelles & parades
 
 1. **Conflit / fraîcheur** — Nakala **n'expose pas de verrou optimiste**
-   (Partie I). Parade : `fetched_at` + **diff & confirmation avant
-   overwrite** (dry-run par défaut sur toute écriture) ; à défaut,
-   last-writer-wins explicite.
+   (Partie I). Parade : détection de dérive via `modDate` + **diff &
+   confirmation avant overwrite** (dry-run par défaut sur toute écriture) ;
+   à défaut, last-writer-wins explicite. ✅ **`modDate` validé en live
+   (2026-06-15)** comme base de dérive : **bumpe à chaque mutation** (metas,
+   ajout/suppression de fichier), **monotone croissant**. Deux nuances :
+   (a) **`None` sur un dépôt frais** (seul `creDate` est posé ; modDate
+   apparaît à la 1ʳᵉ modif → ColleC gère le baseline `None` : pas de fausse
+   dérive) ; (b) **granularité 1 seconde** → deux mutations dans la même
+   seconde partagent un `modDate` (une dérive survenant dans la seconde du
+   pull baseline peut échapper — angle mort théorique).
 2. **Publié vs pending** — sur publié, métadonnées éditables et fichiers
    techniquement mutables (Partie I §6), mais **pas de dé-publication**.
    Parade : statut modélisé + garde-fou `DepotPublie` (flag

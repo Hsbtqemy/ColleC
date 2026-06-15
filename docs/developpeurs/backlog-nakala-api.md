@@ -285,6 +285,17 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   pas de version, et muter les fichiers d'un dépôt publié est techniquement
   accepté par Nakala (→ garde-fou `DepotPublie` = politique, pas nécessité —
   à garder). Cf. savoir-api §13.
+- **S6 — Contraindre le vocabulaire de licences au SPDX** (`P3`) — sondé
+  2026-06-15 : `nkl:license` est **validé contre le set SPDX** (`CC-BY-4.0`,
+  `MIT`, `CC0-1.0`, `etalab-2.0`, `GPL-3.0-only` OK ; code bidon/vide → 422).
+  ColleC pourrait valider la licence côté export/preflight contre
+  `licences_spdx()` (déjà vendorisé) pour échouer tôt avec un message clair
+  au lieu d'un 422 distant. Non prioritaire (le défaut `CC-BY-4.0` est valide).
+- **S7 — Transcription par fichier (`Fichier.description_externe`)** —
+  **viabilité confirmée** (sonde 2026-06-15) : le champ `description` par
+  fichier round-trip à l'identique (unicode compris). Feature V2+ : colonne
+  ORM + UI d'édition par scan + intégration au `files[]` du push fichiers.
+  Cf. CLAUDE.md *Questions ouvertes* (H11) et savoir-api §4.
 
 ---
 

@@ -293,9 +293,14 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   au lieu d'un 422 distant. Non prioritaire (le défaut `CC-BY-4.0` est valide).
 - **S7 — Transcription par fichier (`Fichier.description_externe`)** —
   **viabilité confirmée** (sonde 2026-06-15) : le champ `description` par
-  fichier round-trip à l'identique (unicode compris). Feature V2+ : colonne
-  ORM + UI d'édition par scan + intégration au `files[]` du push fichiers.
-  Cf. CLAUDE.md *Questions ouvertes* (H11) et savoir-api §4.
+  fichier round-trip à l'identique (unicode compris), et peut être **ajouté
+  APRÈS dépôt sans re-upload** (`PUT /datas {files:[{même sha1, +description}]}`)
+  → workflow naturel « déposer les scans, transcrire plus tard ». Feature
+  V2+ : colonne ORM + UI d'édition par scan + intégration au `files[]` du
+  push fichiers. ⚠️ Limite Nakala : **aucune métadonnée structurée par
+  fichier** (les champs extra / `metas[]` par fichier sont droppés) — seul du
+  texte libre `description` (+ `embargoed`) round-trippe. Cf. CLAUDE.md
+  *Questions ouvertes* (H11) et savoir-api §4.
 
 ---
 

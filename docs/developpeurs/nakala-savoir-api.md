@@ -320,13 +320,27 @@ Jeu complet des 10 champs confirmé live (relecture `GET /datas`, 2026-06-15) :
 }
 ```
 
-**`description` par fichier — round-trip validé (2026-06-15)** : envoyée au
-`POST /datas {files:[{sha1, name, description}]}`, elle est **préservée à
-l'identique** à la relecture (unicode/accents/guillemets compris). →
-**confirme la viabilité du backlog « transcription par fichier »**
-(`Fichier.description_externe`) : Nakala accepte, stocke et restitue un texte
-de transcription par scan. Le corps `File` accepte aussi `embargoed` par
-fichier (cf. §6).
+**Métadonnées par fichier — périmètre exact (sondé live 2026-06-15).** Les
+seuls champs **inscriptibles** par fichier sont **`name`, `sha1`,
+`embargoed`, `description`** (schémas OpenAPI : `File5` = input `PUT` le plus
+riche ; `File` = input granulaire `{sha1, description, embargoed}` ; `File3`
+= `{name, sha1}` ; `File2/4/6` = lecture, 9 champs dont `puid`/`format`
+calculés). **Tout champ extra est silencieusement ignoré** : `champLibre`,
+`title`, et même un `metas[]` *par fichier* envoyés au dépôt → **droppés**.
+Nakala **ne gère donc aucune métadonnée structurée au niveau fichier**
+au-delà de `description` (texte libre) + `embargoed` — le Dublin Core riche
+vit uniquement au niveau **donnée** (`metas[]`).
+
+- **`description` round-trip à l'identique** (unicode/accents/guillemets) →
+  **viabilité du backlog « transcription par fichier »** (`Fichier.description_externe`)
+  confirmée.
+- **Enrichissement APRÈS dépôt, sans re-upload** ✓ : un `PUT /datas
+  {files:[{même sha1, +description, +embargoed}]}` **ajoute/modifie** ces
+  champs sur un fichier déjà déposé (mêmes octets, pas de re-upload). →
+  workflow viable : déposer les scans, transcrire/embargoer plus tard.
+- **Embargo par défaut = date du dépôt** : un fichier sans `embargoed`
+  explicite reçoit `embargoed = aujourd'hui` (donc embargo expiré →
+  disponible immédiatement).
 
 ### Dates
 

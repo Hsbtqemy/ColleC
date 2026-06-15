@@ -367,11 +367,12 @@ seule). Les aperçus de publication sont **rouges** (irréversible).
   RFC5646 (`es`) → dépôt/push **rejeté 422** (latent : aucun test n'avait
   déposé de langue). **Fix** : `mapper.langue_vers_nakala` convertit la valeur
   `dcterms:language` + l'attribut `lang` des littéraux, dans `item_vers_slugs`.
-  Reliquat : `exporters/nakala.py` (CSV bulk) émet aussi la langue brute —
-  même bug, chemin séparé, à traiter après validation du format bulk.
+  ✅ Reliquat depuis résolu : `exporters/nakala.py` (CSV bulk) convertit
+  désormais la langue via `langue_vers_nakala` (valeur `dcterms:language` +
+  `langTitle`), comme le dépôt/push.
 
-**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256) ; fix langue
-de l'export CSV bulk.
+**Hors scope → futur** : versioning fichiers (#4, SHA-1↔SHA-256). ~~fix langue
+de l'export CSV bulk~~ → fait.
 
 ## P2 — Dépôt (écriture) vers Nakala (livré)
 

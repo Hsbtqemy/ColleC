@@ -1,9 +1,12 @@
 # Dépôt & round-trip Nakala (chantier futur)
 
 > Document interne, exclu du build MkDocs. Décision structurante prise
-> en session 2026-06-08, à implémenter en V2/V3. Préserve la décision
-> et l'architecture avant de coder (cf. règle projet « proposer les
-> décisions structurantes avant de coder »).
+> en session 2026-06-08. **La majeure partie est désormais livrée**
+> (P1 → P3+c, UI web, V0.10.0) — voir le tableau de phasage ci-dessous ;
+> le savoir API validé en live est consolidé dans
+> [`nakala-savoir-api.md`](nakala-savoir-api.md). Ce document préserve la
+> décision et l'architecture (cf. règle projet « proposer les décisions
+> structurantes avant de coder »).
 
 ## Décision
 
@@ -189,7 +192,7 @@ V0.9.10 :
 | **UI web de dépôt collection (livré)** | Backlog dépôt UI D1-D6. Bouton « Déposer sur Nakala » sur `fonds_lecture.html` (si miroir sans DOI, hors lecture seule), 4 routes `GET/POST /nakala/deposer-collection` + `/suivi/{job_id}` + `/statut/{job_id}`. **Première tâche de fond** du projet : POST réserve un job (registre mémoire thread-safe), démarre un `threading.Thread` daemon `executer_depot_collection`, redirige immédiatement vers la page de suivi qui polle le statut toutes les 2s (`hx-trigger`, arrêt auto en fin de job). Sûreté par **reprise idempotente** (DOI persistés au fil de l'eau → relance saute les items déjà créés), pas de broker. Avertissements de durée tiérisés dans l'aperçu (≥10 / ≥50 / ≥200 items) avec commande CLI `--no-dry-run` pré-remplie pour les très gros fonds. État volatile : restart processus = registre perdu (page suivi 404 sur job inconnu) mais base cohérente, relance reprend où on s'était arrêté. 15 tests web (TestClient + clients mockés). Décision d'archi documentée dans CLAUDE.md (*Tâches de fond : runner mémoire + reprise idempotente*). | livré | moyen |
 | **P3+a — Fondations versioning fichiers (livré)** | Colonne dédiée `Fichier.sha1_nakala` (String(40), indexée) + migration Alembic `s7w8x9y0z1a2` (backfill idempotent depuis `metadonnees["sha1"]` pour les fichiers déjà matérialisés via `rapatrier`). Câblage `deposer_item` : capture du sha1 retourné par `uploader_fichier` à chaque upload, persisté avec `doi_nakala`. Câblage `materialiser_fichiers_nakala` (pull) : pose la colonne en plus de `metadonnees["sha1"]` (compat retro). **Distinct de `hash_sha256`** (SHA-256 intégrité disque) — algos différents, sémantiques séparées. 7 tests (capture upload + cleanup orphelins + 4 cas backfill + 1 vérif pull). | livré | faible |
 | **P3+b — Détection (lecture seule, livré)** | Service `services/nakala_fichiers.py::comparer_fichiers_item` qui classe les fichiers d'un item vs `lire_depot(doi)` distant en 5 catégories : `nouveaux`, `modifies`, `inchanges`, `nakala_only_sans_local`, `orphelins_distants`. Réconciliation prioritaire par SHA-1 recalculé on the fly (`hashlib` streaming), fallback sur `sha1_nakala` stocké pour détecter les modifications. CLI `archives-tool nakala comparer-fichiers <cote> --fonds X [--format text|json]`. Aucune écriture base ni distante. 8 tests unitaires (5 catégories isolées + 2 cas dégénérés + 1 combinaison des 5) + 1 smoke live opt-in apitest (dépôt → comparer inchangé → modif binaire local → comparer modifié → cleanup). Validé en 8.10s contre apitest. | livré | faible |
-| **P3+c.1 — Service push fichiers (livré)** | `pousser_fichiers_item` (service + 2 exceptions `OrphelinsDetectes`/`PushImpossible` + dataclasses `RapportPushFichiers`/`PlanPushFichier`). Pipeline : compare (reuse) → garde-fous (aucun_changement no-op, orphelins refusés sans flag, files_cible vide H3 → PushImpossible) → upload nouveaux+modifies → PUT `/datas/{id}` files=cible → update `Fichier.sha1_nakala` → commit. Cleanup uploads orphelins en cas d'échec PUT. Signature `modifier_depot` étendue avec `files: list[dict] \| None`. **Bonus H7 (rename gratuit)** : un Fichier inchangé (sha1 inchangé) avec nom local différent → PUT propage le nouveau nom à Nakala sans re-upload (si au moins un autre changement structurel déclenche le PUT — sinon `aucun_changement` no-op). **Hypothèses Nakala validées contre apitest** par `scripts/explorer_put_files_nakala.py` (H1, H2A, H3, H4, H5, H6, H7, H10, H11). 9 tests unitaires. CLI + smoke live = palier c.2. **Hors scope MVP, à intégrer plus tard** : champ `description` par fichier pour transcriptions (H11, cf. CLAUDE.md *Questions ouvertes*). | livré | élevé |
+| **P3+c.1 — Service push fichiers (livré)** | `pousser_fichiers_item` (service + 2 exceptions `OrphelinsDetectes`/`PushImpossible` + dataclasses `RapportPushFichiers`/`PlanPushFichier`). Pipeline : compare (reuse) → garde-fous (aucun_changement no-op, orphelins refusés sans flag, files_cible vide H3 → PushImpossible) → upload nouveaux+modifies → PUT `/datas/{id}` files=cible → update `Fichier.sha1_nakala` → commit. Cleanup uploads orphelins en cas d'échec PUT. Signature `modifier_depot` étendue avec `files: list[dict] \| None`. **Bonus H7 (rename gratuit)** : un Fichier inchangé (sha1 inchangé) avec nom local différent → PUT propage le nouveau nom à Nakala sans re-upload (si au moins un autre changement structurel déclenche le PUT — sinon `aucun_changement` no-op). **Hypothèses Nakala validées contre apitest** par `scripts/explorer_put_files_nakala.py` (H1, H2A, H3, H4, H5, H6, H7, H10, H11). 9 tests unitaires. CLI + smoke live = palier c.2. **Hors scope MVP, à intégrer plus tard** : champ `description` par fichier pour transcriptions (H11, cf. CLAUDE.md *Questions ouvertes*). **MAJ (ticket T2, `backlog-nakala-api.md`)** : `pousser_fichiers_item` a depuis été réécrit en opérations **granulaires** (`POST …/files` additif + `DELETE …/files/{sha1}` + `PUT files[]` de réordonnancement construit depuis l'état distant relu) avec garde-fou pré-vol `ContenuDuplique` ; le `PUT` ne sert plus qu'à fixer l'ordre, plus de remplacement intégral. | livré | élevé |
 | **P3+c.2 — CLI + smoke live (livré)** | CLI `archives-tool nakala pousser-fichiers <cote> --fonds X [--no-dry-run] [--retirer-orphelins] [--format text\|json]`. Format text : sommaire compare + plan ordonné par `Fichier.ordre` (H5) avec sha1 tronqués. Format json complet. Exit codes propres : 0 (no-op / appliqué), 1 (DepotImpossible / OrphelinsDetectes / PushImpossible / ErreurNakala / item inconnu), 2 (config absente). 6 tests CLI. **Smoke live opt-in apitest** : cycle complet dépôt → modif binaire → `pousser_fichiers_item` → re-comparer → tout inchangé. Valide bout-en-bout signature étendue `modifier_depot(files=...)`, H1 (remplacement files[]), H10 (consistance immédiate), Fichier.sha1_nakala mis à jour, cache RessourceExterne invalidé. Run 4.58s contre apitest. | livré | moyen |
 | **P3+d — UI** | Bouton « Pousser les fichiers » sur la fiche item (si `doi_nakala` + au moins 1 changement détecté). Aperçu en query GET du rapport comparaison, confirmation POST bloquée 423 en lecture seule. | futur | moyen |
 
@@ -207,11 +210,16 @@ V0.9.10 :
 Couplage madbot à retirer au portage : types d'exception `plugins_api`
 et le DTO `MetadataObject` (remplacer par les métadonnées item ColleC).
 
-## Hors scope
+## Hors scope (cadrage d'origine — état actuel annoté)
 
 - WebDAV : les plugins `madbot_webdav*` restent hors périmètre. La V1.0
   prévoit un montage **davfs2 OS-level** (ShareDocs), pas un client
   WebDAV in-app.
-- Auto-publication Nakala (`status/published`) : laissée à l'UI Nakala
-  (relecture humaine avant mint DataCite).
-- Création de collections Nakala : la collection cible doit préexister.
+- ~~Auto-publication Nakala (`status/published`) : laissée à l'UI Nakala~~
+  → **finalement livré (P3)** : `publier_item` / `publier_collection`
+  (`status=published`, irréversible, dry-run par défaut + double
+  confirmation, garde-fou `--force-published`). Le dry-run tient lieu de
+  relecture avant mint DataCite.
+- ~~Création de collections Nakala : la collection cible doit préexister~~
+  → **finalement livré (P2)** : `creer_collection` (`POST /collections`)
+  + `deposer_collection`.

@@ -46,7 +46,7 @@ reste tolérée pour `montrer` / `rapatrier` sur dépôts publics).
 | `pousser`                 | Push    | `PUT /datas/{id}` — métadonnées d'un item (titre, etc.).    |
 | `pousser-collection`      | Push    | Pousse l'entité collection puis ses items liés.             |
 | `comparer-fichiers`       | Push    | Diff fichiers ColleC vs Nakala (lecture seule).             |
-| `pousser-fichiers`        | Push    | Upload + `PUT files[]` — synchronise les binaires.          |
+| `pousser-fichiers`        | Push    | Upload + `POST`/`DELETE` granulaires (+ `PUT` réordon.) — synchronise les binaires. |
 | `publier`                 | Pub     | `pending → published` sur un item (DOI DataCite minté).     |
 | `publier-collection`      | Pub     | Publie tous les items liés d'une collection.                |
 
@@ -292,9 +292,13 @@ Aucune écriture. Pratique pour auditer avant un push.
 
 ### `pousser-fichiers`
 
-Pipeline complet : compare → garde-fous → upload nouveaux/modifies
-→ `PUT /datas/{id}` avec `files[]` cible → mise à jour
-`Fichier.sha1_nakala` + `iiif_url_nakala`.
+Pipeline complet : compare → garde-fous → upload nouveaux/modifies →
+`POST /datas/{id}/files` (additif) pour les ajouts → `DELETE
+/datas/{id}/files/{sha1}` pour les retraits (anciens modifiés,
+orphelins, non-actifs) → `PUT files[]` de **réordonnancement** construit
+depuis l'état distant relu (fixe l'ordre, sans drop silencieux) → mise à
+jour `Fichier.sha1_nakala` + `iiif_url_nakala` + journal
+`OperationPushNakala`.
 
 ```bash
 # Aperçu (plan d'exécution sans toucher au distant)
@@ -309,7 +313,7 @@ archives-tool nakala pousser-fichiers PF-001 --fonds PF \
     --no-dry-run --force-published
 ```
 
-Quatre garde-fous (dans cet ordre d'évaluation, passe 14) :
+Six garde-fous (dans cet ordre d'évaluation) :
 
 1. **`fichiers_fantomes`** (diagnostic) : un Fichier ColleC porte un
    `sha1_nakala` qui ne matche plus le distant. Refus loud →
@@ -322,6 +326,13 @@ Quatre garde-fous (dans cet ordre d'évaluation, passe 14) :
    externes).
 4. **`OrphelinsDetectes`** (consent) : sha1 distants sans pendant
    ColleC. Confirmer avec `--retirer-orphelins`.
+5. **`PushImpossible`** (plan vide) : tous les fichiers seraient
+   retirés. Nakala refuse un dépôt sans fichier (403 sur le dernier,
+   H3) → refus en amont.
+6. **`ContenuDuplique`** (pré-vol) : le set final contient deux sha1
+   identiques. Nakala refuse les doublons de sha1 (422) → refus avant
+   toute mutation, pour ne pas laisser un état partiel en push
+   granulaire.
 
 Sortie text liste les compteurs par catégorie + avertissements
 critiques (fantôme, published). JSON expose le rapport complet

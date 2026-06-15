@@ -87,6 +87,37 @@ def test_export_nakala_items_incomplets_signales(
     assert cotes_incompletes == {"HK-001", "HK-002", "HK-003"}
 
 
+def test_export_nakala_langue_convertie_rfc5646(
+    session_avec_export: Session, tmp_path: Path
+) -> None:
+    """Reliquat bug #422 : ColleC stocke la langue en ISO 639-3 (`spa`) mais
+    Nakala type `dcterms:language` et `langTitle` en RFC5646 (`es`). L'export
+    CSV bulk doit convertir, sinon l'import Nakala rejette en 422. Garde sur
+    les DEUX colonnes (`langTitle` et `dc:language`)."""
+    from archives_tool.models import Item
+    from sqlalchemy import select
+
+    fonds = lire_fonds_par_cote(session_avec_export, "HK")
+    miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
+    item = session_avec_export.scalar(
+        select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
+    )
+    item.langue = "spa"
+    session_avec_export.commit()
+
+    sortie = tmp_path / "hk_langue.csv"
+    exporter_nakala_csv(session_avec_export, miroir, sortie)
+
+    with sortie.open(encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f, delimiter=";")
+        ligne = next(
+            row for row in reader
+            if row.get("http://purl.org/dc/terms/identifier") == "HK-001"
+        )
+    assert ligne["http://purl.org/dc/terms/language"] == "es"
+    assert ligne["langTitle"] == "es"
+
+
 def test_export_nakala_createur_singulier_reconnu(
     session_avec_export: Session, tmp_path: Path
 ) -> None:

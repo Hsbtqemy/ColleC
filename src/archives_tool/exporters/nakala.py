@@ -24,6 +24,7 @@ from archives_tool.exporters.mapping_dc import (
     valeur_en_liste,
 )
 from archives_tool.api.services.vocabulaires import type_coar_pour_nakala
+from archives_tool.external.nakala.mapper import langue_vers_nakala
 from archives_tool.exporters.rapport import RapportExport, verifier_pre_export
 from archives_tool.models import Collection, Item
 
@@ -98,6 +99,12 @@ def _ligne_nakala(
     type_nakala = type_coar_pour_nakala(type_coar) or type_coar
     licence = meta.get("licence") or meta.get("rights") or licence_defaut
     statut = meta.get("statut_nakala") or statut_defaut
+    # Nakala type `dcterms:language` (et `langTitle`) en RFC5646 (≈ 639-1) ;
+    # ColleC stocke en ISO 639-3 (`spa`). Sans conversion, l'import bulk de
+    # ce CSV est rejeté 422 (`spa` hors vocab Nakala) — même classe que le
+    # bug #422 corrigé au dépôt direct. Codes 639-3 sans équiv. 639-1 :
+    # passés tels quels (Nakala les accepte).
+    langue_nakala = langue_vers_nakala(item.langue) or ""
 
     return {
         "Linked in collection": item.doi_collection_nakala or doi_collection or "",
@@ -106,7 +113,7 @@ def _ligne_nakala(
         "Linked in item": item.doi_nakala or "",
         "Status donnee": statut,
         f"{NS_NAKALA}title": titre,
-        "langTitle": item.langue or "",
+        "langTitle": langue_nakala,
         f"{NS_NAKALA}creator": createur,
         f"{NS_NAKALA}created": date,
         f"{NS_NAKALA}type": type_nakala,
@@ -122,7 +129,7 @@ def _ligne_nakala(
             or meta.get("sujet")
             or meta.get("rubrique")
         ),
-        f"{DC}language": item.langue or "",
+        f"{DC}language": langue_nakala,
         f"{DC}publisher": _joindre(meta.get("editeur") or meta.get("publisher")),
         f"{DC}type": type_coar,
         f"{DC}rights": licence,

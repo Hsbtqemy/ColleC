@@ -71,6 +71,12 @@ class DepotNakala:
     #: Slug → valeur(s) pour tout le reste des metas (dcterms_*, etc.),
     #: à verser dans `Item.metadonnees` au rapatriement.
     metadonnees: dict[str, Any] = field(default_factory=dict)
+    #: DOIs des collections Nakala auxquelles cette donnée appartient
+    #: (champ `collectionsIds` de `GET /datas`). Sert à réconcilier
+    #: l'appartenance au pull (S3) : on lie l'item à la Collection ColleC
+    #: dont le `doi_nakala` matche. Vide si la donnée n'est dans aucune
+    #: collection.
+    collections_ids: list[str] = field(default_factory=list)
 
 
 def _slug(property_uri: str) -> str:
@@ -257,4 +263,7 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
         licence=next(iter(_valeurs(metas, f"{_NKL}license")), None),
         fichiers=fichiers,
         metadonnees=metadonnees,
+        collections_ids=[
+            str(c) for c in (depot.get("collectionsIds") or []) if c
+        ],
     )

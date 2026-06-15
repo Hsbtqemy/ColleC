@@ -93,6 +93,19 @@ def test_mapper_depot_minimal_ne_plante_pas() -> None:
     assert d.langues == []
     assert d.fichiers == []
     assert d.metadonnees == {}
+    assert d.collections_ids == []
+
+
+def test_mapper_collections_ids() -> None:
+    """S3 : `collectionsIds` est capté dans `DepotNakala.collections_ids`
+    (DOIs des collections Nakala d'appartenance). Absent → liste vide ;
+    valeurs nulles filtrées."""
+    d = mapper_depot({
+        "identifier": "10.34847/nkl.x",
+        "collectionsIds": ["10.34847/nkl.col1", "10.34847/nkl.col2", None, ""],
+    })
+    assert d.collections_ids == ["10.34847/nkl.col1", "10.34847/nkl.col2"]
+    assert mapper_depot({"identifier": "10.34847/nkl.y"}).collections_ids == []
 
 
 def test_langue_vers_iso639_3() -> None:

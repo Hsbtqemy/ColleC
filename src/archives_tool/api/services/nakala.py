@@ -35,7 +35,10 @@ from archives_tool.api.services.items import (
     formulaire_depuis_item,
     modifier_item,
 )
-from archives_tool.external.nakala.client import ClientLectureNakala
+from archives_tool.external.nakala.client import (
+    ClientLectureNakala,
+    normaliser_identifiant_nakala,
+)
 from archives_tool.external.nakala.collection import iterer_donnees_collection
 from archives_tool.external.nakala.mapper import DepotNakala, mapper_depot
 from archives_tool.files.nakala import construire_source_fichier_nakala
@@ -44,6 +47,7 @@ from archives_tool.models import (
     Fichier,
     Fonds,
     Item,
+    ItemCollection,
     LienExterneItem,
     RessourceExterne,
     SourceExterne,
@@ -352,6 +356,49 @@ class RapportRapatriement:
     deja_existant: bool
     item_id: int | None = None
     nb_fichiers: int = 0  # fichiers Nakala matérialisés (création réelle)
+    #: S3 — cotes des Collections ColleC auxquelles l'item a été rattaché
+    #: d'après les `collectionsIds` Nakala (réconciliation par doi_nakala).
+    collections_liees: list[str] = field(default_factory=list)
+    #: DOIs de collections Nakala dont aucune Collection ColleC ne porte le
+    #: `doi_nakala` (signalées, jamais auto-créées — scope read-only du pull).
+    collections_inconnues: list[str] = field(default_factory=list)
+
+
+def _reconcilier_collections_nakala(
+    db: Session,
+    item: Item,
+    collections_ids: list[str],
+    *,
+    ajoute_par: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Réconcilie l'appartenance d'un item aux collections Nakala (S3).
+
+    Pour chaque DOI de `collections_ids` (champ `collectionsIds` du dépôt
+    Nakala), cherche une Collection ColleC dont `doi_nakala` matche et lie
+    l'item (junction `ItemCollection`, idempotent, **sans commit** — le
+    commit englobant — typiquement `mettre_en_cache_depot` — persiste tout
+    atomiquement). **Ne crée aucune Collection** : une collection Nakala que
+    ColleC ne miroir pas reste « inconnue » (signalée au rapport, pas
+    auto-créée — cohérent avec le scope lecture du pull).
+
+    Retourne `(cotes_liees, dois_inconnus)`.
+    """
+    liees: list[str] = []
+    inconnues: list[str] = []
+    for brut_doi in collections_ids:
+        doi = normaliser_identifiant_nakala(brut_doi)
+        if not doi:
+            continue
+        coll = db.scalar(select(Collection).where(Collection.doi_nakala == doi))
+        if coll is None:
+            inconnues.append(doi)
+            continue
+        if db.get(ItemCollection, (item.id, coll.id)) is None:
+            db.add(ItemCollection(
+                item_id=item.id, collection_id=coll.id, ajoute_par=ajoute_par,
+            ))
+        liees.append(coll.cote)
+    return liees, inconnues
 
 
 def rapatrier(
@@ -392,11 +439,19 @@ def rapatrier(
         # d'un cache antérieur) : on ne recrée pas, mais sur un run réel on
         # garantit quand même le cache + le lien (idempotent). L'overwrite
         # des champs relève de `rafraichir`.
+        liees: list[str] = []
+        inconnues: list[str] = []
         if not dry_run:
+            # Réconcilie l'appartenance collection (S3) avant le commit du
+            # cache — idempotent, rejoue au re-pull d'un item déjà présent.
+            liees, inconnues = _reconcilier_collections_nakala(
+                db, deja, depot.collections_ids, ajoute_par=cree_par,
+            )
             mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
         return RapportRapatriement(
             cote=deja.cote, fonds_id=deja.fonds_id, dry_run=dry_run,
             deja_existant=True, item_id=deja.id,
+            collections_liees=liees, collections_inconnues=inconnues,
         )
 
     if dry_run:
@@ -414,10 +469,16 @@ def rapatrier(
         nb_fichiers = materialiser_fichiers_nakala(
             db, item, brut, base_url=base_url, ajoute_par=cree_par
         )
+    # Réconcilie l'appartenance aux collections Nakala (S3) avant le commit
+    # du cache → persisté atomiquement avec lui.
+    liees, inconnues = _reconcilier_collections_nakala(
+        db, item, depot.collections_ids, ajoute_par=cree_par,
+    )
     mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
     return RapportRapatriement(
         cote=item.cote, fonds_id=item.fonds_id, dry_run=False,
         deja_existant=False, item_id=item.id, nb_fichiers=nb_fichiers,
+        collections_liees=liees, collections_inconnues=inconnues,
     )
 
 

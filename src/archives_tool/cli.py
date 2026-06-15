@@ -2322,6 +2322,8 @@ def cmd_nakala_rapatrier(
             "deja_existant": rapport.deja_existant,
             "item_id": rapport.item_id,
             "nb_fichiers": rapport.nb_fichiers,
+            "collections_liees": rapport.collections_liees,
+            "collections_inconnues": rapport.collections_inconnues,
         }, ensure_ascii=False, indent=2))
         return
 
@@ -2340,6 +2342,18 @@ def cmd_nakala_rapatrier(
         typer.echo(
             f"[DRY-RUN] Créerait l'item {rapport.cote!r} dans le fonds {fonds}. "
             "Relancer avec --no-dry-run pour créer."
+        )
+
+    # S3 — appartenance aux collections Nakala réconciliée au pull.
+    if rapport.collections_liees:
+        typer.echo(
+            "  Rattaché aux collections ColleC : "
+            + ", ".join(rapport.collections_liees)
+        )
+    if rapport.collections_inconnues:
+        typer.echo(
+            "  Collections Nakala sans miroir ColleC (non rattachées) : "
+            + ", ".join(rapport.collections_inconnues)
         )
 
 

@@ -223,8 +223,15 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
 - **S2 — Réutiliser le `uri` doi.org** : la réponse `GET /datas` fournit
   `uri = https://doi.org/{doi}` ; l'utiliser pour les liens sortants au lieu
   de reconstruire.
-- **S3 — Lire `collectionsIds` au pull** : réconcilier l'appartenance d'un
-  item aux collections Nakala (aujourd'hui ignoré au mapping).
+- **S3 — Lire `collectionsIds` au pull** — ✓ **LIVRÉ.**
+  `DepotNakala.collections_ids` capte le champ ; `rapatrier` réconcilie via
+  `_reconcilier_collections_nakala` : pour chaque DOI, lie l'item à la
+  Collection ColleC dont `doi_nakala` matche (junction `ItemCollection`,
+  idempotent, sans commit propre → atomique avec le cache ; rejoue au re-pull
+  d'un item déjà présent). **Ne crée aucune Collection** : un DOI sans miroir
+  ColleC ressort en `collections_inconnues` (signalé, jamais auto-créé — scope
+  lecture). Surfacé dans `RapportRapatriement` + CLI `nakala rapatrier`
+  (texte + JSON). Tests : mapper + 2 tests pull (connu/inconnu + idempotence).
 - **S4 — `GET /datas/{id}/citation`** : afficher une citation prête à
   l'emploi sur la fiche item d'un dépôt publié.
 - **S5 — `PUT /datas/{id}/status/{status}`** — ✓ **sondé (gaté, 2026-06-15)** :

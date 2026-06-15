@@ -20,7 +20,11 @@ from archives_tool.models import Fonds, Item, LienExterneItem, RessourceExterne
 _DOI = "10.34847/nkl.abcdef12"
 
 
-def _depot(identifiant: str = _DOI, titre: str = "Titre Nakala") -> DepotNakala:
+def _depot(
+    identifiant: str = _DOI,
+    titre: str = "Titre Nakala",
+    collections_ids: list[str] | None = None,
+) -> DepotNakala:
     return DepotNakala(
         identifiant=identifiant,
         statut="published",
@@ -33,6 +37,7 @@ def _depot(identifiant: str = _DOI, titre: str = "Titre Nakala") -> DepotNakala:
         sujets=["satire"],
         licence="CC-BY-4.0",
         metadonnees={"dcterms_publisher": "Square"},
+        collections_ids=collections_ids or [],
     )
 
 
@@ -127,6 +132,71 @@ def test_rapatrier_cote_inderivable_leve(session: Session, fonds_hk: Fonds) -> N
     # DOI sans suffixe exploitable.
     with pytest.raises(RapatriementInvalide):
         rapatrier(session, _depot(identifiant="..."), {}, fonds_id=fonds_hk.id)
+
+
+def _collection_libre_avec_doi(
+    session: Session, fonds: Fonds, *, cote: str, doi: str
+) -> int:
+    """Crée une collection libre rattachée au fonds avec un doi_nakala posé.
+    Renvoie son id."""
+    from archives_tool.api.services.collections import (
+        FormulaireCollection,
+        creer_collection_libre,
+    )
+    col = creer_collection_libre(
+        session,
+        FormulaireCollection(cote=cote, titre=f"Coll {cote}", fonds_id=fonds.id),
+    )
+    col.doi_nakala = doi
+    session.commit()
+    return col.id
+
+
+def test_rapatrier_reconcilie_collections_nakala(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """S3 : au pull, l'item est rattaché à la Collection ColleC dont le
+    doi_nakala matche un collectionsIds Nakala ; un DOI sans miroir ColleC
+    ressort en `collections_inconnues` (jamais auto-créé)."""
+    from archives_tool.models import ItemCollection
+
+    doi_connu = "10.34847/nkl.collconnue"
+    doi_inconnu = "10.34847/nkl.collinconnue"
+    col_id = _collection_libre_avec_doi(
+        session, fonds_hk, cote="HK-LIBRE", doi=doi_connu
+    )
+
+    r = rapatrier(
+        session, _depot(collections_ids=[doi_connu, doi_inconnu]),
+        {"identifier": _DOI}, fonds_id=fonds_hk.id, cree_par="Marie",
+    )
+    assert r.collections_liees == ["HK-LIBRE"]
+    assert r.collections_inconnues == [doi_inconnu]
+    # Lien effectivement posé en base.
+    assert session.get(ItemCollection, (r.item_id, col_id)) is not None
+
+
+def test_rapatrier_reconcilie_idempotent_au_re_pull(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Re-pull d'un item déjà présent : la réconciliation rejoue (idempotente)
+    et lie la collection si le lien manquait."""
+    from archives_tool.models import ItemCollection
+
+    doi_connu = "10.34847/nkl.collconnue"
+    col_id = _collection_libre_avec_doi(
+        session, fonds_hk, cote="HK-LIBRE", doi=doi_connu
+    )
+    # 1er pull SANS collectionsIds → pas de lien à la libre.
+    r1 = rapatrier(session, _depot(), {}, fonds_id=fonds_hk.id)
+    assert session.get(ItemCollection, (r1.item_id, col_id)) is None
+    # 2e pull (déjà existant) AVEC le collectionsIds → lien posé.
+    r2 = rapatrier(
+        session, _depot(collections_ids=[doi_connu]), {}, fonds_id=fonds_hk.id,
+    )
+    assert r2.deja_existant is True
+    assert r2.collections_liees == ["HK-LIBRE"]
+    assert session.get(ItemCollection, (r2.item_id, col_id)) is not None
 
 
 def test_rapatrier_cote_explicite(session: Session, fonds_hk: Fonds) -> None:

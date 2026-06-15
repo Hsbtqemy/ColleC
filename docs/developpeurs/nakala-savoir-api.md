@@ -284,7 +284,7 @@ publics apitest (2026-06-15) :
 | `uri` | **URL résolvable `https://doi.org/{doi}`** (≠ URL API) | ignoré |
 | `version` | entier (cf. §13) | exporté tableur |
 | `creDate` / `modDate` | datetimes +TZ (`modDate` sert à détecter la dérive au push) | partiel |
-| `collectionsIds` | DOIs des collections d'appartenance | ignoré |
+| `collectionsIds` | DOIs des collections d'appartenance | ✅ lu (S3) → `DepotNakala.collections_ids` ; `rapatrier` réconcilie l'item aux Collections ColleC dont `doi_nakala` matche |
 | `relations` | relations inter-données (**vide sur 30/30 sondés — rare**) | ignoré |
 | `fileEmbargoed` | booléen niveau-donnée : ≥ 1 fichier sous embargo (1/30 sondés) | ignoré |
 | `owner` / `depositor` | objet user `{id (UUID), name, type, username, givenname, surname, photo}` | ignoré |

@@ -384,8 +384,13 @@ def sonde_g_doublon(ecriture, lecture, tmp_dir: Path) -> None:
 
 
 def sonde_d_publie(ecriture, lecture, tmp_dir: Path) -> None:
-    """D — comportement sur depot PUBLIE. GATE : irreversible sur apitest."""
-    _print_section("D - depot PUBLIE : POST/DELETE files acceptes ou refuses ?")
+    """D+S5+versioning — sur UN seul depot publie (minimise la pollution).
+    GATE : publier sur apitest est IRREVERSIBLE et laisse un depot
+    indestructible. Repond a 3 questions du backlog :
+      S5  : publier via PUT /datas/{id}/status/{status} (endpoint dedie) ?
+      ver : la publication cree-t-elle une version .vN (GET .../versions) ?
+      D   : POST/DELETE de fichiers acceptes ou refuses sur publie ?"""
+    _print_section("D+S5+versioning - depot PUBLIE (gate, irreversible)")
     if not AUTORISER_PUBLICATION:
         print("[SKIP] NAKALA_ALLOW_PUBLISH != 1 — sonde non lancee.")
         print("  Publier sur apitest est irreversible et laisse un depot")
@@ -393,17 +398,64 @@ def sonde_d_publie(ecriture, lecture, tmp_dir: Path) -> None:
         print("  serveur de test partage. Relancer avec NAKALA_ALLOW_PUBLISH=1")
         print("  UNIQUEMENT si ce cout est explicitement accepte.")
         return
+
     doi, sha1s, scans = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="GD-001", fonds_cote="GD")
-    print(f"Depot cree : {doi} ; publication (IRREVERSIBLE)...")
-    ecriture.modifier_depot(doi, status="published")
+        ecriture, tmp_dir, n=2, cote="GD-001", fonds_cote="GD")
+    print(f"Depot pending cree : {doi} (2 fichiers)")
+
+    # --- versioning AVANT publication (baseline) ---
+    code_v0, versions0 = ecriture.lire_versions_explo(doi)
+    n0 = len(versions0.get("data") or []) if isinstance(versions0, dict) else "?"
+    print(f"\nGET /versions avant publication -> HTTP {code_v0} ; "
+          f"{n0} version(s)")
+
+    # --- S5 : publication via endpoint dedie PUT /status/{status} ---
+    print("\nS5 : PUT /datas/{id}/status/published (endpoint dedie, IRREVERSIBLE)")
+    code_s5, charge_s5 = ecriture.publier_via_status_explo(doi, "published")
+    print(f"  -> HTTP {code_s5} : {json.dumps(charge_s5, ensure_ascii=False)[:200]}")
+    apres_pub = lecture.lire_depot(doi)
+    statut = apres_pub.get("status")
+    print(f"  statut relu = {statut!r}")
+    if code_s5 in (200, 204) and statut == "published":
+        print("  [OK] S5 : PUT /status/{status} publie proprement "
+              "(alternative semantique au PUT /datas {status}).")
+    else:
+        print(f"  [?] S5 : code {code_s5}, statut {statut!r} — endpoint dedie "
+              "non concluant, garder PUT /datas {status}.")
+
+    # --- versioning APRES publication ---
+    code_v1, versions1 = ecriture.lire_versions_explo(doi)
+    data1 = versions1.get("data") or [] if isinstance(versions1, dict) else []
+    print(f"\nGET /versions apres publication -> HTTP {code_v1} ; "
+          f"{len(data1)} version(s)")
+    for v in data1:
+        if isinstance(v, dict):
+            print(f"    version={v.get('version')} id={v.get('versionIdentifier')}")
+    if len(data1) > (n0 if isinstance(n0, int) else 0):
+        print("  [!] La publication a CREE une nouvelle version (.vN).")
+    else:
+        print("  [OK] Publication = pas de nouvelle version (ecrase en place).")
+
+    # --- D : POST puis DELETE de fichiers sur le depot PUBLIE ---
+    print("\nD : mutations de fichiers sur depot publie")
     p = scans / "post_publie.jpg"
     _ecrire_jpg(p, 5)
     desc = ecriture.uploader_fichier(p)
-    code, charge = ecriture.ajouter_fichier_explo(doi, {"sha1": desc["sha1"]})
-    print(f"POST files sur publie -> HTTP {code} : "
-          f"{json.dumps(charge, ensure_ascii=False)[:200]}")
-    print("  (depot publie NON nettoye — indestructible)")
+    code_add, charge_add = ecriture.ajouter_fichier_explo(doi, {"sha1": desc["sha1"]})
+    print(f"  POST /files sur publie -> HTTP {code_add} : "
+          f"{json.dumps(charge_add, ensure_ascii=False)[:160]}")
+    code_del = ecriture.supprimer_fichier_explo(doi, sha1s[0])
+    print(f"  DELETE /files/{sha1s[0][:8]}… sur publie -> HTTP {code_del}")
+    final = lecture.lire_depot(doi).get("files") or []
+    print(f"  fichiers apres = {_noms_sha1(final)}")
+    accepte_add = code_add in (200, 201)
+    accepte_del = code_del in (200, 204)
+    print(f"  [=>] POST {'ACCEPTE' if accepte_add else 'REFUSE'} ; "
+          f"DELETE {'ACCEPTE' if accepte_del else 'REFUSE'} sur publie "
+          f"-> garde-fou DepotPublie de ColleC "
+          f"{'justifie' if not (accepte_add and accepte_del) else 'prudent (mutations possibles mais cassent les citations)'}.")
+
+    print(f"\n  (depot publie {doi} NON nettoye — indestructible sur apitest)")
 
 
 def main() -> None:
@@ -428,9 +480,26 @@ def main() -> None:
         except Exception:  # noqa: BLE001
             return reponse.status_code, reponse.text
 
+    def publier_via_status_explo(self, doi: str, statut: str):
+        # S5 : endpoint dédié PUT /datas/{id}/status/{status}.
+        reponse = self._requete("PUT", f"/datas/{doi}/status/{statut}")
+        try:
+            return reponse.status_code, reponse.json()
+        except Exception:  # noqa: BLE001
+            return reponse.status_code, reponse.text
+
+    def lire_versions_explo(self, doi: str):
+        reponse = self._requete("GET", f"/datas/{doi}/versions")
+        try:
+            return reponse.status_code, reponse.json()
+        except Exception:  # noqa: BLE001
+            return reponse.status_code, reponse.text
+
     NakalaEcritureClient.ajouter_fichier_explo = ajouter_fichier_explo
     NakalaEcritureClient.supprimer_fichier_explo = supprimer_fichier_explo
     NakalaEcritureClient.lire_files_explo = lire_files_explo
+    NakalaEcritureClient.publier_via_status_explo = publier_via_status_explo
+    NakalaEcritureClient.lire_versions_explo = lire_versions_explo
 
     print(f"Cible : {HOTE}")
     print(f"Cle   : {CLE[:13]}... (publique apitest)")

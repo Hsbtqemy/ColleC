@@ -115,11 +115,11 @@ Les utiliser supprimerait le risque de drop silencieux à la racine.
     effet destructif** (le fichier reste, pas de doublon), mais **code non
     fiable** → faire la détection « déjà présent » **côté client** avant le
     POST, ne pas se reposer sur le code HTTP.
-- **Dépôt publié : NON sondé** (gaté derrière `NAKALA_ALLOW_PUBLISH=1` ;
-  publier sur apitest est irréversible et laisse un dépôt indestructible →
-  pollution du serveur partagé). Faible enjeu : le garde-fou `DepotPublie`
-  refuse déjà le push de fichiers sur publié par défaut. À sonder seulement si
-  on lève un jour ce garde-fou.
+- **Dépôt publié — ✓ sondé (gaté, 2026-06-15).** Nakala **accepte**
+  techniquement `POST`/`DELETE` de fichiers sur un dépôt publié (200 / 204,
+  sans créer de version) → le garde-fou `DepotPublie` de ColleC est une
+  **politique** (protéger les citations DataCite), pas une nécessité technique
+  — **confirmé pertinent à garder**. Détail : savoir-api §13.
 
 **Changement proposé.**
 - `external/nakala/write_client.py` : `ajouter_fichier(doi, sha1)`
@@ -210,9 +210,13 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   item aux collections Nakala (aujourd'hui ignoré au mapping).
 - **S4 — `GET /datas/{id}/citation`** : afficher une citation prête à
   l'emploi sur la fiche item d'un dépôt publié.
-- **S5 — `PUT /datas/{id}/status/{status}`** : vérifier si publier via cet
-  endpoint dédié est préférable au `PUT /datas` avec `status` (sémantique
-  plus claire, à confirmer par sonde).
+- **S5 — `PUT /datas/{id}/status/{status}`** — ✓ **sondé (gaté, 2026-06-15)** :
+  l'endpoint dédié **fonctionne** (→ 204, statut `published`). Sémantiquement
+  plus clair que le `PUT /datas {status}` actuel, mais les deux marchent —
+  bascule possible si on veut, sans urgence. Bonus du même run : publier ne
+  crée pas de version, et la mutation de fichiers sur un dépôt publié est
+  techniquement acceptée par Nakala (→ garde-fou `DepotPublie` = politique,
+  pas nécessité — à garder). Cf. savoir-api §13.
 
 ---
 

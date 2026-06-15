@@ -587,7 +587,7 @@ honnêtement ce qui existe mais n'est pas (encore) utilisé :
 | **SPARQL** | ❌ absent | `GET /sparql` → 404. Pas d'endpoint SPARQL public (du moins à ce chemin) |
 | **Embargo par fichier au dépôt** | ✅ accepté | sonde écriture sur apitest : `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée à la relecture avec un champ compagnon `humanReadableEmbargoedDelay`. ColleC ne pose pas encore d'embargo (le flux `deposer_item` n'envoie que `{sha1, name}`) |
 | **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers envoyés en ordre **inversé** → 20/20 conservés, **ordre inverse préservé** (H5 vaut aussi au POST, pas seulement au PUT). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
-| **Versioning (DOI `…​.vN`)** | ⚠️ existe, mais pending = écrase en place | machinerie présente côté Nakala (cf. ci-dessous), mais **éditer un dépôt `pending` n'en crée pas de version** : `PUT` (fichiers ou metas) écrase en place, `version` reste `1`, le DOI ne change pas. C'est le cas que `pousser_fichiers_item` traite (il refuse les publiés par défaut) |
+| **Versioning (DOI `…​.vN`)** | ⚠️ existe, mais ni `pending` ni la publication ne crée de version | machinerie présente côté Nakala (cf. ci-dessous), mais **éditer un dépôt `pending` n'en crée pas de version** (`PUT` fichiers/metas écrase en place, `version` reste `1`) **et publier non plus** (sonde gatée : `.v1` avant et après publication). C'est le cas que `pousser_fichiers_item` traite |
 
 ### Versioning Nakala — ce qui existe (sondé 2026-06-15)
 
@@ -602,17 +602,30 @@ pas :
   creDate, modDate}]}`.
 
 Sur un dépôt `pending`, après deux `PUT` (fichiers puis metas), `/versions`
-ne contient toujours qu'**une** entrée (`version=1`). La création d'une
-nouvelle version `.vN` relève très probablement de la **publication**
-(sémantique DataCite) — **non vérifié** : publier sur apitest est
-irréversible et un dépôt publié n'est plus supprimable (`DELETE` réservé au
-`pending`), ça polluerait durablement le serveur de test. Faible enjeu pour
-ColleC de toute façon (garde-fou `DepotPublie` sur le push de fichiers).
+ne contient toujours qu'**une** entrée (`version=1`).
+
+**Sonde gatée 2026-06-15 (`NAKALA_ALLOW_PUBLISH=1`, un dépôt publié sacrifié
+`10.34847/nkl.f3354s85`)** — résout trois « non vérifié » d'un coup :
+
+- **Publier ne crée PAS de version.** Avant publication : 1 version (`.v1`).
+  Après publication : **toujours 1** (`.v1`). La publication bascule le statut
+  **en place**, elle ne mint pas de `.vN`. La machinerie `.vN` doit donc
+  relever d'un autre déclencheur (édition d'un dépôt déjà publié ?), non
+  exploré (faible enjeu).
+- **S5 — `PUT /datas/{id}/status/published` fonctionne** : **204**, statut
+  relu `published`. Alternative sémantique propre au `PUT /datas {status}`
+  (que ColleC utilise aujourd'hui en P3 — les deux marchent).
+- **Mutation de fichiers sur dépôt PUBLIÉ : ACCEPTÉE par Nakala** —
+  `POST /files` → **200**, `DELETE /files/{sha1}` → **204** sur le dépôt
+  publié, **sans créer de version**. Nakala n'empêche donc **pas
+  techniquement** d'altérer les fichiers d'un dépôt publié (les citations
+  DataCite peuvent silencieusement diverger). Le garde-fou `DepotPublie` de
+  ColleC (refus par défaut, `--force-published` pour outrepasser) est ainsi
+  une **politique de qualité**, pas une nécessité technique — **confirmé
+  pertinent à garder**.
 
 ### Non testé / non testable
 
-- **Versioning sur dépôt PUBLIÉ** : voir ci-dessus — non testé (publication
-  irréversible + non supprimable sur apitest).
 - **Plafond dur du nombre de fichiers** par dépôt / par `PUT files[]` : non
   recherché volontairement (impliquerait des centaines d'uploads sur un
   serveur de test partagé). On sait que ≥ 20 passe sans souci.

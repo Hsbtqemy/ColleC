@@ -188,7 +188,9 @@ Garde-fous :
 - Aucun fichier local résolvable → `DepotImpossible` (un item
   Nakala-only n'est pas re-déposable).
 - Métadonnées insuffisantes (preflight refuse, ex. pas de créateur
-  ni de date) → `MetaInvalide` exit 1.
+  ni de date) → `MetaInvalide` exit 1. *Règle ColleC (qualité
+  catalographique) : Nakala accepterait le dépôt sans — il n'exige
+  que titre + type.*
 - Si le `POST` échoue après uploads → cleanup best-effort des
   uploads orphelins côté Nakala.
 

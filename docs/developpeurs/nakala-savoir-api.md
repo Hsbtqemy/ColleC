@@ -617,10 +617,11 @@ impose la **forme** par champ (cf. Partie I §4) — **5 catégories** :
 `\d{4}-\d{4}-\d{4}-\d{3}[\dX]`) → `{surname, givenname, orcid?}`. Sentinelles
 → `null` : `[s.n.]`/`anonyme` (créateur), `[s.d.]`/`inconnue` (date).
 
-**Obligatoires de niveau dépôt côté ColleC** : `nkl_creator` et `nkl_created`
-émettent **toujours au moins une meta** (valeur `null` si anonyme/inconnu) ;
-tous les autres champs absents (`None`) → **aucune meta**. Les slugs inconnus
-de la carte sont ignorés silencieusement (`slugs_inconnus` les remonte à
+**Convention ColleC** : `nkl_creator` et `nkl_created` émettent **toujours au
+moins une meta** (valeur `null` si anonyme/inconnu) pour alimenter la cascade
+`preflight` — Nakala n'exige que `nkl:title`+`nkl:type` (Partie I §4). Tous
+les autres champs absents (`None`) → **aucune meta**. Les slugs inconnus de la
+carte sont ignorés silencieusement (`slugs_inconnus` les remonte à
 l'utilisateur).
 
 **Cascade preflight** (`preflight.py`) : si `nkl:creator` résout à null,

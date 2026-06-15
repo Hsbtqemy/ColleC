@@ -31,6 +31,7 @@ from archives_tool.external.nakala.client import (
     NakalaAccesInterdit,
     NakalaAuthRefusee,
     NakalaInjoignable,
+    detail_erreur_nakala,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,11 +118,9 @@ class NakalaEcritureClient:
                 f"Nakala : écriture refusée (403) pour {contexte} — la clé "
                 "a-t-elle le droit de dépôt sur cette ressource ?"
             )
-        try:
-            charge = reponse.json()
-            detail = charge.get("message") or charge.get("error") or reponse.text
-        except Exception:  # noqa: BLE001
-            detail = reponse.text
+        # Détail lisible + `payload.validationErrors` (champ(s) fautif(s)
+        # d'un 422) annexés — sinon message générique « invalid data » (T3).
+        detail = detail_erreur_nakala(reponse)
         # 422 = validation métadonnées ; 4xx = charge utile fautive → action
         # utilisateur. 5xx = erreur serveur transitoire.
         if 400 <= reponse.status_code < 500:

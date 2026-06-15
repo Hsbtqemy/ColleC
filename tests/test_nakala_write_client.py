@@ -314,3 +314,63 @@ def test_modifier_collection_put() -> None:
     assert vus["path"] == "/collections/10.34847/nkl.col1"
     assert vus["body"] == {"metas": metas, "status": "public"}
     assert rep == {}
+
+
+# ---------------------------------------------------------------------------
+# T3 — surfaçage de payload.validationErrors dans les messages d'erreur
+# ---------------------------------------------------------------------------
+
+
+def test_422_annexe_les_validation_errors_au_message() -> None:
+    """Un 422 Nakala porte le détail par champ dans
+    `payload.validationErrors` — le message de NakalaSoumissionInvalide
+    doit le contenir (sinon l'utilisateur ne voit que « invalid data »)."""
+    corps = {
+        "code": 422,
+        "message": "Data could not be submitted because of invalid data",
+        "payload": {"validationErrors": [
+            "The metadata http://nakala.fr/terms#title is required.",
+            "The metadata http://nakala.fr/terms#type is required.",
+        ]},
+    }
+    with _client(lambda r: httpx.Response(422, json=corps)) as c:
+        with pytest.raises(NakalaSoumissionInvalide) as exc:
+            c.creer_depot(metas=[], files=[])
+    msg = str(exc.value)
+    assert "http://nakala.fr/terms#title is required" in msg
+    assert "http://nakala.fr/terms#type is required" in msg
+
+
+def test_4xx_sans_validation_errors_message_generique_inchange() -> None:
+    """4xx sans `payload.validationErrors` → message générique conservé
+    (robustesse, pas de régression)."""
+    with _client(lambda r: httpx.Response(
+        400, json={"message": "Bad request"})) as c:
+        with pytest.raises(NakalaSoumissionInvalide) as exc:
+            c.creer_depot(metas=[], files=[])
+    msg = str(exc.value)
+    assert "Bad request" in msg
+    assert "champs en cause" not in msg
+
+
+@pytest.mark.parametrize("corps", [
+    {"message": "x", "payload": "pas un dict"},      # payload non-dict
+    {"message": "x", "payload": {}},                  # pas de validationErrors
+    {"message": "x", "payload": {"validationErrors": []}},  # liste vide
+    {"message": "x"},                                  # pas de payload
+])
+def test_detail_erreur_defensif_sans_validation_errors(corps) -> None:
+    """detail_erreur_nakala reste défensif : payload absent / non-dict /
+    validationErrors vide → message générique seul, sans crash."""
+    from archives_tool.external.nakala.client import detail_erreur_nakala
+    rep = httpx.Response(422, json=corps)
+    detail = detail_erreur_nakala(rep)
+    assert detail == "x"
+    assert "champs en cause" not in detail
+
+
+def test_detail_erreur_corps_non_json() -> None:
+    """Corps non-JSON → texte brut, pas de crash."""
+    from archives_tool.external.nakala.client import detail_erreur_nakala
+    rep = httpx.Response(500, text="Internal Server Error (plain text)")
+    assert detail_erreur_nakala(rep) == "Internal Server Error (plain text)"

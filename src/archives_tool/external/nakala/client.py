@@ -79,6 +79,35 @@ class NakalaIntrouvable(ErreurNakala):
     """404 — l'identifiant demandé n'existe pas (ou pas accessible)."""
 
 
+def detail_erreur_nakala(reponse: httpx.Response) -> str:
+    """Extrait un message d'erreur lisible d'une réponse Nakala en échec.
+
+    Annexe ``payload.validationErrors`` (le **détail par champ** d'un 422,
+    p.ex. ``["The metadata http://nakala.fr/terms#title is required."]``) au
+    message générique — sinon l'utilisateur ne voit que « Data could not be
+    submitted because of invalid data », sans savoir quel champ pose problème
+    (T3, validé live 2026-06-15).
+
+    Défensif : corps non-JSON / non-dict, ``payload`` absent ou non-dict,
+    ``validationErrors`` absent ou vide → on retombe sur le message générique
+    (`message`/`error`) ou le texte brut, sans erreur. Les libellés sont des
+    URIs de propriété (pas de PII)."""
+    try:
+        charge = reponse.json()
+    except Exception:  # noqa: BLE001 — corps non-JSON
+        return reponse.text
+    if not isinstance(charge, dict):
+        return reponse.text
+    detail = charge.get("message") or charge.get("error") or reponse.text
+    payload = charge.get("payload")
+    if isinstance(payload, dict):
+        erreurs = payload.get("validationErrors")
+        if isinstance(erreurs, list) and erreurs:
+            libelles = "; ".join(str(e) for e in erreurs)
+            detail = f"{detail} — champs en cause : {libelles}"
+    return detail
+
+
 class ClientLectureNakala:
     """Client Nakala minimal, lecture seule, basé sur httpx."""
 
@@ -154,11 +183,7 @@ class ClientLectureNakala:
             raise NakalaAccesInterdit(f"Nakala : accès refusé (403) pour {cible}")
         if reponse.status_code == 404:
             raise NakalaIntrouvable(cible)
-        try:
-            charge = reponse.json()
-            detail = charge.get("message") or charge.get("error") or reponse.text
-        except Exception:  # noqa: BLE001
-            detail = reponse.text
+        detail = detail_erreur_nakala(reponse)
         raise ErreurNakala(
             f"Erreur API Nakala (HTTP {reponse.status_code}) pour {cible} : {detail}"
         )

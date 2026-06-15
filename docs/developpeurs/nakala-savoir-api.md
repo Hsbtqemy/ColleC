@@ -110,10 +110,10 @@ publier**. Trois découvertes ont coûté du sang :
 | 404 | ressource inconnue | `{code:404, message:"No route found for \"GET …\""}` |
 | 422 | metas / fichiers refusés | `{message:"Data could not be submitted …", payload:{validationErrors:["The metadata <uri> is required."]}}` |
 
-⚠️ Le détail par champ vit dans **`payload.validationErrors`** ; le client
-ColleC ne lit que `message`/`error` → il **n'affiche pas** ces erreurs fines
-(message générique « invalid data »). Amélioration possible : surfacer
-`validationErrors`.
+Le détail par champ vit dans **`payload.validationErrors`**. ✅ **Surfacé**
+(T3 livré) : `client.detail_erreur_nakala` l'annexe au message des deux
+clients (lecture + écriture) — l'utilisateur voit le(s) champ(s) en cause, pas
+seulement « invalid data ». Défensif si `payload` absent / non-dict.
 
 ### Comportements POST / upload (live)
 

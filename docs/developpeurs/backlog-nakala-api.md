@@ -172,7 +172,15 @@ Les utiliser supprimerait le risque de drop silencieux à la racine.
 
 ---
 
-## T3 — Surfacer `payload.validationErrors` dans les erreurs client `☐` · P2 · ¼ session · risque faible
+## T3 — Surfacer `payload.validationErrors` dans les erreurs client `✓` · P2 · risque faible
+
+> **✓ LIVRÉ.** Helper partagé `client.detail_erreur_nakala(reponse)` qui annexe
+> `payload.validationErrors` (le détail par champ d'un 422) au message
+> générique. Branché dans les **deux** `_verifier_statut` (lecture `client.py`
+> + écriture `write_client.py`) — factorisé plutôt que dupliqué. Défensif :
+> payload absent / non-dict / liste vide / corps non-JSON → message générique
+> seul. Tests : helper direct (cas défensifs) + 422 avec/sans validationErrors
+> côté écriture ET lecture (466 tests nakala verts).
 
 **Constat (live 2026-06-15).** Un `422` Nakala porte le détail par champ dans
 **`payload.validationErrors`** (ex. `["The metadata http://nakala.fr/terms#title

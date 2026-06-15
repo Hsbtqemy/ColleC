@@ -78,6 +78,19 @@ def test_connexion_impossible_injoignable() -> None:
         c.lire_depot("10.34847/nkl.x")
 
 
+def test_validation_errors_surfacees_cote_lecture() -> None:
+    """T3 : le client lecture annexe aussi `payload.validationErrors` au
+    message d'erreur (helper partagé `detail_erreur_nakala`)."""
+    corps = {
+        "message": "invalid",
+        "payload": {"validationErrors": ["The metadata X is required."]},
+    }
+    with _client(lambda r: httpx.Response(422, json=corps)) as c:
+        with pytest.raises(ErreurNakala) as exc:
+            c.lire_depot("10.34847/nkl.x")
+    assert "The metadata X is required" in str(exc.value)
+
+
 def test_lister_depots_scope_invalide() -> None:
     with _client(lambda r: httpx.Response(200, json={})) as c:
         with pytest.raises(ValueError):

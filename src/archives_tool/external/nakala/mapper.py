@@ -21,7 +21,7 @@ from typing import Any
 _NKL = "http://nakala.fr/terms#"
 _DCT = "http://purl.org/dc/terms/"
 
-#: propertyUri Nakala → slug court. Les `nkl:*` (obligatoires) sont
+#: propertyUri Nakala → slug court. Les `nkl:*` (champs cœur) sont
 #: explicites ; tout `dcterms:*` est mappé génériquement en `dcterms_<nom>`.
 PROPERTY_URI_TO_SLUG: dict[str, str] = {
     f"{_NKL}type": "nkl_type",

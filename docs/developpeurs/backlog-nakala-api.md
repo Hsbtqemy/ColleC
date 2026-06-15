@@ -12,7 +12,20 @@
 
 ---
 
-## T1 — Clarifier l'obligation créateur/date (ColleC ≠ Nakala) `☐` · P2 · ½ session · risque faible
+## T1 — Clarifier l'obligation créateur/date (ColleC ≠ Nakala) `✓` · P2 · risque faible
+
+> **✓ LIVRÉ (option A — règle conservée, clarifiée).** Décision actée :
+> garder la règle stricte (alignée sur *autonomie des items* / qualité
+> catalographique), et corriger ce qui était trompeur. Sans changement de
+> comportement. Réalisé : docstring + les **3 messages `MetaInvalide`** de
+> `preflight.py` disent désormais « Règle ColleC : Nakala accepterait le
+> dépôt sans, ColleC l'exige pour la qualité catalographique » ; commentaires
+> « obligatoires niveau dépôt » corrigés dans `depot_mapper.py` (×2) et
+> `mapper.py`. Tests `test_nakala_preflight.py` : les 2 cas « lève »
+> asserent maintenant que le message mentionne « ColleC » + « Nakala » (6/6
+> verts). Le callout `nakala-savoir-api.md` (title+type seulement) était déjà
+> posé. **`forcer=` non ajouté** (YAGNI / principe n°6 — aucun appelant ;
+> à introduire seulement si un besoin réel d'échappatoire émerge).
 
 **Constat (live 2026-06-15).** Nakala n'exige au dépôt que **`nkl:title` +
 `nkl:type`** ; omettre `creator`, `created` ou `license` → `201` accepté

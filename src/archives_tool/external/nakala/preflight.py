@@ -12,6 +12,13 @@ auto-promeut quand c'est possible :
 - **Date** : `nkl:created` null + pas de `dcterms:created` → promotion d'un
   `dcterms:date` W3CDTF. Sinon lève.
 
+⚠️ **Règle ColleC, pas une exigence Nakala.** Sondé live (2026-06-15) :
+l'API Nakala n'exige au dépôt que `nkl:title` + `nkl:type` ; un dépôt **sans
+créateur ni date est accepté** (201). Exiger une indication d'auteur et de
+date est un **choix de qualité catalographique** de ColleC (principes
+*autonomie des items* / *notice auto-suffisante*), pas une contrainte de
+l'API. Voir `docs/developpeurs/nakala-savoir-api.md` (§ champs obligatoires).
+
 Opère sur le `metas[]` wire-format produit par `depot_mapper.slugs_vers_metas`.
 Renvoie `(metas mutée, avertissements)`. Lève `MetaInvalide` si insatisfiable.
 """
@@ -94,7 +101,9 @@ def _cascade_createur(
         raise MetaInvalide(
             "nkl:creator est null/anonyme et aucun dcterms:creator ni "
             "dcterms:contributor n'est fourni — au moins un auteur ou "
-            "contributeur est requis pour la traçabilité."
+            "contributeur est requis pour la traçabilité. "
+            "(Règle ColleC : Nakala accepterait le dépôt sans créateur ; "
+            "ColleC l'exige pour la qualité catalographique.)"
         )
 
     if URI_NKL_CREATOR not in par_uri:
@@ -134,11 +143,15 @@ def _cascade_created(
     if dc_dates:
         raise MetaInvalide(
             "nkl:created est null, aucun dcterms:created, et aucun dcterms:date "
-            "au format W3C-DTF."
+            "au format W3C-DTF. "
+            "(Règle ColleC : Nakala accepterait le dépôt sans date ; ColleC "
+            "l'exige pour la qualité catalographique.)"
         )
     raise MetaInvalide(
         "nkl:created est null et aucun dcterms:created ni dcterms:date — une "
-        "indication temporelle est requise."
+        "indication temporelle est requise. "
+        "(Règle ColleC : Nakala accepterait le dépôt sans date ; ColleC "
+        "l'exige pour la qualité catalographique.)"
     )
 
 

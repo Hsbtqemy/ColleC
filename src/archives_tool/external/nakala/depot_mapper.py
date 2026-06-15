@@ -9,8 +9,9 @@ des DTO `MetadataObject`, et lève `MetaInvalide` (local) au lieu de
 Chaque slug → un ou plusieurs `{propertyUri, value, lang?, typeUri?}`.
 Traitements : multilingue `{value, lang}`, listes de chaînes, dates W3CDTF,
 créateur structuré `"Nom, Prénom [ORCID]"`, spatial/temporal en DCSV,
-sentinels anonyme/inconnu → `null`. `nkl_creator`/`nkl_created`
-(obligatoires niveau dépôt) émettent toujours au moins une meta.
+sentinels anonyme/inconnu → `null`. `nkl_creator`/`nkl_created` émettent
+toujours au moins une meta (même `null`) — convention ColleC pour alimenter
+la cascade `preflight` ; Nakala n'exige que `nkl:title`+`nkl:type`.
 """
 
 from __future__ import annotations
@@ -299,8 +300,9 @@ def _entree_spatial(item: Any) -> dict[str, Any]:
 def _entrees_pour_slug(slug: str, brut: Any) -> list[dict[str, Any]]:
     """Développe un couple (slug, valeur) en N entrées meta Nakala.
 
-    `nkl_creator`/`nkl_created` (obligatoires niveau dépôt) émettent
-    toujours au moins une meta (valeur `null` si anonyme/inconnu)."""
+    `nkl_creator`/`nkl_created` émettent toujours au moins une meta (valeur
+    `null` si anonyme/inconnu) — convention ColleC alimentant la cascade
+    `preflight` (Nakala n'exige que `nkl:title`+`nkl:type`)."""
     if slug == "nkl_creator":
         if brut is None:
             return [_meta(slug, None)]

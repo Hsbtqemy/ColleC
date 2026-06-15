@@ -62,8 +62,12 @@ def test_creator_null_accepte_si_contributeur_present() -> None:
 
 def test_creator_null_sans_tracabilite_leve() -> None:
     metas = [_m(URI_NKL_CREATOR, None), _m(URI_NKL_CREATED, "1984")]
-    with pytest.raises(MetaInvalide):
+    with pytest.raises(MetaInvalide) as exc:
         preflight_appliquer(metas)
+    # T1 : le message doit signaler que c'est une règle ColleC, pas une
+    # exigence Nakala (Nakala accepte un dépôt sans créateur).
+    msg = str(exc.value)
+    assert "ColleC" in msg and "Nakala" in msg
 
 
 def test_promotion_created_depuis_dcterms_date() -> None:
@@ -83,5 +87,8 @@ def test_created_null_sans_date_leve() -> None:
         _m(URI_NKL_CREATOR, {"surname": "S", "givenname": "A"}),
         _m(URI_NKL_CREATED, None),
     ]
-    with pytest.raises(MetaInvalide):
+    with pytest.raises(MetaInvalide) as exc:
         preflight_appliquer(metas)
+    # T1 : message explicite « règle ColleC, pas exigence Nakala ».
+    msg = str(exc.value)
+    assert "ColleC" in msg and "Nakala" in msg

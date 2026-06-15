@@ -87,7 +87,9 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   spécifiés (T1 clarifier obligation créateur/date = règle ColleC ≠
   Nakala ; T2 push fichiers granulaire `POST/DELETE …/files` au lieu du
   `PUT files[]` remplaçant ; T3 surfacer `payload.validationErrors`) +
-  opportunités secondaires. Aucun commencé.
+  opportunités secondaires. **T1, T2, T3 livrés** (+ S2 lien collection,
+  S3 réconciliation `collectionsIds` au pull) ; reste S1/S4/S5 et le
+  versioning fichiers (#4).
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

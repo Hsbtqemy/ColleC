@@ -371,7 +371,7 @@ dépôts publics apitest (2026-06-15) :
 | `version` | entier (cf. §7) |
 | `creDate` / `modDate` | datetimes +TZ (`modDate` = date de dernière modif, sert à détecter la dérive) |
 | `collectionsIds` | DOIs des collections d'appartenance |
-| `relations` | relations inter-données (**vide sur 30/30 sondés — rare**) |
+| `relations` | relations inter-données (**vide sur 30/30 sondés — rare**, car gated par la publication, cf. §6) |
 | `fileEmbargoed` | booléen niveau-donnée : ≥ 1 fichier sous embargo (1/30 sondés) |
 | `owner` / `depositor` | objet user `{id (UUID), name, type, username, givenname, surname, photo}` |
 | `isAdmin`/`isDepositor`/`isEditor`/`isOwner` | **droits relatifs à l'appelant** (tous `false` avec une clé non-propriétaire) |
@@ -500,6 +500,32 @@ zéro pollution) :
   détacher = `DELETE /datas/{id}/collections` (corps = liste de DOI) → 200 ;
 - **passer une collection en `public` est REFUSÉ (422)** tant qu'elle
   contient une donnée `pending` — il faut publier les données d'abord.
+
+**Relations entre données** (`relations[]`, `…/relations` ; sondé live
+2026-06-15) — **gated par la publication** :
+- une relation n'est acceptée que si la **source est publiée** (ou modérée) :
+  sur `pending` → **422** « Only published or moderated data can have
+  relations to other data published in NAKALA ».
+- structure : `{type, repository, target, comment?}` (ex. `type="IsPartOf"`,
+  `repository="nakala"`, `target="10.34847/nkl.…"`). En lecture s'ajoutent
+  `date`, `uri`, `isInferred`.
+- **cible Nakala : existence VALIDÉE** — `target` doit être un DOI Nakala
+  **publié existant** (source publiée → cible publiée → 200) ; un DOI Nakala
+  **inexistant → 422** (« The identifier … »). **Pas de référence en avant
+  possible** vers une donnée Nakala pas encore là.
+- **cible externe : NON validée** — `repository="hal"` (ou autre) + un
+  identifiant externe → **200**, accepté tel quel (Nakala ne vérifie pas les
+  entrepôts tiers). Liens externes en forme libre.
+- **unidirectionnel** : poser B→A ne crée pas A→B (pas d'inférence du revers
+  observée ; `isInferred` reste `false`).
+
+> **→ côté ColleC** : l'appartenance hiérarchique passe par `collectionsIds`
+> (qui marche **dès le dépôt, même `pending`**). Des **relations
+> donnée↔donnée** (ex. « numéro `IsPartOf` périodique ») ne sont **pas**
+> posables pendant un batch de dépôts `pending` : il faudrait une **3ᵉ passe
+> post-publication** (déposer tout → publier tout → poser les relations entre
+> données publiées). ColleC ne gère pas les relations aujourd'hui — ce
+> constat dit pourquoi c'est non-trivial.
 
 > **→ côté ColleC** : refuser par défaut d'éditer un dépôt publié est une
 > **politique de qualité** (garde-fou `DepotPublie`, flag `--force-published`),

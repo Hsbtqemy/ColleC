@@ -301,6 +301,18 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   fichier** (les champs extra / `metas[]` par fichier sont droppés) — seul du
   texte libre `description` (+ `embargoed`) round-trippe. Cf. CLAUDE.md
   *Questions ouvertes* (H11) et savoir-api §4.
+- **S8 — Relations donnée↔donnée (`relations[]`)** — **caractérisé, non
+  trivial** (sonde 2026-06-15). Une relation (`{type, repository, target}`,
+  ex. `IsPartOf`) exige que la **source soit publiée** ET, pour une cible
+  Nakala, que la **cible soit publiée et existante** (DOI inexistant → 422 ;
+  cible **externe** type `hal` = non validée, libre). Unidirectionnel (pas
+  d'inférence du revers). **Conséquence** : on ne peut **pas** poser de
+  relations pendant un batch de dépôts `pending` — il faudrait une **3ᵉ passe
+  post-publication** (déposer → publier → relier). L'appartenance
+  Fonds/Collection passe déjà par `collectionsIds` (OK dès le dépôt) ; les
+  relations donnée↔donnée ne seraient utiles que pour des liens sémantiques
+  (numéro `IsPartOf` périodique, version, citation) — feature V2+ si besoin
+  réel. Cf. savoir-api §6.
 
 ---
 

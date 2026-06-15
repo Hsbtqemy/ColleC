@@ -231,7 +231,16 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   d'un item déjà présent). **Ne crée aucune Collection** : un DOI sans miroir
   ColleC ressort en `collections_inconnues` (signalé, jamais auto-créé — scope
   lecture). Surfacé dans `RapportRapatriement` + CLI `nakala rapatrier`
-  (texte + JSON). Tests : mapper + 2 tests pull (connu/inconnu + idempotence).
+  (texte + JSON). **Passe de revue** : matching DOI **normalisé des deux
+  côtés** (`_resoudre_collections_par_doi` — tolère un `doi_nakala` stocké en
+  forme URL) ; **miroir du fonds exclue** du rapport (déjà liée par
+  `creer_item`, sinon bruit ×N sur un pull collection) ; **aperçu dry-run**
+  (résolution lecture seule, le preview liste ce qui serait rattaché) ;
+  **additif assumé** (rejoue l'appartenance Nakala, préserve les
+  appartenances ColleC-only, ne retire jamais — une appartenance retirée
+  manuellement mais toujours sur Nakala réapparaît au pull). Tests : mapper +
+  6 tests pull (connu/inconnu, idempotence sans doublon + persistance,
+  aperçu dry-run, exclusion miroir, normalisation URL↔nu).
 - **S4 — `GET /datas/{id}/citation`** : afficher une citation prête à
   l'emploi sur la fiche item d'un dépôt publié.
 - **S5 — `PUT /datas/{id}/status/{status}`** — ✓ **sondé (gaté, 2026-06-15)** :

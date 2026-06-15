@@ -12,7 +12,7 @@
 > (hypothèses H1-H11 contre `apitest.nakala.fr`), les 5 tests d'intégration
 > opt-in `tests/test_nakala_*_integration.py`, le code client
 > `src/archives_tool/external/nakala/`, et les découvertes accumulées dans
-> `CLAUDE.md`. Validé pour la dernière fois contre apitest le **2026-06-14**.
+> `CLAUDE.md`. Validé pour la dernière fois contre apitest le **2026-06-15**.
 
 ---
 
@@ -470,9 +470,10 @@ Confirmé en plus par les tests d'intégration :
 ## 7. Quirks & bugs rencontrés
 
 - **Bug #422 — langue** (voir §4). Latent car aucun test ne déposait de
-  langue jusqu'à la validation live. **Reliquat connu** :
-  `exporters/nakala.py` (CSV bulk, chemin manuel séparé) émet encore la
-  langue brute — même classe de bug, à corriger.
+  langue jusqu'à la validation live. ✅ **Corrigé sur les deux chemins** :
+  `exporters/nakala.py` (CSV bulk, chemin manuel séparé) convertit désormais
+  la langue via `langue_vers_nakala` (valeur `dcterms:language` + `langTitle`),
+  comme le dépôt/push.
 - **Canonicalisation des créateurs** : Nakala enrichit au stockage
   `{givenname, surname}` → `{authorId, fullName, givenname, orcid:null,
   surname}`. Sans parade, **chaque push voyait un faux changement**.
@@ -481,10 +482,13 @@ Confirmé en plus par les tests d'intégration :
   D'où le garde-fou `OrphelinsDetectes` / flag `--retirer-orphelins`, et la
   notion de **« fichiers fantômes »** (`sha1_nakala` désynchronisé) qui
   bloque le push.
-- **Push de fichiers non journalisé** (dette) : un `PUT` qui réduit
-  `files[]` retire durablement des fichiers côté Nakala **sans trace** dans
-  `OperationFichier` (qui ne couvre que le disque local). Table
-  `OperationPushNakala` en chantier (migration `t8x9y0z1a2b3`).
+- **Push de fichiers journalisé** : un push qui retire des fichiers côté
+  Nakala (DELETE granulaire ou PUT de réordonnancement) échappait à
+  `OperationFichier` (qui ne couvre que le disque local). ✅ **Résolu**
+  (passe 24) : table `OperationPushNakala` (migration `t8x9y0z1a2b3`) +
+  `journaliser_push_fichiers` insère un snapshot avant/après dans la **même
+  transaction** que les mutations DB. Consultation : `archives-tool montrer
+  push-nakala`.
 - **IIIF images uniquement** : Nakala ne sert l'IIIF Image API que pour les
   images (`jpg/png/tif/webp/jp2/…`) ; pour un fichier non-image (CSV, PDF…),
   une URL `/iiif/.../info.json` renvoie **HTTP 415** (Unsupported Media Type
@@ -578,9 +582,10 @@ mais la base reste cohérente.
   `…​.nakala_fichiers` (events INFO / WARNING / DEBUG ; sha1 tronqués,
   aucun secret ni PII). `publier_item` logge un WARNING (appel
   **irréversible et payant**).
-- Dette identifiée : les 7 autres services d'écriture de `nakala_depot.py`
-  n'ont pas encore le logging structuré (cf. CLAUDE.md *Questions
-  ouvertes*).
+- ✅ Les **7 services d'écriture** de `nakala_depot.py` (`deposer_item`,
+  `deposer_collection`, `pousser_item`, `publier_item`,
+  `pousser_metadonnees_collection`, `pousser_collection`,
+  `publier_collection`) ont tous le logging structuré (résolu passe 21).
 
 ## 13. Surface d'API au-delà du périmètre ColleC
 

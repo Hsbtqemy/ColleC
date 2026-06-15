@@ -98,7 +98,10 @@ def detail_erreur_nakala(reponse: httpx.Response) -> str:
         return reponse.text
     if not isinstance(charge, dict):
         return reponse.text
-    detail = charge.get("message") or charge.get("error") or reponse.text
+    # `message`/`error` sont normalement des chaînes mais Nakala n'en donne
+    # pas la garantie (objet localisé possible) → coercition défensive pour
+    # un message lisible, jamais un repr de dict cru.
+    detail = str(charge.get("message") or charge.get("error") or reponse.text)
     payload = charge.get("payload")
     if isinstance(payload, dict):
         erreurs = payload.get("validationErrors")

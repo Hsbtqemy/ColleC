@@ -364,36 +364,95 @@ class RapportRapatriement:
     collections_inconnues: list[str] = field(default_factory=list)
 
 
+def _resoudre_collections_par_doi(
+    db: Session, collections_ids: list[str]
+) -> tuple[list[Collection], list[str]]:
+    """DOIs Nakala (`collectionsIds`) → (Collections ColleC matchées, DOIs
+    inconnus). Lecture seule.
+
+    Matching **normalisé des deux côtés** : le `doi_nakala` stocké peut être
+    une forme non canonique selon son origine (import d'un export Nakala avec
+    un DOI en forme URL `https://nakala.fr/collection/…`), alors que le
+    `collectionsIds` distant est un DOI nu. Sans normaliser le côté stocké, le
+    match échouerait silencieusement. Déduplique les DOIs entrants (un même
+    DOI listé deux fois ne donne qu'un match).
+    """
+    vus: set[str] = set()
+    dois: list[str] = []
+    for brut in collections_ids:
+        d = normaliser_identifiant_nakala(brut)
+        if d and d not in vus:
+            vus.add(d)
+            dois.append(d)
+    if not dois:
+        return [], []
+    # Index normalisé des doi_nakala stockés (collections peu nombreuses →
+    # une requête, négligeable même en boucle de pull collection).
+    par_doi: dict[str, Collection] = {}
+    for c in db.scalars(
+        select(Collection).where(Collection.doi_nakala.isnot(None))
+    ).all():
+        cle = normaliser_identifiant_nakala(c.doi_nakala or "")
+        if cle:
+            par_doi.setdefault(cle, c)
+    matchees: list[Collection] = []
+    inconnues: list[str] = []
+    for d in dois:
+        coll = par_doi.get(d)
+        if coll is not None:
+            matchees.append(coll)
+        else:
+            inconnues.append(d)
+    return matchees, inconnues
+
+
 def _reconcilier_collections_nakala(
     db: Session,
-    item: Item,
+    item: Item | None,
+    fonds_id: int,
     collections_ids: list[str],
     *,
     ajoute_par: str | None = None,
+    appliquer: bool = True,
 ) -> tuple[list[str], list[str]]:
     """Réconcilie l'appartenance d'un item aux collections Nakala (S3).
 
-    Pour chaque DOI de `collections_ids` (champ `collectionsIds` du dépôt
-    Nakala), cherche une Collection ColleC dont `doi_nakala` matche et lie
-    l'item (junction `ItemCollection`, idempotent, **sans commit** — le
-    commit englobant — typiquement `mettre_en_cache_depot` — persiste tout
-    atomiquement). **Ne crée aucune Collection** : une collection Nakala que
-    ColleC ne miroir pas reste « inconnue » (signalée au rapport, pas
-    auto-créée — cohérent avec le scope lecture du pull).
+    Pour chaque DOI de `collections_ids`, trouve la Collection ColleC dont
+    `doi_nakala` matche (normalisé des deux côtés) et, si `appliquer`, lie
+    l'item via la junction `ItemCollection` (idempotent, **sans commit** : le
+    commit englobant — `mettre_en_cache_depot` — persiste tout atomiquement).
 
-    Retourne `(cotes_liees, dois_inconnus)`.
+    **Additif uniquement** : rejoue l'appartenance Nakala à chaque pull mais
+    ne retire **jamais** de lien. Conséquences assumées : (a) les
+    appartenances **ColleC-only** (collections sans pendant Nakala) sont
+    préservées ; (b) une appartenance retirée manuellement côté ColleC mais
+    **toujours présente sur Nakala** sera **ré-ajoutée** au prochain pull (le
+    pull réaffirme l'état Nakala) ; (c) une appartenance disparue côté Nakala
+    n'est pas retirée localement (pas de réconciliation des suppressions).
+
+    **Ne crée aucune Collection** : un DOI sans pendant ColleC reste
+    « inconnu » (signalé, jamais auto-créé — scope lecture). La **miroir du
+    fonds** de l'item est **exclue** du rapport : `creer_item` la lie déjà
+    automatiquement (invariant 6), ce n'est pas un rattachement S3.
+
+    `appliquer=False` (aperçu / dry-run) : résout et rapporte sans écrire ;
+    `item` peut alors être `None`.
+
+    Retourne `(cotes_liees, dois_inconnus)` — `cotes_liees` = collections
+    (hors miroir du fonds) auxquelles l'item appartient d'après Nakala.
     """
+    matchees, inconnues = _resoudre_collections_par_doi(db, collections_ids)
     liees: list[str] = []
-    inconnues: list[str] = []
-    for brut_doi in collections_ids:
-        doi = normaliser_identifiant_nakala(brut_doi)
-        if not doi:
+    for coll in matchees:
+        # Miroir du fonds : déjà liée par creer_item → on ne la compte pas.
+        if (
+            coll.type_collection == TypeCollection.MIROIR.value
+            and coll.fonds_id == fonds_id
+        ):
             continue
-        coll = db.scalar(select(Collection).where(Collection.doi_nakala == doi))
-        if coll is None:
-            inconnues.append(doi)
-            continue
-        if db.get(ItemCollection, (item.id, coll.id)) is None:
+        if appliquer and item is not None and (
+            db.get(ItemCollection, (item.id, coll.id)) is None
+        ):
             db.add(ItemCollection(
                 item_id=item.id, collection_id=coll.id, ajoute_par=ajoute_par,
             ))
@@ -439,14 +498,14 @@ def rapatrier(
         # d'un cache antérieur) : on ne recrée pas, mais sur un run réel on
         # garantit quand même le cache + le lien (idempotent). L'overwrite
         # des champs relève de `rafraichir`.
-        liees: list[str] = []
-        inconnues: list[str] = []
+        # Réconcilie l'appartenance collection (S3). En dry-run : aperçu
+        # lecture seule (appliquer=False) pour que le preview liste ce qui
+        # SERAIT lié. En réel : lie (avant le commit du cache → atomique).
+        liees, inconnues = _reconcilier_collections_nakala(
+            db, deja, deja.fonds_id, depot.collections_ids,
+            ajoute_par=cree_par, appliquer=not dry_run,
+        )
         if not dry_run:
-            # Réconcilie l'appartenance collection (S3) avant le commit du
-            # cache — idempotent, rejoue au re-pull d'un item déjà présent.
-            liees, inconnues = _reconcilier_collections_nakala(
-                db, deja, depot.collections_ids, ajoute_par=cree_par,
-            )
             mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
         return RapportRapatriement(
             cote=deja.cote, fonds_id=deja.fonds_id, dry_run=dry_run,
@@ -455,9 +514,14 @@ def rapatrier(
         )
 
     if dry_run:
+        # Aperçu lecture seule des collections qui seraient rattachées (S3).
+        liees, inconnues = _reconcilier_collections_nakala(
+            db, None, fonds_id, depot.collections_ids, appliquer=False,
+        )
         return RapportRapatriement(
             cote=cote_finale, fonds_id=fonds_id, dry_run=True,
             deja_existant=False, item_id=None,
+            collections_liees=liees, collections_inconnues=inconnues,
         )
 
     form = _depot_vers_formulaire(
@@ -472,7 +536,8 @@ def rapatrier(
     # Réconcilie l'appartenance aux collections Nakala (S3) avant le commit
     # du cache → persisté atomiquement avec lui.
     liees, inconnues = _reconcilier_collections_nakala(
-        db, item, depot.collections_ids, ajoute_par=cree_par,
+        db, item, item.fonds_id, depot.collections_ids,
+        ajoute_par=cree_par, appliquer=True,
     )
     mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
     return RapportRapatriement(

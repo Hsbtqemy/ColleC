@@ -199,6 +199,91 @@ def test_rapatrier_reconcilie_idempotent_au_re_pull(
     assert session.get(ItemCollection, (r2.item_id, col_id)) is not None
 
 
+def test_rapatrier_reconcilie_idempotent_meme_doi_pas_de_doublon(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Re-pull avec le MÊME collectionsIds : la garde `db.get(ItemCollection)`
+    évite tout doublon. Persistance vérifiée par une requête count (SQL, pas
+    l'identity map)."""
+    from archives_tool.models import ItemCollection
+
+    doi = "10.34847/nkl.collx"
+    col_id = _collection_libre_avec_doi(session, fonds_hk, cote="HK-L", doi=doi)
+    rapatrier(session, _depot(collections_ids=[doi]), {}, fonds_id=fonds_hk.id)
+    r2 = rapatrier(session, _depot(collections_ids=[doi]), {}, fonds_id=fonds_hk.id)
+    assert r2.deja_existant is True
+    assert r2.collections_liees == ["HK-L"]  # appartenance toujours rapportée
+    session.expire_all()
+    n = session.scalar(
+        select(func.count()).select_from(ItemCollection).where(
+            ItemCollection.collection_id == col_id
+        )
+    )
+    assert n == 1  # un seul lien malgré deux pulls
+
+
+def test_rapatrier_dry_run_apercu_collections_sans_ecrire(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Dry-run : aperçu des collections (liées + inconnues) SANS créer item
+    ni lien — le preview reflète ce qui serait rattaché."""
+    from archives_tool.models import ItemCollection
+
+    doi = "10.34847/nkl.collx"
+    _collection_libre_avec_doi(session, fonds_hk, cote="HK-L", doi=doi)
+    r = rapatrier(
+        session, _depot(collections_ids=[doi, "10.34847/nkl.inconnue"]),
+        {}, fonds_id=fonds_hk.id, dry_run=True,
+    )
+    assert r.dry_run is True and r.item_id is None
+    assert r.collections_liees == ["HK-L"]
+    assert r.collections_inconnues == ["10.34847/nkl.inconnue"]
+    # Rien écrit : ni item, ni lien.
+    assert session.scalar(select(func.count()).select_from(Item)) == 0
+    assert session.scalar(select(func.count()).select_from(ItemCollection)) == 0
+
+
+def test_rapatrier_miroir_du_fonds_exclue_du_rapport(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """La miroir du fonds (déjà liée par creer_item, invariant 6) n'est PAS
+    comptée comme rattachement S3, même si son doi_nakala matche un
+    collectionsIds — sinon bruit sur chaque item d'un pull collection."""
+    from archives_tool.models import Collection, TypeCollection
+
+    doi = "10.34847/nkl.miroirdoi"
+    miroir = session.scalar(
+        select(Collection).where(
+            Collection.fonds_id == fonds_hk.id,
+            Collection.type_collection == TypeCollection.MIROIR.value,
+        )
+    )
+    miroir.doi_nakala = doi
+    session.commit()
+    r = rapatrier(session, _depot(collections_ids=[doi]), {}, fonds_id=fonds_hk.id)
+    assert r.collections_liees == []  # miroir exclue
+    assert r.collections_inconnues == []
+
+
+def test_rapatrier_match_doi_normalise_des_deux_cotes(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Un doi_nakala stocké en forme URL matche un collectionsIds nu
+    (normalisation des deux côtés — robustesse imports legacy)."""
+    from archives_tool.models import ItemCollection
+
+    col_id = _collection_libre_avec_doi(
+        session, fonds_hk, cote="HK-URL",
+        doi="https://nakala.fr/collection/10.34847/nkl.urlform",
+    )
+    r = rapatrier(
+        session, _depot(collections_ids=["10.34847/nkl.urlform"]),
+        {}, fonds_id=fonds_hk.id,
+    )
+    assert r.collections_liees == ["HK-URL"]
+    assert session.get(ItemCollection, (r.item_id, col_id)) is not None
+
+
 def test_rapatrier_cote_explicite(session: Session, fonds_hk: Fonds) -> None:
     r = rapatrier(session, _depot(), {}, fonds_id=fonds_hk.id, cote="PF-001")
     assert r.cote == "PF-001"

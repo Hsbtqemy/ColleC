@@ -501,6 +501,22 @@ class ChampPushDiff:
     apres: list[str]
 
 
+def _normaliser_orcid(orcid: Any) -> str:
+    """Forme nue d'un ORCID pour la comparaison de diff.
+
+    Nakala **normalise l'ORCID en URL canonique** au stockage
+    (`https://orcid.org/0000-0001-2345-6789`) alors que ColleC l'émet nu
+    (`0000-0001-2345-6789`). Sans cette normalisation, un créateur porteur
+    d'un ORCID produit un **faux diff à chaque push** (round-trip jamais
+    idempotent) — vérifié live contre apitest 2026-06-15. On compare sur la
+    forme nue (on retire un préfixe `http(s)://orcid.org/`)."""
+    s = str(orcid).strip()
+    for prefixe in ("https://orcid.org/", "http://orcid.org/", "orcid.org/"):
+        if s.lower().startswith(prefixe):
+            return s[len(prefixe):]
+    return s
+
+
 def _canon_valeur(v: Any) -> Any:
     """Forme canonique d'une valeur de meta pour la comparaison de diff.
 
@@ -508,15 +524,17 @@ def _canon_valeur(v: Any) -> Any:
     `{givenname, surname}` et il renvoie `{authorId, fullName, givenname,
     orcid: null, surname}`. Pour ne pas voir un faux changement à chaque push,
     on ne compare que les champs **identifiants** que ColleC contrôle
-    (`surname`, `givenname`, `orcid` non nul) et on ignore les champs ajoutés
-    par Nakala (`authorId`, `fullName`, `orcid: null`)."""
+    (`surname`, `givenname`, `orcid` non nul), on ignore les champs ajoutés
+    par Nakala (`authorId`, `fullName`, `orcid: null`), et on **normalise
+    l'ORCID** en forme nue (Nakala le renvoie en URL — cf.
+    `_normaliser_orcid`)."""
     if isinstance(v, dict):
         canon: dict[str, Any] = {}
         for cle in ("surname", "givenname"):
             if v.get(cle):
                 canon[cle] = v[cle]
         if v.get("orcid"):
-            canon["orcid"] = v["orcid"]
+            canon["orcid"] = _normaliser_orcid(v["orcid"])
         return canon
     return v
 

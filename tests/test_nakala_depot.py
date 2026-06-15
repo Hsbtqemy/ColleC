@@ -376,6 +376,22 @@ def test_diff_push_createur_enrichi_par_nakala_ignore() -> None:
     assert diff_push(distant, local) == []
 
 
+def test_diff_push_createur_orcid_url_vs_nu_idempotent() -> None:
+    """Nakala normalise l'ORCID en URL (`https://orcid.org/X`) au stockage ;
+    ColleC l'émet nu (`X`). Sans normalisation, un créateur avec ORCID donne
+    un faux diff à chaque push. Vérifié live (apitest 2026-06-15)."""
+    from archives_tool.api.services.nakala_depot import diff_push
+
+    distant = [{"propertyUri": f"{_NKL}creator", "value": {
+        "authorId": "df8edbe2", "fullName": "Julio Cortázar",
+        "givenname": "Julio", "surname": "Cortázar",
+        "orcid": "https://orcid.org/0000-0001-2345-6789"}}]
+    local = [{"propertyUri": f"{_NKL}creator", "value": {
+        "givenname": "Julio", "surname": "Cortázar",
+        "orcid": "0000-0001-2345-6789"}}]
+    assert diff_push(distant, local) == []
+
+
 def test_diff_push_detecte_modif_titre() -> None:
     from archives_tool.api.services.nakala_depot import diff_push
 

@@ -291,10 +291,15 @@ langues, contributeurs, identifiants, relations) produit **N metas**.
 ### Créateur
 
 Objet `{surname, givenname, orcid?}`. Sentinelles anonymes (`[s.n.]`,
-`anonyme`) → `null`. ⚠️ **Enrichi au stockage** : Nakala réécrit
-`{givenname, surname}` en `{authorId, fullName, givenname, orcid:null,
-surname}` — une relecture diffère donc de l'envoi (cf. §8, quirk
-canonicalisation).
+`anonyme`) → `null`. ⚠️ **Enrichi + normalisé au stockage** (sondé live
+2026-06-15) : Nakala réécrit `{givenname, surname}` en `{authorId, fullName,
+givenname, orcid:null, surname}`, **normalise l'ORCID en URL**
+(`0000-0001-2345-6789` → `https://orcid.org/0000-0001-2345-6789`) et
+**réordonne les créateurs** (tri par nom observé : envoyé [Somers, Cortázar]
+→ relu [Cortázar, Somers]). Une relecture diffère donc de l'envoi sur trois
+axes → cf. §8 / §13 (canonicalisation `diff_push`). La réordonnancement est
+sans effet sur `diff_push` (comparaison multiset, ordre-insensible) ; c'est
+la normalisation ORCID qui causait un faux diff (corrigée).
 
 ### Fichier (dans une réponse `GET /datas`)
 
@@ -451,13 +456,24 @@ Vocabulaire des statuts (`/vocabularies/dataStatuses`,
 
 **Publier** : `PUT /datas/{id} {status:"published"}` **ou** le endpoint dédié
 `PUT /datas/{id}/status/published` (→ **204**) — **les deux fonctionnent**
-(sondé live, gaté). Bascule le statut **en place**.
+(sondé live, gaté). Bascule le statut **en place** (pas de version).
 
 **Mutation d'un dépôt PUBLIÉ : techniquement ACCEPTÉE par Nakala** (sondé
-gaté 2026-06-15) — `POST …/files` → 200, `DELETE …/files/{sha1}` → 204 sur
-un dépôt publié, **sans créer de version**. Nakala n'empêche donc **pas
-techniquement** d'altérer les fichiers/metas d'un dépôt publié (les
-citations DataCite peuvent silencieusement diverger).
+gaté 2026-06-15) — `POST …/files` → 200, `DELETE …/files/{sha1}` → 204,
+`PUT /datas {metas}` → 200. Nakala n'empêche **pas techniquement** d'altérer
+un dépôt publié. ⚠️ Mais la mutation des **fichiers** d'un publié **crée une
+version** `.vN` (cf. §7) — contrairement aux **metas**, éditées en place.
+C'est la raison du garde-fou ColleC `DepotPublie` (les citations DataCite
+peuvent diverger ; le versioning fichiers prolifère).
+
+**Cycle de vie des collections** (sondé live 2026-06-15, pending/private,
+zéro pollution) :
+- les collections **ne versionnent pas** (aucun champ `version` dans la
+  réponse) ; `PUT metas` édite en place ;
+- `POST /collections {datas:[doi…]}` **rattache** les données à la création ;
+  détacher = `DELETE /datas/{id}/collections` (corps = liste de DOI) → 200 ;
+- **passer une collection en `public` est REFUSÉ (422)** tant qu'elle
+  contient une donnée `pending` — il faut publier les données d'abord.
 
 > **→ côté ColleC** : refuser par défaut d'éditer un dépôt publié est une
 > **politique de qualité** (garde-fou `DepotPublie`, flag `--force-published`),
@@ -701,7 +717,12 @@ de non-régression (`tests/test_nakala_vocabulaires_integration.py`).
   `dcterms:language` + `langTitle`).
 - **Canonicalisation des créateurs** (Partie I §8) : `diff_push`
   canonicalise sur `surname/givenname/orcid` non-nul seuls → plus de faux
-  diff au push.
+  diff au push. ✅ **Étendu (2026-06-15)** : Nakala normalise aussi l'**ORCID
+  en URL** (`https://orcid.org/…`) ; sans normalisation, tout créateur avec
+  ORCID donnait un faux diff à *chaque* push (round-trip jamais idempotent —
+  reproduit puis corrigé live). `_normaliser_orcid` ramène à la forme nue
+  avant comparaison. Le réordonnancement des créateurs par Nakala est
+  inoffensif (diff multiset, ordre-insensible).
 - **`files[]` = remplacement total** (H1) : d'où le garde-fou
   `OrphelinsDetectes` / flag `--retirer-orphelins`, et la notion de
   **« fichiers fantômes »** (`sha1_nakala` désynchronisé) qui bloque le push.

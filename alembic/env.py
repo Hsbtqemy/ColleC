@@ -12,7 +12,15 @@ from archives_tool.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers=False` : sans ca, `fileConfig` desactive
+    # TOUS les loggers deja initialises (incluant
+    # `archives_tool.api.services.nakala_fichiers` et `nakala_depot`).
+    # Effet de bord pernicieux : les tests `caplog` (passes 8 + 21) qui
+    # tournent APRES un test ayant declenche `command.upgrade` ne
+    # capturent plus aucun log -> 16 tests regressent silencieusement.
+    # Decouvert passe 26-revue : interaction `test_migration` ↔ tests
+    # logging des autres modules dans la meme run pytest.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

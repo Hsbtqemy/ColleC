@@ -166,6 +166,57 @@ Format `10.34847/nkl.xxxxxxxx` (registrant Huma-Num), variante versionnée
 `10\.\d+/[^\s/?#]+`) ; best-effort, sinon saisie rendue telle quelle (404
 propre en aval).
 
+### Forme d'écriture des metas (`depot_mapper.py`)
+
+La carte de vérité `SLUG_TO_NAKALA` (**57 champs**) ne se contente pas de
+mapper `slug → propertyUri` : elle porte aussi un **`typeUri`** (indice de
+type XSD/DC transmis dans chaque meta) et impose une **forme** par champ.
+Détail non-évident à re-dériver, donc consigné ici.
+
+**Vocabulaire des `typeUri`** émis :
+
+| `typeUri` | Pour |
+|---|---|
+| `http://www.w3.org/2001/XMLSchema#anyURI` | `nkl:type` (URI COAR) |
+| `http://www.w3.org/2001/XMLSchema#string` | texte (titre, description, sujet, la plupart des `dcterms:*`) |
+| `http://purl.org/dc/terms/RFC5646` | **`dcterms:language`** — reconfirme l'origine du bug #422 (Nakala type la langue en RFC5646) |
+| `http://purl.org/dc/terms/W3CDTF` | dates (`dcterms:date`, `issued`, `modified`, `created`…) |
+| `…/Period`, `…/Point`, `…/Box` | structures temporal / spatial (posés par valeur) |
+
+**5 catégories de forme** d'une valeur de slug à l'écriture :
+
+1. **Multilingue** — liste `[{value, lang}]` (titre, description, sujet,
+   coverage + ~15 DC qualifiés). Chaque entrée → une meta avec `lang`.
+2. **Liste de chaînes** — `nkl_creator`, `dcterms_language`,
+   `dcterms_contributor` → N metas (une par item).
+3. **Tableau de chaînes** — identifiants / relations (`isPartOf`,
+   `references`…) / dates → N metas.
+4. **Scalaire** — `nkl_type`, `nkl_created`, `nkl_license` → une meta.
+5. **Structures** — `dcterms_temporal`, `dcterms_spatial` (cf. DCSV).
+
+**Encodage DCSV (spatial / temporal)** — le point le plus piégeux : un
+objet est **aplati en chaîne** `clé=valeur` jointe par `; `, le `typeUri`
+portant la sémantique :
+
+- `temporal` : chaîne brute → `typeUri=W3CDTF` ; objet
+  `{start, end, name}` → `start=…; end=…; name=…` + `typeUri=Period`.
+- `spatial` : objet `{kind:"Point", east, north, elevation, name}` →
+  `east=…; north=…; …` + `typeUri=Point` ; `{kind:"Box", northlimit,
+  southlimit, eastlimit, westlimit, uplimit, downlimit, units, zunits,
+  projection, name}` → DCSV + `typeUri=Box`. L'attribut `lang` est repris
+  de l'objet s'il est présent.
+
+**Créateur** : format strict `"Nom, Prénom [ORCID]"` (regex ORCID
+`\d{4}-\d{4}-\d{4}-\d{3}[\dX]`) → `{surname, givenname, orcid?}`.
+Sentinelles → `null` : `[s.n.]`/`anonyme` (créateur), `[s.d.]`/`inconnue`
+(date).
+
+**Obligatoires de niveau dépôt** : `nkl_creator` et `nkl_created`
+émettent **toujours au moins une meta** (valeur `null` si anonyme/
+inconnu) ; tous les autres champs absents (`None`) → **aucune meta**. Les
+slugs inconnus de la carte sont ignorés silencieusement (`slugs_inconnus`
+permet de les remonter à l'utilisateur).
+
 ## 4. Vocabulaires — impédances de schéma
 
 ### Langues ⚠️ (origine du bug #422)
@@ -259,8 +310,10 @@ Confirmé en plus par les tests d'intégration :
   `OperationFichier` (qui ne couvre que le disque local). Table
   `OperationPushNakala` en chantier (migration `t8x9y0z1a2b3`).
 - **IIIF images uniquement** : Nakala ne sert l'IIIF Image API que pour les
-  images (`jpg/png/tif/webp/jp2/…`) ; pour un PDF, une URL
-  `/iiif/.../info.json` renvoie 404 → garde sur l'extension à l'import.
+  images (`jpg/png/tif/webp/jp2/…`) ; pour un fichier non-image (CSV, PDF…),
+  une URL `/iiif/.../info.json` renvoie **HTTP 415** (Unsupported Media Type
+  — vérifié live le 2026-06-15 ; le code ColleC documentait « 404 », c'est
+  en réalité 415) → garde sur l'extension à l'import de toute façon.
 - **Fusion (pas remplacement) des metas de collection** : ColleC ne gère
   que titre + description → préserve les metas Nakala non modélisées
   (sujet, créateur de collection…) au lieu de les écraser.
@@ -342,7 +395,35 @@ mais la base reste cohérente.
   n'ont pas encore le logging structuré (cf. CLAUDE.md *Questions
   ouvertes*).
 
-## 13. Où vit ce savoir
+## 13. Surface d'API au-delà du périmètre ColleC
+
+ColleC ne consomme qu'une fraction de l'API Nakala. Sondes **lecture
+seule** menées contre `apitest.nakala.fr` le **2026-06-15** pour borner
+honnêtement ce qui existe mais n'est pas (encore) utilisé :
+
+| Capacité | Statut | Détail |
+|---|---|---|
+| **OAI-PMH** | ✅ existe | `GET /oai2?verb=Identify` → 200 ; `repositoryName=Nakala`, OAI 2.0, `earliestDatestamp=2015-01-01`, `granularity=YYYY-MM-DD`, `deletedRecord=persistent`. `/oai` redirige (301) vers `/oai2`. Moissonnage standard possible — non utilisé par ColleC |
+| **API de recherche** | ✅ existe | `GET /search?q=…&page=&limit=` → 200, JSON, **sans auth**. Renvoie des DOI de données publiques. ColleC ne s'en sert pas (il pull par DOI connu) ; utile pour découvrir des DOI |
+| **Vocabulaire licences** | ✅ = SPDX complet | `GET /vocabularies/licenses` → **620 entrées** `{code, name, url}` pointant `spdx.org`. Résout le « à confirmer » de la §4 : c'est bien la liste SPDX intégrale, pas un sous-ensemble Nakala |
+| **IIIF Image API** | ✅ v3.0 | `info.json` d'un fichier image → 200, `application/ld+json; profile=image/3`. Confirme l'approche visionneuse de ColleC. Fichier non-image → **415** (cf. §7) |
+| **IIIF Presentation (manifeste)** | ❌ non exposé | `/iiif/{doi}/manifest`, `.../manifest.json`, `/iiif/{doi}` → tous 404 (route API non trouvée), même pour un data image publié. Pas de manifeste par-donnée prêt à consommer aux chemins conventionnels ; ColleC construit sa propre visionneuse depuis les `info.json` par fichier |
+| **SPARQL** | ❌ absent | `GET /sparql` → 404. Pas d'endpoint SPARQL public (du moins à ce chemin) |
+
+### Non testé / non testable
+
+- **Embargo au dépôt** : on *lit* `embargoed` par fichier, mais poser un
+  embargo au `POST`/`PUT` (champ `embargoed` par fichier) n'a pas été
+  validé — sonde **écriture** requise (clé API + crée un dépôt sur apitest).
+- **Nombre max de fichiers dans un `PUT files[]`** : H1 implique d'envoyer
+  la liste complète ; non testé sur un très gros item — sonde écriture.
+- **Taille max d'upload, rate limiting** : non testables proprement (il
+  faudrait soit uploader un binaire énorme, soit marteler l'API) — à
+  documenter depuis la doc Huma-Num plutôt que par sonde.
+- **Versioning de fichiers** (DOI `…​.vN`, difficulté #4) : hors scope MVP,
+  jamais exercé.
+
+## 14. Où vit ce savoir
 
 | Sujet | Fichier |
 |---|---|

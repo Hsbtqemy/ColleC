@@ -100,6 +100,58 @@ publier**. Trois découvertes ont coûté du sang :
   **diffère selon l'endpoint** (3 projections) : détail en §3,
   *« Réponse de lecture complète »*.
 
+### Codes & corps d'erreur (relevés live 2026-06-15)
+
+| Code | Quand | Corps |
+|---|---|---|
+| 201 | création OK (`POST /datas`, `/collections`) | `{code:201, message:"Data created", payload:{id:"<doi>"}}` |
+| 204 | `PUT /collections/{id}` OK | vide |
+| 401 | clé absente / invalide | `{message:"Request is missing required authentication credential … X-API-KEY …"}` |
+| 404 | ressource inconnue | `{code:404, message:"No route found for \"GET …\""}` |
+| 422 | metas / fichiers refusés | `{message:"Data could not be submitted …", payload:{validationErrors:["The metadata <uri> is required."]}}` |
+
+⚠️ Le détail par champ vit dans **`payload.validationErrors`** ; le client
+ColleC ne lit que `message`/`error` → il **n'affiche pas** ces erreurs fines
+(message générique « invalid data »). Amélioration possible : surfacer
+`validationErrors`.
+
+### Comportements POST / upload (live)
+
+- **Succès POST = HTTP 201**, DOI dans `payload.id`.
+- **Upload à usage unique** : un fichier du stockage temporaire
+  (`POST /datas/uploads`) est **consommé** quand il est attaché à un dépôt ;
+  réutiliser le même `sha1` pour un 2ᵉ dépôt → 422. Chaque dépôt a ses
+  propres uploads.
+- **`POST /datas/{id}/files` est ADDITIF** : ajoute un fichier sans toucher
+  les autres — contrairement au `PUT /datas/{id}` `files[]` qui **remplace**
+  (H1). Couplé à `DELETE /datas/{id}/files/{fileId}`, c'est une voie de
+  modification **granulaire et sûre** des fichiers, alternative au PUT que
+  `pousser_fichiers_item` emploie aujourd'hui (et à son risque d'orphelins).
+
+### Catalogue complet (56 endpoints)
+
+Référence autoritative : **`GET /doc.json`** (spec OpenAPI / Swagger 2.0).
+ColleC n'en utilise qu'une douzaine ; le reste, par tag (`datas`,
+`collections`, `users`, `groups`, `vocabularies`, `search`) :
+
+- **datas — granulaire, non utilisé** : `…/metadatas` (GET/POST/DELETE *une*
+  meta), `…/files` (GET/POST/DELETE *un* fichier), `…/relations`
+  (GET/POST/PATCH/DELETE), `…/rights` (GET/POST/DELETE), `…/collections`
+  (GET/POST/**PUT**/DELETE — gérer l'appartenance), `…/status` +
+  **`PUT …/status/{status}`** (publier proprement), `…/versions`,
+  `…/citation`, `GET /data/{id}/{fileId}` (téléchargement binaire).
+- **collections — granulaire** : symétrique (`…/metadatas`, `…/rights`,
+  `…/status` + `PUT …/status/{status}`, `…/datas` GET/POST/DELETE).
+- **users** : `GET /users/me` (utilisateur courant), `…/me/apikey`
+  (régénérer / supprimer la clé), `…/datas/{datatypes,statuses,createdyears}`
+  et `…/collections/{statuses,createdyears}` (facettes).
+- **groups** : `POST/GET/PUT/DELETE /groups…` + `/groups/search` (modèle de
+  groupes d'utilisateurs / droits).
+- **divers** : `GET /authors/search`, `GET /resourceprocessing/{id}` (état
+  dans ElasticSearch + DataCite), `GET /websites` (sites de collections),
+  `GET /embed/{id}/{fileId}` (visionneuse Nakala), `GET /iiif/{id}/{fileId}/…`
+  (Image API).
+
 ## 3. Modèle de données
 
 ### Donnée (data) vs Fichier (file)
@@ -122,16 +174,27 @@ d'export ; un pull en base produit toujours **1 Item portant N Fichier**
 
 PropertyUri repérés :
 
-- **Obligatoires Nakala (`nkl:*`)** :
-  `http://nakala.fr/terms#type` (type COAR), `#title`, `#creator`,
-  `#created`, `#license`.
+- **Champs `nkl:*`** : `http://nakala.fr/terms#type` (type COAR), `#title`,
+  `#creator`, `#created`, `#license`.
 - **Dublin Core (`dcterms:*`)** :
   `http://purl.org/dc/terms/description`, `/subject`, `/language`,
   `/spatial`, `/temporal`, `/contributor`, `/relation`, etc.
 
+> ⚠️ **Obligatoires : `nkl:title` + `nkl:type` SEULEMENT** (vérifié live
+> 2026-06-15 par `POST /datas` avec metas incomplètes). Omettre `creator`,
+> `created` ou `license` → **201 accepté**. Le 422 nomme le champ manquant :
+> `{"payload":{"validationErrors":["The metadata http://nakala.fr/terms#title
+> is required."]}}`. La **cascade « créateur obligatoire »** de
+> `preflight.py` est donc une règle ColleC **plus stricte que Nakala**, pas
+> une exigence de l'API — choix de qualité catalographique, pas une
+> contrainte technique.
+
 La **carte de vérité** côté ColleC est `SLUG_TO_NAKALA` (**57 champs**)
 dans `external/nakala/depot_mapper.py` (portée du plugin madbot puis
 découplée). Lecture inverse : `PROPERTY_URI_TO_SLUG` dans `mapper.py`.
+Source autoritative côté Nakala : `GET /vocabularies/properties/details`
+(**55 propriétés** avec leurs `allowedTypes` + `languageAuthorized`) — ce
+que ColleC réimplémente à la main (cf. §4).
 
 ### Créateur
 
@@ -141,8 +204,10 @@ Sentinelles anonymes (`[s.n.]`, `anonyme`) → `null`.
 **Cascade preflight** (`external/nakala/preflight.py`) : si `nkl:creator`
 résout à null, ColleC tente de le promouvoir depuis `dcterms:creator` bien
 formé ; à défaut exige au moins un `dcterms:creator`/`dcterms:contributor`,
-sinon `MetaInvalide`. → créateur **de facto obligatoire**. Même logique
-pour la date (`nkl:created` ← `dcterms:date` W3CDTF valide).
+sinon `MetaInvalide`. Même logique pour la date (`nkl:created` ←
+`dcterms:date` W3CDTF valide). ⚠️ Rappel : cette obligation est **propre à
+ColleC** — Nakala accepte un dépôt sans créateur ni date (cf. callout
+ci-dessus).
 
 ### Fichier (dans une réponse `GET /datas`)
 
@@ -280,6 +345,25 @@ slugs inconnus de la carte sont ignorés silencieusement (`slugs_inconnus`
 permet de les remonter à l'utilisateur).
 
 ## 4. Vocabulaires — impédances de schéma
+
+### Endpoints de vocabulaires (`GET /vocabularies/*`, live 2026-06-15)
+
+Nakala expose ses vocabulaires en **lecture publique** (pas d'auth) — source
+autoritative à privilégier sur les snapshots vendorisés :
+
+| Endpoint | Contenu |
+|---|---|
+| `/vocabularies/depositTypes` | **29 types COAR acceptés au dépôt**, `{uri, en, fr, es, definition}` (trilingue + définition). C'est *la* liste de référence pour `nkl:type` |
+| `/vocabularies/datatypes` | les mêmes 29 types, URIs nues |
+| `/vocabularies/dcmitypes` | 12 types DCMI (`…/dcmitype/Collection`, `Dataset`, `Image`…) |
+| `/vocabularies/dataStatuses` | **5 statuts de donnée** : `pending`, `published`, `deleted`, `old` (version supersédée), `moderated` |
+| `/vocabularies/collectionStatuses` | 2 : `public`, `private` |
+| `/vocabularies/licenses` | **620 licences = liste SPDX complète** `{code, name, url}` |
+| `/vocabularies/languages` | langues `{id, label}` (id en ISO 639-3 pour la longue traîne ; cf. bug #422) |
+| `/vocabularies/countryCodes` | codes pays ISO 3166 alpha-2 (⚠️ pas `/countries`) |
+| `/vocabularies/properties` + `/properties/details` | **55 propriétés** de métadonnées + `allowedTypes` & `languageAuthorized` par propriété — la carte que `SLUG_TO_NAKALA` réimplémente à la main |
+| `/vocabularies/metadatatypes` + `/metadatatypes/details` | types de métadonnées (XSD/DC) |
+| `/vocabularies/lcsh` | concepts LCSH (Library of Congress Subject Headings) |
 
 ### Langues ⚠️ (origine du bug #422)
 
@@ -465,7 +549,7 @@ honnêtement ce qui existe mais n'est pas (encore) utilisé :
 
 | Capacité | Statut | Détail |
 |---|---|---|
-| **OAI-PMH** | ✅ existe | `GET /oai2?verb=Identify` → 200 ; `repositoryName=Nakala`, OAI 2.0, `earliestDatestamp=2015-01-01`, `granularity=YYYY-MM-DD`, `deletedRecord=persistent`. `/oai` redirige (301) vers `/oai2`. Moissonnage standard possible — non utilisé par ColleC |
+| **OAI-PMH** | ✅ existe | `/oai2` (OAI 2.0, `earliestDatestamp=2015-01-01`, `granularity=YYYY-MM-DD`, `deletedRecord=persistent` ; `/oai`→301). **4 formats** : `oai_dc`, `qdc` (DC qualifié), `oai_datacite`, `oai_isidore` (agrégateur Huma-Num). **Les sets = les collections** (`setSpec=doi_10.34847_nkl.<id>`) → on peut moissonner une collection précise. Non utilisé par ColleC |
 | **API de recherche** | ✅ existe | `GET /search?q=…&page=&limit=` → 200, JSON, **sans auth**. Renvoie des DOI de données publiques. ColleC ne s'en sert pas (il pull par DOI connu) ; utile pour découvrir des DOI |
 | **Vocabulaire licences** | ✅ = SPDX complet | `GET /vocabularies/licenses` → **620 entrées** `{code, name, url}` pointant `spdx.org`. Résout le « à confirmer » de la §4 : c'est bien la liste SPDX intégrale, pas un sous-ensemble Nakala |
 | **IIIF Image API** | ✅ v3.0 | `info.json` d'un fichier image → 200, `application/ld+json; profile=image/3`. Confirme l'approche visionneuse de ColleC. Fichier non-image → **415** (cf. §7) |

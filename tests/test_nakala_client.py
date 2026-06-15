@@ -91,6 +91,41 @@ def test_validation_errors_surfacees_cote_lecture() -> None:
     assert "The metadata X is required" in str(exc.value)
 
 
+def test_citation_succes_chaine_json() -> None:
+    """S4 : `GET /datas/{id}/citation` renvoie une chaîne JSON ; `citation()`
+    la retourne et frappe le bon chemin."""
+    vus: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        vus["path"] = request.url.path
+        return httpx.Response(
+            200, json="Somers, A. (1984). Titre. Nakala. https://doi.org/10.34847/nkl.x"
+        )
+
+    with _client(handler) as c:
+        cit = c.citation("10.34847/nkl.x")
+    assert vus["path"] == "/datas/10.34847/nkl.x/citation"
+    assert cit is not None and cit.startswith("Somers")
+
+
+def test_citation_pending_non_citable() -> None:
+    with _client(
+        lambda r: httpx.Response(200, json="Test deposit, therefore not citable.")
+    ) as c:
+        assert c.citation("10.34847/nkl.x") == "Test deposit, therefore not citable."
+
+
+def test_citation_corps_vide_retourne_none() -> None:
+    with _client(lambda r: httpx.Response(200, text="")) as c:
+        assert c.citation("10.34847/nkl.x") is None
+
+
+def test_citation_404_leve() -> None:
+    with _client(lambda r: httpx.Response(404, json={"message": "nope"})) as c:
+        with pytest.raises(NakalaIntrouvable):
+            c.citation("10.34847/nkl.x")
+
+
 def test_lister_depots_scope_invalide() -> None:
     with _client(lambda r: httpx.Response(200, json={})) as c:
         with pytest.raises(ValueError):

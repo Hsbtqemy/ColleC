@@ -146,6 +146,63 @@ def _faire_client(
 
 
 # ---------------------------------------------------------------------------
+# Item — citation (S4, lazy HTMX, lecture seule)
+# ---------------------------------------------------------------------------
+
+
+def _faire_fake_citation(citation: str | None = "Somers, A. (1984). Titre. Nakala."):
+    class _FakeCit:
+        base_url = "https://apitest.nakala.fr"
+
+        def __init__(self, *a, **k) -> None:
+            pass
+
+        def citation(self, doi: str) -> str | None:
+            return citation
+
+        def fermer(self) -> None:
+            pass
+
+    return _FakeCit
+
+
+def test_citation_item_rendue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _faire_client(tmp_path, monkeypatch, fake_cls=_faire_fake_citation())
+    r = client.get("/nakala/item/AS-001/citation", params={"fonds": "AS"})
+    assert r.status_code == 200
+    assert "Somers, A. (1984)" in r.text
+
+
+def test_citation_item_sans_doi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _faire_client(
+        tmp_path, monkeypatch, fake_cls=_faire_fake_citation(), doi_item=None
+    )
+    r = client.get("/nakala/item/AS-001/citation", params={"fonds": "AS"})
+    assert r.status_code == 200
+    assert "pas de DOI Nakala" in r.text  # apostrophe échappée par Jinja2
+
+
+def test_citation_item_pending_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dépôt non publié → Nakala renvoie une citation vide → message d'invite."""
+    client = _faire_client(
+        tmp_path, monkeypatch, fake_cls=_faire_fake_citation(citation=None)
+    )
+    r = client.get("/nakala/item/AS-001/citation", params={"fonds": "AS"})
+    assert r.status_code == 200
+    assert "Aucune citation disponible" in r.text
+
+
+def test_citation_item_inconnu_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _faire_client(tmp_path, monkeypatch, fake_cls=_faire_fake_citation())
+    r = client.get("/nakala/item/INEXISTANT/citation", params={"fonds": "AS"})
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Item — pousser
 # ---------------------------------------------------------------------------
 

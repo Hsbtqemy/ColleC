@@ -58,6 +58,9 @@ class _FakeClient:
     def lire_depot(self, doi: str) -> dict:
         return _DEPOT_JSON
 
+    def citation(self, doi: str) -> str:
+        return "Topor (1969). Titre Nakala. Nakala."
+
 
 @pytest.fixture(autouse=True)
 def _mock_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -113,6 +116,36 @@ def test_montrer_json(config_nakala: Path) -> None:
     assert charge["identifiant"] == _DOI
     assert charge["titre"] == "Titre Nakala"
     assert charge["langues"] == ["fra"]
+
+
+def test_montrer_affiche_citation_si_publie(config_nakala: Path) -> None:
+    """S4 : `montrer` d'un dépôt publié charge et affiche la citation."""
+    r = runner.invoke(app, ["nakala", "montrer", _DOI, "--config", str(config_nakala)])
+    assert r.exit_code == 0, r.output
+    assert "Citation" in r.output and "Topor (1969)" in r.output
+
+
+def test_citer_text(config_nakala: Path) -> None:
+    r = runner.invoke(app, ["nakala", "citer", _DOI, "--config", str(config_nakala)])
+    assert r.exit_code == 0, r.output
+    assert "Topor (1969)" in r.output
+
+
+def test_citer_json(config_nakala: Path) -> None:
+    r = runner.invoke(
+        app, ["nakala", "citer", _DOI, "--config", str(config_nakala), "--format", "json"]
+    )
+    assert r.exit_code == 0, r.output
+    charge = json.loads(r.output)
+    assert charge["doi"] == _DOI
+    assert "Topor" in charge["citation"]
+
+
+def test_citer_sans_config_nakala_exit2(tmp_path: Path) -> None:
+    cfg = tmp_path / "config_local.yaml"
+    cfg.write_text("utilisateur: X\n", encoding="utf-8")
+    r = runner.invoke(app, ["nakala", "citer", _DOI, "--config", str(cfg)])
+    assert r.exit_code == 2
 
 
 def test_montrer_json_expose_liste_fichiers(

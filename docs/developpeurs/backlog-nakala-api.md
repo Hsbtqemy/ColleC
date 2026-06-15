@@ -263,15 +263,28 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   manuellement mais toujours sur Nakala réapparaît au pull). Tests : mapper +
   6 tests pull (connu/inconnu, idempotence sans doublon + persistance,
   aperçu dry-run, exclusion miroir, normalisation URL↔nu).
-- **S4 — `GET /datas/{id}/citation`** : afficher une citation prête à
-  l'emploi sur la fiche item d'un dépôt publié.
-- **S5 — `PUT /datas/{id}/status/{status}`** — ✓ **sondé (gaté, 2026-06-15)** :
-  l'endpoint dédié **fonctionne** (→ 204, statut `published`). Sémantiquement
-  plus clair que le `PUT /datas {status}` actuel, mais les deux marchent —
-  bascule possible si on veut, sans urgence. Bonus du même run : publier ne
-  crée pas de version, et la mutation de fichiers sur un dépôt publié est
-  techniquement acceptée par Nakala (→ garde-fou `DepotPublie` = politique,
-  pas nécessité — à garder). Cf. savoir-api §13.
+- **S4 — `GET /datas/{id}/citation`** — ✓ **LIVRÉ.** Citation
+  bibliographique prête à l'emploi surfacée des **deux** côtés :
+  `ClientLectureNakala.citation(doi)` (tolère chaîne JSON / texte / vide) ;
+  CLI `nakala citer <doi> [--format text|json]` + ligne « Citation » dans
+  `nakala montrer` (chargée seulement si le dépôt est `published`) ; fiche
+  web `/item/<cote>` = section « Citation Nakala » chargée **à la demande**
+  via HTMX (route `GET /nakala/item/<cote>/citation`, partial
+  `nakala_citation.html`) car Nakala est lent (~3-5 s) — pas de fetch à
+  chaque rendu. Best-effort (toute erreur Nakala → message, jamais 500).
+  Tests : client (4) + CLI (4) + web (4).
+- **S5 — `PUT /datas/{id}/status/{status}`** — ✓ **sondé (gaté), décision :
+  garder l'actuel.** L'endpoint dédié **fonctionne** : `PUT
+  /datas/{id}/status/published` (sans corps) → **204**, publie et
+  **préserve les metas** (`av.metas == ap.metas`, re-sondé 2026-06-15). Il
+  découple publication / écriture de metas. Mais `publier_item` re-pousse
+  volontairement les metas locales (`PUT /datas {metas, status}`) — aligné
+  sur le **principe n°1** (la base locale fait foi → on publie ce que ColleC
+  a). **Décision : ne pas basculer** (la bascule publierait l'état distant
+  tel quel, possiblement périmé vs local). Bonus du run : publier ne crée
+  pas de version, et muter les fichiers d'un dépôt publié est techniquement
+  accepté par Nakala (→ garde-fou `DepotPublie` = politique, pas nécessité —
+  à garder). Cf. savoir-api §13.
 
 ---
 

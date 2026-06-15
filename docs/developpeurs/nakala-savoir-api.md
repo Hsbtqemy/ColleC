@@ -552,7 +552,8 @@ existe mais n'est pas (encore) exploité :
 | **SPARQL** | ❌ absent | `GET /sparql` → 404 (du moins à ce chemin) |
 | **Embargo par fichier au dépôt** | ✅ accepté | `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée avec un champ compagnon `humanReadableEmbargoedDelay` |
 | **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers, ordre inverse préservé (cf. §8). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
-| **Citation** | ✅ existe | `GET /datas/{id}/citation` — citation prête à l'emploi (non sondée en détail) |
+| **Citation** | ✅ sondée (S4) | `GET /datas/{id}/citation` → **chaîne JSON** (citation bibliographique prête à l'emploi). Dépôt **pending** → `"Test deposit, therefore not citable."`. Consommée par ColleC : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
+| **Publication via `PUT …/status/{status}`** | ✅ sondée (S5) | `PUT /datas/{id}/status/published` (sans corps) → **204**, publie et **préserve les metas** (`av.metas == ap.metas`). Découple publication / écriture de metas, contrairement à `publier_item` qui re-pousse les metas locales (choix ColleC, principe n°1). ColleC garde l'approche actuelle (cf. §7) |
 | **`GET /users/me`, `/resourceprocessing/{id}`** | ✅ existent | identité de la clé ; état d'indexation ElasticSearch + DataCite (latence post-publication) — non sondés |
 | **Versioning (DOI `…​.vN`)** | ⚠️ existe, déclencheur flou | cf. §7 : ni `pending` ni la publication ne mintent de `.vN` |
 

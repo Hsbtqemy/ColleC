@@ -224,6 +224,26 @@
         {% endif %}
       </section>
 
+      {# Citation Nakala (S4) : chargée à la demande via HTMX (Nakala est
+         lent ~3-5 s → pas à chaque rendu de fiche). Seulement si l'item a
+         un DOI Nakala. #}
+      {% if item.doi_nakala %}
+      <section style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+          Citation Nakala
+        </h3>
+        <div id="citation-nakala">
+          <button type="button"
+                  hx-get="/nakala/item/{{ item.cote | urlencode }}/citation?fonds={{ fonds.cote | urlencode }}"
+                  hx-target="#citation-nakala" hx-swap="innerHTML"
+                  style="font-size:12px;color:#374151;background:#f3f4f6;border:1px solid rgba(0,0,0,0.1);border-radius:6px;padding:5px 10px;cursor:pointer;">
+            Charger la citation
+          </button>
+          <span style="font-size:11px;color:#9ca3af;margin-left:8px;">depuis Nakala (peut prendre quelques secondes)</span>
+        </div>
+      </section>
+      {% endif %}
+
     </div>
   </div>
 

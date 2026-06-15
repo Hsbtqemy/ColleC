@@ -401,6 +401,46 @@ def _resoudre_collection_ou_404(db: Session, cote: str, fonds: str | None):
         raise HTTPException(404, detail=f"Collection {cote!r} introuvable.") from e
 
 
+# ---- Item : citation (S4) ----------------------------------------------
+
+
+@router.get("/nakala/item/{cote}/citation", response_class=HTMLResponse)
+def citation_item(
+    cote: str,
+    request: Request,
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Partial HTMX : citation Nakala d'un item (S4, lecture seule, lazy).
+
+    Chargé à la demande car Nakala est lent (~3-5 s) — pas à chaque rendu de
+    fiche. Best-effort : toute erreur Nakala devient un message dans le
+    partial, jamais une 500 (sauf item local inconnu → 404)."""
+    item = _resoudre_item_ou_404(db, cote, fonds)  # 404 si item inconnu
+    citation: str | None = None
+    erreur: str | None = None
+    if not item.doi_nakala:
+        erreur = "Cet item n'a pas de DOI Nakala."
+    else:
+        lecture = _client_ou_none(config)
+        if lecture is None:
+            erreur = "Nakala n'est pas configuré (section `nakala:`)."
+        else:
+            try:
+                citation = lecture.citation(item.doi_nakala)
+            except ErreurNakala as exc:
+                erreur = _message_erreur_nakala(exc, cote)
+            finally:
+                _fermer(lecture)
+    return templates.TemplateResponse(
+        request, "partials/nakala_citation.html",
+        _contexte_base(nom_base, utilisateur, citation=citation, erreur=erreur),
+    )
+
+
 # ---- Item : pousser ----------------------------------------------------
 
 

@@ -208,6 +208,27 @@ class ClientLectureNakala:
         self._verifier_statut(reponse, ressource=identifiant)
         return reponse.json()
 
+    def citation(self, identifiant: str) -> str | None:
+        """Citation bibliographique prête à l'emploi d'un dépôt
+        (`GET /datas/{id}/citation`, S4).
+
+        Nakala renvoie une **chaîne JSON** (le corps est `"…"`) ; on la
+        retourne telle quelle. Pour un dépôt **pending** non encore publié,
+        Nakala renvoie un texte du type « Test deposit, therefore not
+        citable. » (pas de DOI DataCite minté) — l'appelant peut le filtrer.
+        Tolère un corps non-JSON (texte brut). `None` si le corps est vide.
+        """
+        reponse = self._requete("GET", f"/datas/{identifiant}/citation")
+        self._verifier_statut(reponse, ressource=f"/datas/{identifiant}/citation")
+        try:
+            valeur = reponse.json()
+        except Exception:  # noqa: BLE001 — corps non-JSON éventuel
+            valeur = reponse.text
+        if valeur is None:
+            return None
+        texte = str(valeur).strip()
+        return texte or None
+
     def lister_depots_collection(
         self, identifiant: str, *, page: int = 1, taille: int = 25
     ) -> dict[str, Any]:

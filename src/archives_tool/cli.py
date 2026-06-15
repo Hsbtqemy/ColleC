@@ -2200,6 +2200,14 @@ def cmd_nakala_montrer(
     config = _charger_config_ou_sortie(config_path)
     with _client_nakala_ou_sortie(config) as client:
         brut = _lire_depot_ou_sortie(client, doi)
+        # S4 : citation prête à l'emploi, seulement si publié (sinon Nakala
+        # renvoie « non citable »). Best-effort — ne casse pas `montrer`.
+        citation: str | None = None
+        if brut.get("status") == "published":
+            try:
+                citation = client.citation(doi)
+            except ErreurNakala:
+                citation = None
     depot = mapper_depot(brut)
 
     if format_sortie is _FormatRapport.JSON:
@@ -2209,6 +2217,7 @@ def cmd_nakala_montrer(
             {
                 "identifiant": depot.identifiant,
                 "statut": depot.statut,
+                "citation": citation,
                 "titre": depot.titre,
                 "createurs": depot.createurs,
                 "date": depot.date,
@@ -2263,6 +2272,41 @@ def cmd_nakala_montrer(
         )
     if depot.metadonnees:
         typer.echo(f"  Métadonnées: {', '.join(sorted(depot.metadonnees))}")
+    if citation:
+        typer.echo(f"  Citation   : {citation}")
+
+
+@nakala_app.command("citer")
+def cmd_nakala_citer(
+    doi: str = typer.Argument(..., help="DOI/identifiant Nakala (10.34847/nkl.…)."),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    config_path: Path = _CONFIG_OPTION_NAKALA,
+) -> None:
+    """Afficher la citation bibliographique d'un dépôt Nakala (S4).
+
+    `GET /datas/{id}/citation` (lecture seule). Une citation n'a de sens que
+    pour un dépôt **publié** (DOI DataCite minté) ; un dépôt pending renvoie
+    un texte « non citable ».
+    """
+    doi = normaliser_identifiant_nakala(doi)
+    config = _charger_config_ou_sortie(config_path)
+    with _client_nakala_ou_sortie(config) as client:
+        try:
+            citation = client.citation(doi)
+        except NakalaIntrouvable:
+            typer.echo(f"Erreur : dépôt {doi!r} introuvable sur Nakala.", err=True)
+            raise typer.Exit(1) from None
+        except ErreurNakala as e:
+            typer.echo(f"Erreur Nakala : {e}", err=True)
+            raise typer.Exit(1) from None
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        typer.echo(json.dumps(
+            {"doi": doi, "citation": citation}, ensure_ascii=False, indent=2
+        ))
+        return
+    typer.echo(citation or "(aucune citation — le dépôt est-il publié ?)")
 
 
 @nakala_app.command("rapatrier")

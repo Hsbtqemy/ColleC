@@ -410,7 +410,11 @@ def test_synthese_fonds_doi_visible_dans_rendu(base_demo: Path) -> None:
     resp = client.get("/fonds/HK")
     assert resp.status_code == 200
     assert "10.34847/nkl.visiblestest" in resp.text
-    assert "https://nakala.fr/10.34847/nkl.visiblestest" in resp.text
+    # S2 : lien vers la forme web autoritative d'une COLLECTION Nakala
+    # (`/collection/{doi}`) — sans `/collection/`, le lien route vers une
+    # donnée et casse. Garde-fou contre une régression vers l'ancien form.
+    assert "https://nakala.fr/collection/10.34847/nkl.visiblestest" in resp.text
+    assert "https://nakala.fr/10.34847/nkl.visiblestest" not in resp.text
 
 
 def test_synthese_fonds_budget_sql_borne(base_demo: Path) -> None:

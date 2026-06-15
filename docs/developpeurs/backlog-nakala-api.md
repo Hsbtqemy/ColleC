@@ -220,9 +220,18 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   de non-régression** : `tests/test_nakala_vocabulaires_integration.py`
   (opt-in `-m integration`, 3 assertions ⊆ live). Rejouer après toute évolution
   de `SLUG_TO_NAKALA` / `TYPES_COAR_OPTIONS` / du snapshot COAR.
-- **S2 — Réutiliser le `uri` doi.org** : la réponse `GET /datas` fournit
-  `uri = https://doi.org/{doi}` ; l'utiliser pour les liens sortants au lieu
-  de reconstruire.
+- **S2 — Liens sortants autoritatifs** — ✓ **LIVRÉ** (réinterprété). Le `uri`
+  fourni par Nakala (`doi.org/{doi}` pour une **donnée**,
+  `nakala.fr/collection/{doi}` pour une **collection**) est trivialement
+  reconstructible — la valeur réelle était la **cohérence/justesse** des liens
+  construits. Audit : `lien_doi` (donnée → `doi.org/{doi}`) correct, mais
+  `synthese_fonds.html` liait une **collection** vers `nakala.fr/{doi}`
+  (manque `/collection/` → route vers une donnée, lien cassé). Corrigé vers
+  `nakala.fr/collection/{doi}` (forme du `uri` que `GET /collections` renvoie,
+  savoir-api §3) + garde-fou test (`test_synthese_fonds_doi_visible_dans_rendu`
+  qui asseyait l'ancienne forme cassée — inversé). Aucun autre lien sortant
+  fautif (audit `grep` complet). **Capturer le champ `uri` est inutile**
+  (redondant avec la reconstruction) — non fait à dessein.
 - **S3 — Lire `collectionsIds` au pull** — ✓ **LIVRÉ.**
   `DepotNakala.collections_ids` capte le champ ; `rapatrier` réconcilie via
   `_reconcilier_collections_nakala` : pour chaque DOI, lie l'item à la

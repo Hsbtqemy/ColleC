@@ -138,13 +138,18 @@
                     {% endif %}
                   </a>
                   {% if e.doi_nakala %}
-                    {# DOI Nakala discret sous la cote — clic ouvre le
-                       depot Nakala dans un onglet. Sert a distinguer
-                       les collections publiees des collections internes. #}
+                    {# DOI Nakala discret sous la cote — clic ouvre la
+                       collection Nakala dans un onglet. Sert a distinguer
+                       les collections publiees des collections internes.
+                       URL = forme web autoritative d'une COLLECTION Nakala
+                       (`nakala.fr/collection/{doi}`, = le champ `uri` que
+                       GET /collections renvoie ; cf. nakala-savoir-api §3).
+                       Sans `/collection/`, `nakala.fr/{doi}` route vers une
+                       donnee, pas une collection -> lien casse (S2). #}
                     <div style="font-size:10px;color:#9ca3af;font-family:ui-monospace,monospace;margin-top:1px;margin-left:0;">
-                      <a href="https://nakala.fr/{{ e.doi_nakala }}" target="_blank" rel="noopener"
+                      <a href="https://nakala.fr/collection/{{ e.doi_nakala }}" target="_blank" rel="noopener"
                          style="color:#9ca3af;text-decoration:underline dotted;text-underline-offset:2px;"
-                         title="Ouvrir sur Nakala">{{ e.doi_nakala }}</a>
+                         title="Ouvrir la collection sur Nakala">{{ e.doi_nakala }}</a>
                     </div>
                   {% endif %}
                 </td>

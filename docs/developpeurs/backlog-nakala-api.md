@@ -54,7 +54,22 @@ niveau dépôt », ce qui est trompeur.
 
 ---
 
-## T2 — Push fichiers granulaire (`POST/DELETE …/files`) au lieu du `PUT files[]` `☐` · P1 · 1–2 sessions · risque élevé
+## T2 — Push fichiers granulaire (`POST/DELETE …/files`) au lieu du `PUT files[]` `✓` · P1 · risque élevé
+
+> **✓ LIVRÉ.** `pousser_fichiers_item` réécrit en opérations granulaires :
+> upload → `POST /datas/{id}/files` (additif, avant suppression) → `DELETE
+> /datas/{id}/files/{sha1}` (modifies-anciens + orphelins + non_actifs) →
+> **`PUT files[]` de réordonnancement construit depuis l'état distant relu**
+> (`_reordonner_files`, tri par `Fichier.ordre`, gère les doublons sha1 via
+> une file par sha1). Le PUT réémet exactement les sha1 présents → **aucun
+> drop silencieux**. Client : `NakalaEcritureClient.ajouter_fichier` /
+> `supprimer_fichier_donnee`. Tous les garde-fous conservés (fantôme,
+> backfill, publié, orphelins, plan vide). **Atomicité partielle assumée**
+> (N appels) : ajout-avant-suppression + reprise idempotente ; cleanup
+> `supprimer_upload` des seuls uploads non encore attachés. Validé : 1752
+> tests unitaires + 3 d'intégration live (apitest). Reste **futur** :
+> versioning fichiers (#4 SHA-1), embargo/description par fichier (le corps
+> `File` les accepte, cf. §2 savoir-api).
 
 **Constat (live 2026-06-15).** `pousser_fichiers_item`
 (`api/services/nakala_fichiers.py:1021`) modifie les fichiers via

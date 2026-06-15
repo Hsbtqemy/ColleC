@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -759,6 +760,51 @@ def _construire_plan(
     return plan
 
 
+def _reordonner_files(
+    files_distants: list[dict[str, Any]],
+    plan: list[PlanPushFichier],
+    uploades_par_fichier: Mapping[int, str],
+) -> list[dict[str, Any]]:
+    """Construit le `files[]` canonique pour le PUT de réordonnancement
+    (T2 — palier granulaire) à partir de l'**état distant réel relu**
+    après les opérations POST/DELETE, pas du plan ColleC.
+
+    Garantie de sûreté : on réémet **exactement les sha1 réellement
+    présents** côté Nakala (un par entrée de `files_distants`), jamais une
+    liste reconstruite qui pourrait omettre un fichier (≠ ancien push par
+    `PUT files[]` qui droppait silencieusement les omissions, H1). On se
+    contente de **réordonner** par `Fichier.ordre` et d'appliquer le nom
+    ColleC (renommage gratuit H7) pour les fichiers connus ; un fichier
+    distant inconnu du plan est **conservé** (jamais droppé) et placé en
+    fin, dans son ordre d'origine.
+    """
+    # sha1 → FILE de (ordre, nom ColleC) consommée dans l'ordre du plan.
+    # Une file (pas un scalaire) car deux Fichier ColleC peuvent porter le
+    # MÊME sha1 (cas archivistique légitime : pages blanches, planches
+    # vides) — chaque entrée distante consomme un cran du plan, sans
+    # collision. Les nouveaux/modifies portent leur sha1 fraîchement
+    # uploadé (le plan ne connaît que le sha1 prévisionnel local).
+    desire: dict[str, deque[tuple[int, str]]] = defaultdict(deque)
+    for entree in plan:
+        sha1 = entree.sha1
+        if entree.categorie in ("nouveau", "modifie") and entree.fichier_id is not None:
+            sha1 = uploades_par_fichier.get(entree.fichier_id, sha1)
+        desire[sha1].append((entree.ordre, entree.nom_fichier))
+
+    _FIN = 10**9  # un fichier distant inconnu du plan est conservé, en fin
+    annotes: list[tuple[int, int, str | None, str | None]] = []
+    for i, f in enumerate(files_distants):
+        sha1 = f.get("sha1")
+        file_attente = desire.get(sha1)
+        if file_attente:
+            ordre, nom = file_attente.popleft()
+            annotes.append((ordre, i, sha1, nom))
+        else:
+            annotes.append((_FIN, i, sha1, f.get("name")))
+    annotes.sort(key=lambda t: (t[0], t[1]))
+    return [{"sha1": s, "name": n} for _, _, s, n in annotes]
+
+
 def pousser_fichiers_item(
     db: Any,
     client_lecture: ClientLectureNakala,
@@ -784,16 +830,28 @@ def pousser_fichiers_item(
        ``nakala_only_sans_local``, les orphelins étant exclus).
     4. Garde-fou H3 : ``len(plan) == 0`` → ``PushImpossible``.
     5. Si ``dry_run`` : return avec le plan, sans écriture distante.
-    6. Réel : upload des ``nouveaux + modifies`` via
-       ``uploader_fichier`` (sha1 capturé). PUT
-       ``/datas/{id} {files: cible}`` avec la liste finalisée.
-    7. Met à jour ``Fichier.sha1_nakala`` pour ``modifies + nouveaux``.
-    8. Commit.
+    6. Réel : upload des ``nouveaux + modifies`` via ``uploader_fichier``
+       (sha1 capturé).
+    7. **Opérations granulaires (T2)** :
+       a. ``POST /datas/{id}/files`` pour chaque sha1 uploadé (additif) —
+          *avant* toute suppression (évite le 403 « dernier fichier »).
+       b. ``DELETE /datas/{id}/files/{sha1}`` pour l'ancien sha1 des
+          ``modifies``, les ``orphelins`` (sous flag) et les ``non_actifs``.
+       c. **Réordonnancement** : relit l'état distant réel et réémet ces
+          sha1 triés par ``Fichier.ordre`` via un ``PUT /datas/{id}``
+          (le ``POST`` est LIFO ; le ``PUT`` réémettant la vérité distante
+          ne peut rien dropper, ≠ ancien push par ``PUT files[]``).
+    8. Met à jour ``Fichier.sha1_nakala`` pour ``modifies + nouveaux``,
+       journalise, rafraîchit le cache, commit.
 
-    En cas d'erreur après upload(s) : cleanup des uploads orphelins
-    via ``supprimer_upload``. Les écritures DB (``sha1_nakala``) ne
-    sont commitées qu'**après** le PUT réussi — pas de divergence en
-    base si le distant ne s'est pas mis à jour.
+    En cas d'erreur : cleanup ``supprimer_upload`` des seuls uploads **pas
+    encore attachés** (les sha1 déjà ``POST``és sont consommés). Les
+    écritures DB ne sont commitées qu'**après** les opérations distantes
+    réussies. ⚠️ **Atomicité partielle** (T2) : N appels au lieu d'1 → un
+    échec mid-parcours peut laisser un état distant partiel (fichiers
+    ajoutés mais ordre non fixé, ou anciens non retirés) ; non destructif
+    (ajout avant suppression) et réconcilié par une reprise idempotente
+    (re-comparer + re-pousser).
 
     Args:
         retirer_orphelins: requis pour confirmer le retrait silencieux
@@ -909,12 +967,16 @@ def pousser_fichiers_item(
     # 3. Plan d'exécution (hors uploads)
     rapport.plan = _construire_plan(rapport_cmp)
 
-    # 4. Garde-fou H3 : files cible vide → Nakala ignorerait silencieusement
+    # 4. Garde-fou : plan vide = on retirerait TOUS les fichiers. Nakala
+    # refuse de vider un dépôt (DELETE du dernier fichier → 403, sonde E ;
+    # `PUT files=[]` ignoré, H3). On bloque en amont plutôt que d'enchaîner
+    # des DELETE jusqu'au 403.
     if not rapport.plan:
         raise PushImpossible(
-            f"Item {item.cote!r} : files_cible vide après garde-fous. "
-            "Nakala ignore silencieusement `PUT files=[]` (H3). Pour vider "
-            "un dépôt, utiliser `supprimer_depot` + redéposer."
+            f"Item {item.cote!r} : files_cible vide après garde-fous "
+            "(tous les fichiers seraient retirés). Nakala refuse un dépôt "
+            "sans fichier (403 sur le dernier, H3). Pour vider un dépôt, "
+            "utiliser `supprimer_depot` + redéposer."
         )
 
     # Pré-calcul des sha1 distants retirés au PUT. Deux origines :
@@ -956,9 +1018,13 @@ def pousser_fichiers_item(
         len(rapport.sha1s_retires), rapport.derive,
     )
     # Map fichier_id → sha1 fraîchement uploadé, pour mettre à jour
-    # `Fichier.sha1_nakala` après le PUT réussi.
+    # `Fichier.sha1_nakala` après le push réussi.
     nouveaux_sha1_par_fichier: dict[int, str] = {}
     sha1s_uploades: list[str] = []
+    # sha1 déjà attachés via `POST .../files` : sur échec ultérieur, ils
+    # sont consommés (≠ orphelins temp), donc exclus du cleanup
+    # `supprimer_upload` (qui ne vise que le stockage temporaire).
+    sha1s_postes: set[str] = set()
     from archives_tool.files.paths import resoudre_chemin
 
     try:
@@ -999,44 +1065,69 @@ def pousser_fichiers_item(
                 fc.nom_fichier, sha1_neuf[:12],
             )
 
-        # Construire le `files[]` final avec les sha1 fraîchement uploadés
-        # pour `nouveau` et `modifie`. Les `inchange`/`rename`/`nakala_only`
-        # gardent leur sha1 du plan.
-        files_cible: list[dict[str, Any]] = []
-        for entree in rapport.plan:
-            sha1 = entree.sha1
-            if entree.categorie in ("nouveau", "modifie"):
-                # Override avec sha1 fraîchement uploadé. fichier_id
-                # garanti non-None par `_construire_plan` pour ces
-                # catégories — sinon bug interne.
-                if entree.fichier_id is None:
-                    raise IncoherenceFichierORM(
-                        f"Plan : entrée {entree.nom_fichier!r} en "
-                        f"catégorie {entree.categorie} sans fichier_id."
-                    )
-                sha1 = nouveaux_sha1_par_fichier[entree.fichier_id]
-            files_cible.append({"sha1": sha1, "name": entree.nom_fichier})
+        # 7a. POST additifs (T2) : on ATTACHE les nouveaux + modifies via
+        # `POST .../files` AVANT toute suppression — si tous les anciens
+        # fichiers sont retirés, ajouter d'abord évite le 403 « dernier
+        # fichier » (Nakala refuse un dépôt à 0 fichier, sonde E). On itère
+        # la map des sha1 uploadés (ordre d'insertion = nouveaux puis
+        # modifies, cf. boucle 6a).
+        for sha1_neuf in nouveaux_sha1_par_fichier.values():
+            client_ecriture.ajouter_fichier(item.doi_nakala, sha1_neuf)
+            sha1s_postes.add(sha1_neuf)
+            logger.debug("push fichiers POST add sha1=%s…", sha1_neuf[:12])
 
-        # 7. PUT
+        # 7b. DELETE ciblés (T2) par sha1 (= fileIdentifier, sonde B) :
+        # ancien sha1 des modifies, puis orphelins (sous flag), puis
+        # Fichier non-ACTIF (corbeille/remplacé).
+        for fc in rapport_cmp.modifies:
+            if fc.sha1_distant:
+                client_ecriture.supprimer_fichier_donnee(
+                    item.doi_nakala, fc.sha1_distant,
+                )
+        if retirer_orphelins:
+            for orph in rapport_cmp.orphelins_distants:
+                client_ecriture.supprimer_fichier_donnee(item.doi_nakala, orph.sha1)
+        for nac in rapport_cmp.non_actifs_a_retirer:
+            if nac.sha1_distant:
+                client_ecriture.supprimer_fichier_donnee(
+                    item.doi_nakala, nac.sha1_distant,
+                )
+
+        # 7c. Réordonnancement (T2) : relit l'état distant RÉEL après les
+        # mutations et réémet exactement ces sha1, triés par `Fichier.ordre`
+        # (le POST est LIFO et ne contrôle pas l'ordre, sonde C). Le PUT
+        # réémettant la vérité distante ne peut rien dropper (≠ ancien push).
+        apres_ops = _valider_depot_lu(
+            client_lecture.lire_depot(item.doi_nakala), item.doi_nakala,
+        )
+        files_cible = _reordonner_files(
+            apres_ops.get("files") or [],
+            rapport.plan,
+            nouveaux_sha1_par_fichier,
+        )
         client_ecriture.modifier_depot(item.doi_nakala, files=files_cible)
         logger.info(
-            "push fichiers PUT OK cote=%s doi=%s files_cible=%d",
-            item.cote, item.doi_nakala, len(files_cible),
+            "push fichiers granulaire OK cote=%s doi=%s ajouts=%d "
+            "suppressions=%d files_final=%d",
+            item.cote, item.doi_nakala, len(sha1s_postes),
+            len(rapport.sha1s_retires) + len(rapport_cmp.modifies),
+            len(files_cible),
         )
 
     except Exception:
-        # Cleanup uploads orphelins (best-effort).
-        if sha1s_uploades:
-            logger.warning(
-                "push fichiers ECHEC cote=%s doi=%s cleanup=%d uploads",
-                item.cote, item.doi_nakala, len(sha1s_uploades),
-            )
-        else:
-            logger.warning(
-                "push fichiers ECHEC cote=%s doi=%s cleanup=0",
-                item.cote, item.doi_nakala,
-            )
-        for sha1 in sha1s_uploades:
+        # Cleanup best-effort : seuls les uploads PAS encore attachés
+        # (`POST .../files`) sont des orphelins du stockage temporaire.
+        # Les sha1 déjà POSTés sont consommés/attachés → `supprimer_upload`
+        # échouerait et ne les retirerait pas du dépôt (état partiel — la
+        # reprise idempotente réconcilie, cf. backlog T2 piège atomicité).
+        non_attaches = [s for s in sha1s_uploades if s not in sha1s_postes]
+        logger.warning(
+            "push fichiers ECHEC cote=%s doi=%s uploads=%d attaches=%d "
+            "cleanup_temp=%d (etat distant possiblement partiel)",
+            item.cote, item.doi_nakala, len(sha1s_uploades),
+            len(sha1s_postes), len(non_attaches),
+        )
+        for sha1 in non_attaches:
             try:
                 client_ecriture.supprimer_upload(sha1)
             except Exception as exc:  # noqa: BLE001

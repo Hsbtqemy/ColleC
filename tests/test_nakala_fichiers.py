@@ -693,31 +693,59 @@ def test_combinaison_des_5_categories_simultanees(
 
 
 class _FakeClientEcriture:
-    """Stub `NakalaEcritureClient` : capture les uploads + le PUT.
+    """Stub `NakalaEcritureClient` **stateful** (T2 — push granulaire).
 
-    Pattern aligné sur `tests/test_nakala_depot.py::_FakeWriteClient`.
-    `uploader_fichier` retourne un sha1 séquentiel (`sha-1`, `sha-2`...)
-    pour permettre aux tests d'asserter sur la valeur capturée."""
+    Capture uploads, POST (`ajouter_fichier`), DELETE
+    (`supprimer_fichier_donnee`) et le PUT de réordonnancement
+    (`modifier_depot`). Les opérations **mutent l'état distant** porté par
+    le `_FakeClientLecture` lié, pour que le `lire_depot` post-mutations
+    (étape de réordonnancement) reflète la réalité — sinon le PUT de
+    réordonnancement ne pourrait pas être construit depuis la vérité.
 
-    def __init__(self) -> None:
+    `uploader_fichier` retourne un sha1 séquentiel hex 40 chars
+    (`0000…001`, `0000…002`…) pour permettre aux tests d'asserter dessus.
+    Si `lecture=None`, les ops n'ont pas d'effet d'état (suffisant pour les
+    tests de garde-fou qui n'atteignent jamais l'exécution)."""
+
+    def __init__(self, lecture: "_FakeClientLecture | None" = None) -> None:
+        self.lecture = lecture
         self.uploads: list[str] = []
         self.uploads_sha1s: list[str] = []
-        self.puts: list[dict] = []
-        self.supprimes: list[str] = []
+        self.ajouts: list[str] = []          # sha1 POSTés (ajouter_fichier)
+        self.suppressions: list[str] = []     # sha1 DELETEés (supprimer_fichier_donnee)
+        self.puts: list[dict] = []            # PUT de réordonnancement
+        self.supprimes: list[str] = []        # supprimer_upload (cleanup temp)
+        self._noms_par_sha1: dict[str, str] = {}
 
     def uploader_fichier(self, chemin, nom=None):
         n = nom or Path(chemin).name
         self.uploads.append(n)
-        # Format sha1 hex 40 chars (valide _valider_sha1_uploade passe 7).
-        # Sequence : "0000…001", "0000…002", … pour traçabilité dans
-        # les asserts.
         sha1 = f"{len(self.uploads):040x}"
         self.uploads_sha1s.append(sha1)
+        self._noms_par_sha1[sha1] = n
         return {"name": n, "sha1": sha1}
+
+    def ajouter_fichier(self, identifiant, sha1, *, description=None, embargoed=None):
+        self.ajouts.append(sha1)
+        if self.lecture is not None:
+            # Additif : le nom vient de l'upload (comme Nakala).
+            self.lecture._files.append(
+                {"sha1": sha1, "name": self._noms_par_sha1.get(sha1, sha1)}
+            )
+        return {}
+
+    def supprimer_fichier_donnee(self, identifiant, sha1):
+        self.suppressions.append(sha1)
+        if self.lecture is not None:
+            self.lecture._files = [
+                f for f in self.lecture._files if f.get("sha1") != sha1
+            ]
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
         self.puts.append({"id": identifiant, "metas": metas, "files": files,
                           "status": status})
+        if files is not None and self.lecture is not None:
+            self.lecture._files = [dict(f) for f in files]
         return {}
 
     def supprimer_upload(self, sha1):
@@ -730,7 +758,7 @@ def test_pousser_sans_doi_nakala_leve_depot_impossible(
     from archives_tool.api.services.nakala_depot import DepotImpossible
 
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
         item = creer_item(s, FormulaireItem(
@@ -752,7 +780,7 @@ def test_pousser_dry_run_aucun_changement_no_op(
     contenu = b"identical"
     sha1 = _sha1(contenu)
     lecture = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
@@ -779,7 +807,7 @@ def test_pousser_orphelins_distants_sans_flag_leve(
         {"sha1": sha1, "name": "x.jpg"},
         {"sha1": sha1_orphan, "name": "orphan.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
@@ -809,7 +837,7 @@ def test_pousser_avec_flag_retirer_orphelins_les_exclut(
         {"sha1": sha1, "name": "x.jpg"},
         {"sha1": sha1_orphan, "name": "orphan.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
@@ -847,7 +875,7 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
         {"sha1": sha1_inchange, "name": "i.jpg"},
         {"sha1": sha1_modifie_ancien, "name": "m.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -923,7 +951,7 @@ def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
         {"sha1": sha1_inchange, "name": "ordre2.jpg"},
         {"sha1": sha1_nakala_only, "name": "ordre3.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -977,7 +1005,7 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
     lecture = _FakeClientLecture(files=[
         {"sha1": sha1_inchange, "name": "i.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -1015,22 +1043,28 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
         assert apres[1].version == version_n_avant + 1
 
 
-def test_pousser_cleanup_uploads_si_put_echoue(
+def test_pousser_cleanup_uploads_si_op_granulaire_echoue(
     db_path: Path, tmp_path: Path,
 ) -> None:
-    """Si le PUT leve apres N uploads → supprimer_upload pour chaque
-    sha1 uploade (best-effort). Les Fichier.sha1_nakala n'ont pas ete
-    commites (commit apres PUT reussi)."""
+    """T2 : si une op granulaire échoue après un upload mais avant son
+    `POST .../files`, l'upload temporaire orphelin est nettoyé
+    (best-effort) et `Fichier.sha1_nakala` n'est PAS commité (commit
+    seulement après les opérations distantes réussies).
+
+    ⚠️ Changement de sémantique vs l'ancien `PUT files[]` unique : un échec
+    APRÈS un `POST` réussi laisse le fichier attaché (état partiel non
+    destructif, réconcilié par une reprise idempotente) — ce n'est plus un
+    simple orphelin temporaire."""
     contenu = b"content for upload"
 
-    class _EcritureQuiFaitFlopAuPut(_FakeClientEcriture):
-        def modifier_depot(self, *args, **kwargs):
+    class _EcritureQuiFaitFlopAuPost(_FakeClientEcriture):
+        def ajouter_fichier(self, *args, **kwargs):
             from archives_tool.external.nakala.client import ErreurNakala
 
-            raise ErreurNakala("Simulation echec PUT")
+            raise ErreurNakala("Simulation echec POST .../files")
 
     lecture = _FakeClientLecture(files=[])  # distant vide → tout en nouveau
-    ecriture = _EcritureQuiFaitFlopAuPut()
+    ecriture = _EcritureQuiFaitFlopAuPost(lecture)
     from archives_tool.external.nakala.client import ErreurNakala
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -1042,9 +1076,10 @@ def test_pousser_cleanup_uploads_si_put_echoue(
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
-    # Cleanup : 1 sha1 supprime cote Nakala (le seul uploade avant
-    # l'echec PUT, formate par le stub en hex 40 chars).
+    # Cleanup : 1 upload temporaire orphelin (uploadé, jamais attaché).
     assert ecriture.supprimes == [f"{1:040x}"]
+    # Aucun PUT de réordonnancement (échec avant).
+    assert ecriture.puts == []
     # `sha1_nakala` non commite (rollback de fait via absence de commit)
     with _session(db_path) as s:
         fichier = s.scalars(
@@ -1059,7 +1094,7 @@ def test_pousser_dry_run_construit_plan_sans_uploader(
     """dry_run=True (defaut) : plan complet mais aucun upload ni PUT."""
     contenu = b"new file content"
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -1091,7 +1126,7 @@ def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
         {"sha1": sha1_orphan_a, "name": "a.jpg"},
         {"sha1": sha1_orphan_b, "name": "b.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         # Item sans aucun Fichier local (tous les binaires
         # remote-only ont ete deplaces / supprimes).
@@ -1131,7 +1166,7 @@ def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
     lecture = _FakeClientLecture(files=[
         {"sha1": sha1_renomme, "name": "ancien_nom.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             # Fichier renomme (sha1 inchange, nom different)
@@ -1190,7 +1225,7 @@ def test_pousser_backfill_incomplet_leve_avant_put(
         {"sha1": sha1_a_distant, "name": "A.jpg"},
         {"sha1": sha1_b, "name": "B.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -1224,7 +1259,7 @@ def test_pousser_backfill_incomplet_message_liste_les_fichiers(
     lecture = _FakeClientLecture(files=[
         {"sha1": "aa" + "0" * 38, "name": "A.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "A.jpg", "contenu": None,
@@ -1262,7 +1297,7 @@ def test_pousser_derive_detection_signalee_dans_rapport(
         files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
         mod_date="2026-06-14T12:00:00",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
@@ -1305,7 +1340,7 @@ def test_pousser_pas_de_derive_si_baseline_egale_distant(
         files=[{"sha1": sha1, "name": "x.jpg"}],
         mod_date="2026-01-01T08:00:00",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg",
@@ -1417,7 +1452,7 @@ def test_pousser_doublons_sha1_distants_preserves_dans_files_cible(
         {"sha1": sha1_doublon, "name": "b.jpg"},  # MEME sha1
         {"sha1": sha1_ancien, "name": "c.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "a.jpg",
@@ -1500,7 +1535,7 @@ def test_pousser_non_actifs_inclus_dans_sha1s_retires_au_put(
         {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
         {"sha1": sha1_actif_ancien, "name": "actif.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "actif.jpg",
@@ -1708,7 +1743,7 @@ def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
     """
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -1746,7 +1781,7 @@ def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
     `IncoherenceFichierORM` propre."""
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -1794,7 +1829,7 @@ def test_pousser_emet_log_info_au_demarrage_et_commit(
 
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -1807,36 +1842,26 @@ def test_pousser_emet_log_info_au_demarrage_et_commit(
 
     messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
     assert any("push fichiers START" in m for m in messages)
-    assert any("push fichiers PUT OK" in m for m in messages)
+    assert any("push fichiers granulaire OK" in m for m in messages)
     assert any("push fichiers COMMIT" in m for m in messages)
 
 
 def test_pousser_emet_log_warning_au_cleanup(
     db_path: Path, tmp_path: Path, caplog,
 ) -> None:
-    """Si le PUT echoue apres uploads reussis, log WARNING explicite +
-    cleanup tente."""
+    """Si une opération granulaire échoue après un upload réussi mais
+    AVANT son `POST .../files` (fichier pas encore attaché), log WARNING
+    explicite + cleanup du seul upload temporaire orphelin (T2)."""
     import logging as _logging
     caplog.set_level(_logging.WARNING, logger="archives_tool.api.services.nakala_fichiers")
 
-    class _StubPUTKO:
-        def __init__(self):
-            self.uploads: list[str] = []
-            self.supprimes: list[str] = []
-
-        def uploader_fichier(self, chemin, nom=None):
-            self.uploads.append(nom or Path(chemin).name)
-            return {"sha1": f"{len(self.uploads):040x}", "name": nom}
-
-        def modifier_depot(self, identifiant, **kwargs):
+    class _StubAddKO(_FakeClientEcriture):
+        def ajouter_fichier(self, *args, **kwargs):
             from archives_tool.external.nakala.client import ErreurNakala
-            raise ErreurNakala("PUT simule KO")
-
-        def supprimer_upload(self, sha1):
-            self.supprimes.append(sha1)
+            raise ErreurNakala("POST .../files simule KO")
 
     lecture = _FakeClientLecture(files=[])
-    ecriture = _StubPUTKO()
+    ecriture = _StubAddKO(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
@@ -1850,8 +1875,9 @@ def test_pousser_emet_log_warning_au_cleanup(
             )
 
     messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
-    assert any("ECHEC" in m and "cleanup=1" in m for m in messages)
-    # Cleanup effectivement tente
+    # Échec → WARNING "ECHEC" + 1 upload temp orphelin nettoyé.
+    assert any("ECHEC" in m and "cleanup_temp=1" in m for m in messages)
+    # Cleanup du seul upload non attaché.
     assert ecriture.supprimes == [f"{1:040x}"]
 
 
@@ -1872,7 +1898,7 @@ def test_pousser_refuse_item_publie_par_defaut(
         files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
         statut="published",  # PUBLIE → DOI DataCite minté
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             # binaire modifie
@@ -1906,7 +1932,7 @@ def test_pousser_avec_forcer_publie_passe_quand_meme(
         files=[{"sha1": sha1_ancien, "name": "x.jpg"}],
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -1940,7 +1966,7 @@ def test_pousser_dry_run_publie_pas_de_refus_pas_de_lievre(
         files=[{"sha1": sha1, "name": "x.jpg"}],
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             # binaire modifie pour declencher push
@@ -1967,7 +1993,7 @@ def test_pousser_pending_ne_refuse_pas(
         files=[],
         statut="pending",  # ← non-published
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -1990,7 +2016,7 @@ def test_pousser_statut_absent_du_distant_ne_refuse_pas(
     inutilement le user)."""
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])  # pas de statut
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -2060,7 +2086,7 @@ def test_pousser_refuse_si_fichiers_fantomes(
     """
     sha1_fantome = "abc" + "0" * 37
     lecture = _FakeClientLecture(files=[])  # distant vide, fantome confirmé
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
@@ -2097,7 +2123,7 @@ def test_pousser_garde_fou_fantome_precede_garde_fou_backfill(
     """
     sha1_fantome = "abc" + "0" * 37
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             # Fichier 1 : fantome
@@ -2170,7 +2196,7 @@ def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
     lecture = _FakeClientLecture(files=[
         {"sha1": sha_ancien, "name": "x.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2208,7 +2234,7 @@ def test_pousser_ne_touche_pas_iiif_url_si_pas_pose(
     le service n'invente pas d'URL. iiif_url_nakala reste None apres push."""
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None,
@@ -2245,7 +2271,7 @@ def test_pousser_inchange_ne_recale_pas_iiif_url(
     lecture = _FakeClientLecture(files=[
         {"sha1": sha, "name": "i.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha,
@@ -2288,7 +2314,7 @@ def test_pousser_met_a_jour_metadonnees_sha1_miroir(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2329,7 +2355,7 @@ def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2364,7 +2390,7 @@ def test_pousser_metadonnees_None_pas_d_erreur(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2399,7 +2425,7 @@ def test_pousser_invalide_derives_locaux_apres_changement_binaire(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2443,7 +2469,7 @@ def test_pousser_inchange_n_invalide_pas_derives(
     # 2e Fichier "nouveau"
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
@@ -2561,23 +2587,26 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
     serait incomplet.
     """
     contenu = b"a uploader"
-    # Le client fait 2 lire_depot dans pousser_fichiers_item :
+    # En granulaire (T2), `pousser_fichiers_item` fait 3 lire_depot :
     # 1. pull initial dans comparer_fichiers_item (OK)
-    # 2. refresh cache post-PUT (RETURNS None)
-    # Stub a 2 etats successifs.
+    # 2. relecture pour le réordonnancement (OK, doit refléter les ops)
+    # 3. refresh cache post-PUT (RETURNS None → erreur propre attendue)
+    # Stub stateful (mute `_files` via les ops) qui rend None au 3e appel.
 
-    class _LectureDeuxEtats:
+    class _LectureTroisEtats:
         def __init__(self):
             self.compteur = 0
+            self._files: list[dict] = []
 
         def lire_depot(self, doi):
             self.compteur += 1
-            if self.compteur == 1:
-                return {"identifier": doi, "files": []}  # pull initial OK
-            return None  # post-PUT KO
+            if self.compteur == 3:
+                return None  # refresh cache post-PUT KO
+            return {"identifier": doi, "files": list(self._files),
+                    "status": "pending"}
 
-    lecture = _LectureDeuxEtats()
-    ecriture = _FakeClientEcriture()
+    lecture = _LectureTroisEtats()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
@@ -2588,8 +2617,9 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
-    # Le PUT a bien ete tente (le distant est a jour, c'est juste le
-    # refresh cache qui foire). Le user voit une erreur propre.
+    # Les opérations granulaires + le PUT de réordonnancement ont été
+    # appliqués (distant à jour) ; c'est seulement le refresh cache qui
+    # foire → le user voit une erreur propre.
     assert len(ecriture.puts) == 1
 
 
@@ -2609,7 +2639,7 @@ def test_pousser_journalise_operation_push_nakala(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2660,7 +2690,7 @@ def test_pousser_journalise_sha1s_retires_orphelins(
         {"sha1": sha, "name": "x.jpg"},
         {"sha1": sha_orphan, "name": "orphan.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
@@ -2688,7 +2718,7 @@ def test_pousser_dry_run_n_inscrit_aucun_journal(
     sha_ancien = _sha1(contenu_ancien)
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2714,7 +2744,7 @@ def test_pousser_aucun_changement_n_inscrit_aucun_journal(
     contenu = b"identique"
     sha = _sha1(contenu)
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "x.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
@@ -2755,7 +2785,7 @@ def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
     lecture = _FakeClientLecture(files=[
         {"sha1": sha1_ancien_nakala, "name": "x.jpg"},
     ])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
@@ -2797,7 +2827,7 @@ def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
     # Declenche un PUT via un 2e Fichier nouveau
     contenu_neuf = b"nouveau"
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
@@ -2921,7 +2951,7 @@ def test_garde_fou_fantome_precede_published(
         files=[],  # distant vide, sha1_nakala="abc" est fantome
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "f.jpg", "contenu": None,
@@ -2947,7 +2977,7 @@ def test_garde_fou_backfill_precede_published(
         files=[{"sha1": "x" + "0" * 39, "name": "X.jpg"}],
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "X.jpg", "contenu": None,
@@ -2974,7 +3004,7 @@ def test_garde_fou_published_precede_orphelins(
         files=[{"sha1": sha1_orphelin, "name": "orphan.jpg"}],
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         # Pas de Fichier ColleC → tout sha1 distant = orphelin
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[])
@@ -3005,7 +3035,7 @@ def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
         files=[{"sha1": sha, "name": "i.jpg"}],
         statut="published",
     )
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
@@ -3067,12 +3097,32 @@ def test_idempotence_push_modifie_2x_consecutifs(
             self.uploads = []
             self.puts = []
             self.supprimes = []
+            self.ajouts = []
+            self.suppressions = []
+            self._noms_par_sha1 = {}
 
         def uploader_fichier(self, chemin, nom=None):
             n = nom or Path(chemin).name
             sha = _sha1(Path(chemin).read_bytes())  # VRAI sha contenu
             self.uploads.append(n)
+            self._noms_par_sha1[sha] = n
             return {"sha1": sha, "name": n}
+
+        def ajouter_fichier(self, identifiant, sha1, *, description=None,
+                            embargoed=None):
+            # Additif : mute le distant simulé pour que le lire_depot du
+            # réordonnancement voie la vérité post-mutations.
+            self.ajouts.append(sha1)
+            self._lecture.files.append(
+                {"sha1": sha1, "name": self._noms_par_sha1.get(sha1, sha1)}
+            )
+            return {}
+
+        def supprimer_fichier_donnee(self, identifiant, sha1):
+            self.suppressions.append(sha1)
+            self._lecture.files = [
+                f for f in self._lecture.files if f.get("sha1") != sha1
+            ]
 
         def modifier_depot(self, identifiant, *, metas=None, files=None,
                           status=None):
@@ -3133,7 +3183,7 @@ def test_idempotence_push_dry_run_2x(
     une fonction pure de l'etat DB + distant."""
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])  # nouveau
-    ecriture = _FakeClientEcriture()
+    ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
             {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},

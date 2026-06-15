@@ -443,6 +443,9 @@ class _FakeWriteClient:
         self.uploads_sha1s: list[str] = []
         self.puts: list[dict] = []
         self.supprimes: list[str] = []
+        self.ajouts: list[str] = []
+        self.suppressions: list[str] = []
+        self._noms_par_sha1: dict[str, str] = {}
         _FakeWriteClient.instances.append(self)
 
     def __enter__(self) -> "_FakeWriteClient":
@@ -458,11 +461,28 @@ class _FakeWriteClient:
         # Format hex 40 chars (cf. _valider_sha1_uploade passe 7).
         sha1 = f"{len(self.uploads):040x}"
         self.uploads_sha1s.append(sha1)
+        self._noms_par_sha1[sha1] = n
         return {"name": n, "sha1": sha1}
+
+    # T2 — ops granulaires : mutent l'état distant partagé (`_FakeReadClient.
+    # files`, variable de classe) pour que le lire_depot de réordonnancement
+    # voie la vérité post-mutations.
+    def ajouter_fichier(self, identifiant, sha1, *, description=None, embargoed=None):
+        self.ajouts.append(sha1)
+        _FakeReadClient.files = [*_FakeReadClient.files,
+                                 {"sha1": sha1, "name": self._noms_par_sha1.get(sha1, sha1)}]
+        return {}
+
+    def supprimer_fichier_donnee(self, identifiant, sha1):
+        self.suppressions.append(sha1)
+        _FakeReadClient.files = [f for f in _FakeReadClient.files
+                                 if f.get("sha1") != sha1]
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
         self.puts.append({"id": identifiant, "files": files, "metas": metas,
                           "status": status})
+        if files is not None:
+            _FakeReadClient.files = [dict(f) for f in files]
         return {}
 
     def supprimer_upload(self, sha1):

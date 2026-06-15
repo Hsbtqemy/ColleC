@@ -282,6 +282,60 @@ class NakalaEcritureClient:
             reponse, contexte=f"rattacher {depot_id} → collection {collection_id}"
         )
 
+    def ajouter_fichier(
+        self,
+        identifiant: str,
+        sha1: str,
+        *,
+        description: str | None = None,
+        embargoed: str | None = None,
+    ) -> dict[str, Any]:
+        """Ajoute un fichier déjà uploadé à un dépôt (`POST /datas/{id}/files`).
+
+        **Additif** : n'affecte pas les autres fichiers — contrairement au
+        `PUT /datas/{id}` `files[]` qui **remplace** (H1). Corps = `{sha1}` +
+        `description?` / `embargoed?` optionnels ; le **nom** est repris de
+        l'upload (le schéma `File` de Nakala ne porte pas de `name`). Succès =
+        **200** `{code:200, message:"File added"}` (sondé live 2026-06-15,
+        `scripts/explorer_files_granulaire_nakala.py`).
+
+        ⚠️ Codes d'erreur Nakala **non fiables** (sondes F/G) : un sha1 jamais
+        uploadé → **500** « File not found on server » (≠ le 404 du `PUT`) ;
+        re-POST d'un fichier déjà présent → **409 ou 500** selon l'état du
+        stockage temporaire. L'appelant doit donc **valider en amont** (sha1
+        issu d'un upload de la session courante, fichier pas déjà attaché) —
+        cette méthode lève sur tout non-2xx, sans interpréter le code.
+        """
+        corps: dict[str, Any] = {"sha1": sha1}
+        if description is not None:
+            corps["description"] = description
+        if embargoed is not None:
+            corps["embargoed"] = embargoed
+        reponse = self._requete("POST", f"/datas/{identifiant}/files", json=corps)
+        self._verifier_statut(reponse, contexte=f"POST /datas/{identifiant}/files")
+        try:
+            return reponse.json()
+        except Exception:  # noqa: BLE001 — réponse éventuellement vide
+            return {}
+
+    def supprimer_fichier_donnee(self, identifiant: str, sha1: str) -> None:
+        """Retire un fichier d'un dépôt par son sha1
+        (`DELETE /datas/{id}/files/{sha1}`).
+
+        Le `{fileIdentifier}` de l'API **est le sha1** (sondé live
+        2026-06-15) — pas d'id propre. Retrait ciblé → **204**, les autres
+        fichiers intacts.
+
+        ⚠️ Retirer le **dernier** fichier d'un dépôt → **403 (refusé)** : un
+        dépôt ne peut pas être vidé de tous ses fichiers (cohérent avec
+        `PUT files=[]` ignoré, H3 — pour vider, utiliser `supprimer_depot`).
+        L'appelant doit préserver ≥1 fichier.
+        """
+        reponse = self._requete("DELETE", f"/datas/{identifiant}/files/{sha1}")
+        self._verifier_statut(
+            reponse, contexte=f"DELETE /datas/{identifiant}/files/{sha1[:12]}…",
+        )
+
     def supprimer_depot(self, depot_id: str) -> None:
         """Supprime un dépôt (autorisé uniquement en statut `pending`)."""
         reponse = self._requete("DELETE", f"/datas/{depot_id}")

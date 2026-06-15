@@ -111,6 +111,77 @@ def test_creer_collection_envoie_status_et_metas() -> None:
     assert rep["payload"]["id"] == "10.34847/nkl.colX"
 
 
+def test_ajouter_fichier_post_sur_files_avec_sha1() -> None:
+    """`ajouter_fichier` POST /datas/{id}/files avec un corps {sha1}
+    (+ description/embargo optionnels), additif."""
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vus["method"] = request.method
+        vus["path"] = request.url.path
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"code": 200, "message": "File added"})
+
+    with _client(handler) as c:
+        c.ajouter_fichier(
+            "10.34847/nkl.d1", "abc123sha", description="scan recto",
+        )
+    assert vus["method"] == "POST"
+    assert vus["path"] == "/datas/10.34847/nkl.d1/files"
+    assert vus["body"] == {"sha1": "abc123sha", "description": "scan recto"}
+
+
+def test_ajouter_fichier_corps_minimal_sha1_seul() -> None:
+    """Sans description/embargo, le corps ne porte que sha1 (le name vient
+    de l'upload côté Nakala)."""
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        vus["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": "File added"})
+
+    with _client(handler) as c:
+        c.ajouter_fichier("10.34847/nkl.d1", "deadbeef")
+    assert vus["body"] == {"sha1": "deadbeef"}
+
+
+def test_ajouter_fichier_500_leve_erreur() -> None:
+    """sha1 fantôme / déjà présent → 500 côté Nakala → ErreurNakala
+    (l'appelant valide en amont ; la méthode ne masque pas l'échec)."""
+    with _client(lambda r: httpx.Response(
+        500, json={"code": 500, "message": "File not found on server"})) as c:
+        with pytest.raises(ErreurNakala):
+            c.ajouter_fichier("10.34847/nkl.d1", "fantome")
+
+
+def test_supprimer_fichier_donnee_delete_par_sha1() -> None:
+    """`supprimer_fichier_donnee` DELETE /datas/{id}/files/{sha1} (le
+    fileIdentifier de l'API EST le sha1)."""
+    vus: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        vus["method"] = request.method
+        vus["path"] = request.url.path
+        return httpx.Response(204)
+
+    with _client(handler) as c:
+        c.supprimer_fichier_donnee("10.34847/nkl.d1", "abc123sha")
+    assert vus["method"] == "DELETE"
+    assert vus["path"] == "/datas/10.34847/nkl.d1/files/abc123sha"
+
+
+def test_supprimer_fichier_donnee_403_dernier_fichier() -> None:
+    """Retirer le dernier fichier → 403 → NakalaAccesInterdit (un dépôt ne
+    peut pas être vidé de tous ses fichiers)."""
+    with _client(lambda r: httpx.Response(403, json={"message": "forbidden"})) as c:
+        with pytest.raises(NakalaAccesInterdit):
+            c.supprimer_fichier_donnee("10.34847/nkl.d1", "dernier")
+
+
 @pytest.mark.parametrize(
     "code,exc",
     [

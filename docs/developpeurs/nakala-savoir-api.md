@@ -143,9 +143,11 @@ ColleC ne lit que `message`/`error` → il **n'affiche pas** ces erreurs fines
   fichiers intacts. **Mais retirer le *dernier* fichier → 403 (refusé)** : un
   dépôt ne peut pas être vidé de tous ses fichiers (cohérent avec `PUT
   files=[]` ignoré, H3). Couplés, POST + DELETE granulaires = voie de
-  modification **sûre** des fichiers, alternative au PUT que
-  `pousser_fichiers_item` emploie aujourd'hui (et à son risque d'orphelins).
-  Cf. ticket **T2** du backlog API.
+  modification **sûre** des fichiers. ✅ **`pousser_fichiers_item` les emploie
+  désormais** (ticket T2 livré) : mutations en POST/DELETE par sha1, puis un
+  `PUT files[]` de réordonnancement **construit depuis l'état distant relu**
+  (réémet exactement les sha1 présents → aucun drop silencieux, ≠ ancien push
+  par `PUT files[]`). Cf. ticket **T2** du backlog API.
 
 ### Catalogue complet (56 endpoints)
 

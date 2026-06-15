@@ -483,11 +483,26 @@ La machinerie de versions est présente côté Nakala :
 | Éditer un dépôt `pending` (fichiers ou metas) | ❌ écrase en place, reste `v1` |
 | Publier (`pending → published`) | ❌ bascule le statut en place |
 | **Modifier les metas d'un dépôt publié** (`PUT /datas {metas}`) | ❌ mutation **en place** (200) |
-| **Muter les fichiers d'un dépôt publié** (`POST`/`DELETE …/files`) | ✅ **+1 version** à chaque opération |
+| **Muter les fichiers d'un dépôt publié** — granulaire (`POST`/`DELETE …/files`) | ✅ **+1 version par opération** |
+| **Muter les fichiers d'un dépôt publié** — `PUT /datas {files[]}` | ✅ **+1 version par PUT** (quel que soit le nombre de fichiers changés) |
 
 Sur le cycle observé : ajout d'un fichier → `version` 1→**2** ; suppression
 d'un fichier → 2→**3**. Le champ `version` = le numéro de version-fichiers
-courant ; `/versions` les liste toutes.
+courant ; `/versions` les liste toutes. **Granularité de versionnement =
+l'appel HTTP** : un `PUT files[]` ajoutant 2 fichiers ne crée qu'**une**
+version (delta +1) ; un remplacement de contenu (même nom, nouveau sha1)
+itou. C'est la base du conseil « regrouper en un `PUT` » pour le push sur
+publié (vs N versions en granulaire).
+
+Détail par version : `GET /datas/{doi}.vN` renvoie `version=N`, **son propre
+jeu de fichiers** (snapshot) et ses `creDate`/`modDate` propres.
+
+⚠️ **Suppression de fichier = logique, pas physique.** Un fichier retiré
+d'une version reste **téléchargeable par son sha1** via le DOI de base
+(`GET /data/{doi}/{sha1}` → 200) **et** via le DOI versionné
+(`/data/{doi}.vN/{sha1}`). Les octets sont archivés / adressés par contenu —
+« retirer » ne détruit rien (un retrait via push n'entraîne donc pas de perte
+de donnée côté Nakala).
 
 ⚠️ **Nuance majeure : les versions snapshotent les FICHIERS, pas les
 métadonnées.** Résoudre `.v1`/`.v2`/`.v3` renvoie pour chacune un **jeu de
@@ -562,7 +577,7 @@ existe mais n'est pas (encore) exploité :
 | **SPARQL** | ❌ absent | `GET /sparql` → 404 (du moins à ce chemin) |
 | **Embargo par fichier au dépôt** | ✅ accepté | `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée avec un champ compagnon `humanReadableEmbargoedDelay` |
 | **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers, ordre inverse préservé (cf. §8). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
-| **Citation** | ✅ sondée (S4) | `GET /datas/{id}/citation` → **chaîne JSON** (citation bibliographique prête à l'emploi). Dépôt **pending** → `"Test deposit, therefore not citable."`. Consommée par ColleC : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
+| **Citation** | ✅ sondée (S4) | `GET /datas/{id}/citation` → **chaîne JSON** (citation prête à l'emploi). **Sur apitest, jamais citable** : pending → **200** `"Test deposit, therefore not citable."`, publié → **403** même message (pas de DOI DataCite minté sur le serveur de test → la vraie citation nécessite la **prod**). ColleC avale le 403 (`NakalaAccesInterdit ⊂ ErreurNakala`, best-effort). Consommée : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
 | **Publication via `PUT …/status/{status}`** | ✅ sondée (S5) | `PUT /datas/{id}/status/published` (sans corps) → **204**, publie et **préserve les metas** (`av.metas == ap.metas`). Découple publication / écriture de metas, contrairement à `publier_item` qui re-pousse les metas locales (choix ColleC, principe n°1). ColleC garde l'approche actuelle (cf. §7) |
 | **`GET /users/me`, `/resourceprocessing/{id}`** | ✅ existent | identité de la clé ; état d'indexation ElasticSearch + DataCite (latence post-publication) — non sondés |
 | **Versioning (DOI `…​.vN`)** | ✅ déclencheur résolu | cf. §7 : **mutation de fichiers sur dépôt publié** = +1 version ; metas/pending/publication = en place. Versions = snapshot des **fichiers** (metas partagées) |

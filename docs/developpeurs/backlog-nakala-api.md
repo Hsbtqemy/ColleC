@@ -303,10 +303,22 @@ partagées sur toutes les versions). Détail : savoir-api §7.
 Nakala s'en charge. Le seul point d'attention est que `pousser_fichiers_item`
 en mode granulaire crée **une version par opération** (POST + DELETE + PUT
 réordonnancement) sur un dépôt publié → le garde-fou `DepotPublie` (défaut)
-évite la prolifération de `.vN`. **Améliorations possibles si besoin réel**
-(non prioritaires) : exposer l'historique `/versions` en lecture sur la
-fiche item ; sur le chemin `--force-published`, regrouper en un seul
-`PUT files[]` pour ne créer qu'une version.
+évite la prolifération de `.vN`.
+
+**Approfondissement live (2026-06-15, confirmations) :**
+- **Un seul `PUT files[]` = 1 version** (delta +1 quel que soit le nombre de
+  fichiers changés) → le conseil « regrouper en un PUT pour le chemin
+  `--force-published` » est **validé** (vs N versions en granulaire).
+- **Retrait de fichier = logique, pas physique** : un fichier retiré reste
+  téléchargeable par sha1 via le DOI de base ET versionné → un push qui
+  retire des fichiers **ne perd pas la donnée** côté Nakala (atténue la dette
+  « journaliser les retraits » : récupérable).
+- **Citation non testable sur apitest** (403 « not citable » sur publié) →
+  validation réelle de S4 reportée à la prod.
+
+**Améliorations possibles si besoin réel** (non prioritaires) : exposer
+l'historique `/versions` en lecture sur la fiche item ; basculer le chemin
+`--force-published` sur un `PUT files[]` unique (1 version au lieu de N).
 
 ---
 

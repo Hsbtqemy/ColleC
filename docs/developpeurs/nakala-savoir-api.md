@@ -139,16 +139,19 @@ pour la date (`nkl:created` ← `dcterms:date` W3CDTF valide).
 
 ### Fichier (dans une réponse `GET /datas`)
 
+Jeu complet des 10 champs confirmé live (relecture `GET /datas`, 2026-06-15) :
+
 ```json
 {
   "name": "scan_0001.jpg",
   "sha1": "da39a3ee…",          // 40 hex — poignée du fichier
   "size": 12345,                 // octets
   "mime_type": "image/jpeg",     // API expose "mime_type" (code accepte aussi "mime")
-  "embargoed": "2025-12-31T…"|null,
+  "embargoed": "2099-12-31T00:00:00+01:00"|null,  // datetime + fuseau Europe/Paris
+  "humanReadableEmbargoedDelay": "…",  // délai d'embargo lisible (texte)
   "extension": "jpg",
-  "puid": "fmt/43",              // Pronom (optionnel)
-  "format": "JPEG",             // Pronom label (optionnel)
+  "puid": "fmt/43",              // PRONOM (optionnel)
+  "format": "JPEG",             // PRONOM label (optionnel)
   "description": "…"            // optionnel (cf. H11)
 }
 ```
@@ -409,14 +412,14 @@ honnêtement ce qui existe mais n'est pas (encore) utilisé :
 | **IIIF Image API** | ✅ v3.0 | `info.json` d'un fichier image → 200, `application/ld+json; profile=image/3`. Confirme l'approche visionneuse de ColleC. Fichier non-image → **415** (cf. §7) |
 | **IIIF Presentation (manifeste)** | ❌ non exposé | `/iiif/{doi}/manifest`, `.../manifest.json`, `/iiif/{doi}` → tous 404 (route API non trouvée), même pour un data image publié. Pas de manifeste par-donnée prêt à consommer aux chemins conventionnels ; ColleC construit sa propre visionneuse depuis les `info.json` par fichier |
 | **SPARQL** | ❌ absent | `GET /sparql` → 404. Pas d'endpoint SPARQL public (du moins à ce chemin) |
+| **Embargo par fichier au dépôt** | ✅ accepté | sonde écriture sur apitest : `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée à la relecture avec un champ compagnon `humanReadableEmbargoedDelay`. ColleC ne pose pas encore d'embargo (le flux `deposer_item` n'envoie que `{sha1, name}`) |
+| **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers envoyés en ordre **inversé** → 20/20 conservés, **ordre inverse préservé** (H5 vaut aussi au POST, pas seulement au PUT). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
 
 ### Non testé / non testable
 
-- **Embargo au dépôt** : on *lit* `embargoed` par fichier, mais poser un
-  embargo au `POST`/`PUT` (champ `embargoed` par fichier) n'a pas été
-  validé — sonde **écriture** requise (clé API + crée un dépôt sur apitest).
-- **Nombre max de fichiers dans un `PUT files[]`** : H1 implique d'envoyer
-  la liste complète ; non testé sur un très gros item — sonde écriture.
+- **Plafond dur du nombre de fichiers** par dépôt / par `PUT files[]` : non
+  recherché volontairement (impliquerait des centaines d'uploads sur un
+  serveur de test partagé). On sait que ≥ 20 passe sans souci.
 - **Taille max d'upload, rate limiting** : non testables proprement (il
   faudrait soit uploader un binaire énorme, soit marteler l'API) — à
   documenter depuis la doc Huma-Num plutôt que par sonde.

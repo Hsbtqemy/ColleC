@@ -493,6 +493,17 @@ Confirmé en plus par les tests d'intégration :
 - **Fusion (pas remplacement) des metas de collection** : ColleC ne gère
   que titre + description → préserve les metas Nakala non modélisées
   (sujet, créateur de collection…) au lieu de les écraser.
+- **Unicité du sha1 par dépôt** (sondé live 2026-06-15, revue T2) : Nakala
+  **refuse deux fichiers de même sha1** dans un dépôt — `POST /datas` avec
+  `files=[{X,a},{X,b}]` → **422**, et re-`POST …/files` d'un sha1 déjà
+  attaché → **409/500**. Conséquences : (a) la machinerie défensive
+  « doublons sha1 distants » du comparateur (`pop(0)` / file par sha1) et le
+  deque de `_reordonner_files` défendent un état que **Nakala ne crée pas**
+  (défense morte, conservée pour d'éventuelles données legacy en lecture) ;
+  (b) `pousser_fichiers_item` a un **garde-fou pré-vol `ContenuDuplique`** qui
+  refuse proprement **avant toute mutation** si le set final a un sha1
+  dupliqué (sinon, en granulaire, l'échec arriverait au 2ᵉ POST en laissant un
+  état partiel).
 
 ## 8. Helpers IIIF / URLs (`files/nakala.py`)
 

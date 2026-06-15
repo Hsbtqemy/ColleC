@@ -70,6 +70,15 @@ niveau dépôt », ce qui est trompeur.
 > tests unitaires + 3 d'intégration live (apitest). Reste **futur** :
 > versioning fichiers (#4 SHA-1), embargo/description par fichier (le corps
 > `File` les accepte, cf. §2 savoir-api).
+>
+> **Passe de revue 2026-06-15** (revue multi-angles) : confirmé que le risque
+> #1 « DELETE collatéral sur sha1 dupliqués » est **moot** (Nakala refuse les
+> doublons de sha1, sonde → 422). Ajouté un **garde-fou pré-vol
+> `ContenuDuplique`** (refus propre avant toute mutation si le set final
+> contient deux sha1 identiques — sinon échec partiel au 2ᵉ POST ; handler
+> CLI dédié). **Doc d'atomicité tempérée** : la reprise après échec partiel
+> n'est pas « transparente » (orphelins distants possibles à confirmer).
+> Cleanup mineurs non retenus (3ᵉ `lire_depot` du cache, `plan.sort`).
 
 **Constat (live 2026-06-15).** `pousser_fichiers_item`
 (`api/services/nakala_fichiers.py:1021`) modifie les fichiers via

@@ -78,6 +78,7 @@ from archives_tool.api.services.nakala_depot import (
 from archives_tool.api.services.nakala_fichiers import (
     ComparaisonImpossible,
     BackfillIncomplet,
+    ContenuDuplique,
     DepotPublie,
     FichierFantomeDistant,
     IncoherenceFichierORM,
@@ -3519,6 +3520,9 @@ def cmd_nakala_pousser_fichiers(
             )
             raise typer.Exit(1) from None
         except PushImpossible as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(1) from None
+        except ContenuDuplique as e:
             typer.echo(f"Erreur : {e}", err=True)
             raise typer.Exit(1) from None
         except UploadInvalide as e:

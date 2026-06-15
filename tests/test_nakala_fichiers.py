@@ -19,6 +19,7 @@ from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_fichiers import (
     BackfillIncomplet,
     ComparaisonImpossible,
+    ContenuDuplique,
     DepotPublie,
     FichierFantomeDistant,
     IncoherenceFichierORM,
@@ -1142,6 +1143,37 @@ def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
     assert ecriture.puts == []
 
 
+def test_pousser_contenu_duplique_refuse_avant_toute_mutation(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Garde-fou pré-vol (revue T2) : deux fichiers de contenu identique
+    (même sha1) dans le set final → Nakala refuserait (POST /datas dup →
+    422, re-POST → 409). On refuse AVANT tout upload/POST/DELETE pour ne
+    pas laisser un état distant partiel (échec au 2e POST sinon)."""
+    contenu = b"contenu identique des deux"  # même binaire → même sha1
+    lecture = _FakeClientLecture(files=[])   # distant vide → 2 nouveaux
+    ecriture = _FakeClientEcriture(lecture)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
+            {"ordre": 2, "nom": "b.jpg", "contenu": contenu, "sha1_nakala": None},
+        ])
+        with pytest.raises(ContenuDuplique) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+    # L'exception nomme les deux fichiers fautifs.
+    noms_fautifs = next(iter(exc_info.value.doublons.values()))
+    assert set(noms_fautifs) == {"a.jpg", "b.jpg"}
+    # Aucune mutation distante (refus pré-vol).
+    assert ecriture.uploads == []
+    assert ecriture.ajouts == []
+    assert ecriture.suppressions == []
+    assert ecriture.puts == []
+
+
 def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
     db_path: Path, tmp_path: Path,
 ) -> None:
@@ -1432,16 +1464,21 @@ def test_comparer_doublons_sha1_distants_avec_1_seul_fichier_local_classe_2e_en_
     assert rapport.orphelins_distants[0].nom_fichier == "doublon-perdu.jpg"
 
 
-def test_pousser_doublons_sha1_distants_preserves_dans_files_cible(
+def test_pousser_contenu_duplique_refuse_cote_push(
     db_path: Path, tmp_path: Path,
 ) -> None:
-    """Trou M scenario push : si distant a 2 fichiers meme sha1 et que
-    ColleC a 2 Fichier appariés, le PUT doit envoyer 2 entrées dans
-    `files[]` avec ce sha1 (Nakala accepte les doublons sha1, H1 confirme
-    que `files[]` est remplacé intégralement). Sinon le 2e serait retiré.
+    """Revue T2 — correction du contrat « doublons sha1 au push ».
 
-    On declenche un PUT en ajoutant un Fichier modifie en plus.
-    """
+    L'ancien test asseyait que ColleC POUSSE deux fichiers de même sha1
+    (`files[]` à 2 entrées identiques). Or la sonde live 2026-06-15 prouve
+    que **Nakala REFUSE** un dépôt à sha1 dupliqué (`POST /datas` dup → 422,
+    re-POST d'un sha1 attaché → 409). L'ancien test ne passait que parce que
+    le mock n'imposait pas cette contrainte (cf. revue, Finder F).
+
+    Comportement correct : le garde-fou pré-vol `ContenuDuplique` refuse
+    AVANT toute mutation distante (pas d'échec partiel mi-POST). Le
+    classement comparateur des doublons distants reste couvert par les
+    `test_comparer_*doublons*` (lecture seule, défense pour données legacy)."""
     contenu_doublon = b"identique"
     sha1_doublon = _sha1(contenu_doublon)
     contenu_modif = b"a modifier"
@@ -1462,23 +1499,18 @@ def test_pousser_doublons_sha1_distants_preserves_dans_files_cible(
             {"ordre": 3, "nom": "c.jpg",
              "contenu": contenu_modif, "sha1_nakala": sha1_ancien},
         ])
-        rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
-            racines={"scans": tmp_path / "scans"},
-            dry_run=False,
-        )
-    # 1 PUT envoye, 1 upload (pour c.jpg modifie).
-    assert len(ecriture.puts) == 1
-    files_envoyes = ecriture.puts[0]["files"]
-    # 3 entrees dans `files[]` (les 2 doublons + le modifie).
-    assert len(files_envoyes) == 3
-    # Les 2 entrees a.jpg / b.jpg avec sha1_doublon sont preservees.
-    sha1s_envoyes = [f["sha1"] for f in files_envoyes]
-    assert sha1s_envoyes.count(sha1_doublon) == 2
-    noms = [f["name"] for f in files_envoyes]
-    assert "a.jpg" in noms
-    assert "b.jpg" in noms
-    assert rapport.applique is True
+        with pytest.raises(ContenuDuplique) as exc_info:
+            pousser_fichiers_item(
+                s, lecture, ecriture, item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+            )
+    # Le doublon nomme a.jpg + b.jpg ; aucune mutation distante.
+    assert set(next(iter(exc_info.value.doublons.values()))) == {"a.jpg", "b.jpg"}
+    assert ecriture.uploads == []
+    assert ecriture.ajouts == []
+    assert ecriture.suppressions == []
+    assert ecriture.puts == []
 
 
 # ---------------------------------------------------------------------------

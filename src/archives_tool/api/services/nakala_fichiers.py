@@ -152,6 +152,33 @@ class PushImpossible(Exception):
     """
 
 
+class ContenuDuplique(Exception):
+    """Refus pré-vol : le set de fichiers final contient deux sha1
+    identiques (deux fichiers de même contenu binaire).
+
+    Nakala **rejette** un dépôt avec un sha1 dupliqué (sondé live
+    2026-06-15 : `POST /datas` avec `files=[{X,a},{X,b}]` → 422 ; re-POST
+    d'un sha1 déjà attaché → 409/500). En push granulaire (T2), sans ce
+    garde-fou amont l'échec surviendrait **mi-parcours** (409 au 2ᵉ POST)
+    en laissant le dépôt dans un état partiel. On refuse donc **avant
+    toute mutation distante**, proprement, en nommant les fichiers
+    fautifs — c'est presque toujours une erreur de catalogage (deux
+    Fichier pointant le même binaire).
+    """
+
+    def __init__(self, doublons: dict[str, list[str]]) -> None:
+        #: sha1 (tronqué) → noms des Fichier partageant ce contenu.
+        self.doublons = doublons
+        details = "; ".join(
+            f"{sha1[:12]}… : {', '.join(noms)}" for sha1, noms in doublons.items()
+        )
+        super().__init__(
+            "Contenu dupliqué — Nakala refuse deux fichiers de même sha1 dans "
+            f"un dépôt. Fichiers concernés : {details}. Dé-dupliquer côté "
+            "ColleC (probable erreur de catalogage) avant de pousser."
+        )
+
+
 class FichierFantomeDistant(Exception):
     """Refus du push : un ou plusieurs Fichier ColleC sans binaire local
     portent un ``sha1_nakala`` qui ne matche plus aucun sha1 distant
@@ -849,9 +876,13 @@ def pousser_fichiers_item(
     écritures DB ne sont commitées qu'**après** les opérations distantes
     réussies. ⚠️ **Atomicité partielle** (T2) : N appels au lieu d'1 → un
     échec mid-parcours peut laisser un état distant partiel (fichiers
-    ajoutés mais ordre non fixé, ou anciens non retirés) ; non destructif
-    (ajout avant suppression) et réconcilié par une reprise idempotente
-    (re-comparer + re-pousser).
+    ajoutés mais ordre non fixé, ou anciens non retirés). Non destructif
+    (ajout avant suppression). **Reprise** : un re-``comparer`` reclasse les
+    fichiers déjà attachés en ``inchange`` (leur contenu est désormais
+    distant) et les opérations se rejouent — mais un ancien sha1 non retiré
+    peut ressortir en **orphelin distant** (à confirmer via
+    ``--retirer-orphelins``). Vérifier le diff avant de re-pousser ; ce
+    n'est pas une reprise « transparente ».
 
     Args:
         retirer_orphelins: requis pour confirmer le retrait silencieux
@@ -885,6 +916,8 @@ def pousser_fichiers_item(
             silencieuse de fichier distant au PUT.
         OrphelinsDetectes: orphelins distants sans flag.
         PushImpossible: ``files_cible == []`` (cas H3).
+        ContenuDuplique: le set final contient deux sha1 identiques (Nakala
+            refuse les doublons de contenu dans un dépôt — refus pré-vol).
         UploadInvalide: ``uploader_fichier`` retourne une réponse
             inexploitable (sha1 vide / malformé / non-string). Cleanup
             best-effort des uploads précédents avant propagation.
@@ -978,6 +1011,21 @@ def pousser_fichiers_item(
             "sans fichier (403 sur le dernier, H3). Pour vider un dépôt, "
             "utiliser `supprimer_depot` + redéposer."
         )
+
+    # Garde-fou pré-vol : contenu dupliqué. Nakala refuse deux fichiers de
+    # même sha1 dans un dépôt (sondé live : POST /datas dup → 422, re-POST
+    # → 409). En granulaire, sans ce contrôle l'échec arriverait au 2ᵉ POST,
+    # mi-parcours, laissant un état distant partiel. On refuse avant toute
+    # mutation. Le sha1 prévisionnel du plan = sha1_local (nouveau/modifie/
+    # inchange) ou sha1_distant (nakala_only) — c'est exactement le contenu
+    # qui coexistera côté Nakala.
+    _par_sha1: dict[str, list[str]] = defaultdict(list)
+    for entree in rapport.plan:
+        if entree.sha1:
+            _par_sha1[entree.sha1].append(entree.nom_fichier)
+    _doublons = {s: noms for s, noms in _par_sha1.items() if len(noms) > 1}
+    if _doublons:
+        raise ContenuDuplique(_doublons)
 
     # Pré-calcul des sha1 distants retirés au PUT. Deux origines :
     # 1. orphelins distants (sha1 connu de Nakala mais sans Fichier

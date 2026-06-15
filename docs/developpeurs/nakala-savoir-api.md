@@ -121,12 +121,31 @@ ColleC ne lit que `message`/`error` → il **n'affiche pas** ces erreurs fines
 - **Upload à usage unique** : un fichier du stockage temporaire
   (`POST /datas/uploads`) est **consommé** quand il est attaché à un dépôt ;
   réutiliser le même `sha1` pour un 2ᵉ dépôt → 422. Chaque dépôt a ses
-  propres uploads.
-- **`POST /datas/{id}/files` est ADDITIF** : ajoute un fichier sans toucher
-  les autres — contrairement au `PUT /datas/{id}` `files[]` qui **remplace**
-  (H1). Couplé à `DELETE /datas/{id}/files/{fileId}`, c'est une voie de
-  modification **granulaire et sûre** des fichiers, alternative au PUT que
+  propres uploads. ⚠️ Observé live 2026-06-15 : rejouer un **contenu
+  identique** entre deux exécutions (donc même sha1) déclenche un **500** au
+  `POST /datas`, pas seulement un 422 — d'où le salage uuid du contenu dans
+  `scripts/explorer_files_granulaire_nakala.py` (sha1 frais à chaque run).
+- **`POST /datas/{id}/files` (sondé live 2026-06-15)** : **additif** — ajoute
+  un fichier sans toucher les autres (contrairement au `PUT /datas/{id}`
+  `files[]` qui **remplace**, H1). Corps = `{sha1}` (schéma `File` =
+  `sha1` + `description?` + `embargoed?`, **pas de `name`** : le nom est repris
+  de l'upload). Réponse **200** `{code:200, message:"File added"}`. **Ordre =
+  LIFO** (le dernier POSTé passe devant ; confirmé sur 8 essais dont 4–7
+  décisifs — ordre indépendant du sha1) → pour fixer l'ordre d'affichage,
+  finir par un `PUT files[]` (qui, lui, respecte l'ordre envoyé, H5).
+  **Erreurs (non fiables, non destructives)** : sha1 jamais uploadé →
+  **500** « File not found on server » (≠ le **404** du `PUT`, H4) ; re-POST
+  d'un fichier déjà présent → **409 ou 500** selon l'état du stockage temp
+  (500 si l'upload a été consommé). → valider « déjà présent » côté client.
+- **`DELETE /datas/{id}/files/{fileIdentifier}` (sondé live 2026-06-15)** : le
+  `{fileIdentifier}` **est le sha1** (la donnée fichier n'expose aucun id
+  distinct du sha1). DELETE par sha1 → **204**, retrait ciblé, les autres
+  fichiers intacts. **Mais retirer le *dernier* fichier → 403 (refusé)** : un
+  dépôt ne peut pas être vidé de tous ses fichiers (cohérent avec `PUT
+  files=[]` ignoré, H3). Couplés, POST + DELETE granulaires = voie de
+  modification **sûre** des fichiers, alternative au PUT que
   `pousser_fichiers_item` emploie aujourd'hui (et à son risque d'orphelins).
+  Cf. ticket **T2** du backlog API.
 
 ### Catalogue complet (56 endpoints)
 
@@ -195,6 +214,14 @@ découplée). Lecture inverse : `PROPERTY_URI_TO_SLUG` dans `mapper.py`.
 Source autoritative côté Nakala : `GET /vocabularies/properties/details`
 (**55 propriétés** avec leurs `allowedTypes` + `languageAuthorized`) — ce
 que ColleC réimplémente à la main (cf. §4).
+
+**Parité vérifiée propre (sonde S1, live 2026-06-15)** —
+`scripts/verifier_parite_vocabulaires_nakala.py` confronte les cartes ColleC
+au live : **29/29** types COAR du snapshot ColleC sont acceptés par Nakala
+(aucun fantôme), toutes les projections `type_coar_pour_nakala` tombent dans
+`depositTypes`, et les **57 `propertyUri`** émises sont **⊆** les 60 URIs de
+`/vocabularies/properties`. Aucune dérive. Réutilisable en test de
+non-régression.
 
 ### Créateur
 
@@ -361,7 +388,8 @@ autoritative à privilégier sur les snapshots vendorisés :
 | `/vocabularies/licenses` | **620 licences = liste SPDX complète** `{code, name, url}` |
 | `/vocabularies/languages` | langues `{id, label}` (id en ISO 639-3 pour la longue traîne ; cf. bug #422) |
 | `/vocabularies/countryCodes` | codes pays ISO 3166 alpha-2 (⚠️ pas `/countries`) |
-| `/vocabularies/properties` + `/properties/details` | **55 propriétés** de métadonnées + `allowedTypes` & `languageAuthorized` par propriété — la carte que `SLUG_TO_NAKALA` réimplémente à la main |
+| `/vocabularies/properties` | **60 propertyUri complètes** (liste plate de chaînes, ex. `http://purl.org/dc/terms/description`) — la **bonne** référence pour un check de parité des `propertyUri` |
+| `/vocabularies/properties/details` | **55 entrées** riches (`allowedTypes` + `languageAuthorized`) ⚠️ la clé `uri` y est le **namespace** (`http://purl.org/dc/terms/`) + un `term` séparé, **pas** l'URI complète — ne pas l'utiliser tel quel pour comparer des propertyUri. C'est la carte que `SLUG_TO_NAKALA` réimplémente à la main |
 | `/vocabularies/metadatatypes` + `/metadatatypes/details` | types de métadonnées (XSD/DC) |
 | `/vocabularies/lcsh` | concepts LCSH (Library of Congress Subject Headings) |
 
@@ -601,6 +629,6 @@ ColleC de toute façon (garde-fou `DepotPublie` sur le push de fichiers).
 | Client lecture / écriture / mappers | `src/archives_tool/external/nakala/` |
 | Services dépôt / fichiers | `src/archives_tool/api/services/nakala_depot.py`, `nakala_fichiers.py` |
 | Helpers IIIF | `src/archives_tool/files/nakala.py` |
-| **Sondes live** | `scripts/explorer_put_files_nakala.py` |
+| **Sondes live** | `scripts/explorer_put_files_nakala.py` (PUT `files[]`, H1-H11), `scripts/explorer_files_granulaire_nakala.py` (POST/DELETE granulaires, ticket T2), `scripts/verifier_parite_vocabulaires_nakala.py` (parité vocab S1, lecture seule) |
 | Tests d'intégration (opt-in `-m integration`) | `tests/test_nakala_*_integration.py` |
 | Découvertes accumulées | section Nakala de `CLAUDE.md` |

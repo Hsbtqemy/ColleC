@@ -71,19 +71,46 @@ dont **`POST /datas/{id}/files` confirmé ADDITIF** (vérifié live : un dépôt
 `[A]` + POST `B` → `[A, B]`) et `DELETE /datas/{id}/files/{fileIdentifier}`.
 Les utiliser supprimerait le risque de drop silencieux à la racine.
 
-**Sonde préalable (à faire avant d'implémenter — ~30 min sur apitest).**
-- Que vaut `{fileIdentifier}` dans `DELETE /datas/{id}/files/{fileIdentifier}` —
-  le **sha1** ou un id propre ? (déterminant pour le mapping.)
-- Le `POST …/files` préserve-t-il / contrôle-t-il l'**ordre** ? (le `PUT
-  files[]` garantit l'ordre, H5 ; l'additif risque d'imposer l'ordre
-  d'arrivée — si oui, garder un `PUT` final pour réordonner.)
-- Comportement sur un dépôt **publié** (cohérence avec le garde-fou
-  `DepotPublie`).
+**Sonde préalable — ✓ faite (live apitest 2026-06-15,
+`scripts/explorer_files_granulaire_nakala.py`).**
+- **`{fileIdentifier}` = le sha1.** `DELETE /datas/{id}/files/{sha1}` →
+  **204**, retrait ciblé, les autres fichiers intacts. La donnée fichier
+  n'expose **aucun id distinct du sha1** (clés : `name`, `sha1`, `size`,
+  `mime_type`, `extension`, `embargoed`, `humanReadableEmbargoedDelay`,
+  `description`, `puid`, `format`). → mapping direct sur le
+  `Fichier.sha1_nakala` déjà stocké, **aucune colonne nouvelle**.
+- **`POST /datas/{id}/files` est additif et NE contrôle PAS l'ordre.** Corps
+  = `{sha1}` seul (le schéma `File` n'a **pas** de `name` — le nom est repris
+  de l'upload ; le corps accepte aussi `description` et `embargoed`). Réponse
+  **200** `{code:200, message:"File added"}`. Ordre relu = **LIFO** (le dernier
+  POSTé passe devant), confirmé sur **8 essais dont 4–7 décisifs** (où un tri
+  par sha1 aurait prédit l'inverse — ordre indépendant du sha1) → **garder un
+  `PUT files[]` final pour fixer l'ordre canonique** (le PUT respecte l'ordre
+  envoyé, H5).
+- **Cas limites (sondes E/F/G).**
+  - **DELETE du dernier fichier → 403, refusé** : impossible de vider un dépôt
+    de tous ses fichiers (cohérent avec `PUT files=[]` ignoré, H3). → le
+    garde-fou « préserver ≥1 fichier » sur `--retirer-orphelins` est correct.
+  - **POST d'un sha1 jamais uploadé / fantôme → 500** « File not found on
+    server » (≠ le **404** du `PUT`, H4 — asymétrie entre endpoints). → valider
+    en amont que chaque sha1 vient d'un upload réussi.
+  - **Re-POST d'un fichier déjà présent → 409 OU 500** selon l'état du stockage
+    temporaire (409 si l'upload temp existe encore, **500 « File not found on
+    server »** si l'upload a été consommé — cas du `deposer_item`). **Aucun
+    effet destructif** (le fichier reste, pas de doublon), mais **code non
+    fiable** → faire la détection « déjà présent » **côté client** avant le
+    POST, ne pas se reposer sur le code HTTP.
+- **Dépôt publié : NON sondé** (gaté derrière `NAKALA_ALLOW_PUBLISH=1` ;
+  publier sur apitest est irréversible et laisse un dépôt indestructible →
+  pollution du serveur partagé). Faible enjeu : le garde-fou `DepotPublie`
+  refuse déjà le push de fichiers sur publié par défaut. À sonder seulement si
+  on lève un jour ce garde-fou.
 
 **Changement proposé.**
-- `external/nakala/write_client.py` : `ajouter_fichier(doi, {sha1, name})`
-  → `POST /datas/{id}/files` ; `supprimer_fichier_donnee(doi, fileId)`
-  → `DELETE /datas/{id}/files/{fileId}`.
+- `external/nakala/write_client.py` : `ajouter_fichier(doi, sha1)`
+  → `POST /datas/{id}/files` corps `{sha1}` (nom hérité de l'upload) ;
+  `supprimer_fichier_donnee(doi, sha1)` → `DELETE /datas/{id}/files/{sha1}`
+  (le `{fileIdentifier}` **est** le sha1, donc `Fichier.sha1_nakala`).
 - `pousser_fichiers_item` réécrit en opérations ciblées :
   `nouveaux` → `ajouter_fichier` ; `modifies` → `ajouter_fichier` puis
   `supprimer_fichier_donnee` de l'ancien ; `orphelins_distants` (si
@@ -108,8 +135,14 @@ Les utiliser supprimerait le risque de drop silencieux à la racine.
   état intermédiaire. Prévoir ordre sûr (ajouter avant de supprimer) +
   idempotence à la reprise.
 - **Perf** sur gros items (N round-trips) — acceptable, mais à mesurer.
-- **Ordre** : si l'additif ne préserve pas l'ordre voulu, conserver un `PUT
-  files[]` final pour le réordonnancement (le meilleur des deux).
+- **Ordre** : confirmé **LIFO** (sonde C) — l'additif ne préserve **pas**
+  l'ordre voulu. Finir par un `PUT files[]` pour fixer l'ordre canonique
+  (H5 garantit que le PUT respecte l'ordre envoyé).
+- **Doublon sha1 / sha1 fantôme** : re-POST d'un fichier déjà présent →
+  **409 ou 500** selon l'état du stockage temporaire ; sha1 jamais uploadé →
+  **500**. Codes non fiables et non destructifs → **détecter « déjà présent »
+  et valider les sha1 côté client** avant le POST, ne pas se reposer sur le
+  code HTTP de Nakala.
 - Ne pas casser le journal `OperationPushNakala` (passe 24) qui snapshot le
   `files[]` avant/après.
 
@@ -145,11 +178,16 @@ logguer de PII (les libellés sont des URIs de propriété, sans donnée).
 
 Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas :
 
-- **S1 — Vocabulaires comme source de vérité** (`P2`) : régénérer / valider
-  `TYPES_COAR_OPTIONS` et `SLUG_TO_NAKALA` contre `GET /vocabularies/
-  depositTypes` (29 types) et `/properties/details` (55 propriétés +
-  `allowedTypes`) plutôt que de maintenir des snapshots à la main. Un test
-  de parité « notre carte ⊆ Nakala » suffirait déjà à attraper les dérives.
+- **S1 — Vocabulaires comme source de vérité** (`P2`) — ✓ **sonde de parité
+  faite (2026-06-15, `scripts/verifier_parite_vocabulaires_nakala.py`,
+  lecture seule) : RAS.** 29/29 types COAR du snapshot ColleC acceptés au
+  dépôt, toutes les projections `type_coar_pour_nakala` ⊆ `depositTypes`, et
+  les 57 `propertyUri` de `SLUG_TO_NAKALA` ⊆ les 60 de `/vocabularies/
+  properties` (⚠️ utiliser `/properties` — 60 URIs complètes — et **non**
+  `/properties/details` dont la clé `uri` = le namespace). ✓ **Promue en test
+  de non-régression** : `tests/test_nakala_vocabulaires_integration.py`
+  (opt-in `-m integration`, 3 assertions ⊆ live). Rejouer après toute évolution
+  de `SLUG_TO_NAKALA` / `TYPES_COAR_OPTIONS` / du snapshot COAR.
 - **S2 — Réutiliser le `uri` doi.org** : la réponse `GET /datas` fournit
   `uri = https://doi.org/{doi}` ; l'utiliser pour les liens sortants au lieu
   de reconstruire.

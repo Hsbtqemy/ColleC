@@ -87,21 +87,18 @@ publier**. Trois découvertes ont coûté du sang :
 - **DOI à la création** : `POST /datas` peut renvoyer le DOI sous
   plusieurs formes (`payload.id`, `payload.identifier`, ou `identifier`
   au premier niveau) → extracteur tolérant requis (`extraire_doi`).
-- **Listing paginé** : `{ data: […], page, limit, lastPage }` — la clé est
-  **`data` au singulier**, pas `datas`. Pagination 1-based, `limit` max
-  100 (ColleC utilise 25 en lecture, 50 dans l'itérateur de collection).
-  L'itérateur borne le bouclage par `lastPage` lu sur la 1ʳᵉ page
-  (anti-boucle infinie). (Le listing `/versions` a un dialecte légèrement
-  différent : `{total, currentPage, lastPage, limit, data}` — cf. §13.)
-- **`GET /datas/{id}` est bien plus riche que ce que ColleC en lit** :
-  réponse complète ≈ 21 champs (relevé live 2026-06-15) — `identifier`,
-  `uri`, `status`, `version`, `metas`, `files`, `collectionsIds`,
-  `relations`, `creDate`, `modDate`, `fileEmbargoed`, `owner`, `depositor`,
-  les flags de droits `isAdmin`/`isDepositor`/`isEditor`/`isOwner`, et le
-  workflow de modération (`lastModerator`, `lastModerationDate`,
-  `lastModerationRequestDate`, `moderationRequester`). Le `mapper` ColleC
-  n'en consomme que **4** (`metas`, `files`, `status`, `identifier`) ; le
-  reste (droits, modération, relations, embargo niveau donnée) est ignoré.
+- **Listing paginé de collection** : forme **réelle** (relevée live
+  2026-06-15) = `{ data, currentPage, lastPage, limit, total }` — la clé
+  des éléments est **`data` au singulier** (pas `datas`), et c'est
+  **`currentPage`** (pas `page`) avec un `total` en plus. Pagination
+  1-based, `limit` max 100 (ColleC utilise 25/50). L'itérateur borne le
+  bouclage par `lastPage` (présent → robuste). Même dialecte pour
+  `/versions` (cf. §13). ⚠️ **Trois dialectes de listing distincts** —
+  voir le tableau en §3.
+- **La réponse de lecture est bien plus riche que ce que ColleC en lit**
+  (≈ 21 champs côté donnée, dont droits, modération, propriétaire…) et
+  **diffère selon l'endpoint** (3 projections) : détail en §3,
+  *« Réponse de lecture complète »*.
 
 ## 3. Modèle de données
 
@@ -178,6 +175,58 @@ Format `10.34847/nkl.xxxxxxxx` (registrant Huma-Num), variante versionnée
 (`nakala.fr/collection/…`), d'un `doi:…` ou d'un DOI nu (regex
 `10\.\d+/[^\s/?#]+`) ; best-effort, sinon saisie rendue telle quelle (404
 propre en aval).
+
+### Réponse de lecture complète (champs ignorés par ColleC)
+
+`GET /datas/{id}` renvoie **≈ 21 champs** ; le `mapper` ColleC n'en consomme
+que **4** (`metas`, `files`, `status`, `identifier`). Relevé live sur dépôts
+publics apitest (2026-06-15) :
+
+| Champ | Contenu | ColleC |
+|---|---|---|
+| `identifier` | DOI `10.34847/nkl.…` | ✅ lu |
+| `metas` / `files` | métadonnées / fichiers | ✅ lu |
+| `status` | `pending` / `published` / … | ✅ lu |
+| `uri` | **URL résolvable `https://doi.org/{doi}`** (≠ URL API) | ignoré |
+| `version` | entier (cf. §13) | exporté tableur |
+| `creDate` / `modDate` | datetimes +TZ (`modDate` sert à détecter la dérive au push) | partiel |
+| `collectionsIds` | DOIs des collections d'appartenance | ignoré |
+| `relations` | relations inter-données (**vide sur 30/30 sondés — rare**) | ignoré |
+| `fileEmbargoed` | booléen niveau-donnée : ≥ 1 fichier sous embargo (1/30 sondés) | ignoré |
+| `owner` / `depositor` | objet user `{id (UUID), name, type, username, givenname, surname, photo}` | ignoré |
+| `isAdmin`/`isDepositor`/`isEditor`/`isOwner` | **droits relatifs à l'appelant** (tous `false` avec une clé non-propriétaire) | ignoré |
+| `lastModerator` / `lastModerationDate` / `lastModerationRequestDate` / `moderationRequester` | workflow de **modération** Nakala (null hors modération) | ignoré |
+
+**3 projections de donnée distinctes** (même donnée, champs différents
+selon l'endpoint — piège pour qui parse) :
+
+| Projection | Champs propres |
+|---|---|
+| `GET /datas/{id}` | `owner`, `depositor`, `isAdmin/isDepositor/isEditor/isOwner`, `fileEmbargoed` |
+| item de `/search` | `rights` (liste de rôles), `publicCollectionsIds`, `datestamp` (datetime **sans** fuseau) |
+| item de `/collections/{id}/datas` | projection de listing |
+
+Le champ `rights` (projection search) expose le **modèle de rôles Nakala** :
+`[{role: "ROLE_DEPOSITOR", id, name, type, username, …}]`.
+
+**`GET /collections/{id}`** a sa propre forme : `identifier`, `status`
+(`public`/`private`), `metas`, `uri` (**URL web humaine
+`https://[test.]nakala.fr/collection/{doi}`**), `creDate`, **`modDate`
+souvent `null`** (confirme empiriquement « collections sans dérive », §6),
+`owner` (avec sous-liste `users`), `depositor`, droits `isXxx`,
+`haveData` / `haveAccessibleData`, et une **feature site web** :
+`websiteEnabled`, `websitePrefix`, `websitePublished`.
+
+**Trois dialectes de listing paginé** :
+
+| Endpoint(s) | Forme |
+|---|---|
+| `/collections/{id}/datas`, `/datas/{id}/versions` | `{data, currentPage, lastPage, limit, total}` |
+| `/search` | `{datas, totalResults}` (clé `datas` au pluriel, pas de curseur de page) |
+
+**Trois hôtes Nakala distincts** : `api[test].nakala.fr` (API REST),
+`[test.]nakala.fr` (UI web humaine — cible des `uri` de collection et des
+sites), `doi.org` (résolveur DOI — cible du `uri` de donnée).
 
 ### Forme d'écriture des metas (`depot_mapper.py`)
 

@@ -175,10 +175,10 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   avec langue était rejeté (latent : aucun test d'intégration ne déposait de
   langue). `mapper.langue_vers_nakala` (inverse de `langue_vers_iso639_3`)
   convertit la **valeur** `dcterms:language` ET l'attribut `lang` des littéraux
-  multilingues, appelé dans `item_vers_slugs`. **Reliquat connu** :
-  `exporters/nakala.py` (CSV bulk) émet aussi la langue brute — même classe de
-  bug sur un chemin séparé (upload manuel), à corriger après validation du
-  format bulk.
+  multilingues, appelé dans `item_vers_slugs`. **Reliquat depuis résolu** :
+  `exporters/nakala.py` (CSV bulk, chemin séparé/upload manuel) convertit lui
+  aussi la langue via `langue_vers_nakala` (valeur `dcterms:language` +
+  `langTitle`) — même correction appliquée sur les deux chemins.
   **UI web de dépôt collection livrée** (backlog dépôt UI D1-D6) :
   bouton « Déposer sur Nakala » sur
   `fonds_lecture.html` (si miroir sans DOI, hors lecture seule), 4 routes
@@ -563,7 +563,9 @@ filtre — on garde l'URL `data` brute (qui ne donne pas de viewer
 fonctionnel, mais reflète l'origine exacte de la donnée et déclenche
 proprement le fallback HTML « Télécharger »). Sans cette garde, un
 PDF se serait vu attribuer un `iiif_url_nakala` pointant sur un
-`/iiif/.../info.json` qui retourne 404.
+`/iiif/.../info.json` qui retourne 415 (Unsupported Media Type ;
+vérifié live 2026-06-15 — Nakala ne sert l'IIIF Image API que pour
+les images, pas 404 comme initialement documenté).
 
 Les helpers Nakala sont centralisés dans
 [`files/nakala.py`](src/archives_tool/files/nakala.py) :

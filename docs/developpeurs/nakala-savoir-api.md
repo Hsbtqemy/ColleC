@@ -23,6 +23,13 @@
 > `tests/test_nakala_*_integration.py`, le code client
 > `src/archives_tool/external/nakala/`, et la spec OpenAPI `GET /doc.json`.
 > Validé pour la dernière fois contre apitest le **2026-06-15**.
+>
+> ⚠️ **Portée : tous les constats ci-dessous viennent d'`apitest.nakala.fr`.**
+> Leur parité avec la **production** `nakala.fr` reste à auditer (mêmes
+> logiciel → contrat attendu identique ; divergences plausibles côté
+> DataCite/citation, modération, droits). Chantier planifié :
+> [`backlog-nakala-api.md`](backlog-nakala-api.md) § *Audit de parité
+> apitest ↔ production*.
 
 ---
 

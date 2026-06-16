@@ -95,7 +95,12 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   metas, aligné principe n°1). **Versioning fichiers (#4) caractérisé en
   live** : Nakala versionne automatiquement (mutation de fichiers sur dépôt
   publié = +1 `.vN` ; metas en place ; versions = snapshot des fichiers) →
-  pas de chantier ColleC. Backlog Nakala soldé.
+  pas de chantier ColleC. **Reste planifié** : l'**audit de parité
+  apitest ↔ production** (tous les constats sont validés sur apitest ; à
+  confronter à `nakala.fr` réel — surtout citation/DataCite, modération,
+  droits) + la sonde V1 (strictesse du `type` de relation). Prérequis : une
+  clé d'un vrai compte Huma-Num. Cf. `backlog-nakala-api.md` § *Audit de
+  parité*.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

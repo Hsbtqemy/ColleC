@@ -369,6 +369,58 @@ pollution) :
 
 ---
 
+## Audit de parité apitest ↔ production (chantier futur) `☐` · P2
+
+**Objectif.** Tous les constats de `nakala-savoir-api.md` ont été validés
+contre **`apitest.nakala.fr`**. Vérifier s'ils valent **à l'identique** sur
+la **production** `nakala.fr`, documenter les divergences, et **documenter
+fidèlement les deux** instances.
+
+**Contrainte dure.** La prod ne se teste **pas** comme apitest : pas de
+compte public jetable, DOI réels (DataCite minté à la publication =
+**irréversible**), **interdiction de polluer**. « Tout retester » à
+l'identique est donc impossible sur prod.
+
+**Hypothèse de départ.** apitest et prod font tourner le **même logiciel**
+Nakala → le contrat d'API (formes de réponses, endpoints, validations,
+vocabulaires) est *attendu identique*. Les divergences plausibles se
+concentrent sur ce qu'apitest ne peut pas montrer.
+
+**Divergences plausibles à confirmer :**
+- **Citation / DataCite** : prod mint un vrai DOI → la citation fonctionne
+  (apitest = « not citable »). *La* différence connue.
+- **Modération** : workflow `moderated` (champs `lastModerator`…) peut-être
+  actif en prod là où apitest auto-publie.
+- **Comptes & permissions** : pas de compte public en prod ; la clé de test
+  `ROLE_MODERATOR` n'existe pas → comportements liés aux droits.
+- **Quotas / throttling** éventuels.
+
+**Méthodo — deux volets :**
+- **A — lecture seule sur prod (sûr, zéro pollution)** : sur des DOI publics
+  existants, re-vérifier formes de réponses (`GET /datas`, `/collections`,
+  `/versions`), vocabulaires (`depositTypes`, `licenses`, `languages`),
+  corps d'erreur (404/401/422), IIIF, OAI, `/search`, **citation réelle**,
+  téléchargement. Comble les trous « production-only » de la doc actuelle.
+- **B — écriture (risqué, à éviter sur prod)** : dépôt, publication,
+  relations, versioning, embargo, validation licences. Options : (a) **un
+  seul dépôt sacrificiel** sanctionné par l'institution (`pending` →
+  supprimable ; **ne pas publier** = pas de DOI réel minté) ; (b)
+  **présomption d'identité** (même code) et ne sonder que les divergences
+  crédibles.
+
+**Livrable.** Enrichir `nakala-savoir-api.md` d'une distinction
+**apitest / prod** (les constats sont déjà datés « vérifié apitest » → ajouter
+« confirmé prod » ou « diffère : … »). Réutiliser le pattern des scripts de
+sonde existants (`scripts/explorer_*_nakala.py`) avec `NAKALA_HOST=https://
+api.nakala.fr` + `NAKALA_API_KEY=<clé prod réelle>`.
+
+**Prérequis (bloquant).** Une **clé API d'un vrai compte Huma-Num** sur
+`nakala.fr` + accord pour un éventuel dépôt sacrificiel. Sans ça, seul le
+Volet A est faisable. Inclure aussi la sonde **V1** (§ À vérifier) dans cet
+audit.
+
+---
+
 ## Référence
 
 - Savoir API complet (constats, endpoints, vocabulaires) :

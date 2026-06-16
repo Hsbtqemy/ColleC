@@ -25,6 +25,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from archives_tool.external.nakala.mapper import normaliser_orcid
+
 # Espaces de noms Nakala / Dublin Core.
 _NKL = "http://nakala.fr/terms#"
 _DCT = "http://purl.org/dc/terms/"
@@ -91,7 +93,7 @@ def _fmt_valeur(meta: dict) -> str:
     if isinstance(v, dict):
         sur = (v.get("surname") or "").strip()
         giv = (v.get("givenname") or "").strip()
-        orc = v.get("orcid")
+        orc = normaliser_orcid(v.get("orcid"))  # Nakala renvoie l'URL → nu
         base = ", ".join(p for p in (sur, giv) if p) or str(v)
         return f"{base} [{orc}]" if orc else base
     if v is None:

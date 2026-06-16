@@ -521,8 +521,8 @@ def _canon_valeur(v: Any) -> Any:
         for cle in ("surname", "givenname"):
             if v.get(cle):
                 canon[cle] = v[cle]
-        if v.get("orcid"):
-            canon["orcid"] = normaliser_orcid(v["orcid"])
+        if (orcid := normaliser_orcid(v.get("orcid"))):
+            canon["orcid"] = orcid  # forme nue ; un ORCID vide après normalisation est ignoré
         return canon
     return v
 

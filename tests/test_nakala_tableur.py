@@ -58,6 +58,18 @@ def test_createur_structure_et_lang() -> None:
     assert t.lignes[0]["dcterms:title"] == "[es] Título"
 
 
+def test_createur_orcid_url_rendu_nu() -> None:
+    """L'export tableur normalise l'ORCID en forme nue (cohérent avec la
+    fiche item et le diff — Nakala le stocke en URL)."""
+    d = _donnee([
+        {"propertyUri": f"{_NKL}creator", "value": {
+            "surname": "Cortázar", "givenname": "Julio",
+            "orcid": "https://orcid.org/0000-0001-2345-6789"}},
+    ])
+    t = lignes_niveau_donnee([d])
+    assert t.lignes[0]["nkl:creator"] == "Cortázar, Julio [0000-0001-2345-6789]"
+
+
 def test_union_colonnes_ordre_prefere() -> None:
     # Deux données aux propriétés disjointes : l'union couvre les deux,
     # avec les nkl: avant les dcterms:.

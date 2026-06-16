@@ -296,10 +296,12 @@ Objet `{surname, givenname, orcid?}`. Sentinelles anonymes (`[s.n.]`,
 givenname, orcid:null, surname}`, **normalise l'ORCID en URL**
 (`0000-0001-2345-6789` → `https://orcid.org/0000-0001-2345-6789`) et
 **réordonne les créateurs** (tri par nom observé : envoyé [Somers, Cortázar]
-→ relu [Cortázar, Somers]). Une relecture diffère donc de l'envoi sur trois
-axes → cf. §8 / §13 (canonicalisation `diff_push`). La réordonnancement est
-sans effet sur `diff_push` (comparaison multiset, ordre-insensible) ; c'est
-la normalisation ORCID qui causait un faux diff (corrigée).
+→ relu [Cortázar, Somers]). La réponse **brute** diffère donc de l'envoi sur
+ces trois axes. Côté ColleC, le mapper neutralise deux des trois : il ignore
+l'enrichissement et **ramène l'ORCID à la forme nue** (`normaliser_orcid`,
+partagé par la lecture ET `diff_push`). Reste l'**ordre**, perdu côté Nakala
+— inoffensif au push (`diff_push` multiset) mais visible à la lecture. Donc
+le **round-trip ColleC est fidèle sauf l'ordre des créateurs**. Cf. §13/§16.
 
 ### Fichier (dans une réponse `GET /datas`)
 

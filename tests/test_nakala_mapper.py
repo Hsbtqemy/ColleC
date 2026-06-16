@@ -110,10 +110,12 @@ def test_mapper_fichier_description_par_fichier() -> None:
     `FichierNakala.description` ; absente → None."""
     d = mapper_depot({"identifier": "10.34847/nkl.x", "files": [
         {"name": "p1.jpg", "sha1": "aaa", "description": "Recto, page de titre."},
-        {"name": "p2.jpg", "sha1": "bbb"},  # pas de description
+        {"name": "p2.jpg", "sha1": "bbb"},  # clé absente
+        {"name": "p3.jpg", "sha1": "ccc", "description": ""},  # vide → None (or None)
     ]})
     assert d.fichiers[0].description == "Recto, page de titre."
     assert d.fichiers[1].description is None
+    assert d.fichiers[2].description is None
 
 
 def test_mapper_depot_minimal_ne_plante_pas() -> None:

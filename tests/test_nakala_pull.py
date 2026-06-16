@@ -298,18 +298,41 @@ def test_materialiser_capture_description_par_fichier(
     ))
     brut = {"identifier": "10.34847/nkl.descX", "files": [
         {"name": "p1.jpg", "sha1": "a" * 40, "description": "Recto, titre."},
-        {"name": "p2.jpg", "sha1": "b" * 40},  # pas de description
+        {"name": "p2.jpg", "sha1": "b" * 40},  # clé absente → None
+        {"name": "p3.jpg", "sha1": "c" * 40, "description": ""},  # vide → None
     ]}
     n = materialiser_fichiers_nakala(
         session, item, brut, base_url="https://apitest.nakala.fr",
     )
     session.commit()
-    assert n == 2
+    session.expire_all()  # force une relecture SQL (persistance, pas l'identity map)
+    assert n == 3
     fichiers = session.scalars(
         select(Fichier).where(Fichier.item_id == item.id).order_by(Fichier.ordre)
     ).all()
     assert fichiers[0].description_externe == "Recto, titre."
     assert fichiers[1].description_externe is None
+    assert fichiers[2].description_externe is None  # "" coercé en None (or None)
+
+
+def test_fichier_description_externe_defaut_none(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Contrat de colonne : un Fichier créé sans description_externe vaut
+    None (pas de default '' qui casserait la garde `if description_externe`)."""
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.models import Fichier
+
+    item = creer_item(session, FormulaireItem(
+        cote="PF-DEF", titre="x", fonds_id=fonds_hk.id,
+    ))
+    f = Fichier(item_id=item.id, nom_fichier="a.jpg", racine="scans",
+                chemin_relatif="a.jpg", ordre=1)
+    session.add(f)
+    session.commit()
+    session.expire_all()
+    relu = session.scalar(select(Fichier).where(Fichier.item_id == item.id))
+    assert relu.description_externe is None
 
 
 def test_rapatrier_cote_explicite(session: Session, fonds_hk: Fonds) -> None:

@@ -25,8 +25,15 @@ Les hypothèses Nakala validées contre apitest (script
 - **H10** : ``lire_depot`` immédiat post-PUT reflète les changements
   (pas d'eventual consistency à gérer).
 - **H11** : champ ``description`` par fichier accepté et préservé.
-  **Pas exposé en MVP** (ColleC n'a pas encore `Fichier.description_externe`),
-  à intégrer en V2+ (cf. CLAUDE.md *Questions ouvertes*).
+  **Fondation S7 livrée** : `Fichier.description_externe` capture la
+  description au pull (``materialiser_fichiers_nakala``). ⚠️ **Le push ne
+  porte PAS encore la description** : ``_reordonner_files`` n'émet que
+  ``{sha1, name}``. Tant que l'intégration push S7 n'est pas faite,
+  **ne pas présumer** que la description survit à un push — c'est
+  justement la sonde live en attente : *omettre ``description`` dans un
+  ``PUT files[]`` efface-t-il la description distante ?* (H2A suggère que
+  les clés omises sont préservées, mais non vérifié au niveau ``files[i]``).
+  Voir ticket S7 (`backlog-nakala-api.md`) avant d'implémenter le push.
 """
 
 from __future__ import annotations
@@ -829,6 +836,13 @@ def _reordonner_files(
         else:
             annotes.append((_FIN, i, sha1, f.get("name")))
     annotes.sort(key=lambda t: (t[0], t[1]))
+    # ⚠️ S7 (transcription par fichier) : on n'émet que {sha1, name}. La
+    # `description` par fichier (Fichier.description_externe) n'est PAS
+    # renvoyée — donc si Nakala efface une clé `files[i]` omise au PUT (non
+    # vérifié, sonde live en attente, cf. ticket S7), un push effacerait les
+    # transcriptions distantes. À résoudre AVANT l'intégration push S7 :
+    # sonder omit-vs-wipe, puis (si wipe) porter ici `description` depuis
+    # description_externe pour chaque fichier.
     return [{"sha1": s, "name": n} for _, _, s, n in annotes]
 
 

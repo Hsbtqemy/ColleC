@@ -352,7 +352,10 @@ def test_montrer_fichier_description_externe(tmp_path: Path) -> None:
     text = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
                                "--db-path", str(db)])
     assert text.exit_code == 0, text.output
-    assert "Transcription" in text.output and "page de titre, 1969" in text.output
+    # Pince la VALEUR, pas le label : « Transcription » apparaît aussi dans
+    # l'intitulé de la ligne, donc ne prouverait rien seul. « page de titre »
+    # est propre à la valeur seedée. (L'assertion JSON ci-dessous est exacte.)
+    assert "page de titre" in text.output
 
     js = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
                              "--format", "json", "--db-path", str(db)])

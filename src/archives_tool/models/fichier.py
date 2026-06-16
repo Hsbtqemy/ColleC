@@ -85,9 +85,11 @@ class Fichier(Base):
     derive_genere: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes_techniques: Mapped[str | None] = mapped_column(Text)
     #: Transcription / description **publique** du fichier (S7), destinée à
-    #: accompagner le scan côté Nakala (champ `description` par fichier —
-    #: round-trip validé : sondes H11 + périmètre 2026-06-15) et à
-    #: l'indexation textuelle future. Texte libre : Nakala n'accepte AUCUNE
+    #: accompagner le scan côté Nakala (champ `description` par fichier) et à
+    #: l'indexation textuelle future. Round-trip **API** validé (sondes H11 +
+    #: périmètre 2026-06-15) ; côté ColleC, **capture au pull faite**, **push
+    #: à venir** (intégration S7 différée, cf. backlog). Texte libre : Nakala
+    #: n'accepte AUCUNE
     #: métadonnée structurée par fichier au-delà de `description` +
     #: `embargoed` (cf. nakala-savoir-api §4). **Distinct** de
     #: `notes_techniques` (interne, jamais exporté) et de `Item.description`

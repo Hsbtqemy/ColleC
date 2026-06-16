@@ -162,30 +162,41 @@ def test_liseuse_affiche_transcription_lecture_seule(base: Path) -> None:
     fid = _fid(base, "AS-001", "p1.jpg")  # position 1 = scan courant par défaut
     _set_description(base, fid, "Transcription liseuse ABC")
 
+    fid_attr = f'data-transcription-lecture="{fid}"'
     r = TestClient(app).get("/lire/AS/AS-001")
     assert r.status_code == 200
-    assert "Transcription du scan" in r.text
-    assert "Transcription liseuse ABC" in r.text
-    # Lecture seule : aucune surface d'édition de transcription dans la liseuse.
+    assert fid_attr in r.text                       # le panneau lecture seule
+    assert "Transcription liseuse ABC" in r.text     # la valeur
+    # Auto-ouvert pour une image (p1.jpg) : `open` DANS la balise <details> du
+    # panneau (sinon la transcription serait repliée, invisible sans clic).
+    i = r.text.index(fid_attr)
+    balise_ouvrante = r.text[i:r.text.index(">", i)]
+    assert "open" in balise_ouvrante
+    # Lecture seule : aucune surface d'édition (textarea du panneau éditable du
+    # viewer de catalogage). Marqueur robuste, pas un substring d'URL.
     assert 'name="texte"' not in r.text
-    assert "/transcription" not in r.text
 
 
 def test_liseuse_partial_swap_inclut_la_transcription(base: Path) -> None:
     """Le partial de swap HTMX (navigation page) porte la transcription du
-    NOUVEAU scan → reste synchronisée pendant la navigation (sinon la colonne
-    méta gauche, non swappée, afficherait une transcription périmée)."""
+    NOUVEAU scan DANS la zone principale (`#zone-visionneuse`, innerHTML) — pas
+    dans un bloc OOB ni la colonne méta gauche (non swappée) qui se
+    désynchroniseraient."""
     fid2 = _fid(base, "AS-001", "p2.jpg")
     _set_description(base, fid2, "Transcription du scan 2 XYZ")
 
     r = TestClient(app).get(f"/lire/AS/AS-001/visionneuse/{fid2}")
     assert r.status_code == 200
-    assert "Transcription du scan 2 XYZ" in r.text  # voyage avec le swap
+    assert "Transcription du scan 2 XYZ" in r.text
+    # Le partial rend les blocs OOB (hx-swap-oob) PUIS le contenu principal
+    # (dispatcher). La transcription doit tomber APRÈS le dernier OOB → dans la
+    # zone swappée principale, donc en phase avec le scan à chaque navigation.
+    assert r.text.index("Transcription du scan 2 XYZ") > r.text.rfind("hx-swap-oob")
 
 
 def test_liseuse_pas_de_panneau_si_aucune_transcription(base: Path) -> None:
     """Sans transcription, le panneau ne s'affiche pas (auto-masquage, comme
-    le panneau annotations)."""
+    le panneau annotations). Marqueur `data-` robuste vs un libellé partagé."""
     r = TestClient(app).get("/lire/AS/AS-001")
     assert r.status_code == 200
-    assert "Transcription du scan" not in r.text
+    assert "data-transcription-lecture" not in r.text

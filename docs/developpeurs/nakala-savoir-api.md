@@ -510,7 +510,11 @@ zéro pollution) :
   relations to other data published in NAKALA ».
 - structure : `{type, repository, target, comment?}` (ex. `type="IsPartOf"`,
   `repository="nakala"`, `target="10.34847/nkl.…"`). En lecture s'ajoutent
-  `date`, `uri`, `isInferred`.
+  `date`, `uri`, `isInferred`. `type` = vocabulaire DataCite relationType
+  (CamelCase) ; `IsPartOf`/`Cites` vérifiés, pas d'endpoint
+  `/vocabularies/relationTypes`. ⚠️ **Strictesse du `type` non confirmée**
+  (un type invalide est-il rejeté ?) — sonde en attente, cf.
+  [`backlog-nakala-api.md`](backlog-nakala-api.md) § *À vérifier* (V1).
 - **cible Nakala : existence VALIDÉE** — `target` doit être un DOI Nakala
   **publié existant** (source publiée → cible publiée → 200) ; un DOI Nakala
   **inexistant → 422** (« The identifier … »). **Pas de référence en avant

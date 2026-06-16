@@ -312,7 +312,8 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   Fonds/Collection passe déjà par `collectionsIds` (OK dès le dépôt) ; les
   relations donnée↔donnée ne seraient utiles que pour des liens sémantiques
   (numéro `IsPartOf` périodique, version, citation) — feature V2+ si besoin
-  réel. Cf. savoir-api §6.
+  réel. Cf. savoir-api §6. ⚠️ **Point à vérifier** : le `type` est-il validé
+  contre un vocabulaire strict ? (cf. § À vérifier ci-dessous).
 
 ---
 
@@ -347,6 +348,24 @@ réordonnancement) sur un dépôt publié → le garde-fou `DepotPublie` (défau
 **Améliorations possibles si besoin réel** (non prioritaires) : exposer
 l'historique `/versions` en lecture sur la fiche item ; basculer le chemin
 `--force-published` sur un `PUT files[]` unique (1 version au lieu de N).
+
+---
+
+## À vérifier (sondes en attente)
+
+Sondes apitest pas encore faites — à compléter quand l'occasion se présente
+(toutes faisables sur les dépôts publiés déjà sacrifiés, sans nouvelle
+pollution) :
+
+- **V1 — Vocabulaire des `type` de relation (S8)** : `IsPartOf` et `Cites`
+  sont acceptés, et il n'y a **pas** d'endpoint `/vocabularies/relationTypes`
+  (404). **À déterminer** : un `type` arbitraire/invalide (ex.
+  `"NOTAREALTYPE"`, ou une casse différente comme `ispartof`) est-il **rejeté
+  (422, vocabulaire strict DataCite)** ou **accepté tel quel** ? Sonde prête
+  (POST `/datas/{S}/relations` sur la source publiée `1eb87r1j` → cible
+  publiée `d5dduly8`) ; **tentée le 2026-06-16 mais apitest était injoignable**
+  (ConnectTimeout). Impact : savoir si ColleC devrait valider/normaliser le
+  `type` avant envoi.
 
 ---
 

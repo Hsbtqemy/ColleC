@@ -339,6 +339,9 @@ def materialiser_fichiers_nakala(
                 sha1_nakala=sha1,
                 taille_octets=taille_octets,
                 format=(f.get("extension") or None),
+                # S7 — transcription/description publique du scan (round-trip
+                # Nakala). `None` si le fichier distant n'en porte pas.
+                description_externe=(f.get("description") or None),
                 metadonnees=meta_fichier or None,
                 ajoute_par=ajoute_par,
             )

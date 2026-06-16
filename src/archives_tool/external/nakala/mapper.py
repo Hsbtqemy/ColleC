@@ -51,6 +51,8 @@ class FichierNakala:
     taille: int | None
     mime: str | None
     embargo_actif: bool
+    #: Transcription/description publique par fichier (S7). `None` si absente.
+    description: str | None = None
 
 
 @dataclass
@@ -262,6 +264,7 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
             # les deux pour rester robuste aux variantes / fixtures.
             mime=f.get("mime_type") or f.get("mime"),
             embargo_actif=_embargo_actif(f.get("embargoed")),
+            description=f.get("description") or None,
         )
         for f in (depot.get("files") or [])
     ]

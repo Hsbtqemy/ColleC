@@ -284,6 +284,34 @@ def test_rapatrier_match_doi_normalise_des_deux_cotes(
     assert session.get(ItemCollection, (r.item_id, col_id)) is not None
 
 
+def test_materialiser_capture_description_par_fichier(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """S7 : au pull, la `description` d'un fichier Nakala (transcription) est
+    rangée dans `Fichier.description_externe` ; absente → None."""
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.api.services.nakala import materialiser_fichiers_nakala
+    from archives_tool.models import Fichier
+
+    item = creer_item(session, FormulaireItem(
+        cote="PF-DESC", titre="x", fonds_id=fonds_hk.id,
+    ))
+    brut = {"identifier": "10.34847/nkl.descX", "files": [
+        {"name": "p1.jpg", "sha1": "a" * 40, "description": "Recto, titre."},
+        {"name": "p2.jpg", "sha1": "b" * 40},  # pas de description
+    ]}
+    n = materialiser_fichiers_nakala(
+        session, item, brut, base_url="https://apitest.nakala.fr",
+    )
+    session.commit()
+    assert n == 2
+    fichiers = session.scalars(
+        select(Fichier).where(Fichier.item_id == item.id).order_by(Fichier.ordre)
+    ).all()
+    assert fichiers[0].description_externe == "Recto, titre."
+    assert fichiers[1].description_externe is None
+
+
 def test_rapatrier_cote_explicite(session: Session, fonds_hk: Fonds) -> None:
     r = rapatrier(session, _depot(), {}, fonds_id=fonds_hk.id, cote="PF-001")
     assert r.cote == "PF-001"

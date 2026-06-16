@@ -619,6 +619,8 @@ def rendu_text_fichier_detail(
     tech.add_row("Dérivés générés", "oui" if fichier.derive_genere else "non")
     if fichier.notes_techniques:
         tech.add_row("Notes techniques", fichier.notes_techniques)
+    if fichier.description_externe:
+        tech.add_row("Transcription (description publique)", fichier.description_externe)
     console.print(tech)
 
     if fichier.operations:
@@ -683,6 +685,7 @@ def rendu_json_fichier_detail(fichier: Fichier) -> str:
                     "hash_sha256": fichier.hash_sha256,
                     "etat": fichier.etat,
                     "notes_techniques": fichier.notes_techniques,
+                    "description_externe": fichier.description_externe,
                 },
                 "tracabilite": {
                     "ajoute_le": fichier.ajoute_le.isoformat()

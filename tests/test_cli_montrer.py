@@ -338,6 +338,30 @@ def test_montrer_fichier_detail(tmp_path: Path) -> None:
     assert "Hara-Kiri" in result.output  # contexte fonds
 
 
+def test_montrer_fichier_description_externe(tmp_path: Path) -> None:
+    """S7 : la transcription (`description_externe`) est surfacée en text et
+    en JSON par `montrer fichier`."""
+    db = _base_demo_petite(tmp_path)
+    factory = creer_session_factory(creer_engine(db))
+    with factory() as s:
+        fichier = s.scalar(sa_select(Fichier).order_by(Fichier.id).limit(1))
+        fichier.description_externe = "Transcription : page de titre, 1969."
+        s.commit()
+        fichier_id = fichier.id
+
+    text = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
+                               "--db-path", str(db)])
+    assert text.exit_code == 0, text.output
+    assert "Transcription" in text.output and "page de titre, 1969" in text.output
+
+    js = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
+                             "--format", "json", "--db-path", str(db)])
+    data = json.loads(js.output)
+    assert data["fichier"]["technique"]["description_externe"] == (
+        "Transcription : page de titre, 1969."
+    )
+
+
 def test_montrer_fichier_inexistant(tmp_path: Path) -> None:
     db = _base_demo_petite(tmp_path)
     result = runner.invoke(

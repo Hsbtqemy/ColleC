@@ -292,15 +292,23 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   `licences_spdx()` (déjà vendorisé) pour échouer tôt avec un message clair
   au lieu d'un 422 distant. Non prioritaire (le défaut `CC-BY-4.0` est valide).
 - **S7 — Transcription par fichier (`Fichier.description_externe`)** —
-  **viabilité confirmée** (sonde 2026-06-15) : le champ `description` par
-  fichier round-trip à l'identique (unicode compris), et peut être **ajouté
-  APRÈS dépôt sans re-upload** (`PUT /datas {files:[{même sha1, +description}]}`)
-  → workflow naturel « déposer les scans, transcrire plus tard ». Feature
-  V2+ : colonne ORM + UI d'édition par scan + intégration au `files[]` du
-  push fichiers. ⚠️ Limite Nakala : **aucune métadonnée structurée par
-  fichier** (les champs extra / `metas[]` par fichier sont droppés) — seul du
-  texte libre `description` (+ `embargoed`) round-trippe. Cf. CLAUDE.md
-  *Questions ouvertes* (H11) et savoir-api §4.
+  **fondation LIVRÉE** (2026-06-16, offline) ; finition différée. Livré :
+  colonne ORM `Fichier.description_externe` (TEXT) + migration `u9y0z1a2b3c4` ;
+  **capture au pull** (`materialiser_fichiers_nakala` + `FichierNakala.description`
+  lisent le `description` distant) ; **surfaçage lecture** `montrer fichier`
+  (text + JSON). Tests mockés (modèle, pull, mapper, CLI). **Différé** :
+  (a) **UI d'édition web** par scan — décision UX de placement à trancher
+  (liseuse à côté du scan ? panneau item ?) ; (b) **intégration push**
+  (`deposer_item` + `pousser_fichiers_item` portent `description` ; détection
+  d'un diff description-seule au comparer pour déclencher le push) — **bloqué
+  sur une sonde live** : *omettre `description` dans un `PUT files[]` efface-t-il
+  la description distante ?* (détermine s'il faut toujours renvoyer la
+  description). **Viabilité confirmée** (sonde 2026-06-15) : round-trip à
+  l'identique (unicode compris), ajout **APRÈS dépôt sans re-upload**
+  (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala : **aucune
+  métadonnée structurée par fichier** (champs extra / `metas[]` par fichier
+  droppés) — seul `description` (texte) + `embargoed` round-trippe. Cf.
+  CLAUDE.md *Questions ouvertes* (H11) et savoir-api §4.
 - **S8 — Relations donnée↔donnée (`relations[]`)** — **caractérisé, non
   trivial** (sonde 2026-06-15). Une relation (`{type, repository, target}`,
   ex. `IsPartOf`) exige que la **source soit publiée** ET, pour une cible

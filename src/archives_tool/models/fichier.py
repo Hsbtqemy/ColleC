@@ -84,6 +84,15 @@ class Fichier(Base):
     )
     derive_genere: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes_techniques: Mapped[str | None] = mapped_column(Text)
+    #: Transcription / description **publique** du fichier (S7), destinée à
+    #: accompagner le scan côté Nakala (champ `description` par fichier —
+    #: round-trip validé : sondes H11 + périmètre 2026-06-15) et à
+    #: l'indexation textuelle future. Texte libre : Nakala n'accepte AUCUNE
+    #: métadonnée structurée par fichier au-delà de `description` +
+    #: `embargoed` (cf. nakala-savoir-api §4). **Distinct** de
+    #: `notes_techniques` (interne, jamais exporté) et de `Item.description`
+    #: (niveau donnée). `None` = pas de transcription.
+    description_externe: Mapped[str | None] = mapped_column(Text)
     # Métadonnées libres par-fichier — pendant de `Item.metadonnees`.
     # Sert aux champs propres à un scan (URLs Nakala data/embed/preview/thumb,
     # hash dupliqués, infos techniques import) qui ne rentrent pas dans

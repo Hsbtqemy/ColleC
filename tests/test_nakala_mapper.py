@@ -105,6 +105,17 @@ def test_mapper_fichiers_et_embargo() -> None:
     assert p2.embargo_actif is True  # embargo 2999 → actif
 
 
+def test_mapper_fichier_description_par_fichier() -> None:
+    """S7 : la `description` par fichier (transcription) est captée dans
+    `FichierNakala.description` ; absente → None."""
+    d = mapper_depot({"identifier": "10.34847/nkl.x", "files": [
+        {"name": "p1.jpg", "sha1": "aaa", "description": "Recto, page de titre."},
+        {"name": "p2.jpg", "sha1": "bbb"},  # pas de description
+    ]})
+    assert d.fichiers[0].description == "Recto, page de titre."
+    assert d.fichiers[1].description is None
+
+
 def test_mapper_depot_minimal_ne_plante_pas() -> None:
     d = mapper_depot({"identifier": "10.34847/nkl.vide"})
     assert d.identifiant == "10.34847/nkl.vide"

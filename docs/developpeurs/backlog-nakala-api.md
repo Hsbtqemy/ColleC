@@ -452,6 +452,53 @@ audit.
 
 ---
 
+## Rafraîchir les notices déjà importées (backfill des découvertes API) `☐` · P3
+
+**Objectif.** Les notices (fiches d'items) rapatriées de Nakala l'ont été à
+**différents moments** du chantier (P1 → P1.5 → P3+b). Le sondage live a fait
+émerger, *en cours de route*, plusieurs choses que ColleC sait désormais
+extraire ou corriger — mais les notices importées **avant** chaque découverte
+ne les reflètent pas. À un moment (après stabilisation, idéalement après
+l'audit de parité prod), il faudra repasser sur les fonds déjà importés pour
+**uniformiser** leur contenu avec l'état courant de l'extraction.
+
+**Ce qui mérite un backfill** (chaque ligne = une découverte postérieure à
+certaines importations) :
+
+- **Fichiers matérialisés** (T2.5) : items rapatriés avant T2.5 n'ont pas de
+  `Fichier` avec `iiif_url_nakala` / `sha1_nakala` → non navigables dans la
+  visionneuse.
+- **`collectionsIds`** (S3) : rattachements de collection Nakala non
+  réconciliés sur les notices antérieures à S3.
+- **Description par fichier** (S7) : `Fichier.description_externe` non
+  rétro-rempli depuis le `description` distant pour les fichiers matérialisés
+  avant S7.
+- **`sha1_nakala`** (P3+a) : la migration `s7w8x9y0z1a2` backfille depuis
+  `metadonnees["sha1"]`, mais seulement pour les fichiers déjà matérialisés —
+  les items jamais matérialisés restent à traiter.
+- **Type COAR / langue** : si des notices ont été figées avant les
+  normalisations (`c_2659` au lieu du faux `c_3e5a` — migration
+  `r6v7w8x9y0z1` ; langue ISO 639-3), vérifier qu'elles sont bien à jour.
+
+**Piège outillage.** `rafraichir` / `rafraichir-collection` re-pull les
+**métadonnées de l'item** (diff documentaire, dry-run par défaut, champs
+ColleC-only préservés) mais **ne re-synchronisent pas les fichiers** (note
+P1.5c). Donc le backfill **niveau fichier** (matérialisation T2.5, description
+S7, `sha1_nakala`) ne passe **pas** par `rafraichir` tel quel : il faut soit
+un re-`rapatrier` ciblé, soit une passe dédiée qui ré-exécute
+`materialiser_fichiers_nakala` sur les items déjà liés (sans recréer l'item).
+À spécifier avant le chantier.
+
+**Cas concret.** Le corpus de test **Por Favor** (173 items, 7454 fichiers
+Nakala-only) est le candidat naturel pour valider la passe — il a traversé
+tout le chantier P1→P3 et concentre donc le plus d'hétérogénéité d'import.
+
+**Trigger.** Après l'audit de parité prod (ci-dessus) et une fois l'extraction
+stable, lancer la passe en dry-run d'abord, fonds par fonds. Pas urgent tant
+que les notices concernées ne sont pas activement consultées/exportées.
+
+---
+
 ## Référence
 
 - Savoir API complet (constats, endpoints, vocabulaires) :

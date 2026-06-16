@@ -11,6 +11,7 @@ Précédence sur les cotes ambiguës :
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -1341,6 +1342,48 @@ def page_lire_item_visionneuse_partial(
             fichier_precedent_id=fichier_precedent_id,
             fichier_suivant_id=fichier_suivant_id,
         ),
+    )
+
+
+@router.post("/item/{cote}/fichiers/{fichier_id}/transcription")
+def item_fichier_transcription(
+    cote: str,
+    fichier_id: int,
+    fonds: str = Query(...),
+    texte: str = Form(""),
+    fichier_courant: int = Form(1),
+    db: Session = Depends(get_db),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> RedirectResponse:
+    """Enregistre la transcription (description publique) d'un scan (S7).
+
+    Surface d'édition = viewer de catalogage (`/item/<cote>/visionneuse`,
+    même page que « Annoter ») ; la liseuse l'affiche en lecture seule.
+    Vérifie l'appartenance fichier→item→fonds (anti-confused-deputy) avant
+    d'écrire. Texte vide → `None` (pas de transcription). Bloqué 423 en
+    lecture seule par le middleware (et le formulaire est masqué côté
+    template). PRG : redirige vers le viewer au même scan courant.
+    """
+    fonds_obj = _charger_fonds_ou_404(db, fonds)
+    try:
+        item = lire_item_par_cote(db, cote, fonds_id=fonds_obj.id)
+    except ItemIntrouvable as e:
+        raise HTTPException(status_code=404, detail="Item introuvable.") from e
+    fichier = db.get(Fichier, fichier_id)
+    if fichier is None or fichier.item_id != item.id:
+        raise HTTPException(
+            status_code=404, detail="Fichier introuvable dans cet item.",
+        )
+    nouvelle = texte.strip() or None
+    if nouvelle != fichier.description_externe:
+        fichier.description_externe = nouvelle
+        fichier.modifie_le = datetime.now()
+        fichier.version = (fichier.version or 1) + 1
+        db.commit()
+    return RedirectResponse(
+        f"/item/{cote}/visionneuse?fonds={fonds_obj.cote}"
+        f"&fichier_courant={max(1, fichier_courant)}",
+        status_code=303,
     )
 
 

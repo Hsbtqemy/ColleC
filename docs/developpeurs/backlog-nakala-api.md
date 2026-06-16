@@ -296,14 +296,22 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   colonne ORM `Fichier.description_externe` (TEXT) + migration `u9y0z1a2b3c4` ;
   **capture au pull** (`materialiser_fichiers_nakala` + `FichierNakala.description`
   lisent le `description` distant) ; **surfaçage lecture** `montrer fichier`
-  (text + JSON). Tests mockés (modèle, pull, mapper, CLI). **Différé** :
-  (a) **UI d'édition web** par scan — décision UX de placement à trancher
-  (liseuse à côté du scan ? panneau item ?) ; (b) **intégration push**
+  (text + JSON). Tests mockés (modèle, pull, mapper, CLI).
+  **UI d'édition LIVRÉE** (2026-06-16) — **décision UX tranchée : pattern
+  annotations** (édition sur le viewer de catalogage, lecture seule dans la
+  liseuse ; le code montre que la liseuse rend déjà les annotations en lecture
+  seule, l'édition vit sur `/item/<cote>/visionneuse`). Livré : route
+  `POST /item/<cote>/fichiers/<id>/transcription` (anti-confused-deputy, vide →
+  None, garde lecture-seule 423) + `FichierResume.description_externe` + panneau
+  flottant `<details>` éditable (form PRG, sans JS) sur le viewer catalogage.
+  5 tests. **Différé** : (a) **affichage lecture seule dans la liseuse** —
+  doit rester en phase pendant les swaps HTMX (cible OOB ou param dispatcher),
+  à vérifier en navigateur ; (b) **intégration push**
   (`deposer_item` + `pousser_fichiers_item` portent `description` ; détection
   d'un diff description-seule au comparer pour déclencher le push) — **bloqué
   sur une sonde live** : *omettre `description` dans un `PUT files[]` efface-t-il
   la description distante ?* (détermine s'il faut toujours renvoyer la
-  description). **Viabilité confirmée** (sonde 2026-06-15) : round-trip à
+  description ; danger déjà signalé en code à `_reordonner_files`). **Viabilité confirmée** (sonde 2026-06-15) : round-trip à
   l'identique (unicode compris), ajout **APRÈS dépôt sans re-upload**
   (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala : **aucune
   métadonnée structurée par fichier** (champs extra / `metas[]` par fichier

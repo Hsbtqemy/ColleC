@@ -2209,6 +2209,9 @@ class FichierResume:
     #: dès qu'on a un fichier disque (la route locale sert le binaire
     #: depuis la racine configurée).
     url_telechargement_externe: str | None = None
+    #: Transcription / description publique du scan (S7). Éditée sur le
+    #: viewer de catalogage, affichée en lecture seule dans la liseuse.
+    description_externe: str | None = None
 
     @property
     def dimensions(self) -> str | None:
@@ -2434,6 +2437,7 @@ def _resume_fichier(f: Fichier) -> FichierResume:
         format=f.format,
         source_image=resoudre_source_image(f),
         url_telechargement_externe=_url_telechargement_externe(f),
+        description_externe=f.description_externe,
     )
 
 

@@ -81,8 +81,10 @@ def test_post_transcription_vide_donne_none(base: Path) -> None:
     client.post(f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
                 data={"texte": "x", "fichier_courant": "1"}, follow_redirects=False)
     # Espaces seuls → strip → None (pas de transcription vide stockée).
-    client.post(f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
-                data={"texte": "   ", "fichier_courant": "1"}, follow_redirects=False)
+    r2 = client.post(f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
+                     data={"texte": "   ", "fichier_courant": "1"}, follow_redirects=False)
+    # 303 : le None vient bien du strip d'une requête ACCEPTÉE (pas d'un rejet).
+    assert r2.status_code == 303
     assert _description(base, fid) is None
 
 
@@ -111,8 +113,9 @@ def test_viewer_catalogage_affiche_panneau_transcription(base: Path) -> None:
     r = TestClient(app).get("/item/AS-001/visionneuse?fonds=AS&fichier_courant=1")
     assert r.status_code == 200
     assert "Transcription du scan" in r.text          # libellé du panneau
-    assert "Transcription test ZQX" in r.text          # valeur (dans la textarea)
+    assert "Transcription test ZQX" in r.text          # valeur pré-remplie
     assert f"/fichiers/{fid}/transcription" in r.text  # action du form
+    assert 'name="texte"' in r.text  # surface ÉDITABLE (textarea), pas un simple affichage
 
 
 def test_post_transcription_bloque_en_lecture_seule(

@@ -100,16 +100,19 @@
        (tentait IIIF + open-failed). Maintenant le PDF s'affiche
        vraiment via PDF.js sur cette page aussi. #}
     {{ visionneuse_consultation(f_courant, item.cote, fonds_cote) }}
+    {% set _EXTENSIONS_IMAGE = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] %}
     {# S7 — Transcription du scan courant. Surface d'ÉDITION (catalogage) ;
        la liseuse l'affiche en lecture seule (pattern annotations). Panneau
        flottant `<details>` (collapsible natif, sans JS) en bas-GAUCHE :
        n'interfère pas avec les contrôles OSD (haut-gauche), le bouton
-       Annoter ni le panneau annotations (haut/bas-droite). Ouvert d'office
-       s'il y a déjà une transcription, replié sinon (ne masque pas le scan).
-       PRG : le form poste puis revient au même scan (`fichier_courant`). #}
+       Annoter ni le panneau annotations (haut/bas-droite). Auto-ouvert
+       seulement pour les IMAGES (overlay tolérable) ; pour un PDF/vidéo le
+       panneau reste REPLIÉ par défaut afin de ne pas masquer ni intercepter
+       le scroll du viewer (PDF.js plein cadre). PRG : poste puis revient au
+       même scan (`fichier_courant`). Hauteur plafonnée (contenu scrollable). #}
     {% if f_courant %}
     <details data-transcription-scan="{{ f_courant.id }}"
-             {% if f_courant.description_externe %}open{% endif %}
+             {% if f_courant.description_externe and f_courant.extension in _EXTENSIONS_IMAGE %}open{% endif %}
              style="position:absolute;bottom:8px;left:8px;z-index:9;width:320px;max-width:calc(100% - 16px);
                     background:rgba(255,255,255,0.95);backdrop-filter:blur(6px);
                     border:1px solid rgba(0,0,0,0.14);border-radius:6px;font-size:12px;color:#374151;">
@@ -118,7 +121,7 @@
         Transcription du scan
         {%- if f_courant.description_externe %} <span style="color:#16a34a;">●</span>{% endif %}
       </summary>
-      <div style="padding:0 10px 10px;">
+      <div style="padding:0 10px 10px;max-height:38vh;overflow:auto;">
         {% if est_lecture_seule() %}
           <div style="white-space:pre-wrap;color:#374151;">{{ f_courant.description_externe or '— aucune transcription —' }}</div>
         {% else %}
@@ -146,8 +149,8 @@
        courant est OSD (extension image). Pour un PDF, Annotorious
        n'a rien à annoter et le bouton serait trompeur. Position :
        coin haut-DROITE car OSD met ses contrôles natifs (zoom, home,
-       full page, rotation) en haut-gauche. Masqué en lecture seule. #}
-    {% set _EXTENSIONS_IMAGE = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] %}
+       full page, rotation) en haut-gauche. Masqué en lecture seule.
+       (`_EXTENSIONS_IMAGE` est défini plus haut, près du panneau S7.) #}
     {% if f_courant and f_courant.extension in _EXTENSIONS_IMAGE %}
     {# Bouton Annoter en haut-droite, sous les contrôles OSD natifs
        (qui sont en haut-gauche). Masqué en lecture seule mais on

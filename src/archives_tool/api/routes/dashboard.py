@@ -1353,7 +1353,6 @@ def item_fichier_transcription(
     texte: str = Form(""),
     fichier_courant: int = Form(1),
     db: Session = Depends(get_db),
-    utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
     """Enregistre la transcription (description publique) d'un scan (S7).
 
@@ -1363,6 +1362,11 @@ def item_fichier_transcription(
     d'écrire. Texte vide → `None` (pas de transcription). Bloqué 423 en
     lecture seule par le middleware (et le formulaire est masqué côté
     template). PRG : redirige vers le viewer au même scan courant.
+
+    Pas d'auteur enregistré : `Fichier` n'a pas de `modifie_par` (≠ Item/
+    Collection/Fonds). Le bump `version` suit le pattern du module Nakala
+    (`pousser_fichiers_item`) — sans verrou optimiste actif sur `Fichier`
+    (dette projet documentée), c'est last-write-wins en concurrence.
     """
     fonds_obj = _charger_fonds_ou_404(db, fonds)
     try:
@@ -1380,8 +1384,9 @@ def item_fichier_transcription(
         fichier.modifie_le = datetime.now()
         fichier.version = (fichier.version or 1) + 1
         db.commit()
+    # Redirige avec la cote canonique (item.cote), pas le param de chemin brut.
     return RedirectResponse(
-        f"/item/{cote}/visionneuse?fonds={fonds_obj.cote}"
+        f"/item/{item.cote}/visionneuse?fonds={fonds_obj.cote}"
         f"&fichier_courant={max(1, fichier_courant)}",
         status_code=303,
     )

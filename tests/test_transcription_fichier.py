@@ -2,9 +2,11 @@
 
 Surface d'**édition** = viewer de catalogage (`/item/<cote>/visionneuse`,
 même page que « Annoter »). Route `POST /item/<cote>/fichiers/<id>/transcription`.
-La liseuse l'affichera en lecture seule (différé). httpx via TestClient,
-base SQLite isolée par test (pas la demo module-scoped → pas de contamination
-puisque ces tests MUTENT).
+La **liseuse l'affiche en lecture seule** (rendu dans le dispatcher
+`visionneuse_consultation` → voyage avec le swap HTMX, contrairement à la
+colonne méta gauche non swappée). httpx via TestClient, base SQLite isolée
+par test (pas la demo module-scoped → pas de contamination puisque ces tests
+MUTENT).
 """
 
 from __future__ import annotations
@@ -60,6 +62,14 @@ def _description(db: Path, fid: int) -> str | None:
         val = s.get(Fichier, fid).description_externe
     eng.dispose()
     return val
+
+
+def _set_description(db: Path, fid: int, texte: str | None) -> None:
+    eng = creer_engine(db)
+    with creer_session_factory(eng)() as s:
+        s.get(Fichier, fid).description_externe = texte
+        s.commit()
+    eng.dispose()
 
 
 def test_post_transcription_enregistre_et_redirige(base: Path) -> None:
@@ -139,3 +149,43 @@ def test_post_transcription_bloque_en_lecture_seule(
     )
     assert r.status_code == 423
     assert _description(base, fid) is None  # rien écrit
+
+
+# ---------------------------------------------------------------------------
+# Liseuse (consultation) — affichage LECTURE SEULE, synchronisé aux swaps HTMX
+# ---------------------------------------------------------------------------
+
+
+def test_liseuse_affiche_transcription_lecture_seule(base: Path) -> None:
+    """La liseuse affiche la transcription du scan courant, en LECTURE SEULE
+    (pas de form/textarea — l'édition vit sur le viewer de catalogage)."""
+    fid = _fid(base, "AS-001", "p1.jpg")  # position 1 = scan courant par défaut
+    _set_description(base, fid, "Transcription liseuse ABC")
+
+    r = TestClient(app).get("/lire/AS/AS-001")
+    assert r.status_code == 200
+    assert "Transcription du scan" in r.text
+    assert "Transcription liseuse ABC" in r.text
+    # Lecture seule : aucune surface d'édition de transcription dans la liseuse.
+    assert 'name="texte"' not in r.text
+    assert "/transcription" not in r.text
+
+
+def test_liseuse_partial_swap_inclut_la_transcription(base: Path) -> None:
+    """Le partial de swap HTMX (navigation page) porte la transcription du
+    NOUVEAU scan → reste synchronisée pendant la navigation (sinon la colonne
+    méta gauche, non swappée, afficherait une transcription périmée)."""
+    fid2 = _fid(base, "AS-001", "p2.jpg")
+    _set_description(base, fid2, "Transcription du scan 2 XYZ")
+
+    r = TestClient(app).get(f"/lire/AS/AS-001/visionneuse/{fid2}")
+    assert r.status_code == 200
+    assert "Transcription du scan 2 XYZ" in r.text  # voyage avec le swap
+
+
+def test_liseuse_pas_de_panneau_si_aucune_transcription(base: Path) -> None:
+    """Sans transcription, le panneau ne s'affiche pas (auto-masquage, comme
+    le panneau annotations)."""
+    r = TestClient(app).get("/lire/AS/AS-001")
+    assert r.status_code == 200
+    assert "Transcription du scan" not in r.text

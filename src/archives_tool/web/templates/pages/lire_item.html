@@ -71,8 +71,10 @@
      L'attribut data sur le wrapper OSD signale à `annotations_osd.js`
      qu'il doit greffer Annotorious sans handlers create/update/delete. #}
   <div id="zone-visionneuse"
-       style="flex:1;min-width:0;height:100%;">
-    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote, annotations_lecture_seule=True) }}
+       style="flex:1;min-width:0;height:100%;position:relative;">
+    {{ visionneuse_consultation(f_courant, item.cote, fonds_cote,
+                                annotations_lecture_seule=True,
+                                transcription_lecture=True) }}
   </div>
 
   {# Droite : vignettes en colonne fixe. Variante simple (pas le

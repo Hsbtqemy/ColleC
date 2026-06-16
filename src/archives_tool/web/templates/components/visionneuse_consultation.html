@@ -30,7 +30,7 @@
 
 {%- set _EXTENSIONS_OSD = ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'bmp', 'jp2', 'svg'] -%}
 
-{% macro visionneuse_consultation(fichier, cote, fonds_cote, annotations_lecture_seule=False) -%}
+{% macro visionneuse_consultation(fichier, cote, fonds_cote, annotations_lecture_seule=False, transcription_lecture=False) -%}
 {%- if not fichier %}
   <div class="flex items-center justify-center h-full bg-gray-50 rounded-lg"
        style="border:1px solid rgba(0,0,0,0.08);">
@@ -66,5 +66,26 @@
       Télécharger {{ fichier.nom_fichier }}
     </a>
   </div>
+{%- endif %}
+{#- S7 — Transcription en LECTURE SEULE (liseuse de consultation). Rendue
+    DANS le dispatcher pour voyager avec le swap HTMX `#zone-visionneuse`
+    (innerHTML) — la colonne méta gauche n'est pas swappée, elle serait
+    désynchronisée à chaque page. Pattern annotations : la liseuse affiche,
+    n'édite pas (édition sur le viewer de catalogage). N'apparaît que s'il y
+    a une transcription (comme le panneau annotations s'auto-masque). Flottant
+    bas-gauche, auto-ouvert pour les images, replié pour les non-images
+    (n'obstrue pas le scroll PDF.js). Nécessite un conteneur `position:relative`
+    (posé par la liseuse sur `#zone-visionneuse`). #}
+{%- if transcription_lecture and fichier and fichier.description_externe %}
+<details {% if fichier.extension in _EXTENSIONS_OSD %}open{% endif %}
+         style="position:absolute;bottom:8px;left:8px;z-index:9;width:300px;max-width:calc(100% - 16px);
+                background:rgba(255,255,255,0.95);backdrop-filter:blur(6px);
+                border:1px solid rgba(0,0,0,0.14);border-radius:6px;font-size:12px;color:#374151;">
+  <summary style="padding:6px 10px;cursor:pointer;list-style:none;font-size:11px;font-weight:600;
+                  letter-spacing:.02em;text-transform:uppercase;color:#6b7280;">
+    Transcription du scan
+  </summary>
+  <div style="padding:0 10px 10px;max-height:38vh;overflow:auto;white-space:pre-wrap;">{{ fichier.description_externe }}</div>
+</details>
 {%- endif %}
 {%- endmacro %}

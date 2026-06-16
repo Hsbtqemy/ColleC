@@ -304,9 +304,14 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   `POST /item/<cote>/fichiers/<id>/transcription` (anti-confused-deputy, vide →
   None, garde lecture-seule 423) + `FichierResume.description_externe` + panneau
   flottant `<details>` éditable (form PRG, sans JS) sur le viewer catalogage.
-  5 tests. **Différé** : (a) **affichage lecture seule dans la liseuse** —
-  doit rester en phase pendant les swaps HTMX (cible OOB ou param dispatcher),
-  à vérifier en navigateur ; (b) **intégration push**
+  **Affichage lecture seule dans la liseuse LIVRÉ** : rendu dans le dispatcher
+  `visionneuse_consultation` (param `transcription_lecture`) → voyage avec le
+  swap HTMX `#zone-visionneuse` (la colonne méta gauche n'est pas swappée) ;
+  panneau `<details>` lecture seule, auto-masqué si pas de transcription,
+  replié pour les non-images. 8 tests (édition + liseuse + partial swap).
+  ⚠️ à confirmer en navigateur : non-chevauchement des panneaux
+  transcription/annotations sur viewport étroit. **Différé** : **intégration
+  push**
   (`deposer_item` + `pousser_fichiers_item` portent `description` ; détection
   d'un diff description-seule au comparer pour déclencher le push) — **bloqué
   sur une sonde live** : *omettre `description` dans un `PUT files[]` efface-t-il

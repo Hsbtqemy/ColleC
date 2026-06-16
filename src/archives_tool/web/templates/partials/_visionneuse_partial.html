@@ -44,7 +44,9 @@
    `annotations_lecture_seule=True` aligne le partial swap sur le rendu
    initial de `lire_item.html` (cf. annotations-image-future.md : la
    liseuse reste en lecture seule, même après navigation). #}
-{{ visionneuse_consultation(f_courant, item.cote, fonds_cote, annotations_lecture_seule=True) }}
+{{ visionneuse_consultation(f_courant, item.cote, fonds_cote,
+                            annotations_lecture_seule=True,
+                            transcription_lecture=True) }}
 
 {# Ré-instancier OSD côté JS après swap HTMX. visionneuse_osd.js
    écoute DOMContentLoaded — qui ne se redéclenche pas sur un swap.

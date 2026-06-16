@@ -285,6 +285,86 @@ barre globale couvre alors :
 L'utilisateur ne se soucie pas de la provenance — il cherche, il
 trouve.
 
+## Articulation avec `Fichier.description_externe` (transcription S7)
+
+Point découvert **après** la rédaction initiale de ce doc, lors de
+la livraison de la **transcription par fichier** (palier S7,
+2026-06-16 — colonne `Fichier.description_externe`, éditable au
+catalogage, affichée en lecture seule dans la liseuse, round-trip
+Nakala). Il faut acter explicitement le rapport entre cette colonne
+et le texte OCR, sinon un futur implémenteur les confondra ou les
+dupliquera.
+
+### Carte des couches de texte sur un scan
+
+Quatre niveaux de granularité coexistent. Les confondre est une
+erreur de conception ; les articuler correctement est ce qui évite
+la redondance.
+
+| Niveau | Porteur | Provenance | Indexé FTS | Round-trip Nakala |
+|---|---|---|---|---|
+| Item | `Item.description`, `Item.metadonnees` | humain | ✅ `item_fts` (en place) | via metas item |
+| **Scan entier — texte plat** | **`Fichier.description_externe` (S7)** | **humain, ou OCR aplati** | ❌ pas encore | ✅ `description` par fichier (savoir-api H11) |
+| Scan entier — structuré | `OcrPage.texte_brut` + `OcrMot` (coords, `WC`) | machine (ALTO) | prévu `ocr_text` (cette couche) | ❌ jamais (Nakala ne prend que du texte plat par fichier) |
+| Région dans le scan | `AnnotationRegion` (W3C) | humain | prévu `annotations_text` (couche annotations) | via export annotations W3C |
+
+### La collision réelle : même granularité, provenance différente
+
+`OcrPage.texte_brut` et `Fichier.description_externe` sont **deux
+textes plats au même niveau** (un scan entier), pas deux choses de
+nature différente. La distinction « structuré vs manuel » faite
+plus haut vaut pour les *annotations* (transcription de **bulle /
+région**) ; elle ne sépare PAS l'OCR du texte de scan, qui sont à
+la même échelle. Ce qui les sépare :
+
+- **`OcrPage.texte_brut`** — sortie machine (brute, possiblement
+  bruitée), adossée à l'ALTO (coordonnées + `WC`), **regénérable** à
+  volonté (phase C re-OCR). Sert le FTS, le surlignage régionalisé,
+  l'audit de confiance. **Ne round-trip pas vers Nakala.**
+- **`Fichier.description_externe`** — transcription/description
+  **curatée, publiable** d'un scan, **éditée à la main** au
+  catalogage, **seule à round-tripper vers Nakala** (texte plat par
+  fichier, le seul que Nakala accepte à cette granularité).
+
+### Relation recommandée : l'OCR *alimente*, ne *remplace pas*
+
+```
+OCR (ABBYY/pdfalto) → ALTO + OcrPage.texte_brut   ← couche machine (locale : FTS, surlignage, confiance)
+                            │ projection ordre de lecture, aplatie, (relue/corrigée)
+                            ▼
+                  Fichier.description_externe        ← couche curatée (éditable, publiable, → Nakala)
+```
+
+`description_externe` est la **destination naturelle du texte qu'un
+OCR produit pour l'humain et pour Nakala** — mais ce n'est pas « la
+zone où l'OCR fonctionne » : le moteur OCR garde sa propre maison
+(`OcrPage` / `OcrMot` + ALTO sur disque). `description_externe` reste
+aussi valable **sans OCR** (transcription manuelle d'un scan qui n'a
+pas d'ALTO, ou correction d'un OCR jugé insuffisant).
+
+### Trois décisions à trancher au démarrage du module OCR
+
+Aucune n'est à prendre maintenant — elles sont notées ici pour que
+l'implémenteur OCR ne les redécouvre pas à froid :
+
+1. **Fusion ou séparation ?** Reco par défaut : **séparation** —
+   `OcrPage.texte_brut` source machine, `description_externe`
+   projection curatée. L'un alimente l'autre, ils ne sont pas le
+   même champ.
+2. **FTS — réconcilier le plan.** La section « Enrichissement de
+   l'index FTS5 » ci-dessus prévoit `ocr_text` + `annotations_text`
+   dans `item_fts` mais **ignore `description_externe`** (écrite
+   avant S7). Quand `ocr_text` arrivera, indexer aussi
+   `description_externe` **par le même pattern** (`GROUP_CONCAT` des
+   fichiers d'un item, comme `metadonnees_text`) — sinon la
+   transcription curatée et publiée reste invisible à la recherche.
+   Aujourd'hui `description_externe` n'est indexé nulle part (le FTS
+   est entièrement au niveau Item).
+3. **Politique de remplissage.** Quand l'OCR pré-remplit, écrase-t-il
+   `description_externe` ? Seulement si vide ? Avec un flag
+   « curaté » qui protège la version humaine d'un re-OCR (phase C) ?
+   Choix à faire à l'OCR-alpha.
+
 ## Coexistence PDF.js / OSD dans la liseuse
 
 Cas particulier souvent rencontré (Por Favor en tête) : un item
@@ -442,6 +522,12 @@ heures pour tout Por Favor, en une fois.
 - **Couplage explicite avec le module annotations** : ALTO
   `<Illustration>` comme seed, transcriptions manuelles
   complémentaires pour BDs, FTS5 enrichi des deux sources.
+- **Articulation avec `Fichier.description_externe` (S7)** :
+  `OcrPage.texte_brut` = source machine (FTS, surlignage, confiance),
+  `description_externe` = projection curatée publiable (édition
+  humaine, seule à round-tripper vers Nakala). L'OCR alimente, ne
+  remplace pas. FTS à réconcilier (indexer aussi `description_externe`
+  quand `ocr_text` arrive). Trois décisions à trancher à l'OCR-alpha.
 - **Une seule surface d'annotation (OSD)**, signalement dans
   PDF.js via projection, storage unifié.
 - **Pipeline d'import via profil YAML + script de commodité**,
@@ -455,4 +541,7 @@ heures pour tout Por Favor, en une fois.
   `workflow-numerisation.md`.
 - Sites statiques (consomment les ALTO pour annotations
   publiables) : `sites-statiques-future.md`.
+- Transcription par fichier (palier S7, articulation avec le texte
+  OCR) : `backlog-nakala-api.md` (note S7) + question ouverte
+  `Fichier.description_externe` du `CLAUDE.md` racine.
 - Roadmap V2 du `CLAUDE.md` racine.

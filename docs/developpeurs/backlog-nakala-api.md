@@ -324,6 +324,14 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   métadonnée structurée par fichier** (champs extra / `metas[]` par fichier
   droppés) — seul `description` (texte) + `embargoed` round-trippe. Cf.
   CLAUDE.md *Questions ouvertes* (H11) et savoir-api §4.
+  **Articulation avec le futur module OCR** : `description_externe` est la
+  couche **texte plat publiable** d'un scan (humain, → Nakala) ; le module OCR
+  produira `OcrPage.texte_brut` (machine, ALTO + coords/confiance, local). Même
+  granularité (un scan), provenance différente : l'OCR *alimente*
+  `description_externe` (projection ordre de lecture, relue), ne le remplace pas.
+  FTS à réconcilier. Détail :
+  [`ocr-module-future.md`](ocr-module-future.md) § *Articulation avec
+  `Fichier.description_externe`*.
 - **S8 — Relations donnée↔donnée (`relations[]`)** — **caractérisé, non
   trivial** (sonde 2026-06-15). Une relation (`{type, repository, target}`,
   ex. `IsPartOf`) exige que la **source soit publiée** ET, pour une cible

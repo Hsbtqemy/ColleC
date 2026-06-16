@@ -1,6 +1,6 @@
 # Nakala (CLI)
 
-L'intégration Nakala expose **14 sous-commandes** sous
+L'intégration Nakala expose **15 sous-commandes** sous
 `archives-tool nakala …`, organisées en six flux complémentaires :
 
 1. [Lecture](#1-lecture) — consulter un dépôt distant.
@@ -36,6 +36,7 @@ reste tolérée pour `montrer` / `rapatrier` sur dépôts publics).
 | Commande                  | Type    | Effet                                                       |
 | ------------------------- | ------- | ----------------------------------------------------------- |
 | `montrer`                 | Lecture | Affiche les métadonnées + fichiers d'un dépôt distant.      |
+| `citer`                   | Lecture | Affiche la citation bibliographique d'un dépôt publié.      |
 | `rapatrier`               | Lecture | Crée un Item ColleC depuis un dépôt Nakala.                 |
 | `rafraichir`              | Lecture | Re-pull + diff sur un item déjà rapatrié.                   |
 | `rapatrier-collection`    | Lecture | Crée Fonds + N Items depuis une collection Nakala.          |
@@ -71,7 +72,23 @@ archives-tool nakala montrer 10.34847/nkl.abcdef12
 
 Le format text liste les fichiers si ≤ 20, sinon redirige vers
 `--format json`. JSON expose les 5 champs `FichierNakala` (`nom`,
-`sha1`, `taille`, `mime`, `embargo_actif`).
+`sha1`, `taille`, `mime`, `embargo_actif`). Si le dépôt est **publié**,
+une ligne « Citation » est ajoutée (récupérée via l'endpoint citation).
+
+### `citer`
+
+Affiche la citation bibliographique prête à l'emploi d'un dépôt
+(`GET /datas/{id}/citation`, lecture seule).
+
+```bash
+archives-tool nakala citer 10.34847/nkl.abcdef12
+archives-tool nakala citer 10.34847/nkl.abcdef12 --format json
+```
+
+Une citation n'a de sens que pour un dépôt **publié** (DOI DataCite
+minté). Un dépôt en brouillon (`pending`) renvoie un texte « non
+citable ». La même citation est surfacée sur la fiche item de l'UI web
+(chargée à la demande, le service Nakala étant lent).
 
 ## 2. Rapatriement
 

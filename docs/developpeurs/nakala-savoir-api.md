@@ -825,7 +825,7 @@ Nakala :
 | `remplacer_sha` | même URL, sha remplacé | recalage après push fichiers |
 | `construire_source_fichier_nakala` | info.json (image) ou /data (autre) | au rapatriement (on a DOI+sha) |
 
-## 15. Les 14 commandes CLI
+## 15. Les 15 commandes CLI
 
 Toutes les écritures sont en **dry-run par défaut** (`--no-dry-run` pour
 appliquer), avec `--format text|json` et codes de sortie **0** (succès /
@@ -834,7 +834,7 @@ no-op idempotent), **1** (erreur métier ou garde-fou), **2** (config
 
 | Flux | Commandes |
 |---|---|
-| Lecture | `montrer`, `rapatrier`, `rafraichir`, `rapatrier-collection`, `rafraichir-collection` |
+| Lecture | `montrer`, `citer`, `rapatrier`, `rafraichir`, `rapatrier-collection`, `rafraichir-collection` |
 | Export | `exporter-tableur` (CSV `;`/UTF-8-BOM ou xlsx ; granularité donnée\|fichier) |
 | Dépôt | `deposer`, `deposer-collection` (reprise idempotente : items déjà déposés sautés) |
 | Push métadonnées | `pousser`, `pousser-collection` |

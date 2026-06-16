@@ -2720,7 +2720,8 @@ dédiée avec URI + label, pas en dur dans le code.
       `rafraichir-collection`, `deposer`, `deposer-collection`,
       `pousser`, `publier`, `pousser-collection`, `publier-collection`)
       ont reçu `--format json` avec helper `_payload_push_json` partagé
-      et 7 tests gardiens. **14/14 commandes Nakala ont JSON**.
+      et 7 tests gardiens. **14/14 commandes Nakala ont JSON** (puis la
+      commande `citer` ajoutée en S4 expose aussi JSON → 15/15).
 - [x] **Re-caractérisation du binaire après `pousser_fichiers_item`**
       — **partiellement résolu passe 25 P3+c.2** : `hash_sha256` (SHA-256
       disque, distinct du sha1 Nakala) et `taille_octets` recalculés sur

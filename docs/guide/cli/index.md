@@ -13,7 +13,7 @@ Vue d'ensemble des commandes CLI et conventions communes.
 | [`montrer`](montrer.md)         | Consulter fonds, collections, items, fichiers.                        |
 | [`renommer`](renommer.md)       | Renommer transactionnellement les fichiers.                           |
 | [`deriver`](deriver.md)         | Générer ou nettoyer les dérivés (vignettes, aperçus).                 |
-| [`nakala`](nakala.md)           | 14 sous-commandes : lecture, rapatriement, dépôt, push, publication.  |
+| [`nakala`](nakala.md)           | 15 sous-commandes : lecture, rapatriement, dépôt, push, publication.  |
 
 D'autres sous-commandes (non détaillées dans cette section) :
 

@@ -309,9 +309,11 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   swap HTMX `#zone-visionneuse` (la colonne méta gauche n'est pas swappée) ;
   panneau `<details>` lecture seule, auto-masqué si pas de transcription,
   replié pour les non-images. 8 tests (édition + liseuse + partial swap).
-  ⚠️ à confirmer en navigateur : non-chevauchement des panneaux
-  transcription/annotations sur viewport étroit. **Différé** : **intégration
-  push**
+  ✅ **Vérifié en navigateur** (2026-06-16, base demo) : aux largeurs d'usage,
+  pas de chevauchement panneau transcription (bas-gauche) ↔ Annoter / panneau
+  annotations (haut-droite) ↔ contrôles OSD (haut-gauche). Dégradation cosmétique
+  seulement sous ~700px (toute l'UI 3 zones l'est à cette largeur — hors scope).
+  **Différé** : **intégration push**
   (`deposer_item` + `pousser_fichiers_item` portent `description` ; détection
   d'un diff description-seule au comparer pour déclencher le push) — **bloqué
   sur une sonde live** : *omettre `description` dans un `PUT files[]` efface-t-il

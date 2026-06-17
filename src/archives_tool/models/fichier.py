@@ -31,6 +31,21 @@ if TYPE_CHECKING:
     from .journal import OperationFichier
 
 
+def normaliser_transcription(valeur: str | None) -> str | None:
+    """Normalise une transcription par fichier (`description_externe`, S7) :
+    None ou espaces seuls → None. Une transcription blanche n'existe pas.
+
+    Source **unique** de cette invariante métier, partagée par la route
+    d'édition (à l'écriture) et le service de push (comparaison locale ↔
+    distante) — pour éviter qu'un strip→None diverge entre les deux et
+    masque (ou invente) une divergence de transcription.
+    """
+    if valeur is None:
+        return None
+    valeur = valeur.strip()
+    return valeur or None
+
+
 class Fichier(Base):
     __tablename__ = "fichier"
 

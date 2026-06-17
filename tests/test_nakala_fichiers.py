@@ -3519,3 +3519,106 @@ def test_pousser_description_seule_dry_run_n_est_pas_un_no_op(
     assert rapport.compare is not None
     assert len(rapport.compare.descriptions_divergentes) == 1
     assert ecriture.puts == []  # dry-run : aucune écriture distante
+
+
+def test_comparer_effacement_local_non_classe_divergence(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Revue : effacer une transcription localement (description_externe None)
+    alors que la distante en porte une N'EST PAS classé divergence — non
+    propageable par le design local-sinon-distante (sinon faux signal « à
+    pousser » + non-convergence). `aucun_changement` reste True (no-op
+    honnête)."""
+    contenu = b"page content"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "p.jpg", "description": "Transcription distante"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": None},  # effacée localement
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.descriptions_divergentes == []
+    assert rapport.aucun_changement is True
+
+
+def test_comparer_transcription_espaces_seuls_equivaut_a_vide(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Revue : transcription locale espaces-seuls ≡ vide (normalisation) →
+    pas de divergence vs distante vide."""
+    contenu = b"x"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[{"sha1": sha1, "name": "p.jpg"}])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": "   "},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.descriptions_divergentes == []
+
+
+def test_pousser_effacement_local_est_no_op(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Revue : pousser un effacement local seul est un no-op (aucun PUT) —
+    on ne prétend pas pouvoir effacer la transcription distante, qui est
+    préservée."""
+    contenu = b"page content"
+    sha1 = _sha1(contenu)
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "p.jpg", "description": "Distante conservée"},
+    ])
+    ecriture = _FakeClientEcriture(lecture)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": None},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"}, dry_run=False,
+        )
+    assert rapport.raison == "aucun_changement"
+    assert ecriture.puts == []
+
+
+def test_pousser_modifie_et_nouveau_portent_leur_description(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Revue (trou HIGH) : un fichier MODIFIÉ (binaire changé, ré-uploadé) et
+    un NOUVEAU portent bien leur transcription locale jusqu'au PUT. Chemin
+    distinct de l'inchangé : remap sha1 (uploadé) + `ajouter_fichier` qui
+    n'attache PAS la description → elle doit être réappliquée au PUT 7c via
+    `_reordonner_files` (résolu par `fichier_id`)."""
+    contenu_modifie = b"new modified content"
+    sha1_modifie_ancien = "a" * 40
+    contenu_nouveau = b"brand new file"
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1_modifie_ancien, "name": "m.jpg", "description": "ancienne m"},
+    ])
+    ecriture = _FakeClientEcriture(lecture)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "m.jpg", "contenu": contenu_modifie,
+             "sha1_nakala": sha1_modifie_ancien,
+             "description_externe": "Transcription m"},
+            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
+             "sha1_nakala": None, "description_externe": "Transcription n"},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"}, dry_run=False,
+        )
+    assert rapport.applique is True
+    assert sorted(ecriture.uploads) == ["m.jpg", "n.jpg"]  # binaires (ré)uploadés
+    files = {f["name"]: f for f in ecriture.puts[0]["files"]}
+    assert files["m.jpg"]["description"] == "Transcription m"  # modifié
+    assert files["n.jpg"]["description"] == "Transcription n"  # nouveau

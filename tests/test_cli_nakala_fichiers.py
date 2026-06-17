@@ -89,6 +89,7 @@ def _db_avec_item_depose(
     contenu: bytes = b"\xff\xd8\xff init",
     doi_nakala: str = "10.34847/nkl.x1",
     sha1_nakala: str | None = None,
+    description_externe: str | None = None,
 ) -> tuple[Path, str]:
     """Crée base + fonds AS + item AS-001 avec doi posé et 1 fichier.
     Renvoie (chemin_db, sha1_du_binaire)."""
@@ -106,6 +107,7 @@ def _db_avec_item_depose(
             item_id=item.id, nom_fichier="x.jpg", racine="scans",
             chemin_relatif="x.jpg", ordre=1,
             sha1_nakala=sha1_nakala,
+            description_externe=description_externe,
         ))
         s.commit()
     engine.dispose()
@@ -280,10 +282,11 @@ def test_json_comparer_expose_7_categories_meme_si_vides(
     r = _invoke(config_nakala, db, "--format", "json")
     data = json.loads(r.output)
 
-    # 7 categories de Fichier ColleC + 1 categorie cote distant
+    # 8 categories de Fichier ColleC + 1 categorie cote distant
     for cat in [
         "inchanges", "modifies", "nouveaux", "nakala_only_sans_local",
         "non_actifs_a_retirer", "fichiers_fantomes",
+        "descriptions_divergentes",  # S7
         "orphelins_distants",
     ]:
         assert cat in data, f"Categorie manquante : {cat}"
@@ -313,6 +316,35 @@ def test_text_comparer_expose_fantome_et_non_actifs(
     assert "Nakala-only sans local" in r.output
     assert "Non-ACTIF à retirer" in r.output
     assert "Fichiers fantômes" in r.output
+
+
+def test_comparer_divergence_transcription_text_et_json(
+    config_nakala: Path, tmp_path: Path,
+) -> None:
+    """S7 (revue) : la catégorie `descriptions_divergentes` est surfacée par
+    la CLI `comparer-fichiers` en texte ET en JSON. Binaire identique
+    (sha1 match) + transcription locale ≠ distante."""
+    contenu = b"\xff\xd8\xff page"
+    db, sha1 = _db_avec_item_depose(
+        tmp_path, contenu=contenu, sha1_nakala=None,
+        description_externe="Nouvelle transcription",
+    )
+    _FakeReadClient.files = [
+        {"sha1": sha1, "name": "x.jpg", "description": "Ancienne transcription"},
+    ]
+
+    # Texte : compteur + section détail.
+    r = _invoke(config_nakala, db)
+    assert r.exit_code == 0, r.output
+    assert "Transcriptions modifiées : 1" in r.output
+    assert "Transcriptions modifiées (binaire identique" in r.output
+
+    # JSON : clé présente avec 1 entrée.
+    rj = _invoke(config_nakala, db, "--format", "json")
+    data = json.loads(rj.output)
+    assert len(data["descriptions_divergentes"]) == 1
+    assert data["descriptions_divergentes"][0]["nom_fichier"] == "x.jpg"
+    assert data["aucun_changement"] is False
 
 
 # ---------------------------------------------------------------------------

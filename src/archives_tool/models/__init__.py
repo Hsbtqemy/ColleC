@@ -26,7 +26,7 @@ from .enums import (
     TypeRelationExterne,
 )
 from .externe import LienExterneItem, RessourceExterne, SourceExterne
-from .fichier import Fichier
+from .fichier import Fichier, normaliser_transcription
 from .fonds import Fonds
 from .item import Item
 from .item_collection import ItemCollection
@@ -52,6 +52,7 @@ __all__ = [
     "Item",
     "ItemCollection",
     "Fichier",
+    "normaliser_transcription",
     "ProfilImport",
     "ChampPersonnalise",
     "Vocabulaire",

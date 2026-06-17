@@ -107,6 +107,7 @@ from archives_tool.models import (
     PhaseChantier,
     RoleCollaborateur,
     TypeCollection,
+    normaliser_transcription,
 )
 
 router = APIRouter()
@@ -1378,7 +1379,7 @@ def item_fichier_transcription(
         raise HTTPException(
             status_code=404, detail="Fichier introuvable dans cet item.",
         )
-    nouvelle = texte.strip() or None
+    nouvelle = normaliser_transcription(texte)
     if nouvelle != fichier.description_externe:
         fichier.description_externe = nouvelle
         fichier.modifie_le = datetime.now()

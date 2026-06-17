@@ -34,7 +34,11 @@ Les hypothèses Nakala validées contre apitest (script
   description distante, que Nakala efface ou préserve les clés ``files[i]``
   omises. ``comparer_fichiers_item`` détecte une divergence
   description-seule (sha1 identique) pour qu'une édition de transcription
-  seule soit poussable. **Reste à confirmer en live** (sonde différée, cf.
+  seule soit poussable. **Corollaire** : un **effacement** local (vider une
+  transcription qui existe côté distant) n'est PAS propageable par ce design
+  (préserver = garder la distante) — il n'est donc pas classé en divergence
+  (sinon faux signal + non-convergence). Effacer une description distante
+  attend la sonde omit-vs-wipe. **Reste à confirmer en live** (sonde différée, cf.
   ticket S7 `backlog-nakala-api.md`) : le comportement exact de Nakala sur
   une clé ``files[i]`` omise — confirmation, pas prérequis (le design ne
   dépend pas de la réponse).
@@ -54,7 +58,7 @@ from typing import Any
 from archives_tool.external.nakala.client import ClientLectureNakala
 from archives_tool.external.nakala.mapper import mapper_depot
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
-from archives_tool.models import Fichier, Item
+from archives_tool.models import Fichier, Item, normaliser_transcription
 from archives_tool.models.enums import EtatFichier
 
 #: Logger structure pour le service push fichiers. Le service mute un
@@ -417,13 +421,15 @@ class RapportComparaisonFichiers:
     non_actifs_a_retirer: list[FichierCompare] = field(default_factory=list)
     fichiers_fantomes: list[FichierCompare] = field(default_factory=list)
     #: **descriptions_divergentes** : Fichier dont le contenu (sha1) est
-    #: inchangé côté distant mais dont la transcription locale
+    #: inchangé côté distant mais dont la transcription locale **non vide**
     #: (`description_externe`) diffère de la `description` distante (S7).
     #: Sous-ensemble de ``inchanges`` ∪ ``nakala_only_sans_local`` (mêmes
     #: objets). Compte comme un changement (`aucun_changement` → False) :
-    #: au PUT, ``_reordonner_files`` propage la nouvelle transcription.
-    #: Sans cette détection, une édition de transcription seule serait
-    #: classée no-op et jamais poussée.
+    #: au PUT, ``_reordonner_files`` propage la nouvelle transcription. Sans
+    #: cette détection, une édition de transcription seule serait classée
+    #: no-op et jamais poussée. **N'inclut PAS un effacement** (locale vidée,
+    #: distante non vide) : non propageable par le design actuel (cf.
+    #: `_transcription_a_propager`), donc pas signalé comme « à pousser ».
     descriptions_divergentes: list[FichierCompare] = field(default_factory=list)
     #: Snapshot brut des `files[]` distants (filtré via isinstance dict).
     #: Préservé pour la journalisation `OperationPushNakala` (passe 24)
@@ -478,21 +484,24 @@ def _sha1_du_binaire(chemin: Path) -> str:
     return h.hexdigest()
 
 
-def _normaliser_description(valeur: str | None) -> str | None:
-    """Vide / espaces seuls → None — une transcription blanche n'existe pas
-    (cohérent avec la sémantique S7 de la route d'édition : strip → None)."""
-    if valeur is None:
-        return None
-    valeur = valeur.strip()
-    return valeur or None
+def _transcription_a_propager(locale: str | None, distante: str | None) -> bool:
+    """Vrai si pousser changerait la description distante.
 
+    Le push n'émet la transcription LOCALE que si elle est **non vide**
+    (`_reordonner_files`, règle local-sinon-distante). Une divergence n'est
+    donc « poussable » que si la locale est non vide **et** diffère de la
+    distante (après normalisation None ≡ ""). Sert à classer un changement
+    *description-seule* (sha1 identique) en `descriptions_divergentes`.
 
-def _descriptions_different(locale: str | None, distante: str | None) -> bool:
-    """Vrai si la transcription locale diffère de la distante, après
-    normalisation (None et "" équivalents). Détecte un changement
-    *description-seule* (sha1 identique) → déclenche un push S7 qui serait
-    sinon classé no-op."""
-    return _normaliser_description(locale) != _normaliser_description(distante)
+    Conséquence **assumée** : un **effacement** local (locale vidée alors que
+    la distante porte un texte) n'est PAS propageable par le design actuel —
+    `_reordonner_files` préserverait la distante. On ne le classe donc pas en
+    divergence : sinon faux signal « à pousser » + non-convergence (le PUT
+    ré-émettrait la valeur distante, le comparer la re-signalerait à l'infini).
+    Effacer une transcription distante nécessitera la sonde omit-vs-wipe
+    (différée, apitest down) — cf. note de module + backlog S7."""
+    loc = normaliser_transcription(locale)
+    return loc is not None and loc != normaliser_transcription(distante)
 
 
 def comparer_fichiers_item(
@@ -687,7 +696,7 @@ def comparer_fichiers_item(
                     # S7 : transcription éditée localement sur un fichier
                     # Nakala-only (pas de binaire local) → divergence
                     # poussable via `_reordonner_files`.
-                    if _descriptions_different(
+                    if _transcription_a_propager(
                         f.description_externe, fd_match.get("description")
                     ):
                         rapport.descriptions_divergentes.append(compare)
@@ -705,7 +714,7 @@ def comparer_fichiers_item(
             # S7 : binaire identique mais transcription locale éditée →
             # divergence description-seule, poussable via le PUT de
             # réordonnancement (`_reordonner_files`, local gagne).
-            if _descriptions_different(
+            if _transcription_a_propager(
                 f.description_externe, fd_match.get("description")
             ):
                 rapport.descriptions_divergentes.append(compare)
@@ -907,10 +916,20 @@ def _reordonner_files(
     for _, i, s, n, fid in annotes:
         fd = files_distants[i]
         entry: dict[str, Any] = {"sha1": s, "name": n}
-        desc_local = descriptions_locales.get(fid) if fid is not None else None
+        # Transcription locale non vide → gagne (normalisée comme à la
+        # détection, cf. `_transcription_a_propager`) ; sinon on PRÉSERVE la
+        # distante re-lue (anti-wipe). Un effacement local ne peut donc pas
+        # écraser la distante (limite assumée, cf. note de module).
+        desc_local = (
+            normaliser_transcription(descriptions_locales.get(fid))
+            if fid is not None else None
+        )
         description = desc_local if desc_local else (fd.get("description") or None)
         if description:
             entry["description"] = description
+        # `embargoed` : non modélisé par ColleC. Datetime+TZ distant opaque,
+        # ré-émis tel quel pour ne pas lever un embargo par omission (H1
+        # remplace tout). Toujours présent côté distant pour un fichier réel.
         embargoed = fd.get("embargoed")
         if embargoed:
             entry["embargoed"] = embargoed

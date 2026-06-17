@@ -326,9 +326,16 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   préserve les clés `files[i]` omises. La sonde *omit-vs-wipe* devient une
   **confirmation, pas un prérequis** (le design ne dépend pas de sa réponse).
   `embargoed` (non modélisé par ColleC) est préservé par le même mécanisme.
+  **Limite assumée** : on ne peut PAS encore **effacer** une transcription
+  distante depuis ColleC (vider `description_externe` localement préserve la
+  distante — c'est l'anti-wipe). Ce cas n'est donc pas classé en divergence
+  (sinon faux signal « à pousser » + non-convergence). L'effacement distant
+  sera débloqué par la sonde omit-vs-wipe (savoir si Nakala traite `""` /
+  l'omission comme un effacement).
   **Reste (bloqué apitest)** : **smoke round-trip live**
   (déposer → +description → push → re-lire → vérifier) + la sonde omit-vs-wipe
-  de confirmation. Viabilité déjà confirmée en lecture (sonde 2026-06-15) :
+  (confirmation anti-wipe + déblocage de l'effacement). Viabilité déjà
+  confirmée en lecture (sonde 2026-06-15) :
   round-trip à l'identique (unicode compris), ajout **APRÈS dépôt sans
   re-upload** (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala :
   **aucune métadonnée structurée par fichier** (champs extra / `metas[]` par

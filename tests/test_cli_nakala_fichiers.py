@@ -265,17 +265,18 @@ def test_json_serialise_toutes_les_categories(
     assert "statut_distant" in data
 
 
-def test_json_comparer_expose_7_categories_meme_si_vides(
+def test_json_comparer_expose_8_categories_meme_si_vides(
     config_nakala: Path, tmp_path: Path,
 ) -> None:
     """Trou AB (passe 17) — gardien anti-regression : le format JSON de
-    `comparer-fichiers` doit exposer les 7 categories (5 cote ColleC +
-    2 ajouts récents : non_actifs + fantomes) + orphelins distants +
-    2 meta (statut_distant, mod_date_distant).
+    `comparer-fichiers` doit exposer les 8 categories de Fichier ColleC
+    (5 d'origine + non_actifs + fantomes + descriptions_divergentes S7) +
+    orphelins distants + 2 meta (statut_distant, mod_date_distant).
 
-    Avant ce fix, les ajouts des passes 6 (non_actifs) et 10 (fantomes)
-    n'apparaissaient PAS en JSON. Un script consommateur ne voyait
-    pas qu'il y avait un fantome a fixer ou des fichiers a retirer.
+    Avant, des ajouts de catégories (non_actifs, fantomes, puis
+    descriptions_divergentes) n'apparaissaient PAS en JSON. Un script
+    consommateur ne voyait pas qu'il y avait un fantome a fixer, des
+    fichiers a retirer, ou une transcription a pousser.
     """
     db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]

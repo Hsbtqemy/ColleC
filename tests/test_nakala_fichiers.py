@@ -3451,6 +3451,18 @@ def test_reordonner_files_preserve_description_distante_si_locale_vide() -> None
     assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
 
 
+def test_reordonner_files_locale_espaces_seuls_preserve_distante() -> None:
+    """`_reordonner_files` : une transcription locale espaces-seuls est
+    normalisée à vide → on PRÉSERVE la distante. Sans la normalisation à
+    l'émission, `"   "` (truthy) écraserait la distante par du blanc."""
+    sha1 = "9a" * 20
+    files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
+    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
+                            categorie="inchange", ordre=1)]
+    sortie = _reordonner_files(files_distants, plan, {}, {7: "   "})
+    assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
+
+
 def test_reordonner_files_preserve_embargoed_distant() -> None:
     """`_reordonner_files` : `embargoed` (non modélisé par ColleC) est
     préservé tel quel depuis le distant — même principe anti-wipe."""
@@ -3588,6 +3600,8 @@ def test_pousser_effacement_local_est_no_op(
         )
     assert rapport.raison == "aucun_changement"
     assert ecriture.puts == []
+    # La transcription distante est préservée — jamais écrasée par l'effacement.
+    assert lecture._files[0]["description"] == "Distante conservée"
 
 
 def test_pousser_modifie_et_nouveau_portent_leur_description(

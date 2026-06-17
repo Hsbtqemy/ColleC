@@ -49,7 +49,13 @@ from archives_tool.external.nakala.write_client import (
     NakalaEcritureClient,
     extraire_doi,
 )
-from archives_tool.models import Collection, Fichier, Item, RessourceExterne
+from archives_tool.models import (
+    Collection,
+    Fichier,
+    Item,
+    RessourceExterne,
+    normaliser_transcription,
+)
 
 #: Logger structure pour le service depot Nakala (deposer / pousser /
 #: publier item ET collection). Pattern aligne sur
@@ -303,9 +309,11 @@ def deposer_item(
             entree: dict[str, Any] = {"sha1": sha1, "name": desc.get("name") or nom}
             # S7 : porte la transcription par fichier au POST /datas. Validé
             # H11 (apitest) : Nakala accepte et préserve `description` par
-            # fichier au dépôt comme au round-trip.
-            if fichier_orm.description_externe:
-                entree["description"] = fichier_orm.description_externe
+            # fichier au dépôt comme au round-trip. Normalisée via la source
+            # unique (même invariante vide→absent qu'à la route et au push).
+            transcription = normaliser_transcription(fichier_orm.description_externe)
+            if transcription:
+                entree["description"] = transcription
             uploades.append(entree)
             sha1s.append(sha1)
             fichier_orm.sha1_nakala = sha1

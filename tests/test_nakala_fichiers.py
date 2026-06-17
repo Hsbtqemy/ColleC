@@ -24,9 +24,11 @@ from archives_tool.api.services.nakala_fichiers import (
     FichierFantomeDistant,
     IncoherenceFichierORM,
     OrphelinsDetectes,
+    PlanPushFichier,
     PushImpossible,
     ReponseLectureInvalide,
     UploadInvalide,
+    _reordonner_files,
     comparer_fichiers_item,
     pousser_fichiers_item,
 )
@@ -129,6 +131,7 @@ def _setup_item_avec_fichiers(
             iiif_url_nakala=spec.get("iiif_url_nakala"),
             ordre=spec["ordre"],
             sha1_nakala=spec.get("sha1_nakala"),
+            description_externe=spec.get("description_externe"),
         ))
     s.commit()
     return item
@@ -3346,3 +3349,173 @@ def test_invariant_aucun_consomme_si_distant_vide(
         + len(rapport.nakala_only_sans_local)
         + len(rapport.non_actifs_a_retirer)
     ) == 0
+
+
+# ---------------------------------------------------------------------------
+# S7 — Intégration push de la transcription par fichier (`description_externe`)
+# ---------------------------------------------------------------------------
+
+
+def test_comparer_detecte_divergence_description_inchange(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Binaire identique (sha1 match) mais transcription locale éditée →
+    `descriptions_divergentes` non vide ET `aucun_changement` False, pour
+    qu'un push propage la nouvelle transcription (S7)."""
+    contenu = b"page content"
+    sha1 = _sha1(contenu)
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "p.jpg", "description": "Ancienne transcription"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": "Nouvelle transcription"},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.inchanges) == 1            # contenu inchangé
+    assert len(rapport.descriptions_divergentes) == 1
+    assert rapport.aucun_changement is False       # le push doit proceder
+
+
+def test_comparer_pas_de_divergence_si_description_identique(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Description locale == distante (et None ≡ "" après normalisation) →
+    pas de divergence, `aucun_changement` True (no-op propre)."""
+    contenu = b"page content"
+    sha1 = _sha1(contenu)
+    # Distant sans clé description ; local None → équivalents (None ≡ absent).
+    client = _FakeClientLecture(files=[{"sha1": sha1, "name": "p.jpg"}])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": None},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert rapport.descriptions_divergentes == []
+    assert rapport.aucun_changement is True
+
+
+def test_comparer_divergence_description_sur_nakala_only(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Fichier Nakala-only (pas de binaire local) dont la transcription a
+    été éditée localement → divergence détectée (poussable via le PUT de
+    réordonnancement, local gagne)."""
+    sha1 = "ab" * 20
+    client = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "p.jpg", "description": "Distante"},
+    ])
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            # Nakala-only : pas de binaire local → source = iiif_url_nakala
+            # (CHECK `ck_fichier_source_au_moins_une`).
+            {"ordre": 1, "nom": "p.jpg", "contenu": None, "sha1_nakala": sha1,
+             "iiif_url_nakala": "https://apitest.nakala.fr/iiif/x/y/info.json",
+             "description_externe": "Locale éditée"},
+        ])
+        rapport = comparer_fichiers_item(
+            s, client, item, racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.nakala_only_sans_local) == 1
+    assert len(rapport.descriptions_divergentes) == 1
+    assert rapport.aucun_changement is False
+
+
+def test_reordonner_files_porte_description_locale_qui_gagne() -> None:
+    """`_reordonner_files` : la transcription LOCALE écrase la distante
+    (édition = source de vérité)."""
+    sha1 = "cd" * 20
+    files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
+    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
+                            categorie="inchange", ordre=1)]
+    sortie = _reordonner_files(files_distants, plan, {}, {7: "locale"})
+    assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "locale"}]
+
+
+def test_reordonner_files_preserve_description_distante_si_locale_vide() -> None:
+    """`_reordonner_files` : transcription locale absente → on PRÉSERVE la
+    distante (anti-wipe : un push ne peut jamais effacer une description
+    qu'on ne gère pas localement)."""
+    sha1 = "ef" * 20
+    files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
+    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
+                            categorie="inchange", ordre=1)]
+    # Locale None (et idem si fichier_id absent de la map).
+    sortie = _reordonner_files(files_distants, plan, {}, {7: None})
+    assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
+
+
+def test_reordonner_files_preserve_embargoed_distant() -> None:
+    """`_reordonner_files` : `embargoed` (non modélisé par ColleC) est
+    préservé tel quel depuis le distant — même principe anti-wipe."""
+    sha1 = "12" * 20
+    files_distants = [{"sha1": sha1, "name": "p.jpg", "embargoed": "2999-01-01"}]
+    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
+                            categorie="inchange", ordre=1)]
+    sortie = _reordonner_files(files_distants, plan, {}, {})
+    assert sortie[0]["embargoed"] == "2999-01-01"
+
+
+def test_pousser_description_seule_declenche_put_avec_nouvelle_description(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Bout-en-bout (fakes) : seule la transcription a changé (binaire
+    identique) → le push n'est PAS un no-op, et le PUT porte la NOUVELLE
+    transcription locale."""
+    contenu = b"identical bytes"
+    sha1 = _sha1(contenu)
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
+    ])
+    ecriture = _FakeClientEcriture(lecture)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": "Après (édité localement)"},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False, modifie_par="hugo",
+        )
+    assert rapport.applique is True
+    assert rapport.raison != "aucun_changement"
+    assert ecriture.uploads == []                  # aucun ré-upload (binaire identique)
+    assert len(ecriture.puts) == 1
+    entree = ecriture.puts[0]["files"][0]
+    assert entree["description"] == "Après (édité localement)"
+
+
+def test_pousser_description_seule_dry_run_n_est_pas_un_no_op(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """Une édition de transcription seule en dry-run remonte la divergence
+    et un plan non vide (l'utilisateur voit qu'il y a quelque chose à
+    pousser), au lieu d'être classée `aucun_changement`."""
+    contenu = b"identical bytes"
+    sha1 = _sha1(contenu)
+    lecture = _FakeClientLecture(files=[
+        {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
+    ])
+    ecriture = _FakeClientEcriture(lecture)
+    with _session(db_path) as s:
+        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
+            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1,
+             "description_externe": "Après"},
+        ])
+        rapport = pousser_fichiers_item(
+            s, lecture, ecriture, item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=True,
+        )
+    assert rapport.raison != "aucun_changement"
+    assert len(rapport.plan) == 1
+    assert rapport.compare is not None
+    assert len(rapport.compare.descriptions_divergentes) == 1
+    assert ecriture.puts == []  # dry-run : aucune écriture distante

@@ -3376,6 +3376,9 @@ def cmd_nakala_comparer_fichiers(
                 _fc(fc) for fc in rapport.non_actifs_a_retirer
             ],
             "fichiers_fantomes": [_fc(fc) for fc in rapport.fichiers_fantomes],
+            "descriptions_divergentes": [
+                _fc(fc) for fc in rapport.descriptions_divergentes
+            ],
             "orphelins_distants": [
                 {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
                 for fo in rapport.orphelins_distants
@@ -3396,6 +3399,7 @@ def cmd_nakala_comparer_fichiers(
         f" · Nakala-only sans local : {len(rapport.nakala_only_sans_local)}"
         f" · Non-ACTIF à retirer : {len(rapport.non_actifs_a_retirer)}"
         f" · Fichiers fantômes : {len(rapport.fichiers_fantomes)}"
+        f" · Transcriptions modifiées : {len(rapport.descriptions_divergentes)}"
     )
     # Avertissements forts pour les conditions a fixer (diagnostic) ou
     # a confirmer (consent) - alignes sur les garde-fous du service.
@@ -3466,6 +3470,11 @@ def cmd_nakala_comparer_fichiers(
             f"[{fc.ordre:02d}] {fc.nom_fichier}"
             + (f" (sha1 fantôme: {fc.sha1_distant[:12]}…)" if fc.sha1_distant else "")
         ),
+    )
+    _detail_liste(
+        "Transcriptions modifiées (binaire identique, description à pousser — S7)",
+        rapport.descriptions_divergentes,
+        lambda fc: f"[{fc.ordre:02d}] {fc.nom_fichier}",
     )
 
 
@@ -3645,6 +3654,9 @@ def cmd_nakala_pousser_fichiers(
                 "nakala_only_sans_local": [_fc(fc) for fc in cmp.nakala_only_sans_local],
                 "non_actifs_a_retirer": [_fc(fc) for fc in cmp.non_actifs_a_retirer],
                 "fichiers_fantomes": [_fc(fc) for fc in cmp.fichiers_fantomes],
+                "descriptions_divergentes": [
+                    _fc(fc) for fc in cmp.descriptions_divergentes
+                ],
                 "orphelins_distants": [_fo(fo) for fo in cmp.orphelins_distants],
                 "mod_date_distant": cmp.mod_date_distant,
                 "statut_distant": cmp.statut_distant,
@@ -3698,6 +3710,7 @@ def cmd_nakala_pousser_fichiers(
             f" · {len(cmp.nakala_only_sans_local)} Nakala-only"
             f" · {len(cmp.orphelins_distants)} orphelin(s) distant(s)"
             f" · {len(cmp.non_actifs_a_retirer)} non-ACTIF avec pendant Nakala"
+            f" · {len(cmp.descriptions_divergentes)} transcription(s) modifiée(s)"
         )
 
         # Avertissement explicite si des Fichier non-ACTIF (corbeille

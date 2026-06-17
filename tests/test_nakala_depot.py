@@ -152,6 +152,25 @@ def test_reel_upload_et_cree_depot(db_path: Path, tmp_path: Path) -> None:
         assert fichier.sha1_nakala == "sha-1"
 
 
+def test_deposer_porte_description_par_fichier(
+    db_path: Path, tmp_path: Path,
+) -> None:
+    """S7 : un Fichier avec `description_externe` (transcription) la porte
+    dans son entrée `files[]` au POST /datas. Validé H11 (apitest) :
+    Nakala accepte et préserve la `description` par fichier au dépôt."""
+    racines = {"scans": tmp_path / "scans"}
+    client = _FakeWriteClient()
+    with _session(db_path) as s:
+        item = _item_avec_fichier_local(s, tmp_path)
+        next(iter(item.fichiers)).description_externe = "Recto, page de titre."
+        s.commit()
+        deposer_item(s, client, item, racines=racines, dry_run=False)
+    assert client.depot_cree["files"] == [
+        {"sha1": "sha-1", "name": "as001.jpg",
+         "description": "Recto, page de titre."},
+    ]
+
+
 def test_sha1_nakala_pas_persiste_si_creer_depot_echoue(
     db_path: Path, tmp_path: Path,
 ) -> None:

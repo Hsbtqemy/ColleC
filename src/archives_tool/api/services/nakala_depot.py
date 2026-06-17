@@ -300,7 +300,13 @@ def deposer_item(
         for chemin, nom, fichier_orm in locaux:
             desc = client.uploader_fichier(chemin, nom)
             sha1 = desc["sha1"]
-            uploades.append({"sha1": sha1, "name": desc.get("name") or nom})
+            entree: dict[str, Any] = {"sha1": sha1, "name": desc.get("name") or nom}
+            # S7 : porte la transcription par fichier au POST /datas. Validé
+            # H11 (apitest) : Nakala accepte et préserve `description` par
+            # fichier au dépôt comme au round-trip.
+            if fichier_orm.description_externe:
+                entree["description"] = fichier_orm.description_externe
+            uploades.append(entree)
             sha1s.append(sha1)
             fichier_orm.sha1_nakala = sha1
             logger.debug(

@@ -2763,23 +2763,25 @@ dédiée avec URI + label, pas en dur dans le code.
       commandes documentées avec exemples concrets, garde-fous, format
       JSON, codes de sortie, observabilité. Nav `mkdocs.yml` à jour,
       `mkdocs build --strict` OK.
-- [ ] **`Fichier.description_externe` : transcription par fichier.**
-      Cas d'usage stratégique pour ColleC : pour chaque scan d'une
-      collection (revue numérisée, correspondance, manuscrits,
-      partitions, cartes…), stocker la **transcription textuelle**
-      par fichier (en plus des annotations IIIF qui sont à granularité
-      bulle/région). Validé par exploration apitest H11 : Nakala
-      accepte un champ `description` par fichier au `POST /datas` et
-      `PUT /datas/{id}`, le préserve, le restitue à `lire_depot`.
-      Permet : (a) accompagner les scans Nakala d'une transcription
-      consultable côté portail public, (b) indexer la transcription
-      en FTS5 local pour recherche textuelle, (c) round-trip propre
-      ColleC ↔ Nakala. Mise en œuvre : colonne `Fichier.description_externe`
-      (TEXT) + UI édition par fichier (panneau item) + intégration au
-      `files_cible` de `pousser_fichiers_item` (palier P3+c, le format
-      reste extensible). Distinct des annotations IIIF (granularité
-      bulle, modèle W3C séparé). Probable V2+ après le palier P3+c
-      MVP. Cf. `nakala-depot-future.md` H11.
+- [x] **`Fichier.description_externe` : transcription par fichier (S7)** —
+      **round-trip complet livré**. Cas d'usage : pour chaque scan
+      (revue numérisée, correspondance, manuscrits, partitions, cartes…),
+      stocker la **transcription textuelle** par fichier (distinct des
+      annotations IIIF à granularité bulle/région — modèle W3C séparé).
+      Validé apitest H11 : Nakala accepte `description` par fichier au
+      `POST /datas` et `PUT /datas/{id}`, le préserve, le restitue.
+      **Livré** : colonne ORM `Fichier.description_externe` (migration
+      `u9y0z1a2b3c4`) + capture au pull + UI (édition sur le viewer de
+      catalogage, lecture seule dans la liseuse) + **intégration push**
+      (`deposer_item` au `POST /datas`, `_reordonner_files` au PUT,
+      `comparer_fichiers_item` détecte un diff description-seule). Règle
+      **anti-wipe probe-independent** : le PUT émet la transcription
+      LOCALE si présente, sinon préserve la distante re-lue. **Reste** :
+      (a) indexation FTS5 (à réconcilier avec le plan `ocr_text` du module
+      OCR — cf. [`ocr-module-future.md`](docs/developpeurs/ocr-module-future.md)
+      § *Articulation*), (b) consultation portail public (futur),
+      (c) **smoke round-trip live** (bloqué apitest down).
+      Cf. `nakala-depot-future.md` H11 + `backlog-nakala-api.md` S7.
 - [ ] **Activer le verrou optimiste sur `Fichier`** (`__mapper_args__
       = {"version_id_col": TracabiliteMixin.version}`). La colonne
       `Fichier.version` existe mais n'est **pas câblée** comme verrou

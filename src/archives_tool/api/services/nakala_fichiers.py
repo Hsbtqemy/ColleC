@@ -25,15 +25,19 @@ Les hypothèses Nakala validées contre apitest (script
 - **H10** : ``lire_depot`` immédiat post-PUT reflète les changements
   (pas d'eventual consistency à gérer).
 - **H11** : champ ``description`` par fichier accepté et préservé.
-  **Fondation S7 livrée** : `Fichier.description_externe` capture la
-  description au pull (``materialiser_fichiers_nakala``). ⚠️ **Le push ne
-  porte PAS encore la description** : ``_reordonner_files`` n'émet que
-  ``{sha1, name}``. Tant que l'intégration push S7 n'est pas faite,
-  **ne pas présumer** que la description survit à un push — c'est
-  justement la sonde live en attente : *omettre ``description`` dans un
-  ``PUT files[]`` efface-t-il la description distante ?* (H2A suggère que
-  les clés omises sont préservées, mais non vérifié au niveau ``files[i]``).
-  Voir ticket S7 (`backlog-nakala-api.md`) avant d'implémenter le push.
+  **Intégration push S7 livrée** : `Fichier.description_externe` est capturé
+  au pull (``materialiser_fichiers_nakala``), porté au dépôt
+  (``deposer_item`` → ``POST /datas``) ET au push (``_reordonner_files`` →
+  ``PUT /datas/{id}``). **Règle anti-wipe indépendante de la sonde** : le
+  PUT émet la transcription LOCALE si elle existe, **sinon préserve la
+  valeur distante re-lue** — donc un push ne peut jamais effacer une
+  description distante, que Nakala efface ou préserve les clés ``files[i]``
+  omises. ``comparer_fichiers_item`` détecte une divergence
+  description-seule (sha1 identique) pour qu'une édition de transcription
+  seule soit poussable. **Reste à confirmer en live** (sonde différée, cf.
+  ticket S7 `backlog-nakala-api.md`) : le comportement exact de Nakala sur
+  une clé ``files[i]`` omise — confirmation, pas prérequis (le design ne
+  dépend pas de la réponse).
 """
 
 from __future__ import annotations
@@ -412,6 +416,15 @@ class RapportComparaisonFichiers:
     orphelins_distants: list[FichierOrphelin] = field(default_factory=list)
     non_actifs_a_retirer: list[FichierCompare] = field(default_factory=list)
     fichiers_fantomes: list[FichierCompare] = field(default_factory=list)
+    #: **descriptions_divergentes** : Fichier dont le contenu (sha1) est
+    #: inchangé côté distant mais dont la transcription locale
+    #: (`description_externe`) diffère de la `description` distante (S7).
+    #: Sous-ensemble de ``inchanges`` ∪ ``nakala_only_sans_local`` (mêmes
+    #: objets). Compte comme un changement (`aucun_changement` → False) :
+    #: au PUT, ``_reordonner_files`` propage la nouvelle transcription.
+    #: Sans cette détection, une édition de transcription seule serait
+    #: classée no-op et jamais poussée.
+    descriptions_divergentes: list[FichierCompare] = field(default_factory=list)
     #: Snapshot brut des `files[]` distants (filtré via isinstance dict).
     #: Préservé pour la journalisation `OperationPushNakala` (passe 24)
     #: — snapshot AVANT le PUT. Pas re-lu par le service push (qui
@@ -433,7 +446,10 @@ class RapportComparaisonFichiers:
     def aucun_changement(self) -> bool:
         """Vrai si pousser serait un no-op propre : pas de nouveaux,
         pas de modifs, pas d'orphelins à retirer, pas de Fichier
-        non-ACTIF avec pendant distant, **pas de fantôme**.
+        non-ACTIF avec pendant distant, **pas de fantôme**, **pas de
+        divergence de transcription** (S7 : une description éditée
+        localement doit pouvoir être poussée même sans changement de
+        binaire).
 
         Les ``nakala_only_sans_local`` ne comptent pas comme un
         changement — ils sont seulement un signal d'attention pour
@@ -449,6 +465,7 @@ class RapportComparaisonFichiers:
             and not self.orphelins_distants
             and not self.non_actifs_a_retirer
             and not self.fichiers_fantomes
+            and not self.descriptions_divergentes
         )
 
 
@@ -459,6 +476,23 @@ def _sha1_du_binaire(chemin: Path) -> str:
         for chunk in iter(lambda: fh.read(_TAILLE_CHUNK_SHA1), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _normaliser_description(valeur: str | None) -> str | None:
+    """Vide / espaces seuls → None — une transcription blanche n'existe pas
+    (cohérent avec la sémantique S7 de la route d'édition : strip → None)."""
+    if valeur is None:
+        return None
+    valeur = valeur.strip()
+    return valeur or None
+
+
+def _descriptions_different(locale: str | None, distante: str | None) -> bool:
+    """Vrai si la transcription locale diffère de la distante, après
+    normalisation (None et "" équivalents). Détecte un changement
+    *description-seule* (sha1 identique) → déclenche un push S7 qui serait
+    sinon classé no-op."""
+    return _normaliser_description(locale) != _normaliser_description(distante)
 
 
 def comparer_fichiers_item(
@@ -648,8 +682,15 @@ def comparer_fichiers_item(
             #    au push.
             if sha1_nakala_norm:
                 if sha1_index.get(sha1_nakala_norm):
-                    sha1_index[sha1_nakala_norm].pop(0)
+                    fd_match = sha1_index[sha1_nakala_norm].pop(0)
                     rapport.nakala_only_sans_local.append(compare)
+                    # S7 : transcription éditée localement sur un fichier
+                    # Nakala-only (pas de binaire local) → divergence
+                    # poussable via `_reordonner_files`.
+                    if _descriptions_different(
+                        f.description_externe, fd_match.get("description")
+                    ):
+                        rapport.descriptions_divergentes.append(compare)
                 else:
                     rapport.fichiers_fantomes.append(compare)
             else:
@@ -659,8 +700,15 @@ def comparer_fichiers_item(
         # Binaire local présent — `sha1_local` est garanti non-None.
         assert compare.sha1_local is not None
         if sha1_index.get(compare.sha1_local):
-            sha1_index[compare.sha1_local].pop(0)
+            fd_match = sha1_index[compare.sha1_local].pop(0)
             rapport.inchanges.append(compare)
+            # S7 : binaire identique mais transcription locale éditée →
+            # divergence description-seule, poussable via le PUT de
+            # réordonnancement (`_reordonner_files`, local gagne).
+            if _descriptions_different(
+                f.description_externe, fd_match.get("description")
+            ):
+                rapport.descriptions_divergentes.append(compare)
         elif sha1_nakala_norm and sha1_index.get(sha1_nakala_norm):
             # Modifié : on retrouve l'ancien sha1 côté distant, mais
             # le binaire local en porte un nouveau.
@@ -798,6 +846,7 @@ def _reordonner_files(
     files_distants: list[dict[str, Any]],
     plan: list[PlanPushFichier],
     uploades_par_fichier: Mapping[int, str],
+    descriptions_locales: Mapping[int, str | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Construit le `files[]` canonique pour le PUT de réordonnancement
     (T2 — palier granulaire) à partir de l'**état distant réel relu**
@@ -811,6 +860,13 @@ def _reordonner_files(
     ColleC (renommage gratuit H7) pour les fichiers connus ; un fichier
     distant inconnu du plan est **conservé** (jamais droppé) et placé en
     fin, dans son ordre d'origine.
+
+    ``descriptions_locales`` : map ``fichier_id → description_externe`` (S7).
+    Pour chaque entrée, la ``description`` émise est la valeur **locale** si
+    l'utilisateur en a une (édition = source de vérité), **sinon** la valeur
+    **distante re-lue** est préservée. Règle anti-wipe **indépendante de la
+    sonde omit-vs-wipe** : un PUT ne peut jamais effacer une transcription
+    distante, que Nakala efface ou préserve les clés ``files[i]`` omises.
     """
     # sha1 → FILE de (ordre, nom ColleC) consommée dans l'ordre du plan.
     # Une file (pas un scalaire) car deux Fichier ColleC peuvent porter le
@@ -818,32 +874,48 @@ def _reordonner_files(
     # vides) — chaque entrée distante consomme un cran du plan, sans
     # collision. Les nouveaux/modifies portent leur sha1 fraîchement
     # uploadé (le plan ne connaît que le sha1 prévisionnel local).
-    desire: dict[str, deque[tuple[int, str]]] = defaultdict(deque)
+    descriptions_locales = descriptions_locales or {}
+    # sha1 → FILE de (ordre, nom ColleC, fichier_id) consommée dans l'ordre
+    # du plan. `fichier_id` sert à retrouver la transcription locale (S7).
+    desire: dict[str, deque[tuple[int, str, int | None]]] = defaultdict(deque)
     for entree in plan:
         sha1 = entree.sha1
         if entree.categorie in ("nouveau", "modifie") and entree.fichier_id is not None:
             sha1 = uploades_par_fichier.get(entree.fichier_id, sha1)
-        desire[sha1].append((entree.ordre, entree.nom_fichier))
+        desire[sha1].append((entree.ordre, entree.nom_fichier, entree.fichier_id))
 
     _FIN = 10**9  # un fichier distant inconnu du plan est conservé, en fin
-    annotes: list[tuple[int, int, str | None, str | None]] = []
+    # (ordre, index distant, sha1, nom, fichier_id|None). `index distant`
+    # permet de retrouver l'entrée distante d'origine (et sa `description`).
+    annotes: list[tuple[int, int, str | None, str | None, int | None]] = []
     for i, f in enumerate(files_distants):
         sha1 = f.get("sha1")
         file_attente = desire.get(sha1)
         if file_attente:
-            ordre, nom = file_attente.popleft()
-            annotes.append((ordre, i, sha1, nom))
+            ordre, nom, fid = file_attente.popleft()
+            annotes.append((ordre, i, sha1, nom, fid))
         else:
-            annotes.append((_FIN, i, sha1, f.get("name")))
+            annotes.append((_FIN, i, sha1, f.get("name"), None))
     annotes.sort(key=lambda t: (t[0], t[1]))
-    # ⚠️ S7 (transcription par fichier) : on n'émet que {sha1, name}. La
-    # `description` par fichier (Fichier.description_externe) n'est PAS
-    # renvoyée — donc si Nakala efface une clé `files[i]` omise au PUT (non
-    # vérifié, sonde live en attente, cf. ticket S7), un push effacerait les
-    # transcriptions distantes. À résoudre AVANT l'intégration push S7 :
-    # sonder omit-vs-wipe, puis (si wipe) porter ici `description` depuis
-    # description_externe pour chaque fichier.
-    return [{"sha1": s, "name": n} for _, _, s, n in annotes]
+
+    # S7 — `description` (transcription) par fichier : valeur LOCALE
+    # (`description_externe`) si l'utilisateur en a une (édition = source de
+    # vérité), SINON on PRÉSERVE la valeur distante re-lue. Anti-wipe,
+    # indépendant de la sonde omit-vs-wipe. `embargoed` (non modélisé par
+    # ColleC) est préservé tel quel depuis le distant — même principe.
+    result: list[dict[str, Any]] = []
+    for _, i, s, n, fid in annotes:
+        fd = files_distants[i]
+        entry: dict[str, Any] = {"sha1": s, "name": n}
+        desc_local = descriptions_locales.get(fid) if fid is not None else None
+        description = desc_local if desc_local else (fd.get("description") or None)
+        if description:
+            entry["description"] = description
+        embargoed = fd.get("embargoed")
+        if embargoed:
+            entry["embargoed"] = embargoed
+        result.append(entry)
+    return result
 
 
 def pousser_fichiers_item(
@@ -1166,6 +1238,7 @@ def pousser_fichiers_item(
             apres_ops.get("files") or [],
             rapport.plan,
             nouveaux_sha1_par_fichier,
+            {f.id: f.description_externe for f in item.fichiers},
         )
         client_ecriture.modifier_depot(item.doi_nakala, files=files_cible)
         logger.info(

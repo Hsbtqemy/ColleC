@@ -313,16 +313,26 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   pas de chevauchement panneau transcription (bas-gauche) ↔ Annoter / panneau
   annotations (haut-droite) ↔ contrôles OSD (haut-gauche). Dégradation cosmétique
   seulement sous ~700px (toute l'UI 3 zones l'est à cette largeur — hors scope).
-  **Différé** : **intégration push**
-  (`deposer_item` + `pousser_fichiers_item` portent `description` ; détection
-  d'un diff description-seule au comparer pour déclencher le push) — **bloqué
-  sur une sonde live** : *omettre `description` dans un `PUT files[]` efface-t-il
-  la description distante ?* (détermine s'il faut toujours renvoyer la
-  description ; danger déjà signalé en code à `_reordonner_files`). **Viabilité confirmée** (sonde 2026-06-15) : round-trip à
-  l'identique (unicode compris), ajout **APRÈS dépôt sans re-upload**
-  (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala : **aucune
-  métadonnée structurée par fichier** (champs extra / `metas[]` par fichier
-  droppés) — seul `description` (texte) + `embargoed` round-trippe. Cf.
+  **Intégration push LIVRÉE** (2026-06-17, offline, **design probe-independent**) :
+  `deposer_item` porte la `description` par fichier au `POST /datas` ;
+  `_reordonner_files` la porte au `PUT /datas/{id}` ; `comparer_fichiers_item`
+  détecte une **divergence description-seule** (sha1 identique, transcription
+  éditée) via `descriptions_divergentes` → un push propage l'édition même sans
+  changement de binaire. CLI `comparer-fichiers` / `pousser-fichiers` surfacent
+  la nouvelle catégorie (text + JSON). 9 tests offline.
+  **Règle anti-wipe indépendante de la sonde** : le PUT émet la transcription
+  LOCALE si elle existe, **sinon préserve la valeur distante re-lue** — donc un
+  push ne peut jamais effacer une description distante, que Nakala efface ou
+  préserve les clés `files[i]` omises. La sonde *omit-vs-wipe* devient une
+  **confirmation, pas un prérequis** (le design ne dépend pas de sa réponse).
+  `embargoed` (non modélisé par ColleC) est préservé par le même mécanisme.
+  **Reste (bloqué apitest)** : **smoke round-trip live**
+  (déposer → +description → push → re-lire → vérifier) + la sonde omit-vs-wipe
+  de confirmation. Viabilité déjà confirmée en lecture (sonde 2026-06-15) :
+  round-trip à l'identique (unicode compris), ajout **APRÈS dépôt sans
+  re-upload** (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala :
+  **aucune métadonnée structurée par fichier** (champs extra / `metas[]` par
+  fichier droppés) — seul `description` (texte) + `embargoed` round-trippe. Cf.
   CLAUDE.md *Questions ouvertes* (H11) et savoir-api §4.
   **Articulation avec le futur module OCR** : `description_externe` est la
   couche **texte plat publiable** d'un scan (humain, → Nakala) ; le module OCR

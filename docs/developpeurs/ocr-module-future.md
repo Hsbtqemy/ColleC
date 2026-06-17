@@ -10,6 +10,94 @@
 
     Tenue à jour au fil des sessions. Pas une référence utilisateur.
 
+## Révision — recadrage *text-first* (2026-06-17)
+
+!!! note "Cette révision PRIME sur le corps ci-dessous"
+    Le plan d'origine faisait d'**ALTO le format pivot d'ENTRÉE** et
+    intégrait fortement le **cas BD** (segmentation cases/bulles). Après
+    (a) la vérification du terrain — corpus Por Favor = 173 PDF **avec
+    couche texte** ; El País = images brutes —, (b) la découverte de
+    l'outil sœur **BD_ditor**, et (c) la décision de scope « **ColleC est
+    text-first** », la direction change. Le corps original est conservé
+    comme trace du raisonnement ; les points ci-dessous le **remplacent**
+    là où ils divergent.
+
+**Scope ColleC = texte.** Documents textuels d'abord ; photos / BD
+ponctuelles. La **gestion BD spécialisée** (segmentation cases/bulles,
+OCR par région, annotation BD) vit dans l'**outil sœur séparé
+`BD_ditor`** — *pas* dans ColleC : modèles et workflows entièrement
+différents (album→planche→region vs Fonds→Collection→Item→Fichier +
+catalogage + Nakala).
+
+**Voie dominante = extraction de couche texte, pas OCR.** La majorité du
+corpus visé est en **PDF avec couche texte** (validé sur PF, ~2000-2500
+car/page) → **PyMuPDF** (déjà dépendance) extrait `texte_brut` par page
+**et** les coordonnées mot — zéro ML, zéro outil externe, zéro ALTO.
+L'OCR « moteur » ne sert qu'aux **rares corpus image** (El País), via un
+moteur **externe** (Tesseract/ABBYY) → texte/ALTO ingéré.
+
+**ALTO : d'entrée → SORTIE.** ALTO descend de « contrat d'entrée
+unique » à **format d'export optionnel** (interop Mirador / portail
+public futur / archivage), au même rang que Dublin Core — cohérent avec
+« stocker relationnel, sérialiser aux frontières ». Plusieurs
+**adaptateurs d'ENTRÉE** (PyMuPDF dominant ; parseur ALTO pour le cas
+image-OCRisé), pas un format imposé.
+
+**Source de vérité = la DB ColleC** (principe n°1). `OcrPage.texte_brut`
+est primaire → la recherche marche **partout, hors-source** (laptop sans
+le disque, VPS). Les fichiers (PDF/ALTO) sont des **intrants
+régénérables** gardés et référencés, jamais la vérité vivante. Les
+**coords** : dérivées/stockées en DB — **pas de table `OcrMot`** au
+départ (cf. charge).
+
+**Ingestion remote-first.** Conforme à l'usage réel : ColleC
+référence/rapatrie depuis **Nakala** et lit **ShareDocs** (client WebDAV
+à porter, cf. *Emprunts*). Les fichiers locaux (disque D:) servent de
+**simili** de développement. Pour OCRiser *depuis* Nakala : petit
+chantier « télécharger le binaire » (la reconstruction d'URL
+`vers_data` existe déjà ; manque le `GET` + extraction).
+
+**Crop-pour-illustrer = secondaire, SANS segmentation.** Servi par les
+coords (PyMuPDF) + une primitive de crop serveur + Annotorious (déjà
+là) + IIIF region crop. Pas de détection automatique de zones (ça, c'est
+BD_ditor).
+
+**Charge revue.** Sans `OcrMot` (1,4M lignes / ~79 Mo écartées) : on
+stocke le texte par page (FTS) + éventuellement des coords compactes par
+page si le crop doit être portable hors-source. Pièges FTS5 à traiter :
+ne PAS re-concaténer tout l'OCR dans le trigger `item` (sinon chaque
+édition inline rebalaie 43 pages) → triggers sur la table OCR
+reconstruisant la ligne `item_fts` complète, contournement des triggers
+à l'ingestion bulk (pattern `reindexer_fts`), poids `bm25` pour ne pas
+noyer le titre sous l'OCR.
+
+### Phase A minimale (text-first, faisable sur le réel *maintenant*)
+
+PDF à couche texte (PF, simili D:) → **PyMuPDF** extrait `texte_brut`
+par page → modèle `OcrPage` + migration → colonne FTS `ocr_text`
+(+ `description_externe` réconcilié dans le même index) → recherche
+FTS5. **Aucun ML, ALTO, outil externe ni serveur.** Suites : crop-région
+→ ingestion distante (Nakala download + client WebDAV) → ALTO en export.
+
+### Emprunts à `BD_ditor` (outil sœur — patterns portés, PAS de dépendance)
+
+ColleC **copie et s'approprie** des patterns isolés de BD_ditor
+(re-implémentés au style ColleC, **aucune dépendance ni couplage
+runtime** ; BD_ditor reste séparé et inchangé) :
+
+- **client WebDAV ShareDocs** (`pipeline/sharedocs.py` : PROPFIND/GET/PUT,
+  anti-SSRF, creds RAM-only) → ingestion distante, en appliquant les
+  correctifs de l'audit BD_ditor lui-même (garde HTTPS explicite,
+  normalisation anti-traversal `..`) ;
+- **pattern de crop-région serveur** (`region_crop_png` : crop net du
+  master, cache 1-image, borne `max_dim`) → « recherche → illustrer » ;
+- **philosophie pré-remplissage jamais écrasant** (`only_empty=True`) →
+  déjà alignée avec `description_externe` (la sortie machine ne touche
+  pas la curation humaine).
+
+BD_ditor est un **donneur/référence**, pas un composant : copie →
+possession → divergence.
+
 ## Positionnement
 
 Aujourd'hui ColleC indexe au niveau item (FTS5 sur titre,
@@ -29,6 +117,13 @@ sur disque, référencé par un nouveau champ `ocr_chemin_relatif`
 sur `Fichier`.
 
 ## Norme retenue : ALTO comme format pivot
+
+> **⚠ Superseded — révision 2026-06-17 (voir en tête).** ALTO passe de
+> *format pivot d'entrée* à *format d'export optionnel*. La voie d'entrée
+> dominante est désormais l'extraction de couche texte (**PyMuPDF**) ; un
+> parseur ALTO reste un adaptateur d'entrée pour le seul cas image-OCRisé.
+> Le contenu ci-dessous reste valable pour **décrire ALTO** et son usage en
+> **export** / interop.
 
 ALTO (Analyzed Layout and Text Object) est un format XML
 standardisé par la Library of Congress, conçu pour capturer
@@ -220,6 +315,14 @@ matérialise visuellement les items qui mériteraient une re-OCR.
 Petit, transparent, honnête.
 
 ## Couplage avec le module annotations
+
+> **⚠ Hors-scope ColleC — révision 2026-06-17 (voir en tête).** La
+> segmentation BD (cases via Kumiko, bulles via YOLOv8, OCR par région via
+> EasyOCR) et le workflow d'annotation BD vivent dans l'**outil sœur séparé
+> `BD_ditor`**, pas dans ColleC. La section ci-dessous est conservée comme
+> **référence conceptuelle** sur la complémentarité OCR ↔ annotations ; pour
+> les rares photos/BD dans ColleC, on s'appuie sur l'annotation manuelle
+> existante (Annotorious) sans pipeline de segmentation automatique.
 
 Le module OCR et le module annotations
 ([`annotations-image-future.md`](annotations-image-future.md))

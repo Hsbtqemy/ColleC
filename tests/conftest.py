@@ -26,21 +26,14 @@ from archives_tool.api.services.items import (
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.models import Base, Fonds, Item, ItemCollection
 
-# V0.9.0-alpha : la refonte Fonds / Collection / Item invalide la
-# plupart des tests existants (ancien `Collection.parent_id`,
-# `Collection.cote_collection`, `Item.collection_id`). La liste
-# ci-dessous met en quarantaine les fichiers concernés ; ils seront
-# adaptés et réactivés au fil des sessions V0.9.0-gamma (services
-# Collection/Item refondus, demo seeder, importers v2, exporters,
-# qa, renamer, derivatives, affichage CLI, routes web).
-collect_ignore = [
-    # V0.9.0-alpha quarantine : fichiers à adapter ou supprimer.
-    "test_contraintes.py",
-    "test_derives_route.py",
-    "test_mapping_dc.py",
-    "test_rapport_export.py",
-    "test_roundtrip.py",
-]
+# Quarantaine V0.9.0-alpha résorbée (2026-06-18, revue générale) : les 5
+# fichiers mis de côté à la refonte Fonds/Collection/Item ont été traités —
+# `test_contraintes.py`, `test_mapping_dc.py`, `test_rapport_export.py`
+# migrés vers le modèle courant (en conservant leur couverture unique :
+# contraintes SQL, branche imbriquée `extraire_valeur`, cœur
+# `verifier_pre_export`) ; `test_roundtrip.py` et `test_derives_route.py`
+# réactivés tels quels (déjà alignés). Plus de fichier en quarantaine.
+collect_ignore: list[str] = []
 
 
 @pytest.fixture

@@ -1,20 +1,20 @@
-"""Tests isolés de `rapport.verifier_pre_export`."""
+"""Tests isolés de `rapport.verifier_pre_export` (champs obligatoires,
+type_coar hors URI, langue hors ISO 639-3). Complémentaire de
+`test_rapport_licence.py` qui couvre la dimension licence.
+
+Migré V0.9.0 (2026-06-18) : `verifier_pre_export` ne lit que
+`cote`/`titre`/`date`/`type_coar`/`langue`/`metadonnees` — items construits
+en mémoire, sans relation `collection` (le helper d'origine utilisait le
+champ supprimé `Collection.cote_collection`)."""
 
 from __future__ import annotations
 
 from archives_tool.exporters.rapport import RapportExport, verifier_pre_export
-from archives_tool.models import Collection, Item
+from archives_tool.models import Item
 
 
 def _item(**kwargs) -> Item:
-    base = {
-        "collection": Collection(
-            cote_collection=f"T-{kwargs.get('cote', 'X')}", titre="T"
-        ),
-        "cote": "X",
-    }
-    base.update(kwargs)
-    return Item(**base)
+    return Item(**{"cote": "X", **kwargs})
 
 
 def test_tous_champs_obligatoires_presents() -> None:

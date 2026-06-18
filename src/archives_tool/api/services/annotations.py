@@ -306,21 +306,6 @@ def supprimer_annotation(db: Session, annotation_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def lister_annotations_item(db: Session, item_id: int) -> tuple[AnnotationRegion, ...]:
-    """Toutes les annotations des fichiers d'un item, triées par
-    (fichier_id, cree_le). Pour l'export par item (granularité
-    typique Nakala : un AnnotationCollection par numéro de revue)."""
-    from archives_tool.models import Fichier
-
-    rows = db.scalars(
-        select(AnnotationRegion)
-        .join(Fichier, Fichier.id == AnnotationRegion.fichier_id)
-        .where(Fichier.item_id == item_id)
-        .order_by(AnnotationRegion.fichier_id, AnnotationRegion.cree_le)
-    ).all()
-    return tuple(rows)
-
-
 def lister_annotations_collection(
     db: Session, collection_id: int
 ) -> tuple[AnnotationRegion, ...]:

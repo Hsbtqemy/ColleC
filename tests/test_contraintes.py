@@ -1,134 +1,87 @@
-"""Contraintes d'unicité et d'intégrité sur le modèle."""
+"""Contraintes d'unicité et d'intégrité **au niveau SQL** (IntegrityError).
+
+Défense en profondeur : ces contraintes valent même si la couche service
+est contournée. Couverture **unique** non assurée ailleurs :
+`uq_fichier_item_ordre`, `uq_fichier_chemin`, `uq_item_doi_nakala`,
+`uq_collection_doi_nakala` (+ NULL non-égaux), `ck_item_etat_catalogage`.
+
+Migré V0.9.0 (2026-06-18) : modèle Fonds / Collection / Item refondu. Les
+tests d'unicité de cote (désormais `uq_item_fonds_cote` / cote collection
+par fonds) sont couverts par `test_fonds.py` ; les tests de hiérarchie
+`Collection.parent_id` sont supprimés (fonctionnalité retirée à la refonte).
+"""
 
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from archives_tool.models import Collection, Fichier, Item
+from archives_tool.models import Collection, Fichier, Fonds, Item
 
 
-def _nouvelle_collection(session: Session, cote: str = "COL-A") -> Collection:
-    col = Collection(cote_collection=cote, titre=f"Revue {cote}")
-    session.add(col)
+def _fonds(session: Session, cote: str = "F") -> Fonds:
+    fonds = Fonds(cote=cote, titre=f"Fonds {cote}")
+    session.add(fonds)
     session.flush()
-    return col
+    return fonds
 
 
-def test_cote_item_unique_dans_collection(session: Session) -> None:
-    col = _nouvelle_collection(session)
-    session.add(Item(collection_id=col.id, cote="1923-01"))
+def _item(session: Session, fonds: Fonds, cote: str, **kwargs) -> Item:
+    item = Item(fonds_id=fonds.id, cote=cote, **kwargs)
+    session.add(item)
     session.flush()
-    session.add(Item(collection_id=col.id, cote="1923-01"))
-    with pytest.raises(IntegrityError):
-        session.flush()
+    return item
 
 
-def test_meme_cote_autorisee_dans_collections_differentes(session: Session) -> None:
-    col_a = _nouvelle_collection(session, "COL-A")
-    col_b = _nouvelle_collection(session, "COL-B")
-    session.add(Item(collection_id=col_a.id, cote="1923-01"))
-    session.add(Item(collection_id=col_b.id, cote="1923-01"))
-    session.flush()  # ne doit pas lever
+def _fichier(item: Item, ordre: int, chemin: str) -> Fichier:
+    return Fichier(
+        item_id=item.id,
+        racine="scans",
+        chemin_relatif=chemin,
+        nom_fichier=chemin.rsplit("/", 1)[-1],
+        ordre=ordre,
+    )
 
 
-def test_cote_collection_globale_unique(session: Session) -> None:
-    _nouvelle_collection(session, "COL-X")
-    session.add(Collection(cote_collection="COL-X", titre="Doublon"))
-    with pytest.raises(IntegrityError):
-        session.flush()
+# --- Fichier : ordre unique par item, chemin globalement unique ---
 
 
 def test_ordre_fichier_unique_dans_item(session: Session) -> None:
-    col = _nouvelle_collection(session)
-    item = Item(collection_id=col.id, cote="N1")
-    session.add(item)
+    item = _item(session, _fonds(session), "N1")
+    session.add(_fichier(item, ordre=1, chemin="a/1.tif"))
     session.flush()
-    session.add(
-        Fichier(
-            item_id=item.id,
-            racine="scans",
-            chemin_relatif="a/1.tif",
-            nom_fichier="1.tif",
-            ordre=1,
-        )
-    )
-    session.flush()
-    session.add(
-        Fichier(
-            item_id=item.id,
-            racine="scans",
-            chemin_relatif="a/2.tif",
-            nom_fichier="2.tif",
-            ordre=1,
-        )
-    )
+    session.add(_fichier(item, ordre=1, chemin="a/2.tif"))  # même ordre
     with pytest.raises(IntegrityError):
         session.flush()
 
 
 def test_meme_ordre_autorise_sur_items_differents(session: Session) -> None:
-    col = _nouvelle_collection(session)
-    item_a = Item(collection_id=col.id, cote="N1")
-    item_b = Item(collection_id=col.id, cote="N2")
-    session.add_all([item_a, item_b])
-    session.flush()
-    session.add(
-        Fichier(
-            item_id=item_a.id,
-            racine="scans",
-            chemin_relatif="a/1.tif",
-            nom_fichier="1.tif",
-            ordre=1,
-        )
-    )
-    session.add(
-        Fichier(
-            item_id=item_b.id,
-            racine="scans",
-            chemin_relatif="b/1.tif",
-            nom_fichier="1.tif",
-            ordre=1,
-        )
-    )
-    session.flush()
+    fonds = _fonds(session)
+    item_a = _item(session, fonds, "N1")
+    item_b = _item(session, fonds, "N2")
+    session.add(_fichier(item_a, ordre=1, chemin="a/1.tif"))
+    session.add(_fichier(item_b, ordre=1, chemin="b/1.tif"))
+    session.flush()  # ne doit pas lever
 
 
 def test_chemin_fichier_globalement_unique(session: Session) -> None:
-    col = _nouvelle_collection(session)
-    item = Item(collection_id=col.id, cote="N1")
-    session.add(item)
+    item = _item(session, _fonds(session), "N1")
+    session.add(_fichier(item, ordre=1, chemin="dup/1.tif"))
     session.flush()
-    session.add(
-        Fichier(
-            item_id=item.id,
-            racine="scans",
-            chemin_relatif="dup/1.tif",
-            nom_fichier="1.tif",
-            ordre=1,
-        )
-    )
-    session.flush()
-    session.add(
-        Fichier(
-            item_id=item.id,
-            racine="scans",
-            chemin_relatif="dup/1.tif",
-            nom_fichier="1.tif",
-            ordre=2,
-        )
-    )
+    session.add(_fichier(item, ordre=2, chemin="dup/1.tif"))  # même (racine, chemin)
     with pytest.raises(IntegrityError):
         session.flush()
 
 
+# --- DOI Nakala : unique sur collection et item, NULL non-égaux ---
+
+
 def test_doi_nakala_collection_unique(session: Session) -> None:
     doi = "10.34847/nkl.abc123"
-    session.add(Collection(cote_collection="A", titre="A", doi_nakala=doi))
+    session.add(Collection(cote="A", titre="A", doi_nakala=doi))
     session.flush()
-    session.add(Collection(cote_collection="B", titre="B", doi_nakala=doi))
+    session.add(Collection(cote="B", titre="B", doi_nakala=doi))
     with pytest.raises(IntegrityError):
         session.flush()
 
@@ -136,104 +89,35 @@ def test_doi_nakala_collection_unique(session: Session) -> None:
 def test_doi_nakala_collection_null_non_unique(session: Session) -> None:
     # Les NULL ne sont pas considérés comme égaux : plusieurs collections
     # sans DOI Nakala doivent coexister.
-    session.add(Collection(cote_collection="A", titre="A"))
-    session.add(Collection(cote_collection="B", titre="B"))
+    session.add(Collection(cote="A", titre="A"))
+    session.add(Collection(cote="B", titre="B"))
     session.flush()
 
 
 def test_doi_nakala_item_unique(session: Session) -> None:
-    col = _nouvelle_collection(session)
+    fonds = _fonds(session)
     doi = "10.34847/nkl.item001"
-    session.add(Item(collection_id=col.id, cote="N1", doi_nakala=doi))
-    session.flush()
-    session.add(Item(collection_id=col.id, cote="N2", doi_nakala=doi))
+    _item(session, fonds, "N1", doi_nakala=doi)
+    session.add(Item(fonds_id=fonds.id, cote="N2", doi_nakala=doi))
     with pytest.raises(IntegrityError):
         session.flush()
 
 
 def test_doi_collection_nakala_item_partageable(session: Session) -> None:
-    # Contrepartie critique : plusieurs items doivent pouvoir pointer
-    # vers la même collection Nakala. Aucune contrainte d'unicité.
-    col = _nouvelle_collection(session)
+    # Contrepartie critique : plusieurs items doivent pouvoir pointer vers
+    # la même collection Nakala. Aucune contrainte d'unicité.
+    fonds = _fonds(session)
     doi_col = "10.34847/nkl.coll001"
-    session.add(Item(collection_id=col.id, cote="N1", doi_collection_nakala=doi_col))
-    session.add(Item(collection_id=col.id, cote="N2", doi_collection_nakala=doi_col))
-    session.add(Item(collection_id=col.id, cote="N3", doi_collection_nakala=doi_col))
+    for cote in ("N1", "N2", "N3"):
+        session.add(Item(fonds_id=fonds.id, cote=cote, doi_collection_nakala=doi_col))
     session.flush()  # ne doit pas lever
 
 
-def test_collection_racine_valide(session: Session) -> None:
-    col = Collection(cote_collection="RACINE", titre="Fonds", parent_id=None)
-    session.add(col)
-    session.flush()
-    assert col.parent is None
-    assert col.parent_id is None
-
-
-def test_sous_collection_valide(session: Session) -> None:
-    parent = Collection(cote_collection="FONDS-A", titre="Fonds A")
-    enfant = Collection(cote_collection="FONDS-A-1", titre="Série 1", parent=parent)
-    session.add(parent)
-    session.flush()
-    assert enfant.parent_id == parent.id
-    assert enfant in parent.enfants
-
-
-def test_cascade_suppression_parent(session: Session) -> None:
-    # Pré-condition : FK actives pour que l'ORM déclenche le cascade à la
-    # session. Sinon on ne teste pas ce qu'on croit.
-    assert session.execute(text("PRAGMA foreign_keys")).scalar() == 1
-
-    parent = Collection(cote_collection="P", titre="Parent")
-    enfant = Collection(cote_collection="P-1", titre="Enfant", parent=parent)
-    item = Item(collection=enfant, cote="X1")
-    session.add(parent)
-    session.commit()
-
-    enfant_id, item_id = enfant.id, item.id
-    session.delete(parent)
-    session.commit()
-
-    assert session.get(Collection, enfant_id) is None
-    assert session.get(Item, item_id) is None
-
-
-def test_anti_cycle_auto_reference(session: Session) -> None:
-    col = Collection(cote_collection="CYC1", titre="Auto")
-    session.add(col)
-    session.flush()
-    col.parent = col
-    with pytest.raises(ValueError, match="propre parent"):
-        session.flush()
-
-
-def test_anti_cycle_via_parent_id_direct(session: Session) -> None:
-    # Verrouille le chemin d'assignation probable de la CLI : affecter
-    # directement parent_id sans toucher à la relation. Le validator
-    # doit quand même détecter la boucle via lazy-load de parent.
-    col = Collection(cote_collection="CYCID", titre="Auto id")
-    session.add(col)
-    session.flush()
-    col.parent_id = col.id
-    with pytest.raises(ValueError, match="propre parent"):
-        session.flush()
-
-
-def test_anti_cycle_profond(session: Session) -> None:
-    a = Collection(cote_collection="CYC-A", titre="A")
-    b = Collection(cote_collection="CYC-B", titre="B", parent=a)
-    c = Collection(cote_collection="CYC-C", titre="C", parent=b)
-    session.add(a)
-    session.commit()
-
-    # A > B > C ; puis on tente C -> parent de A, ce qui fermerait la boucle.
-    a.parent = c
-    with pytest.raises(ValueError, match="[Cc]ycle"):
-        session.flush()
+# --- CHECK état de catalogage ---
 
 
 def test_etat_catalogage_check_constraint(session: Session) -> None:
-    col = _nouvelle_collection(session)
-    session.add(Item(collection_id=col.id, cote="N1", etat_catalogage="inexistant"))
+    fonds = _fonds(session)
+    session.add(Item(fonds_id=fonds.id, cote="N1", etat_catalogage="inexistant"))
     with pytest.raises(IntegrityError):
         session.flush()

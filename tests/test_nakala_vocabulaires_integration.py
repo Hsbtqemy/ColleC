@@ -66,9 +66,15 @@ def vocab_live() -> dict[str, set[str]]:
     ⚠️ `/properties` (liste plate d'URIs complètes) et **non**
     `/properties/details` (clé `uri` = namespace) — cf. sonde S1.
     """
-    with httpx.Client(timeout=30, follow_redirects=True) as c:
-        types = _set_uris(c.get(f"{HOTE}/vocabularies/depositTypes").json())
-        props = _set_uris(c.get(f"{HOTE}/vocabularies/properties").json())
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as c:
+            types = _set_uris(c.get(f"{HOTE}/vocabularies/depositTypes").json())
+            props = _set_uris(c.get(f"{HOTE}/vocabularies/properties").json())
+    except (httpx.HTTPError, ValueError) as exc:
+        # apitest down → réponse non-JSON (503 HTML) : `.json()` lève
+        # JSONDecodeError (sous-classe de ValueError). On skippe proprement
+        # au lieu d'ERROR sur la fixture.
+        pytest.skip(f"Vocabulaires Nakala live injoignables sur {HOTE} ({exc}).")
     if not types or not props:
         pytest.skip(
             f"Vocabulaires Nakala live introuvables sur {HOTE} "

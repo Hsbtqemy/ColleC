@@ -1,4 +1,13 @@
-"""Tests des utilitaires de mapping DC."""
+"""Tests des utilitaires de mapping DC (`extraire_valeur`, `valeur_en_liste`).
+
+Couverture unitaire **unique** : la branche imbriquée d'`extraire_valeur`
+(`metadonnees.hierarchie.fonds`) et les cas-limites de `valeur_en_liste`
+(scalaire non-str, filtrage des None, tri) ne sont exercés qu'ici.
+
+Migré V0.9.0 (2026-06-18) : `extraire_valeur` ne lit que les attributs de
+l'item et `metadonnees` — item construit en mémoire, sans relation
+`collection` (le helper d'origine utilisait le champ supprimé
+`Collection.cote_collection`)."""
 
 from __future__ import annotations
 
@@ -8,12 +17,11 @@ from archives_tool.exporters.mapping_dc import (
     extraire_valeur,
     valeur_en_liste,
 )
-from archives_tool.models import Collection, Item
+from archives_tool.models import Item
 
 
 def _item_synthetique() -> Item:
-    item = Item(
-        collection=Collection(cote_collection="T", titre="T"),
+    return Item(
         cote="T-1",
         titre="Un titre",
         date="1923",
@@ -24,7 +32,6 @@ def _item_synthetique() -> Item:
             "hierarchie": {"fonds": "FA", "serie": "01"},
         },
     )
-    return item
 
 
 def test_mapping_couvre_colonnes_et_metadonnees() -> None:

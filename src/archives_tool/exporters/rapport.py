@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from archives_tool.models import Item
+from archives_tool.reference.loaders import licence_reconnue
 
 _RE_URI_COAR = re.compile(r"^http://purl\.org/coar/resource_type/")
 _RE_ISO_639_3 = re.compile(r"^[a-z]{3}$")
@@ -38,12 +39,21 @@ def verifier_pre_export(
     items: list[Item] | tuple[Item, ...],
     champs_obligatoires: list[str],
     format: str,
+    *,
+    valider_licence: bool = False,
 ) -> RapportExport:
     """Analyse les items et remplit un rapport de pré-export.
 
     - Items manquant un champ obligatoire → listés avec les champs KO.
     - Valeurs `type_coar` qui ne sont pas des URI COAR → signalées.
     - Valeurs `langue` qui ne sont pas ISO 639-3 → signalées.
+    - Si `valider_licence` (export Nakala) : licence `metadonnees.licence`
+      (ou `rights`) non reconnue par Nakala → signalée. Permet d'échouer
+      tôt avec un message clair plutôt qu'un 422 distant. **Signalement
+      seul, jamais bloquant** (cf. `licence_reconnue`). Le défaut de licence
+      (appliqué côté exporter) n'est pas vérifié ici — seule une valeur
+      explicitement saisie l'est. Désactivé pour Dublin Core, dont
+      `dcterms:license` n'est pas contraint à SPDX.
     """
     rapport = RapportExport(format=format, nb_items_selectionnes=len(items))
 
@@ -60,5 +70,12 @@ def verifier_pre_export(
             rapport.valeurs_non_mappees.append(("type_coar", item.type_coar))
         if item.langue and not _RE_ISO_639_3.match(item.langue):
             rapport.valeurs_non_mappees.append(("langue", item.langue))
+
+        if valider_licence:
+            meta = item.metadonnees or {}
+            licence = meta.get("licence") or meta.get("rights")
+            if isinstance(licence, str) and licence.strip():
+                if not licence_reconnue(licence):
+                    rapport.valeurs_non_mappees.append(("licence", licence))
 
     return rapport

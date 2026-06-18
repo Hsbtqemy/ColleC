@@ -181,7 +181,7 @@ def exporter_nakala_csv(
     items = [ipe.item for ipe in export.items]
 
     rapport = verifier_pre_export(
-        items, CHAMPS_OBLIGATOIRES_NAKALA, format="nakala_csv"
+        items, CHAMPS_OBLIGATOIRES_NAKALA, format="nakala_csv", valider_licence=True
     )
     rapport.chemin_sortie = chemin_sortie
     _verifier_createur(items, rapport)

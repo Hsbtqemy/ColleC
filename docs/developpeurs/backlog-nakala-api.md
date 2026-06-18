@@ -285,12 +285,22 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   pas de version, et muter les fichiers d'un dépôt publié est techniquement
   accepté par Nakala (→ garde-fou `DepotPublie` = politique, pas nécessité —
   à garder). Cf. savoir-api §13.
-- **S6 — Contraindre le vocabulaire de licences au SPDX** (`P3`) — sondé
-  2026-06-15 : `nkl:license` est **validé contre le set SPDX** (`CC-BY-4.0`,
-  `MIT`, `CC0-1.0`, `etalab-2.0`, `GPL-3.0-only` OK ; code bidon/vide → 422).
-  ColleC pourrait valider la licence côté export/preflight contre
-  `licences_spdx()` (déjà vendorisé) pour échouer tôt avec un message clair
-  au lieu d'un 422 distant. Non prioritaire (le défaut `CC-BY-4.0` est valide).
+- **S6 — Contraindre le vocabulaire de licences au SPDX** — ✅ **LIVRÉ**
+  (2026-06-18, offline). Sondé 2026-06-15 : `nkl:license` est validé contre
+  le set SPDX (`CC-BY-4.0`, `MIT`, `CC0-1.0`, `etalab-2.0`, `GPL-3.0-only`
+  OK ; code bidon/vide → 422). **Piège évité** : `licences_spdx()` est la
+  liste SPDX **complète**, pas le sous-ensemble Nakala — or Nakala accepte
+  `etalab-2.0` qui **n'est pas** un code SPDX. Valider « rejeter si absent de
+  SPDX » aurait donc **bloqué une licence valide**. Implémentation sûre :
+  `reference.loaders.licence_reconnue()` = SPDX ∪ `LICENCES_NAKALA_EXTRAS`
+  (`{etalab-2.0}`, extensible) ; `verifier_pre_export(..., valider_licence=True)`
+  (export Nakala uniquement, pas DC) **signale** une `metadonnees.licence` /
+  `rights` non reconnue dans `valeurs_non_mappees` — **jamais bloquant** (le
+  set non-SPDX peut être incomplet → faux négatif acceptable, faux positif
+  exclu). Surfacé dans `_afficher_rapport_export` sous « Valeurs non
+  canoniques » (gap préexistant comblé : type_coar / langue n'étaient pas non
+  plus affichés). 8 tests (7 unit `test_rapport_licence.py` + 1 CLI). Doc :
+  `reference/exports.md`, `guide/cli/exporter.md`.
 - **S7 — Transcription par fichier (`Fichier.description_externe`)** —
   **fondation LIVRÉE** (2026-06-16, offline) ; finition différée. Livré :
   colonne ORM `Fichier.description_externe` (TEXT) + migration `u9y0z1a2b3c4` ;

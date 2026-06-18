@@ -91,6 +91,54 @@ def test_cli_exporter_nakala(tmp_path: Path) -> None:
     assert sortie.is_file()
 
 
+def _base_item_licence_bidon(tmp_path: Path) -> Path:
+    """Fonds HK + un item dont la licence (metadonnees) n'est pas reconnue
+    par Nakala."""
+    db = tmp_path / "test.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    with creer_session_factory(engine)() as s:
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        fonds = lire_fonds_par_cote(s, "HK")
+        creer_item(
+            s,
+            FormulaireItem(
+                cote="HK-001",
+                titre="N°1",
+                fonds_id=fonds.id,
+                metadonnees={"licence": "CC-BY-BIDON"},
+            ),
+        )
+    engine.dispose()
+    return db
+
+
+def test_cli_exporter_nakala_signale_licence_non_canonique(tmp_path: Path) -> None:
+    """Export Nakala : une licence non reconnue est signalée dans le rapport
+    (--verbose détaille la valeur). Le quick win S6 — échouer tôt avec un
+    message clair plutôt qu'un 422 distant."""
+    db = _base_item_licence_bidon(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "exporter",
+            "nakala",
+            "HK",
+            "--fonds",
+            "HK",
+            "--sortie",
+            str(tmp_path / "o.csv"),
+            "--db-path",
+            str(db),
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Valeurs non canoniques" in result.output
+    assert "licence" in result.output
+    assert "CC-BY-BIDON" in result.output
+
+
 def test_cli_exporter_xlsx(tmp_path: Path) -> None:
     db = _base_avec_collection(tmp_path)
     sortie = tmp_path / "out.xlsx"

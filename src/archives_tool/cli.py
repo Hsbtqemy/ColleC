@@ -460,6 +460,14 @@ def _afficher_rapport_export(rapport: RapportExport, verbose: bool) -> None:
         if verbose:
             for cote, manques in rapport.items_incomplets:
                 typer.echo(f"    - {cote} : manque {', '.join(manques)}", err=True)
+    if rapport.valeurs_non_mappees:
+        # Dédupliqué : une même valeur fautive (ex. licence) répétée sur N
+        # items ne s'affiche qu'une fois. Couvre type_coar / langue / licence.
+        uniques = list(dict.fromkeys(rapport.valeurs_non_mappees))
+        typer.echo(f"  ⚠ Valeurs non canoniques : {len(uniques)}", err=True)
+        if verbose:
+            for champ, valeur in uniques:
+                typer.echo(f"    - {champ} : {valeur!r}", err=True)
 
 
 @exporter_app.command("dublin-core")

@@ -58,7 +58,10 @@ src/archives_tool/exporters/
 d'origine, eager loading). `mapping_dc.py` reste la source de vérité
 pour le mapping vers Dublin Core (réutilisé par DC et Nakala).
 `rapport.py` détecte les items incomplets (champs obligatoires
-manquants, type_coar non URI, langue non ISO 639-3).
+manquants, type_coar non URI, langue non ISO 639-3 ; et, pour l'export
+Nakala, licence non reconnue — signalement non bloquant). Les valeurs
+non canoniques sont résumées en fin d'export, détaillées avec
+`--verbose`.
 
 ## Champs obligatoires par format
 

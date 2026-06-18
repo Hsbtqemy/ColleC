@@ -196,6 +196,14 @@ utile pour les collections transversales.
   session ultérieure.
 - **Type COAR non validé** contre la liste officielle. Le rapport
   d'export signale les valeurs hors `http://purl.org/coar/resource_type/`.
+- **Licence (export Nakala uniquement)** : le rapport signale une
+  `metadonnees.licence` (ou `rights`) qui n'est ni un code SPDX
+  vendorisé ni une addition Nakala connue (`etalab-2.0`), pour repérer
+  une faute de frappe avant un rejet 422 de Nakala. **Signalement seul,
+  jamais bloquant** (le set Nakala non-SPDX peut être incomplet). Non
+  appliqué en Dublin Core, dont `dcterms:license` n'est pas contraint à
+  SPDX. Les valeurs signalées apparaissent sous « Valeurs non canoniques »
+  (détaillées avec `--verbose`).
 - **Fichiers non inclus** dans les exports : seules les
   métadonnées des items sont exportées, pas les binaires des
   scans. Pour une publication Nakala complète, l'upload des

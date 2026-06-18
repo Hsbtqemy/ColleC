@@ -12,8 +12,10 @@ Fonds / Collection / Item, interface web pour le travail
 quotidien, CLI pour l'automatisation, exports Dublin Core /
 Nakala / xlsx.
 
-**Statut** : V0.9.7 stable. Modèle stable, interface web complète
-(annotations IIIF W3C + Annotorious depuis V0.9.7, création en série
+**Statut** : V0.10.0 stable (+ ingestion ShareDocs / WebDAV livrée
+depuis). Modèle stable, interface web complète (écriture Nakala complète
+— dépôt + round-trip métadonnées + publication — depuis V0.10.0 ;
+annotations IIIF W3C + Annotorious depuis V0.9.7, création en série
 d'items, synthèse collection / fonds + édition inline sur 3 entités
 depuis V0.9.6, recherche FTS5, champs personnalisés, liseuse de
 consultation). La V1.0 ajoutera le déploiement VPS et l'auth
@@ -59,7 +61,7 @@ Voir la doc en ligne (lien ci-dessus) ou en local
 
 - `src/archives_tool/` — code Python (modèles, services, CLI, API).
 - `alembic/` — migrations.
-- `tests/` — pytest (~570 tests).
+- `tests/` — pytest (~1900 tests).
 - `profiles/` — profils d'import YAML par fonds.
 - `data/` — base SQLite locale (gitignoré).
 - `docs/` — sources MkDocs ; build déployé sur GitHub Pages via

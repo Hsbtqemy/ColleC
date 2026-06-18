@@ -178,9 +178,34 @@ interne, consommation **aval** ».
 
 ## Transverse / continu
 
-- **Dette technique** : verrou optimiste sur `Fichier` (colonne `version`
-  non câblée), re-caractérisation binaire complète post-push (`format`/
-  dimensions), etc.
+- **Dette technique** (relevée à la revue générale 2026-06-18) :
+  - **Isolation per-user des états module-globaux** — `sharedocs_session
+    ._session` (creds ShareDocs en RAM) et `nakala_depot_jobs._JOBS` /
+    `_id_actuel` sont partagés par toutes les requêtes. Inoffensif en
+    mono-utilisateur, mais **c'est le refactor V1.0 le plus structurant** :
+    ces registres doivent devenir per-utilisateur/session **avant** tout
+    déploiement multi-utilisateurs (Chantier 3). Déjà anticipé dans les
+    commentaires de code.
+  - **Garde mono-job non extensible** — `nakala_depot_jobs._id_actuel` ne
+    protège que le dépôt collection. À revoir au **Chantier 2** : l'OCR /
+    extraction texte sera une 2ᵉ tâche de fond mutant des `Fichier`/`OcrPage`
+    → la garde mono-job actuelle ne suffira plus (condition de remise en
+    cause déjà documentée dans CLAUDE.md § *Tâches de fond*).
+  - **Verrou optimiste `Fichier`** (colonne `version` non câblée, ≠ Item/
+    Collection/Fonds). Risque réel limité aujourd'hui (ShareDocs ne fait que
+    *créer* des Fichier, le push fichiers est CLI-only, `IncoherenceFichierORM`
+    couvre déjà la pire course). À câbler **avec V1.0** ; audit des tests qui
+    n'incrémentent pas `version` en prérequis.
+  - **Re-caractérisation binaire incomplète** post-push (`format`/`largeur_px`/
+    `hauteur_px` PIL obsolètes ; `hash_sha256`/`taille_octets`, eux, recalculés)
+    → V2+ (calcul async).
+- **Doctrine des secrets distants — asymétrie assumée** : le mot de passe
+  ShareDocs (= identité complète du compte) n'est **jamais** sur disque
+  (RAM web / env CLI) ; la clé API Nakala (**révocable et scopée**) vit, elle,
+  dans `config_local.yaml`. Différence justifiée par la nature des secrets, à
+  **unifier** dans le coffre chiffré multi-comptes du Chantier 3
+  (`deploiement-future.md`). À garder en tête : d'ici là, ColleC met *un*
+  secret Huma-Num sur disque (Nakala), pas *aucun*.
 - **Audit de parité Nakala apitest ↔ prod** (quand clé Huma-Num).
 - Tests verts, doc + mémoire à jour, git propre.
 

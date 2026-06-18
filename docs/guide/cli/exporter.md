@@ -85,12 +85,13 @@ Produit par tous les exporters et affiché par le CLI :
 | `nb_items_selectionnes`    |                                                                                 |
 | `nb_fichiers_selectionnes` | total des fichiers liés aux items                                               |
 | `items_incomplets`         | `[(cote, [champs_manquants]), …]`                                               |
-| `valeurs_non_mappees`      | `[(champ, valeur), …]` — type_coar hors URI COAR, langue hors ISO 639-3         |
+| `valeurs_non_mappees`      | `[(champ, valeur), …]` — type_coar hors URI COAR, langue hors ISO 639-3, et (export Nakala) licence non reconnue |
 | `avertissements`           | Liste libre                                                                     |
 | `chemin_sortie`            | Chemin du fichier produit                                                       |
 | `duree_secondes`           |                                                                                 |
 
-`--verbose` détaille les `items_incomplets` ligne par ligne.
+`--verbose` détaille les `items_incomplets` **et** les
+`valeurs_non_mappees` (dédupliquées) ligne par ligne.
 
 ## Détail des formats produits
 

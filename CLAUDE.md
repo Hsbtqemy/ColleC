@@ -22,8 +22,12 @@ correction et le contrôle de catalogues d'archives scannées.
 **Utilisateurs :** quelques personnes, édition jamais simultanée sur un
 même item, consultation possible à plusieurs.
 
-**Statut :** **V0.10.0 livré** (1554 tests verts + 6 d'intégration
-opt-in, doc déployée sur <https://hsbtqemy.github.io/ColleC/>). Modèle
+**Statut :** **V0.10.0 livré** (~1900 tests verts + tests d'intégration
+opt-in, doc déployée sur <https://hsbtqemy.github.io/ColleC/>).
+**Post-V0.10.0 sur `main`** : Chantier 1 **ingestion ShareDocs (WebDAV)**
+complet (client + service + CLI + UI parcours/import) et **validation de
+licence Nakala au pré-export (S6)** — cf. *Plan de développement* et
+`docs/developpeurs/roadmap.md`. Modèle
 pivoté Fonds / Collection / Item, CLI complète, interface web complète
 (écriture Nakala complète — dépôt + round-trip métadonnées +
 publication, CLI et UI — depuis V0.10.0 ; synthèse collection + fonds
@@ -215,7 +219,7 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `doi_nakala`) et au pull dans `materialiser_fichiers_nakala` (colonne
   + compat retro `metadonnees["sha1"]`). **Distinct de `hash_sha256`**
   (SHA-256 intégrité disque, algos différents).
-  **P3+b livré (détection lecture seule)** : `services/nakala_fichiers.py
+  **P3+b livré (détection lecture seule)** : `api/services/nakala_fichiers.py
   ::comparer_fichiers_item` classe les fichiers d'un item vs le dépôt
   distant en 5 catégories — `nouveaux`, `modifies`, `inchanges`,
   `nakala_only_sans_local`, `orphelins_distants`. Réconciliation
@@ -1666,6 +1670,9 @@ combinant `peupler_base` + config `lecture_seule: true`).
 - `pages/collection_nouvelle.html` : template sans route active
   (création de collection libre passe par d'autres flux). Modifié
   pour cohérence en lecture seule, mais inaccessible via URL.
+  **MAJ : plus vrai** — les routes GET/POST `/collections/nouvelle`
+  existent (`routes/dashboard.py`) et sont liées depuis
+  `menu_importer.html`. Le template est donc vivant.
 - `components/section_collaborateurs.html` + `partials/_formulaire_collaborateur.html` :
   utilisaient l'ancienne route `collaborateurs.py` archivée en
   V0.8 (CLAUDE.md note explicite). Non touchés — dette V0.8.
@@ -2833,6 +2840,17 @@ dédiée avec URI + label, pas en dur dans le code.
       du verrou. **Risque** : activer `version_id_col` casse les tests
       qui n'incrémentent pas `version` à l'écriture — audit complet
       requis avant. Voir pattern dans `models/item.py:46-47`.
+- [ ] **Isolation per-user des états module-globaux (prérequis V1.0)** —
+      relevé à la revue générale 2026-06-18. `sharedocs_session._session`
+      (identifiants ShareDocs en RAM) et `nakala_depot_jobs._JOBS` /
+      `_id_actuel` (registre des tâches de fond) sont des **module-globaux
+      partagés par toutes les requêtes**. Inoffensif en mono-utilisateur
+      local (le mode actuel), mais **un déploiement multi-utilisateurs
+      exposerait les creds/jobs d'un utilisateur à tous les autres** : ces
+      registres doivent devenir per-utilisateur/session avant le Chantier 3.
+      C'est **le refactor V1.0 le plus structurant** côté état serveur.
+      Détail + voisinage (garde mono-job, doctrine secrets) dans
+      [`roadmap.md`](docs/developpeurs/roadmap.md) § *Transverse / continu*.
 - [x] **Tester `alembic downgrade` dans la CI** — **résolu passe 26
       P3+c.2** : 2 nouveaux tests dans `tests/test_migration.py` :
       `test_migration_downgrade_apres_refonte_v090_puis_upgrade_head_est_idempotent`

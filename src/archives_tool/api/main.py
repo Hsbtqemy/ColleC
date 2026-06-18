@@ -22,12 +22,23 @@ d'effet sur une base déjà à jour.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version_paquet
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+
+try:
+    # Source unique de vérité : la version déclarée dans pyproject.toml,
+    # lue depuis les métadonnées du paquet installé. Évite la dérive d'une
+    # constante recopiée à la main (ancien bug : `0.9.7` figé ici alors que
+    # le projet était en 0.10.0).
+    _VERSION = _version_paquet("archives-tool")
+except PackageNotFoundError:  # pragma: no cover - paquet non installé (rare)
+    _VERSION = "0.0.0+inconnu"
 
 from archives_tool.api.deps import chemin_base_courant
 from archives_tool.api.middleware import middleware_lecture_seule
@@ -78,7 +89,7 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(
     title="archives-tool",
     description="Outil de gestion de collections numérisées",
-    version="0.9.7",
+    version=_VERSION,
     lifespan=_lifespan,
 )
 

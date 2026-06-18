@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Aperçu import ShareDocs · ColleC{% endblock %}
+
+{% block content %}
+{% set carte_style = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:18px 20px;margin-bottom:18px;" %}
+{% set bouton_style = "padding:7px 16px;font-size:13px;border-radius:5px;border:1px solid transparent;background:#1f2937;color:white;cursor:pointer;" %}
+
+<h1 class="text-2xl font-medium mb-2" style="color:#1f1f1f;letter-spacing:-0.02em;">Aperçu de l'import</h1>
+<p class="text-sm text-gray-500 mb-6">
+  Vers l'item <strong>{{ item }}</strong> (fonds {{ fonds }}), racine
+  <code style="font-family:monospace;">{{ racine }}</code>. Rien n'est encore
+  écrit — confirmez ci-dessous.
+</p>
+
+<section style="{{ carte_style }}">
+  <p class="text-sm mb-3" style="color:#1f1f1f;">
+    <strong>{{ rapport.nb_retenus }}</strong> fichier(s) à importer ·
+    {{ rapport.nb_sautes }} sauté(s).
+  </p>
+  <ul style="list-style:none;margin:0;padding:0;">
+    {% for f in rapport.fichiers %}
+    <li style="display:flex;align-items:center;gap:10px;padding:5px 0;
+               border-bottom:1px solid rgba(0,0,0,0.05);font-size:13px;">
+      {% if f.retenu %}
+        <span style="color:#16a34a;">✓</span>
+        <span style="color:#1f1f1f;">{{ f.chemin_relatif }}</span>
+      {% else %}
+        <span style="color:#9ca3af;">—</span>
+        <span style="color:#6b7280;">{{ f.chemin_relatif }}</span>
+        <span style="margin-left:auto;color:#b45309;font-size:12px;">{{ f.raison }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<div class="flex items-center gap-4">
+  {% if rapport.nb_retenus and not est_lecture_seule() %}
+  <form method="post" action="/sharedocs/importer">
+    <input type="hidden" name="fonds" value="{{ fonds }}">
+    <input type="hidden" name="item" value="{{ item }}">
+    <input type="hidden" name="racine" value="{{ racine }}">
+    <input type="hidden" name="chemin" value="{{ chemin }}">
+    {% for f in rapport.fichiers %}
+      {% if f.retenu %}
+      <input type="hidden" name="fichiers" value="{{ f.chemin_distant }}">
+      {% endif %}
+    {% endfor %}
+    <button type="submit" style="{{ bouton_style }}">
+      Confirmer l'import ({{ rapport.nb_retenus }})
+    </button>
+  </form>
+  {% elif est_lecture_seule() %}
+  <span class="text-sm text-gray-500">Import désactivé (mode lecture seule).</span>
+  {% else %}
+  <span class="text-sm text-gray-500">Rien à importer (déjà présent ?).</span>
+  {% endif %}
+  <a href="/sharedocs?chemin={{ chemin | urlencode }}"
+     class="text-sm" style="color:#2563eb;text-decoration:none;">Retour au parcours</a>
+</div>
+{% endblock %}

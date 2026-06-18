@@ -16,6 +16,13 @@
 </div>
 {% endif %}
 
+{% if message %}
+<div role="status" style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#065f46;">
+  ✓ {{ message }}
+</div>
+{% endif %}
+
 {% set label_style = "display:block;font-size:12px;color:#374151;margin-bottom:4px;" %}
 {% set input_style = "width:100%;padding:6px 10px;font-size:13px;border:1px solid rgba(0,0,0,0.15);border-radius:4px;" %}
 {% set carte_style = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:18px 20px;margin-bottom:18px;" %}
@@ -91,7 +98,12 @@
   </nav>
   {% endif %}
 
-  {# Listing du dossier courant #}
+  {% set importable = not est_lecture_seule() %}
+  {# Listing du dossier courant. Si import possible : tout est dans un <form>
+     (cases à cocher sur les fichiers + cible + bouton Aperçu). Les dossiers
+     restent des liens de navigation (hors sélection). #}
+  {% if importable %}<form method="get" action="/sharedocs/importer">
+    <input type="hidden" name="chemin" value="{{ chemin }}">{% endif %}
   <section style="{{ carte_style }}">
     {% if entrees is none %}
       <p class="text-sm text-gray-500">Impossible de lister ce dossier.</p>
@@ -107,6 +119,10 @@
             <a href="/sharedocs?chemin={{ e.chemin | urlencode }}"
                style="color:#2563eb;text-decoration:none;">{{ e.nom }}</a>
           {% else %}
+            {% if importable %}
+            <input type="checkbox" name="fichiers" value="{{ e.chemin }}"
+                   aria-label="Sélectionner {{ e.nom }}">
+            {% endif %}
             <span aria-hidden="true" style="opacity:0.5;">📄</span>
             <span style="color:#1f1f1f;">{{ e.nom }}</span>
             {% if e.taille is not none %}
@@ -120,8 +136,38 @@
       </ul>
     {% endif %}
   </section>
-  <p class="text-xs text-gray-400">
-    La sélection et l'import de fichiers vers un item arrivent dans la prochaine étape.
-  </p>
+
+  {% if importable %}
+    {# Cible de l'import : fonds + item + racine locale #}
+    <section style="{{ carte_style }}">
+      <h2 class="text-base font-medium mb-1" style="color:#1f1f1f;">Importer la sélection</h2>
+      <p class="text-xs text-gray-500 mb-3">
+        Coche des fichiers ci-dessus, indique l'item cible, puis aperçu avant import.
+      </p>
+      <div class="flex gap-4 flex-wrap" style="margin-bottom:12px;">
+        <div style="flex:1;min-width:140px;">
+          <label style="{{ label_style }}" for="imp-fonds">Cote du fonds</label>
+          <input id="imp-fonds" type="text" name="fonds" required style="{{ input_style }}">
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <label style="{{ label_style }}" for="imp-item">Cote de l'item</label>
+          <input id="imp-item" type="text" name="item" required style="{{ input_style }}">
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <label style="{{ label_style }}" for="imp-racine">Racine locale cible</label>
+          {% if racines %}
+          <select id="imp-racine" name="racine" required style="{{ input_style }}">
+            {% for r in racines %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+          </select>
+          {% else %}
+          <input id="imp-racine" type="text" name="racine" required
+                 placeholder="aucune racine configurée" style="{{ input_style }}">
+          {% endif %}
+        </div>
+      </div>
+      <button type="submit" style="{{ bouton_style }}">Aperçu de l'import</button>
+    </section>
+  </form>
+  {% endif %}
 {% endif %}
 {% endblock %}

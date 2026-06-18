@@ -9,10 +9,14 @@ disque), racine inconnue, namespacing par cote + ordre, succès partiel sur
 
 from __future__ import annotations
 
+import hashlib
+import unicodedata
 from pathlib import Path
 
 import httpx
 import pytest
+
+from archives_tool.config import ShareDocsConfig
 from sqlalchemy import select
 
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
@@ -150,10 +154,11 @@ def test_idempotent_deja_en_base(env) -> None:
         assert len(s.scalars(select(Fichier)).all()) == 1
 
 
-def test_deja_sur_disque_saute_sans_telecharger(env) -> None:
+def test_fichier_sur_disque_sans_pendant_est_rattache(env) -> None:
+    """Reprise auto-réparante : un binaire déjà sur disque SANS Fichier en
+    base (import précédent interrompu) est ADOPTÉ — pas re-téléchargé (le
+    contenu reste celui du disque, pas `BYTES-…`), pas écrasé."""
     db, racines = env
-    # Pré-crée le fichier cible → l'import ne doit pas l'écraser ni créer
-    # de Fichier (pas de pendant en base).
     cible = racines["import"] / "AS-001" / "a.jpg"
     cible.parent.mkdir(parents=True)
     cible.write_bytes(b"DEJA-LA")
@@ -167,11 +172,190 @@ def test_deja_sur_disque_saute_sans_telecharger(env) -> None:
             racines=racines,
             dry_run=False,
         )
+    assert rapport.nb_retenus == 1
+    assert rapport.fichiers[0].raison == "rattache_disque"
+    assert cible.read_bytes() == b"DEJA-LA"  # NI écrasé NI re-téléchargé
+    with _session(db) as s:
+        fichiers = s.scalars(select(Fichier)).all()
+        assert len(fichiers) == 1
+        # Le hash est celui du contenu disque adopté, pas du faux download.
+        assert fichiers[0].hash_sha256 == hashlib.sha256(b"DEJA-LA").hexdigest()
+
+
+def test_collision_basename_intra_lot(env) -> None:
+    """Deux chemins distants distincts de même basename → même cible. Le 2e
+    est signalé `collision_nom` (pas perdu en silence), et le dry-run le
+    prédit (aperçu honnête, ≠ ancien comportement)."""
+    db, racines = env
+    chemins = ["dossierA/p1.jpg", "dossierB/p1.jpg"]
+    with _session(db) as s:
+        apercu = importer_depuis_sharedocs(
+            s,
+            _client(),
+            chemins,
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=True,
+        )
+    assert apercu.nb_retenus == 1  # le dry-run ne ment pas (1, pas 2)
+    assert [f.raison for f in apercu.fichiers] == [None, "collision_nom"]
+    with _session(db) as s:
+        reel = importer_depuis_sharedocs(
+            s,
+            _client(),
+            chemins,
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+        assert reel.nb_retenus == 1
+        assert reel.fichiers[1].raison == "collision_nom"
+        assert len(s.scalars(select(Fichier)).all()) == 1
+
+
+def test_modifie_le_none_a_la_creation(env) -> None:
+    """Un fichier importé est *ajouté*, pas *modifié* → `modifie_le` reste
+    None (sinon il s'afficherait à tort comme « modifié il y a… »)."""
+    db, racines = env
+    with _session(db) as s:
+        importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    with _session(db) as s:
+        f = s.scalars(select(Fichier)).one()
+        assert f.modifie_le is None
+        assert f.ajoute_par is None  # défaut importe_par=None
+
+
+def test_ordre_depuis_item_non_vide(env) -> None:
+    """L'ordre repart de max(existants)+1, pas de 1 (sinon collision
+    `uq_fichier_item_ordre`)."""
+    db, racines = env
+    with _session(db) as s:
+        item = _item(s)
+        for i, nom in enumerate(("x.jpg", "y.jpg", "z.jpg"), start=1):
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    racine="import",
+                    chemin_relatif=f"pre/{nom}",
+                    nom_fichier=nom,
+                    ordre=i,
+                )
+            )
+        s.commit()
+    with _session(db) as s:
+        importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    with _session(db) as s:
+        nouveau = s.scalars(select(Fichier).where(Fichier.nom_fichier == "a.jpg")).one()
+        assert nouveau.ordre == 4
+
+
+def test_normalisation_nfc(env) -> None:
+    """Le nom est stocké en NFC même si le chemin distant est en NFD
+    (portabilité macOS, principe n°5) ; la clé d'idempotence reste stable."""
+    nfd = "café.jpg"  # "café.jpg" décomposé
+    db, racines = env
+    with _session(db) as s:
+        importer_depuis_sharedocs(
+            s,
+            _client(),
+            [f"d/{nfd}"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    with _session(db) as s:
+        f = s.scalars(select(Fichier)).one()
+        assert unicodedata.is_normalized("NFC", f.nom_fichier)
+        assert f.nom_fichier == unicodedata.normalize("NFC", nfd)
+        # Re-import → reconnu déjà en base (clé NFC stable).
+        rapport = importer_depuis_sharedocs(
+            s,
+            _client(),
+            [f"d/{nfd}"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+        assert rapport.fichiers[0].raison == "deja_en_base"
+
+
+def test_lot_mixte_deja_et_nouveau(env) -> None:
+    """Lot où un fichier est déjà en base et deux sont nouveaux."""
+    db, racines = env
+    with _session(db) as s:
+        importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    with _session(db) as s:
+        rapport = importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a.jpg", "d/b.jpg", "d/c.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+        assert rapport.nb_retenus == 2 and rapport.nb_sautes == 1
+        assert rapport.fichiers[0].raison == "deja_en_base"
+        assert len(s.scalars(select(Fichier)).all()) == 3
+
+
+def test_echec_ecriture_consigne_et_continue(env) -> None:
+    """Une OSError à l'écriture est consignée (echec_ecriture) sans casser le
+    lot — ici le dossier de namespacing est occupé par un FICHIER."""
+    db, racines = env
+    # `<racine>/AS-001` est un fichier → mkdir du parent de la cible échoue.
+    (racines["import"] / "AS-001").write_bytes(b"je-suis-un-fichier")
+    with _session(db) as s:
+        rapport = importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
     assert rapport.nb_retenus == 0
-    assert rapport.fichiers[0].raison == "deja_sur_disque"
-    assert cible.read_bytes() == b"DEJA-LA"  # non écrasé
+    assert rapport.fichiers[0].raison == "echec_ecriture"
     with _session(db) as s:
         assert s.scalars(select(Fichier)).all() == []
+
+
+def test_sharedocs_config_valide_https() -> None:
+    """`ShareDocsConfig` exige https et strippe le `/` final ; refuse http."""
+    cfg = ShareDocsConfig(base_url="https://sharedocs.huma-num.fr/dav/colleC/")
+    assert cfg.base_url == "https://sharedocs.huma-num.fr/dav/colleC"
+    assert cfg.hotes_autorises == []
+    with pytest.raises(ValueError):
+        ShareDocsConfig(base_url="http://sharedocs.huma-num.fr/dav")
 
 
 def test_racine_inconnue_leve(env) -> None:

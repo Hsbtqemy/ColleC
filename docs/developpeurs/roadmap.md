@@ -149,15 +149,26 @@ l'ingestion bulk + poids `bm25`.
 Débloqué par le Chantier 2 (recherche). Incarne la décision « ColleC
 interne, consommation **aval** ».
 
+- **🔑 Keystone `exporters/iiif_presentation.py`** — manifeste IIIF
+  Presentation 3.0 (Manifest/item + Collection/collection). **Prérequis
+  partagé** de toute la diffusion image : débloque **Canopy** (SSG
+  image-first), rend réel le `iiif_manifest:` du pivot Quarto + son viewer
+  (OSD/UV/Mirador), et porte les annotations W3C déjà produites.
+  **Nécessaire** car Nakala n'expose **pas** la Presentation API (Image API
+  seul — vérifié `nakala-savoir-api.md` §13). À faire **en premier** dans ce
+  chantier ; valeur indépendante de Canopy.
 - **`notebooks-sdk`** — page-guide avec recettes (l'API existe ; ne dépend
   de rien → **tirable dès H0** si envie).
-- **`sites-statiques`** — export arbre Markdown (Quarto phase 1, Hugo
-  phase 3) ; sortie publique **figée**, légère.
+- **`sites-statiques`** — deux cibles **complémentaires** (choix par
+  occasion) : **Quarto/Hugo** = réponse **éditoriale** (pivot Markdown,
+  narratif) ; **Canopy IIIF** = réponse **image-first** (pivot Manifest,
+  feuilletage/facettes/recherche clé-en-main). Sortie publique **figée**,
+  légère.
 - **`portail-public`** — consommateur **dynamique** (FastAPI + Meilisearch
   + IIIF), **système séparé** ; le plus loin (corpus + OCR + IIIF requis).
 
-**Renvois** : `notebooks-sdk-future.md`, `sites-statiques-future.md`,
-`portail-public-future.md`.
+**Renvois** : `notebooks-sdk-future.md`, `sites-statiques-future.md`
+(§ Candidat Canopy + keystone), `portail-public-future.md`.
 
 ---
 

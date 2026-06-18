@@ -497,11 +497,88 @@ Enrichissements à la demande, **jamais en anticipation** :
 - **Pas de build du site, pas de validation HTTP, pas de
   versioning d'exports, pas de multi-langue en V1.**
 
+## Candidat image-first : Canopy IIIF + keystone manifeste IIIF Presentation (évalué 2026-06-18)
+
+[Canopy IIIF](https://github.com/canopy-iiif/app) (MIT, mature — v1.12.2
+mai 2026, ~164 releases) est un **générateur de site statique piloté par
+IIIF** : on lui donne une **Collection IIIF Presentation** (clé `collection:`
+de `canopy.yml`, et/ou des `manifest:`), il génère un site statique
+(GitHub Pages, `npm run build`, Node ≥24) avec **une page « work » par
+Manifest**, un **facettage automatique** par métadonnées (clé `metadata:`,
+ex. `Subject` / `Date` / `Language` / `Genre`), une **recherche** et des
+pages éditoriales **MDX** (`content/*.mdx`). Viewer Clover IIIF, theming
+Tailwind (`theme: {appearance, accentColor, grayColor}`). Le repo `app`
+est le **moteur** — les vrais projets partent d'un **template** (≠ cloner
+`app`).
+
+### Pourquoi c'est complémentaire de Quarto, pas concurrent
+
+Les deux sont des **sorties statiques**, mais de **centre de gravité
+opposé**, sur le **même substrat IIIF** :
+
+| | **Quarto / Hugo** (ce doc) | **Canopy** |
+|---|---|---|
+| Pivot d'entrée | **Markdown + frontmatter** | **Collection IIIF Presentation** |
+| Unité | la **notice** (texte) | le **Manifest** (objet/image) |
+| Centre de gravité | **éditorial** : prose, dossiers, biblio, contrôle fin | **image-first** : feuilletage, deep-zoom, facettes + recherche clé-en-main |
+| Idéal pour | corpus éditorialisé, exposition narrative | périodique numérisé à feuilleter/facetter (Por Favor) |
+| Éditorial | natif (Markdown) | surcouche MDX |
+
+Choix **par occasion**, non exclusif : Quarto = réponse éditoriale,
+Canopy = réponse image-first. Tous deux nourris par ColleC.
+
+### Keystone : un exporter `iiif_presentation.py` (prérequis partagé)
+
+**Contrainte vérifiée** (`nakala-savoir-api.md` §13, sondé live) : Nakala
+expose l'**Image API** (`info.json`) mais **pas** l'API **Presentation**
+(`/iiif/{doi}/manifest…` → 404). Donc **aucun raccourci** « pointer Canopy
+sur Nakala » : ColleC doit **générer** les manifestes Presentation. Cet
+exporter est donc la **seule porte** vers tout consommateur Presentation,
+et il **paie plusieurs fois** :
+
+1. **débloque Canopy** (`collection:` pointe sur la Collection générée) ;
+2. **rend réel le champ `iiif_manifest:`** du pivot Quarto, et le viewer
+   embarqué (OSD / UV / **Mirador**) consomme le **même** manifeste ;
+3. les **annotations W3C** déjà produites par ColleC s'**attachent au
+   manifeste** → ressortent dans Clover (Canopy) **et** Mirador (Quarto).
+
+C'est bien borné : ColleC a la structure item→fichiers ordonnés, les URLs
+**Image API Nakala** (`info.json`) comme `service` de chaque canvas, les
+métadonnées et les annotations. Le **mapping facettes Canopy** tombe
+juste : `Subject`←`sujets`, `Date`←`date`/`année`, `Language`←`langue`,
+`Genre`←`type_coar` (l'exporter pose ces labels dans le `metadata` du
+Manifest → facettage Canopy sans config). Les `id` des manifestes prennent
+un `--base-url` (même pattern que l'export annotations δ : URI relative à
+remplacer après dépôt).
+
+### Réserves
+
+- **Hébergement des manifestes** = affaire du **projet de site** (ColleC
+  produit, n'héberge pas). Option élégante : déposer les JSON générés comme
+  *data* Nakala → URLs HTTP stables ; sinon raw GitHub du repo de site.
+- **Build JS (Node ≥24)** côté projet de site, pas dans ColleC (cohérent
+  avec « ColleC ne build pas le site »). Dépôt exemple type
+  `colle-c-example-site-canopy` à partir du **template** Canopy.
+- **Theming opiniâtre** (Tailwind tokens) → moins de liberté éditoriale
+  que Quarto. C'est l'arbitrage assumé.
+
+### Statut
+
+**Candidat évalué, non engagé.** Le **prérequis** = l'exporter
+`iiif_presentation.py`, qui a de la valeur **indépendamment** de Canopy
+(Mirador, UV, portail public en consomment aussi). À séquencer dans le
+**Chantier 4 (diffusion)**, après le Chantier 2 (OCR/recherche). Décision
+de cible (Quarto / Canopy / les deux) à prendre **par occasion de
+valorisation**, pas une fois pour toutes.
+
 ## Renvois
 
 - Roadmap V2 du `CLAUDE.md` racine (section *Plan de
   développement*) : ajouter une entrée explicite « Export site
   statique » lors de la validation finale.
+- **Canopy IIIF** + keystone manifeste IIIF Presentation : cf. section
+  ci-dessus ; contrainte Nakala (Image API seul, pas Presentation) dans
+  `nakala-savoir-api.md` §13.
 - Portail public (consommateur dynamique parallèle aux sites
   statiques) : `portail-public-future.md`.
 - Annotations IIIF (intégrables en phase 4) :

@@ -83,14 +83,10 @@ def test_session_inexistante_404(client_vide: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_abandonner_passe_le_statut(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_abandonner_passe_le_statut(client_vide: TestClient, tmp_path: Path) -> None:
     cree = client_vide.post("/import/nouveau", follow_redirects=False)
     session_id = int(cree.headers["location"].rsplit("/", 1)[1])
-    resp = client_vide.post(
-        f"/import/{session_id}/abandonner", follow_redirects=False
-    )
+    resp = client_vide.post(f"/import/{session_id}/abandonner", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/import"
 
@@ -111,12 +107,8 @@ def test_abandonner_idempotent(client_vide: TestClient) -> None:
     """Ré-abandonner une session déjà abandonnée reste un 303 propre."""
     cree = client_vide.post("/import/nouveau", follow_redirects=False)
     session_id = int(cree.headers["location"].rsplit("/", 1)[1])
-    r1 = client_vide.post(
-        f"/import/{session_id}/abandonner", follow_redirects=False
-    )
-    r2 = client_vide.post(
-        f"/import/{session_id}/abandonner", follow_redirects=False
-    )
+    r1 = client_vide.post(f"/import/{session_id}/abandonner", follow_redirects=False)
+    r2 = client_vide.post(f"/import/{session_id}/abandonner", follow_redirects=False)
     assert r1.status_code == 303
     assert r2.status_code == 303
 
@@ -150,9 +142,7 @@ def test_abandonner_supprime_le_tableur_temporaire(
 # ---------------------------------------------------------------------------
 
 
-def test_upload_csv_detecte_colonnes(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_upload_csv_detecte_colonnes(client_vide: TestClient, tmp_path: Path) -> None:
     cree = client_vide.post("/import/nouveau", follow_redirects=False)
     sid = _id_session(cree)
     resp = client_vide.post(
@@ -281,9 +271,7 @@ def _session_a_l_etape_mapping(client: TestClient) -> int:
         files={"fichier": ("inv.csv", CSV_DEMO, "text/csv")},
         data={"feuille": ""},
     )
-    client.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     return sid
 
 
@@ -439,9 +427,7 @@ def test_mapping_anomalies_a11y_role_region(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     # Override avec Page → __meta__ pour générer une anomalie.
     client_vide.post(
         f"/import/{sid}/mapping",
@@ -481,9 +467,7 @@ def test_mapping_simple_macro_respecte_choix_vide_explicite(
     import re
 
     # Cherche le <select name="colonne_titre"> et son option selected.
-    match = re.search(
-        r'<select name="colonne_titre".*?</select>', resp.text, re.DOTALL
-    )
+    match = re.search(r'<select name="colonne_titre".*?</select>', resp.text, re.DOTALL)
     assert match is not None
     bloc = match.group()
     # L'option vide doit être selected.
@@ -511,9 +495,7 @@ def test_apercu_affiche_divergences_aggregees(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     # Granularité fichier + Page sur __meta__ (l'utilisateur override
     # la promotion auto et choisit "Métadonnée personnalisée item").
     client_vide.post(
@@ -557,9 +539,7 @@ def test_mapping_anomalie_apres_override_par_fichier(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     # Override : on force Page sur __meta__ malgré la promotion auto.
     client_vide.post(
         f"/import/{sid}/mapping",
@@ -571,7 +551,7 @@ def test_mapping_anomalie_apres_override_par_fichier(
     assert resp.status_code == 200
     assert "Anomalies détectées" in resp.text
     assert "« Page »" in resp.text
-    assert 'data-action-corriger' in resp.text
+    assert "data-action-corriger" in resp.text
     assert 'data-cible-suggeree="__meta_fichier__"' in resp.text
 
 
@@ -584,13 +564,7 @@ def test_mapping_anomalie_melange_pas_de_bouton_corriger(
     de trancher."""
     # 4 cotes : 2 avec une valeur stable, 2 avec deux valeurs → 50/50,
     # tombe en `melange` (ni >=90% par-item, ni >50% par-fichier).
-    csv = (
-        b"Cote;X\n"
-        b"HK-1;a\nHK-1;a\n"
-        b"HK-2;b\nHK-2;b\n"
-        b"HK-3;c\nHK-3;d\n"
-        b"HK-4;e\nHK-4;f\n"
-    )
+    csv = b"Cote;X\nHK-1;a\nHK-1;a\nHK-2;b\nHK-2;b\nHK-3;c\nHK-3;d\nHK-4;e\nHK-4;f\n"
     cree = client_vide.post("/import/nouveau", follow_redirects=False)
     sid = _id_session(cree)
     client_vide.post(
@@ -598,9 +572,7 @@ def test_mapping_anomalie_melange_pas_de_bouton_corriger(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     resp = client_vide.get(f"/import/{sid}/mapping?avance=1")
     assert resp.status_code == 200
     assert "Anomalies détectées" in resp.text
@@ -630,9 +602,7 @@ def test_mapping_pas_d_anomalie_si_coherent(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     resp = client_vide.get(f"/import/{sid}/mapping?avance=1")
     assert resp.status_code == 200
     # Page est auto-promue en CIBLE_META_FICHIER → pas d'anomalie.
@@ -658,9 +628,7 @@ def test_mapping_affiche_indice_classif(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     resp = client_vide.get(f"/import/{sid}/mapping?avance=1")
     assert resp.status_code == 200
     # On signale les surprises (cote, par-fichier, mélange) — pas par-item
@@ -736,8 +704,8 @@ def test_suggerer_reponses_simple_restaure_mapping_existant() -> None:
             "D": {"classif": "par-item"},
         },
         mappings={
-            "cote": "B",          # l'user a choisi B comme cote (pas A)
-            "titre": "D",         # et D comme titre
+            "cote": "B",  # l'user a choisi B comme cote (pas A)
+            "titre": "D",  # et D comme titre
             "metadonnees.a": "A",
             "metadonnees.c": "C",
         },
@@ -895,21 +863,19 @@ def test_mapping_simple_indice_granularite_fichier(
         files={"fichier": ("inv.csv", csv, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     resp = client_vide.get(f"/import/{sid}/mapping")
     assert resp.status_code == 200
     assert "La majorité des colonnes varient au sein de chaque cote" in resp.text
     # Le radio « fichier » doit être checked.
-    assert 'value="fichier"\n               checked' in resp.text or \
-           'value="fichier" checked' in resp.text or \
-           'checked>' in resp.text  # tolérant aux variations de rendu Jinja
+    assert (
+        'value="fichier"\n               checked' in resp.text
+        or 'value="fichier" checked' in resp.text
+        or "checked>" in resp.text
+    )  # tolérant aux variations de rendu Jinja
 
 
-def test_mapping_simple_toggle_avance(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_mapping_simple_toggle_avance(client_vide: TestClient, tmp_path: Path) -> None:
     """`?avance=1` rend l'ancienne page avec 28 selects + lien de retour."""
     sid = _session_a_l_etape_mapping(client_vide)
     resp = client_vide.get(f"/import/{sid}/mapping?avance=1")
@@ -1028,7 +994,9 @@ def test_colonnes_champs_avances_session_sans_mapping() -> None:
     assert colonnes_champs_avances(session) == []
 
 
-def test_colonnes_champs_avances_ignore_les_pertes_recuperables_par_heuristique() -> None:
+def test_colonnes_champs_avances_ignore_les_pertes_recuperables_par_heuristique() -> (
+    None
+):
     """Bug B : si la colonne au nom évocateur (« Année », « Auteur »)
     serait re-promue vers la même cible dédiée par l'heuristique du
     mode simple, on ne signale PAS une perte. Évite la bannière
@@ -1042,7 +1010,13 @@ def test_colonnes_champs_avances_ignore_les_pertes_recuperables_par_heuristique(
     session = SessionImport(
         utilisateur="test",
         colonnes_detectees=[
-            "Cote", "Année", "Auteur", "Langue", "An", "Aut", "DOI",
+            "Cote",
+            "Année",
+            "Auteur",
+            "Langue",
+            "An",
+            "Aut",
+            "DOI",
         ],
         mappings={
             "cote": "Cote",
@@ -1232,8 +1206,16 @@ def test_apercu_repartition_simple_compte_promues_vs_libres() -> None:
     session = SessionImport(
         utilisateur="test",
         colonnes_detectees=[
-            "Cote", "title", "Date", "doi", "langue", "auteur",
-            "filename", "thumb", "ancienne_cote", "Commentaire",
+            "Cote",
+            "title",
+            "Date",
+            "doi",
+            "langue",
+            "auteur",
+            "filename",
+            "thumb",
+            "ancienne_cote",
+            "Commentaire",
         ],
         colonnes_echantillon={
             "Cote": {"classif": "cote"},
@@ -1292,7 +1274,9 @@ def test_apercu_repartition_simple_sans_suggestions_complet() -> None:
         },
     )
     sugg = SuggestionsModeSimple(
-        colonne_cote=None, colonne_titre=None, colonne_date=None,
+        colonne_cote=None,
+        colonne_titre=None,
+        colonne_date=None,
         granularite="item",
     )
     apercu = apercu_repartition_simple(session, sugg)
@@ -1352,7 +1336,9 @@ def test_construire_mapping_simple_filtre_colonnes_absentes_d_echantillons() -> 
         },
     )
     mapping = construire_mapping_depuis_simple(
-        session, colonne_cote="Cote", colonne_titre="title",
+        session,
+        colonne_cote="Cote",
+        colonne_titre="title",
         colonne_date="Date",
     )
     # « Vide » est exclue — n'apparaît ni en champ dédié ni en
@@ -1477,9 +1463,7 @@ def test_construire_mapping_simple_collision_roles() -> None:
         colonnes_echantillon=None,
     )
     with pytest.raises(MappingInvalide, match="à la fois"):
-        construire_mapping_depuis_simple(
-            session, colonne_cote="c", colonne_titre="c"
-        )
+        construire_mapping_depuis_simple(session, colonne_cote="c", colonne_titre="c")
 
 
 # ---------------------------------------------------------------------------
@@ -1543,9 +1527,7 @@ def test_detecter_anomalies_par_item_cible_fichier() -> None:
         detecter_anomalies_mapping,
     )
 
-    session = _session_avec_classif(
-        {"cote": "cote", "titre": "par-item"}
-    )
+    session = _session_avec_classif({"cote": "cote", "titre": "par-item"})
     cibles = ["cote", CIBLE_META_FICHIER]  # titre en niveau fichier (faux)
     anomalies = detecter_anomalies_mapping(session, cibles)
     assert len(anomalies) == 1
@@ -1562,9 +1544,7 @@ def test_detecter_anomalies_melange_sans_suggestion() -> None:
         detecter_anomalies_mapping,
     )
 
-    session = _session_avec_classif(
-        {"cote": "cote", "X": "melange"}
-    )
+    session = _session_avec_classif({"cote": "cote", "X": "melange"})
     cibles = ["cote", CIBLE_META]
     anomalies = detecter_anomalies_mapping(session, cibles)
     assert len(anomalies) == 1
@@ -1580,9 +1560,7 @@ def test_detecter_anomalies_ignore_cible_ignore() -> None:
         detecter_anomalies_mapping,
     )
 
-    session = _session_avec_classif(
-        {"cote": "cote", "page": "par-fichier"}
-    )
+    session = _session_avec_classif({"cote": "cote", "page": "par-fichier"})
     cibles = ["cote", CIBLE_IGNORE]
     assert detecter_anomalies_mapping(session, cibles) == []
 
@@ -1610,9 +1588,7 @@ def test_detecter_anomalies_par_fichier_sur_champ_dedie_fichier_ok() -> None:
     pas d'anomalie, c'est cohérent."""
     from archives_tool.api.services.import_web import detecter_anomalies_mapping
 
-    session = _session_avec_classif(
-        {"cote": "cote", "filename": "par-fichier"}
-    )
+    session = _session_avec_classif({"cote": "cote", "filename": "par-fichier"})
     cibles = ["cote", "fichier.nom_fichier"]
     assert detecter_anomalies_mapping(session, cibles) == []
 
@@ -1644,13 +1620,8 @@ def test_detecter_anomalies_sans_classif() -> None:
     )
     assert detecter_anomalies_mapping(session_sans_ech, ["cote", CIBLE_META]) == []
 
-    session_indetermine = _session_avec_classif(
-        {"cote": "cote", "x": "indetermine"}
-    )
-    assert (
-        detecter_anomalies_mapping(session_indetermine, ["cote", CIBLE_META])
-        == []
-    )
+    session_indetermine = _session_avec_classif({"cote": "cote", "x": "indetermine"})
+    assert detecter_anomalies_mapping(session_indetermine, ["cote", CIBLE_META]) == []
 
 
 def test_cibles_proposees_mapping_existant_pas_re_promu() -> None:
@@ -1682,9 +1653,7 @@ def test_cibles_proposees_mapping_existant_pas_re_promu() -> None:
     assert cibles[1] == CIBLE_META
 
 
-def test_soumettre_mapping_valide(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_soumettre_mapping_valide(client_vide: TestClient, tmp_path: Path) -> None:
     sid = _session_a_l_etape_mapping(client_vide)
     # 3 colonnes (Cote, Titre, Date) → cote, titre, métadonnée.
     resp = client_vide.post(
@@ -1752,9 +1721,7 @@ def test_fichiers_skip_metadonnees_seules(
     assert rows[0].etape == "apercu"
 
 
-def test_fichiers_avec_racine_motif(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_fichiers_avec_racine_motif(client_vide: TestClient, tmp_path: Path) -> None:
     sid = _session_a_l_etape_fichiers(client_vide)
     resp = client_vide.post(
         f"/import/{sid}/fichiers",
@@ -1809,15 +1776,11 @@ def test_apercu_dry_run_compte_les_items(client_vide: TestClient) -> None:
     assert ">2</strong>" in resp.text
 
 
-def test_executer_cree_le_fonds(
-    client_vide: TestClient, tmp_path: Path
-) -> None:
+def test_executer_cree_le_fonds(client_vide: TestClient, tmp_path: Path) -> None:
     from archives_tool.models import Fonds, Item
 
     sid = _session_prete_pour_apercu(client_vide)
-    resp = client_vide.post(
-        f"/import/{sid}/executer", follow_redirects=False
-    )
+    resp = client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/fonds/HK"
 
@@ -1826,9 +1789,7 @@ def test_executer_cree_le_fonds(
     with factory() as s:
         fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
         assert fonds is not None
-        nb_items = len(
-            list(s.scalars(select(Item).where(Item.fonds_id == fonds.id)))
-        )
+        nb_items = len(list(s.scalars(select(Item).where(Item.fonds_id == fonds.id))))
         assert nb_items == 2
     engine.dispose()
 
@@ -1844,9 +1805,7 @@ def test_executer_idempotent_redirige_vers_le_fonds(
     pas de second import."""
     sid = _session_prete_pour_apercu(client_vide)
     client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
-    resp = client_vide.post(
-        f"/import/{sid}/executer", follow_redirects=False
-    )
+    resp = client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/fonds/HK"
 
@@ -1883,9 +1842,7 @@ def _session_apercu_csv(client: TestClient, contenu: bytes) -> int:
         files={"fichier": ("inv.csv", contenu, "text/csv")},
         data={"feuille": ""},
     )
-    client.post(
-        f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"}
-    )
+    client.post(f"/import/{sid}/fonds", data={"cote": "HK", "titre": "Hara-Kiri"})
     client.post(
         f"/import/{sid}/mapping",
         data={"cible": ["cote", "titre", "annee"]},
@@ -1911,9 +1868,7 @@ def test_apercu_tolere_les_lignes_sans_cote(client_vide: TestClient) -> None:
     """Avec `?tolerer_sans_cote=true`, la ligne sans cote est ignorée :
     2 items, plus d'erreur bloquante."""
     sid = _session_apercu_csv(client_vide, CSV_AVEC_LIGNE_SANS_COTE)
-    resp = client_vide.get(
-        f"/import/{sid}/apercu?tolerer_sans_cote=true"
-    )
+    resp = client_vide.get(f"/import/{sid}/apercu?tolerer_sans_cote=true")
     assert resp.status_code == 200
     assert "ne peut pas s'exécuter" not in resp.text
     assert ">2</strong>" in resp.text  # 2 items
@@ -1959,10 +1914,7 @@ def test_executer_sans_tolerance_bloque_sur_ligne_sans_cote(
 
 # CSV à granularité fichier : 3 lignes, 2 cotes (PF-1 sur 2 lignes).
 CSV_GRANULARITE_FICHIER = (
-    b"Cote;Titre;Page\n"
-    b"PF-1;Numero 1;1\n"
-    b"PF-1;Numero 1;2\n"
-    b"PF-2;Numero 2;1\n"
+    b"Cote;Titre;Page\nPF-1;Numero 1;1\nPF-1;Numero 1;2\nPF-2;Numero 2;1\n"
 )
 
 
@@ -1980,21 +1932,16 @@ def test_granularite_fichier_regroupe_par_cote(
         files={"fichier": ("inv.csv", CSV_GRANULARITE_FICHIER, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"})
     client_vide.post(
         f"/import/{sid}/mapping",
-        data={"cible": ["cote", "titre", "__ignore__"],
-              "granularite": "fichier"},
+        data={"cible": ["cote", "titre", "__ignore__"], "granularite": "fichier"},
     )
     client_vide.post(
         f"/import/{sid}/fichiers",
         data={"racine": "", "motif_chemin": "", "type_motif": "template"},
     )
-    resp = client_vide.post(
-        f"/import/{sid}/executer", follow_redirects=False
-    )
+    resp = client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"] == "/fonds/PF"
 
@@ -2014,8 +1961,7 @@ def test_granularite_persistee_dans_la_session(
     sid = _session_a_l_etape_mapping(client_vide)
     client_vide.post(
         f"/import/{sid}/mapping",
-        data={"cible": ["cote", "titre", "__meta__"],
-              "granularite": "fichier"},
+        data={"cible": ["cote", "titre", "__meta__"], "granularite": "fichier"},
     )
     rows = _sessions(tmp_path / "vide.db")
     assert rows[0].granularite == "fichier"
@@ -2047,14 +1993,13 @@ def test_mapping_fichier_cree_des_fichiers_nakala(
         files={"fichier": ("export.csv", CSV_EXPORT_NAKALA, "text/csv")},
         data={"feuille": ""},
     )
-    client_vide.post(
-        f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"}
-    )
+    client_vide.post(f"/import/{sid}/fonds", data={"cote": "PF", "titre": "Por Favor"})
     client_vide.post(
         f"/import/{sid}/mapping",
         data={
             "cible": [
-                "cote", "titre",
+                "cote",
+                "titre",
                 "fichier.nom_fichier",
                 "fichier.hash_sha256",
                 "fichier.iiif_url_nakala",
@@ -2066,9 +2011,7 @@ def test_mapping_fichier_cree_des_fichiers_nakala(
         f"/import/{sid}/fichiers",
         data={"racine": "", "motif_chemin": "", "type_motif": "template"},
     )
-    resp = client_vide.post(
-        f"/import/{sid}/executer", follow_redirects=False
-    )
+    resp = client_vide.post(f"/import/{sid}/executer", follow_redirects=False)
     assert resp.status_code == 303
 
     engine = creer_engine(tmp_path / "vide.db")
@@ -2124,13 +2067,12 @@ def test_hints_couvrent_toutes_les_cibles() -> None:
         CIBLE_META_FICHIER,
     )
 
-    cibles_attendues = {
-        v for v, _ in routes._CIBLES_ITEM
-    } | {
-        v for v, _ in routes._CIBLES_FICHIER
-    } | {
-        v for v, _ in routes._CIBLES_META_FREQUENTES
-    } | {CIBLE_META, CIBLE_META_FICHIER, CIBLE_IGNORE}
+    cibles_attendues = (
+        {v for v, _ in routes._CIBLES_ITEM}
+        | {v for v, _ in routes._CIBLES_FICHIER}
+        | {v for v, _ in routes._CIBLES_META_FREQUENTES}
+        | {CIBLE_META, CIBLE_META_FICHIER, CIBLE_IGNORE}
+    )
     couvertes = set(routes._HINTS_CIBLES.keys())
     manquantes = cibles_attendues - couvertes
     assert not manquantes, f"hints absents pour : {sorted(manquantes)}"

@@ -171,8 +171,7 @@ def controler_inv6_item_dans_miroir(
     # — économise mémoire et IO sur grosse base.
     miroir_ids_relevants = (
         {miroirs_par_fonds[perimetre.fonds_id]}
-        if perimetre.fonds_id is not None
-        and perimetre.fonds_id in miroirs_par_fonds
+        if perimetre.fonds_id is not None and perimetre.fonds_id in miroirs_par_fonds
         else set(miroirs_par_fonds.values())
     )
     liaisons_stmt = select(ItemCollection.item_id, ItemCollection.collection_id).where(
@@ -188,9 +187,7 @@ def controler_inv6_item_dans_miroir(
         if (iid, miroir_id) not in liaisons:
             problemes.append(
                 Exemple(
-                    message=(
-                        f"Item {item_cote} retiré de la miroir du fonds {fc}"
-                    ),
+                    message=(f"Item {item_cote} retiré de la miroir du fonds {fc}"),
                     references={
                         "item_cote": item_cote,
                         "item_id": iid,

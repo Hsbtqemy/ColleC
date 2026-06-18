@@ -55,8 +55,9 @@ class _ConfigNakalaStub:
     """Stub minimal de ConfigNakala — duck-typed (le runner n'utilise
     que ces 4 attributs pour construire NakalaEcritureClient)."""
 
-    def __init__(self, *, base_url: str = "https://apitest.nakala.fr",
-                 api_key: str = "test-key") -> None:
+    def __init__(
+        self, *, base_url: str = "https://apitest.nakala.fr", api_key: str = "test-key"
+    ) -> None:
         self.base_url = base_url
         self.api_key = api_key
         self.timeout = 30.0
@@ -84,10 +85,14 @@ class _ClientEcritureStub:
         return {"payload": {"id": "10.34847/nkl.colNEW"}}
 
     def creer_depot(self, *, metas, files, status="pending", collections_ids=None):
-        self.depots_crees.append({
-            "metas": metas, "files": files, "status": status,
-            "collectionsIds": collections_ids,
-        })
+        self.depots_crees.append(
+            {
+                "metas": metas,
+                "files": files,
+                "status": status,
+                "collectionsIds": collections_ids,
+            }
+        )
         return {"payload": {"id": f"10.34847/nkl.dep{len(self.depots_crees)}"}}
 
     def supprimer_upload(self, sha1):
@@ -103,18 +108,30 @@ def _amorcer_collection_avec_item(db_path: Path, tmp_path: Path) -> int:
     factory = creer_session_factory(creer_engine(db_path))
     with factory() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="La mujer desnuda", fonds_id=f.id,
-            date="1984", langue="spa", description="Roman",
-            type_coar="http://purl.org/coar/resource_type/c_2f33",
-            metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Lit"]},
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="La mujer desnuda",
+                fonds_id=f.id,
+                date="1984",
+                langue="spa",
+                description="Roman",
+                type_coar="http://purl.org/coar/resource_type/c_2f33",
+                metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Lit"]},
+            ),
+        )
         (tmp_path / "scans").mkdir(exist_ok=True)
         (tmp_path / "scans" / "as001.jpg").write_bytes(b"\xff\xd8\xff img")
-        s.add(Fichier(
-            item_id=item.id, nom_fichier="as001.jpg", racine="scans",
-            chemin_relatif="as001.jpg", ordre=1,
-        ))
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="as001.jpg",
+                racine="scans",
+                chemin_relatif="as001.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
         miroir = s.scalar(
             select(Collection).where(
@@ -207,7 +224,8 @@ def test_make_progress_silencieux_si_job_inconnu() -> None:
 
 
 def test_executer_depot_succes_marque_termine_et_libere_id_actuel(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Parcours nominal : 1 item, dépôt réussi.
     - statut passe à `termine`.
@@ -225,8 +243,11 @@ def test_executer_depot_succes_marque_termine_et_libere_id_actuel(
         return_value=client,
     ):
         executer_depot_collection(
-            job_id, chemin_db=db_path, collection_id=col_id,
-            config_nakala=_ConfigNakalaStub(), racines=racines,
+            job_id,
+            chemin_db=db_path,
+            collection_id=col_id,
+            config_nakala=_ConfigNakalaStub(),
+            racines=racines,
         )
 
     etat = lire_etat_job(job_id)
@@ -244,7 +265,8 @@ def test_executer_depot_succes_marque_termine_et_libere_id_actuel(
 
 
 def test_executer_depot_collection_inexistante_marque_echec(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Collection introuvable → statut=echec, erreur_globale posée,
     verrou libéré. Garde-fou contre une race où la collection serait
@@ -256,7 +278,9 @@ def test_executer_depot_collection_inexistante_marque_echec(
         return_value=_ClientEcritureStub(),
     ):
         executer_depot_collection(
-            job_id, chemin_db=db_path, collection_id=99999,
+            job_id,
+            chemin_db=db_path,
+            collection_id=99999,
             config_nakala=_ConfigNakalaStub(),
             racines={"scans": tmp_path / "scans"},
         )
@@ -268,7 +292,8 @@ def test_executer_depot_collection_inexistante_marque_echec(
 
 
 def test_executer_depot_reprise_idempotente_via_doi_pre_existant(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Reprise après un job tué : on pré-pose `Collection.doi_nakala`
     et `Item.doi_nakala` pour simuler le résultat partiel. Le 2e run
@@ -295,7 +320,9 @@ def test_executer_depot_reprise_idempotente_via_doi_pre_existant(
         return_value=client,
     ):
         executer_depot_collection(
-            job_id, chemin_db=db_path, collection_id=col_id,
+            job_id,
+            chemin_db=db_path,
+            collection_id=col_id,
             config_nakala=_ConfigNakalaStub(),
             racines={"scans": tmp_path / "scans"},
         )
@@ -404,6 +431,4 @@ def test_lire_etat_job_isolation_listes_avec_runner_concurrent() -> None:
 
     arret.set()
     lecteur.join(timeout=2)
-    assert erreurs_detectees == [], (
-        f"snapshot non isole : {erreurs_detectees[:3]}"
-    )
+    assert erreurs_detectees == [], f"snapshot non isole : {erreurs_detectees[:3]}"

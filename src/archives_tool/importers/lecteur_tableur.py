@@ -31,17 +31,13 @@ class LectureTableurErreur(Exception):
 
 
 # Extensions de tableur reconnues par le lecteur.
-EXTENSIONS_TABLEUR: frozenset[str] = frozenset(
-    {".xlsx", ".xls", ".csv", ".tsv"}
-)
+EXTENSIONS_TABLEUR: frozenset[str] = frozenset({".xlsx", ".xls", ".csv", ".tsv"})
 
 # Sentinelles nulles par défaut, utilisées par l'analyse de colonnes
 # avant que le profil n'existe (l'assistant n'a pas encore la liste
 # `valeurs_nulles` du profil cible). Mêmes valeurs que le défaut du
 # schéma Profil (`TableurConfig.valeurs_nulles`), en case-insensible.
-_VALEURS_NULLES_DEFAUT: frozenset[str] = frozenset(
-    {"", "none", "n/a", "s.d.", "nan"}
-)
+_VALEURS_NULLES_DEFAUT: frozenset[str] = frozenset({"", "none", "n/a", "s.d.", "nan"})
 
 # Nombre max de lignes lues pour l'analyse d'échantillonnage. Au-delà,
 # les stats reflètent un échantillon, pas le total — acceptable pour
@@ -102,9 +98,7 @@ _SEUIL_PAR_ITEM = 0.90
 _SEUIL_PAR_FICHIER = 0.50
 
 
-def lire_entetes_tableur(
-    chemin: Path, feuille: str | None = None
-) -> list[str]:
+def lire_entetes_tableur(chemin: Path, feuille: str | None = None) -> list[str]:
     """Lit la seule ligne d'en-tête d'un tableur et renvoie ses colonnes.
 
     Lecture minimale (`nrows=1`) — utilisée par l'assistant d'import
@@ -130,19 +124,13 @@ def lire_entetes_tableur(
         else:
             sep = "\t" if ext == ".tsv" else ";"
             try:
-                df = pd.read_csv(
-                    chemin, sep=sep, encoding="utf-8", dtype=str, nrows=1
-                )
+                df = pd.read_csv(chemin, sep=sep, encoding="utf-8", dtype=str, nrows=1)
             except UnicodeDecodeError:
-                df = pd.read_csv(
-                    chemin, sep=sep, encoding="cp1252", dtype=str, nrows=1
-                )
+                df = pd.read_csv(chemin, sep=sep, encoding="cp1252", dtype=str, nrows=1)
     except LectureTableurErreur:
         raise
     except Exception as e:  # noqa: BLE001 — toute erreur pandas → message propre
-        raise LectureTableurErreur(
-            f"Lecture du tableur impossible : {e}"
-        ) from e
+        raise LectureTableurErreur(f"Lecture du tableur impossible : {e}") from e
 
     colonnes = [str(c).strip() for c in df.columns]
     if not colonnes:
@@ -317,13 +305,9 @@ def analyser_colonnes_tableur(
     except LectureTableurErreur:
         raise
     except Exception as e:  # noqa: BLE001 — toute erreur pandas → message propre
-        raise LectureTableurErreur(
-            f"Lecture du tableur impossible : {e}"
-        ) from e
+        raise LectureTableurErreur(f"Lecture du tableur impossible : {e}") from e
 
-    df.columns = [
-        unicodedata.normalize("NFC", str(c).strip()) for c in df.columns
-    ]
+    df.columns = [unicodedata.normalize("NFC", str(c).strip()) for c in df.columns]
     # Normalisation in-place : sentinelles + NaN → None. On a besoin
     # d'un df nettoyé pour le groupby de la classif (sinon "none" ou
     # NaN serait compté comme valeur distincte).
@@ -377,9 +361,7 @@ def analyser_colonnes_tableur(
     # utile. La colonne cote, même 100 % vide théoriquement (cas
     # absurde), serait quand même filtrée — l'utilisateur verra
     # "colonne cote inconnue" à la soumission mode simple.
-    return {
-        col: s for col, s in stats.items() if s["remplies"] > 0
-    }
+    return {col: s for col, s in stats.items() if s["remplies"] > 0}
 
 
 def _normaliser_cellule(valeur: Any, valeurs_nulles: set[str]) -> Any:

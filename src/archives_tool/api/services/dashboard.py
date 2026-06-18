@@ -1021,8 +1021,7 @@ def _composer_cartographie_collections(
 
     # 2) Map item_id → set(collection_ids) du fonds, en une query.
     appartenance_rows = db.execute(
-        select(ItemCollection.item_id, ItemCollection.collection_id)
-        .where(
+        select(ItemCollection.item_id, ItemCollection.collection_id).where(
             ItemCollection.collection_id.in_([c.id for c in collections])
         )
     ).all()
@@ -1031,17 +1030,11 @@ def _composer_cartographie_collections(
         appartenance.setdefault(item_id, set()).add(col_id)
 
     miroir_id = next(
-        (
-            c.id
-            for c in collections
-            if c.type_collection == TypeCollection.MIROIR.value
-        ),
+        (c.id for c in collections if c.type_collection == TypeCollection.MIROIR.value),
         None,
     )
     libre_ids = {
-        c.id
-        for c in collections
-        if c.type_collection != TypeCollection.MIROIR.value
+        c.id for c in collections if c.type_collection != TypeCollection.MIROIR.value
     }
 
     # 3) Compteurs cross-collection.
@@ -1062,22 +1055,16 @@ def _composer_cartographie_collections(
     for c in collections:
         # Items de cette collection.
         items_de_c = {
-            item_id
-            for item_id, col_set in appartenance.items()
-            if c.id in col_set
+            item_id for item_id, col_set in appartenance.items() if c.id in col_set
         }
         # Partages : pour la miroir, items aussi dans ≥1 libre ; pour
         # une libre, items aussi dans une AUTRE libre (la miroir ne
         # compte pas comme « autre » sinon nb_partages = nb_items).
         if c.id == miroir_id:
-            nb_partages = sum(
-                1 for i in items_de_c if appartenance[i] & libre_ids
-            )
+            nb_partages = sum(1 for i in items_de_c if appartenance[i] & libre_ids)
         else:
             autres_libres = libre_ids - {c.id}
-            nb_partages = sum(
-                1 for i in items_de_c if appartenance[i] & autres_libres
-            )
+            nb_partages = sum(1 for i in items_de_c if appartenance[i] & autres_libres)
         entrees.append(
             CollectionDansFonds(
                 cote=c.cote,
@@ -1134,9 +1121,7 @@ def composer_synthese_fonds(db: Session, fonds: Fonds) -> SyntheseFonds:
     nb_a_corriger = 0
     nb_sans_titre = 0
     nb_sans_annee = 0
-    for (
-        _id, _cote, titre, langue, type_coar, annee, date, etat, meta
-    ) in lignes_items:
+    for _id, _cote, titre, langue, type_coar, annee, date, etat, meta in lignes_items:
         if langue:
             counter_langue[langue] += 1
         if type_coar:
@@ -1196,8 +1181,9 @@ def composer_synthese_fonds(db: Session, fonds: Fonds) -> SyntheseFonds:
     # ---- 3. Trous (mêmes calculs qu'en collection, à l'échelle fonds)
     nb_sans_fichier = (
         db.scalar(
-            select(func.count(Item.id))
-            .where(Item.fonds_id == fonds.id, ~Item.fichiers.any())
+            select(func.count(Item.id)).where(
+                Item.fonds_id == fonds.id, ~Item.fichiers.any()
+            )
         )
         or 0
     )
@@ -1606,9 +1592,7 @@ def composer_page_collection(db: Session, collection: Collection) -> CollectionD
 #: de cote, typologies internes) et n'ont pas vocation à apparaître dans
 #: les agrégats qualitatifs. Distinct de :data:`_META_FICHIER_TECHNIQUES`
 #: (qui couvre les fingerprints Nakala au niveau fichier).
-_META_ITEM_STRUCTURELLES: frozenset[str] = frozenset(
-    {"hierarchie", "typologie"}
-)
+_META_ITEM_STRUCTURELLES: frozenset[str] = frozenset({"hierarchie", "typologie"})
 
 #: Clés de `Item.metadonnees` qui sont **techniques/calculées** (compteurs
 #: Nakala, hashes, fingerprints). Exclues des agrégats synthèse parce
@@ -1618,11 +1602,21 @@ _META_ITEM_STRUCTURELLES: frozenset[str] = frozenset(
 #: ces clés sur la fiche item).
 _META_ITEM_TECHNIQUES_SYNTHESE: frozenset[str] = frozenset(
     {
-        "num_files",       # compteur Nakala — bruit
-        "hash", "sha", "sha256", "checksum",
-        "data_url", "embed_url", "preview_url", "thumb", "thumbnail",
-        "iiif", "iiif_url", "iiif_url_nakala", "info_json",
-        "categories",      # Nakala-side type aggregation, peu utile
+        "num_files",  # compteur Nakala — bruit
+        "hash",
+        "sha",
+        "sha256",
+        "checksum",
+        "data_url",
+        "embed_url",
+        "preview_url",
+        "thumb",
+        "thumbnail",
+        "iiif",
+        "iiif_url",
+        "iiif_url_nakala",
+        "info_json",
+        "categories",  # Nakala-side type aggregation, peu utile
     }
 )
 
@@ -1632,10 +1626,20 @@ _META_ITEM_TECHNIQUES_SYNTHESE: frozenset[str] = frozenset(
 #: en ISO 639-1 (`fr`, `es`…). Ce mapping rattrape l'affichage sans
 #: imposer une migration de données.
 _LANGUES_ISO1_VERS_ISO3: dict[str, str] = {
-    "fr": "fra", "en": "eng", "es": "spa", "it": "ita",
-    "de": "deu", "pt": "por", "nl": "nld", "ar": "ara",
-    "ru": "rus", "el": "ell", "la": "lat", "oc": "oci",
-    "br": "bre", "ca": "cat",
+    "fr": "fra",
+    "en": "eng",
+    "es": "spa",
+    "it": "ita",
+    "de": "deu",
+    "pt": "por",
+    "nl": "nld",
+    "ar": "ara",
+    "ru": "rus",
+    "el": "ell",
+    "la": "lat",
+    "oc": "oci",
+    "br": "bre",
+    "ca": "cat",
 }
 
 #: Nombre maximum de valeurs distinctes affichées par agrégat. Au-delà,
@@ -1667,8 +1671,6 @@ def _resoudre_libelle_langue(code: str) -> str:
         if lib2:
             return lib2
     return code
-
-
 
 
 @dataclass(frozen=True)
@@ -1975,9 +1977,7 @@ def composer_synthese_collection(
     nb_a_corriger = 0
     nb_sans_titre = 0
     nb_sans_annee = 0
-    for (
-        _id, _cote, titre, langue, type_coar, annee, date, etat, meta
-    ) in lignes_items:
+    for _id, _cote, titre, langue, type_coar, annee, date, etat, meta in lignes_items:
         if langue:
             counter_langue[langue] += 1
         if type_coar:
@@ -2066,9 +2066,7 @@ def composer_synthese_collection(
     base_url = f"/collection/{collection.cote}"
     sep_fonds = f"&fonds={fonds_query}" if fonds_query else ""
     url_a_corriger: str | None = (
-        f"{base_url}?etat=a_corriger{sep_fonds}"
-        if nb_a_corriger > 0
-        else None
+        f"{base_url}?etat=a_corriger{sep_fonds}" if nb_a_corriger > 0 else None
     )
 
     trous: list[TrouCatalographique] = []
@@ -2147,7 +2145,9 @@ def composer_synthese_collection(
             .join(Fonds, Fonds.id == Item.fonds_id)
             .where(Item.id.in_(ids_echantillon))
         ).all()
-        items_par_id = {item.id: (item, fonds_cote) for item, fonds_cote in items_avec_fichier}
+        items_par_id = {
+            item.id: (item, fonds_cote) for item, fonds_cote in items_avec_fichier
+        }
         vignettes_liste: list[VignetteSynthese] = []
         for id_ in ids_echantillon:
             entry = items_par_id.get(id_)
@@ -2325,10 +2325,23 @@ class ItemDetail:
 # documentaire.
 _META_FICHIER_TECHNIQUES: frozenset[str] = frozenset(
     {
-        "data_url", "embed_url", "preview_url", "thumb", "thumbnail",
-        "iiif", "iiif_url", "iiif_url_nakala", "info_json",
-        "chiffre", "ext", "extension",
-        "hash", "hash_sha256", "sha", "sha256", "checksum",
+        "data_url",
+        "embed_url",
+        "preview_url",
+        "thumb",
+        "thumbnail",
+        "iiif",
+        "iiif_url",
+        "iiif_url_nakala",
+        "info_json",
+        "chiffre",
+        "ext",
+        "extension",
+        "hash",
+        "hash_sha256",
+        "sha",
+        "sha256",
+        "checksum",
     }
 )
 
@@ -2606,8 +2619,24 @@ def _valeur_metadonnee_str(valeur: Any) -> str | None:
 #: cette liste, `_libelle_depuis_cle("doi")` retournerait `"Doi"` —
 #: laid pour les utilisateurs habitués au DC.
 _ACRONYMES_LIBELLES: frozenset[str] = frozenset(
-    {"doi", "iiif", "url", "uri", "ocr", "edtf", "coar", "issn",
-     "isbn", "ark", "id", "pdf", "tiff", "jpeg", "png", "svg"}
+    {
+        "doi",
+        "iiif",
+        "url",
+        "uri",
+        "ocr",
+        "edtf",
+        "coar",
+        "issn",
+        "isbn",
+        "ark",
+        "id",
+        "pdf",
+        "tiff",
+        "jpeg",
+        "png",
+        "svg",
+    }
 )
 
 
@@ -2693,6 +2722,7 @@ def composer_metadonnees_par_section(
     from archives_tool.api.services.vocabulaires_db import (
         options_depuis_vocabulaire,
     )
+
     for champ in sorted(champs_personnalises, key=lambda c: (c.ordre, c.cle)):
         if champ.cle in vus:
             continue
@@ -2714,9 +2744,7 @@ def composer_metadonnees_par_section(
         # liste_multiple (inline_edit.js ne sait pas faire de
         # multi-select via input/select). texte_long mappé sur
         # `multiligne` pour que le JS crée un <textarea>.
-        type_donnee_inline = (
-            "multiligne" if champ.type == "texte_long" else champ.type
-        )
+        type_donnee_inline = "multiligne" if champ.type == "texte_long" else champ.type
         est_editable_inline = champ.type != "liste_multiple"
         perso.append(
             ChampMetadonnee(
@@ -2747,9 +2775,8 @@ def composer_metadonnees_par_section(
         # listes d'URLs ni de descriptions qui contiendraient un
         # lien au milieu.
         type_donnee: str | None = None
-        if (
-            isinstance(valeur_brute, str)
-            and valeur_brute.strip().startswith(("http://", "https://"))
+        if isinstance(valeur_brute, str) and valeur_brute.strip().startswith(
+            ("http://", "https://")
         ):
             type_donnee = "uri"
         # V0.9.4 lot 2 : marquer promouvable les clés libres dont le
@@ -2757,6 +2784,7 @@ def composer_metadonnees_par_section(
         # slug non valide (Unnamed: 15, mots-clés) reste libre — la
         # promotion exige un nettoyage manuel en amont.
         from archives_tool.api.services.champs_personnalises import PATTERN_CLE
+
         est_promouvable = bool(PATTERN_CLE.match(cle))
         perso.append(
             ChampMetadonnee(
@@ -2921,6 +2949,7 @@ def composer_page_item(
     from archives_tool.api.services.champs_personnalises import (
         lister_champs_actifs_pour_item,
     )
+
     champs = lister_champs_actifs_pour_item(db, item.id)
 
     return ItemDetail(
@@ -2973,9 +3002,7 @@ def _agreger_fichier_metadonnees(
             par_cle.setdefault(cle, Counter())[val] += 1
     agregats: list[AgregatChampFichier] = []
     for cle, counter in sorted(par_cle.items()):
-        valeurs = tuple(
-            sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
-        )
+        valeurs = tuple(sorted(counter.items(), key=lambda kv: (-kv[1], kv[0])))
         agregats.append(
             AgregatChampFichier(
                 cle=cle,
@@ -3068,6 +3095,7 @@ def composer_fiche_item(
     from archives_tool.api.services.champs_personnalises import (
         lister_champs_actifs_pour_item,
     )
+
     champs = lister_champs_actifs_pour_item(db, item.id)
 
     # Tags annotations agrégés depuis tous les fichiers de l'item.
@@ -3089,9 +3117,7 @@ def composer_fiche_item(
     )
 
 
-def _agreger_tags_item(
-    db: Session, item_id: int
-) -> tuple[TagAnnotationAgrege, ...]:
+def _agreger_tags_item(db: Session, item_id: int) -> tuple[TagAnnotationAgrege, ...]:
     """Agrège les tags W3C des AnnotationRegion de tous les fichiers
     de l'item, dédupliqué par (libellé, URI), trié par fréquence
     décroissante puis alphabétique.

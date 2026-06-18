@@ -29,36 +29,45 @@ from archives_tool.api.templating import _url_safe
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("url", [
-    "https://www.wikidata.org/entity/Q733678",
-    "http://purl.org/coar/resource_type/c_2fe3",
-    "https://doi.org/10.34847/nkl.abc",
-    "mailto:archiviste@univ-poitiers.fr",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.wikidata.org/entity/Q733678",
+        "http://purl.org/coar/resource_type/c_2fe3",
+        "https://doi.org/10.34847/nkl.abc",
+        "mailto:archiviste@univ-poitiers.fr",
+    ],
+)
 def test_url_safe_accepte_http_https_mailto(url: str) -> None:
     assert _url_safe(url) == url
 
 
-@pytest.mark.parametrize("url", [
-    "/fonds/HK",
-    "/collection/HK-FAVORIS",
-    "./relative.html",
-    "../parent.html",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/fonds/HK",
+        "/collection/HK-FAVORIS",
+        "./relative.html",
+        "../parent.html",
+    ],
+)
 def test_url_safe_accepte_urls_relatives(url: str) -> None:
     assert _url_safe(url) == url
 
 
-@pytest.mark.parametrize("url_malicieux", [
-    "javascript:alert(1)",
-    "JAVASCRIPT:alert(1)",  # case insensitive
-    "JavaScript:alert(1)",
-    " javascript:alert(1)",  # whitespace
-    "data:text/html,<script>alert(1)</script>",
-    "vbscript:msgbox(1)",
-    "file:///etc/passwd",
-    "ftp://evil.com/x",  # ftp pas dans la whitelist
-])
+@pytest.mark.parametrize(
+    "url_malicieux",
+    [
+        "javascript:alert(1)",
+        "JAVASCRIPT:alert(1)",  # case insensitive
+        "JavaScript:alert(1)",
+        " javascript:alert(1)",  # whitespace
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "file:///etc/passwd",
+        "ftp://evil.com/x",  # ftp pas dans la whitelist
+    ],
+)
 def test_url_safe_refuse_schemes_malicieux(url_malicieux: str) -> None:
     """Tout scheme hors http/https/mailto retourne `#` — lien neutralise."""
     assert _url_safe(url_malicieux) == "#"
@@ -79,6 +88,7 @@ def test_filtre_url_safe_enregistre_sur_jinja_env() -> None:
     """Le filtre est bien expose au template engine — sinon les usages
     `{{ x | url_safe }}` dans les templates leveraient TemplateError."""
     from archives_tool.api.templating import templates
+
     assert "url_safe" in templates.env.filters
     assert templates.env.filters["url_safe"]("https://x") == "https://x"
     assert templates.env.filters["url_safe"]("javascript:x") == "#"

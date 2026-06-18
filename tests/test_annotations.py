@@ -57,9 +57,7 @@ def test_creer_annotation_succes(base_demo: Path) -> None:
         formulaire = FormulaireAnnotation(
             selecteur="xywh=100,200,300,400",
             selecteur_type="fragment",
-            corps=[
-                {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-            ],
+            corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
             motivation="tagging",
         )
         annotation = creer_annotation(s, fid, formulaire, cree_par="marie")
@@ -148,12 +146,11 @@ def test_lister_annotations_fichier(base_demo: Path) -> None:
     with factory() as s:
         for i, nom in enumerate(["Copi", "Forges", "Reiser"]):
             creer_annotation(
-                s, fid,
+                s,
+                fid,
                 FormulaireAnnotation(
-                    selecteur=f"xywh={i*100},0,50,50",
-                    corps=[
-                        {"type": "TextualBody", "purpose": "tagging", "value": nom}
-                    ],
+                    selecteur=f"xywh={i * 100},0,50,50",
+                    corps=[{"type": "TextualBody", "purpose": "tagging", "value": nom}],
                 ),
             )
         annotations = lister_annotations_fichier(s, fid)
@@ -171,7 +168,8 @@ def test_modifier_annotation_succes(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "v1"}],
@@ -180,7 +178,8 @@ def test_modifier_annotation_succes(base_demo: Path) -> None:
         )
         version_avant = a.version
         modifie = modifier_annotation(
-            s, a.id,
+            s,
+            a.id,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,20,20",
                 corps=[{"type": "TextualBody", "value": "v2"}],
@@ -202,7 +201,8 @@ def test_modifier_annotation_conflit_version(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "x"}],
@@ -210,7 +210,8 @@ def test_modifier_annotation_conflit_version(base_demo: Path) -> None:
         )
         with pytest.raises(ConflitVersion):
             modifier_annotation(
-                s, a.id,
+                s,
+                a.id,
                 FormulaireAnnotation(
                     selecteur="xywh=0,0,20,20",
                     corps=[{"type": "TextualBody", "value": "x"}],
@@ -227,7 +228,8 @@ def test_supprimer_annotation_idempotent(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "x"}],
@@ -256,12 +258,11 @@ def test_serialiser_w3c_format_canonique(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=100,200,50,50",
-                corps=[
-                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-                ],
+                corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
                 motivation="identifying",
             ),
             cree_par="marie",
@@ -293,7 +294,8 @@ def test_serialiser_svg_selector(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur='<svg><polygon points="0,0 10,0 5,10"/></svg>',
                 selecteur_type="svg",
@@ -339,9 +341,7 @@ def test_route_post_creer_annotation_forme_simple(base_demo: Path) -> None:
         json={
             "selecteur": "xywh=10,20,30,40",
             "selecteur_type": "fragment",
-            "corps": [
-                {"type": "TextualBody", "purpose": "tagging", "value": "Forges"}
-            ],
+            "corps": [{"type": "TextualBody", "purpose": "tagging", "value": "Forges"}],
             "motivation": "tagging",
         },
     )
@@ -383,10 +383,7 @@ def test_route_post_creer_annotation_forme_w3c_native(base_demo: Path) -> None:
     assert r.status_code == 201, r.text
     w3c = r.json()
     assert w3c["motivation"] == "identifying"
-    assert (
-        w3c["body"][0]["source"]
-        == "https://www.wikidata.org/entity/Q733678"
-    )
+    assert w3c["body"][0]["source"] == "https://www.wikidata.org/entity/Q733678"
 
 
 def test_route_post_creer_annotation_polygone_svg(base_demo: Path) -> None:
@@ -585,9 +582,7 @@ def test_route_post_accepte_specific_resource_annotorious_natif(
     assert r_get.status_code == 200
     bodies = r_get.json()["body"]
     sr = next(b for b in bodies if b.get("type") == "SpecificResource")
-    assert isinstance(sr["source"], dict), (
-        "Le source doit rester un objet imbriqué"
-    )
+    assert isinstance(sr["source"], dict), "Le source doit rester un objet imbriqué"
     assert sr["source"]["id"] == "https://www.wikidata.org/entity/Q733678"
     assert sr["source"]["label"] == "Copi"
 
@@ -648,18 +643,31 @@ def test_route_autocomplete_vocabulaires_liste_actives(base_demo: Path) -> None:
         )
         s.add(vocab)
         s.flush()
-        s.add(ValeurControlee(
-            vocabulaire_id=vocab.id, code="copi", libelle="Copi",
-            uri="https://www.wikidata.org/entity/Q733678",
-        ))
-        s.add(ValeurControlee(
-            vocabulaire_id=vocab.id, code="reiser", libelle="Reiser",
-            uri=None,  # pas d'URI = pas de pivot, juste tag
-        ))
-        s.add(ValeurControlee(
-            vocabulaire_id=vocab.id, code="vieux", libelle="Ancien",
-            uri="https://x", actif=False,  # déprécié, exclu
-        ))
+        s.add(
+            ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code="copi",
+                libelle="Copi",
+                uri="https://www.wikidata.org/entity/Q733678",
+            )
+        )
+        s.add(
+            ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code="reiser",
+                libelle="Reiser",
+                uri=None,  # pas d'URI = pas de pivot, juste tag
+            )
+        )
+        s.add(
+            ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code="vieux",
+                libelle="Ancien",
+                uri="https://x",
+                actif=False,  # déprécié, exclu
+            )
+        )
         s.commit()
     engine.dispose()
 
@@ -693,19 +701,22 @@ def test_serialiser_annotation_collection_w3c_format_complet(
     from archives_tool.api.services.annotations import (
         serialiser_annotation_collection_w3c,
     )
+
     fid = _premier_fichier_id(base_demo)
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
         a1 = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "x"}],
             ),
         )
         a2 = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=20,20,10,10",
                 corps=[{"type": "TextualBody", "value": "y"}],
@@ -755,7 +766,9 @@ def test_lister_annotations_collection_couvre_tous_les_items(
             )
         )
         fichiers = list(
-            s.scalars(select(Fichier).order_by(Fichier.item_id, Fichier.ordre).limit(10)).all()
+            s.scalars(
+                select(Fichier).order_by(Fichier.item_id, Fichier.ordre).limit(10)
+            ).all()
         )
         # Prendre 1 fichier de 2 items distincts
         item_ids_distincts = []
@@ -769,14 +782,22 @@ def test_lister_annotations_collection_couvre_tous_les_items(
         assert len(fichiers_distincts) == 2
 
         # Annote chaque fichier d'un tag distinct
-        creer_annotation(s, fichiers_distincts[0].id, FormulaireAnnotation(
-            selecteur="xywh=0,0,1,1",
-            corps=[{"type": "TextualBody", "value": "tag-a"}],
-        ))
-        creer_annotation(s, fichiers_distincts[1].id, FormulaireAnnotation(
-            selecteur="xywh=0,0,1,1",
-            corps=[{"type": "TextualBody", "value": "tag-b"}],
-        ))
+        creer_annotation(
+            s,
+            fichiers_distincts[0].id,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,1,1",
+                corps=[{"type": "TextualBody", "value": "tag-a"}],
+            ),
+        )
+        creer_annotation(
+            s,
+            fichiers_distincts[1].id,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,1,1",
+                corps=[{"type": "TextualBody", "value": "tag-b"}],
+            ),
+        )
 
         # lister couvre les 2 annotations
         annotations = lister_annotations_collection(s, miroir.id)
@@ -826,21 +847,21 @@ def test_isolation_entre_fichiers(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         # Récupère 2 fichiers distincts du seeder
-        fichiers = list(s.scalars(
-            select(Fichier).order_by(Fichier.id).limit(2)
-        ).all())
+        fichiers = list(s.scalars(select(Fichier).order_by(Fichier.id).limit(2)).all())
         assert len(fichiers) == 2
         fid_a, fid_b = fichiers[0].id, fichiers[1].id
 
         creer_annotation(
-            s, fid_a,
+            s,
+            fid_a,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "annotation-A"}],
             ),
         )
         creer_annotation(
-            s, fid_b,
+            s,
+            fid_b,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "annotation-B"}],
@@ -864,6 +885,7 @@ def test_cascade_item_supprime_aussi_annotations(base_demo: Path) -> None:
     (cascade existante Item.fichiers), qui à leur tour suppriment
     leurs AnnotationRegion (cascade nouvelle V0.9.7)."""
     from archives_tool.models import Item
+
     fid = _premier_fichier_id(base_demo)
     client = TestClient(app)
     r = client.post(
@@ -928,13 +950,15 @@ def _creer_vocab_avec_valeurs(
         s.add(vocab)
         s.flush()
         for vcode, vlibelle, vuri in valeurs:
-            s.add(ValeurControlee(
-                vocabulaire_id=vocab.id,
-                code=vcode,
-                libelle=vlibelle,
-                uri=vuri,
-                actif=True,
-            ))
+            s.add(
+                ValeurControlee(
+                    vocabulaire_id=vocab.id,
+                    code=vcode,
+                    libelle=vlibelle,
+                    uri=vuri,
+                    actif=True,
+                )
+            )
         s.commit()
         vid = vocab.id
     engine.dispose()
@@ -952,7 +976,8 @@ def test_enrichir_dry_run_match_libelle_exact(base_demo: Path) -> None:
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -960,17 +985,19 @@ def test_enrichir_dry_run_match_libelle_exact(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         ann = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
-                corps=[
-                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-                ],
+                corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
             ),
         )
         ann_id = ann.id
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=True,
+            s,
+            vid,
+            fonds_id,
+            dry_run=True,
         )
 
     # 1 match, 0 déjà enrichi
@@ -1005,7 +1032,8 @@ def test_enrichir_appliquer_remplace_textualbody_par_specificresource(
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -1013,18 +1041,21 @@ def test_enrichir_appliquer_remplace_textualbody_par_specificresource(
     factory = creer_session_factory(engine)
     with factory() as s:
         ann = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
-                corps=[
-                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-                ],
+                corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
             ),
         )
         ann_id = ann.id
         version_avant = ann.version
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=False, modifie_par="marie",
+            s,
+            vid,
+            fonds_id,
+            dry_run=False,
+            modifie_par="marie",
         )
 
     assert rapport.nb_matches == 1
@@ -1058,7 +1089,8 @@ def test_enrichir_replay_no_op(base_demo: Path) -> None:
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -1066,7 +1098,8 @@ def test_enrichir_replay_no_op(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "Copi"}],
@@ -1076,7 +1109,10 @@ def test_enrichir_replay_no_op(base_demo: Path) -> None:
         enrichir_annotations_par_vocab(s, vid, fonds_id, dry_run=False)
         # Deuxième passe : doit être no-op
         rapport2 = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=False,
+            s,
+            vid,
+            fonds_id,
+            dry_run=False,
         )
     assert rapport2.nb_matches == 0
     assert rapport2.deja_enrichies == 1
@@ -1094,7 +1130,8 @@ def test_enrichir_normalisation_accents_et_casse(base_demo: Path) -> None:
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -1103,14 +1140,18 @@ def test_enrichir_normalisation_accents_et_casse(base_demo: Path) -> None:
     with factory() as s:
         for valeur in ("COPI", "côpi", "  Copi  "):
             creer_annotation(
-                s, fid,
+                s,
+                fid,
                 FormulaireAnnotation(
                     selecteur=f"xywh=0,0,{len(valeur)},10",
                     corps=[{"type": "TextualBody", "value": valeur}],
                 ),
             )
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=True,
+            s,
+            vid,
+            fonds_id,
+            dry_run=True,
         )
     assert rapport.nb_matches == 3
     libelles = {m.libelle_libre for m in rapport.matches}
@@ -1128,7 +1169,8 @@ def test_enrichir_skip_valeur_sans_uri(base_demo: Path) -> None:
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", None)],  # pas d'URI
     )
 
@@ -1136,14 +1178,18 @@ def test_enrichir_skip_valeur_sans_uri(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "Copi"}],
             ),
         )
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=True,
+            s,
+            vid,
+            fonds_id,
+            dry_run=True,
         )
     assert rapport.nb_matches == 0
     assert rapport.deja_enrichies == 0
@@ -1167,23 +1213,31 @@ def test_enrichir_skip_valeur_depreciee(base_demo: Path) -> None:
         vocab = Vocabulaire(code="dessinateurs", libelle="Dessinateurs")
         s.add(vocab)
         s.flush()
-        s.add(ValeurControlee(
-            vocabulaire_id=vocab.id, code="copi", libelle="Copi",
-            uri="https://www.wikidata.org/entity/Q733678",
-            actif=False,  # déprécié
-        ))
+        s.add(
+            ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code="copi",
+                libelle="Copi",
+                uri="https://www.wikidata.org/entity/Q733678",
+                actif=False,  # déprécié
+            )
+        )
         s.commit()
         vid = vocab.id
 
         creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "Copi"}],
             ),
         )
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=True,
+            s,
+            vid,
+            fonds_id,
+            dry_run=True,
         )
     assert rapport.nb_matches == 0
     engine.dispose()
@@ -1215,7 +1269,8 @@ def test_enrichir_fonds_introuvable(base_demo: Path) -> None:
     )
 
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -1242,7 +1297,8 @@ def test_enrichir_annotation_avec_plusieurs_tags_libres(
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "personnages",
+        base_demo,
+        "personnages",
         [
             ("copi", "Copi", "https://www.wikidata.org/entity/Q733678"),
             ("franco", "Franco", "https://www.wikidata.org/entity/Q57112"),
@@ -1253,7 +1309,8 @@ def test_enrichir_annotation_avec_plusieurs_tags_libres(
     factory = creer_session_factory(engine)
     with factory() as s:
         ann = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,100,100",
                 corps=[
@@ -1264,7 +1321,10 @@ def test_enrichir_annotation_avec_plusieurs_tags_libres(
         )
         ann_id = ann.id
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=False,
+            s,
+            vid,
+            fonds_id,
+            dry_run=False,
         )
     # 2 matches sur 1 annotation
     assert rapport.nb_matches == 2
@@ -1298,7 +1358,8 @@ def test_enrichir_annotation_avec_tag_libre_ET_uri_dont_un_match(
     fid = _premier_fichier_id(base_demo)
     fonds_id = _fonds_id_du_fichier(base_demo, fid)
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "personnages",
+        base_demo,
+        "personnages",
         [
             ("copi", "Copi", "https://www.wikidata.org/entity/Q733678"),
             ("franco", "Franco", "https://www.wikidata.org/entity/Q57112"),
@@ -1309,7 +1370,8 @@ def test_enrichir_annotation_avec_tag_libre_ET_uri_dont_un_match(
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,100,100",
                 corps=[
@@ -1326,7 +1388,10 @@ def test_enrichir_annotation_avec_tag_libre_ET_uri_dont_un_match(
             ),
         )
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_id, dry_run=False,
+            s,
+            vid,
+            fonds_id,
+            dry_run=False,
         )
     assert rapport.nb_matches == 1
     assert rapport.deja_enrichies == 1
@@ -1363,7 +1428,8 @@ def test_enrichir_scope_fonds_isole_autres_fonds(base_demo: Path) -> None:
     assert fid_b is not None, "Demo doit avoir au moins 2 fonds"
 
     vid = _creer_vocab_avec_valeurs(
-        base_demo, "dessinateurs",
+        base_demo,
+        "dessinateurs",
         [("copi", "Copi", "https://www.wikidata.org/entity/Q733678")],
     )
 
@@ -1372,7 +1438,8 @@ def test_enrichir_scope_fonds_isole_autres_fonds(base_demo: Path) -> None:
     with factory() as s:
         for fid in (fid_a, fid_b):
             creer_annotation(
-                s, fid,
+                s,
+                fid,
                 FormulaireAnnotation(
                     selecteur="xywh=0,0,10,10",
                     corps=[{"type": "TextualBody", "value": "Copi"}],
@@ -1380,7 +1447,10 @@ def test_enrichir_scope_fonds_isole_autres_fonds(base_demo: Path) -> None:
             )
         # Enrichir uniquement fonds_a
         rapport = enrichir_annotations_par_vocab(
-            s, vid, fonds_a, dry_run=False,
+            s,
+            vid,
+            fonds_a,
+            dry_run=False,
         )
     assert rapport.nb_matches == 1  # uniquement le fid_a
 
@@ -1405,7 +1475,8 @@ def test_serialiser_w3c_omet_champs_null(base_demo: Path) -> None:
     with factory() as s:
         # Annotation sans cree_par → `creator` doit être absent.
         a = creer_annotation(
-            s, fid,
+            s,
+            fid,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,10,10",
                 corps=[{"type": "TextualBody", "value": "x"}],

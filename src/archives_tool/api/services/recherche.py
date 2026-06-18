@@ -164,7 +164,9 @@ class ResultatsRecherche:
         """
         if self.par_page <= 0:
             return 1
-        effectif = min(self.total, self.paginable_max) if self.paginable_max else self.total
+        effectif = (
+            min(self.total, self.paginable_max) if self.paginable_max else self.total
+        )
         return max(1, ceil(effectif / self.par_page))
 
     @property
@@ -308,9 +310,8 @@ def rechercher(
     # vide ne doit pas lister toute la base. Une restriction
     # *explicite* (au moins une case décochée) signale l'intention.
     types_restreint = types is not None and len(types) < 3
-    intention_sans_query = (
-        requete_fts is None
-        and (filtres.affecte_items_seulement or not scope.est_global or types_restreint)
+    intention_sans_query = requete_fts is None and (
+        filtres.affecte_items_seulement or not scope.est_global or types_restreint
     )
     if requete_fts is None and not intention_sans_query:
         return ResultatsRecherche(
@@ -348,15 +349,13 @@ def rechercher(
     else:
         resultats_tous.sort(key=lambda r: r.score)
     offset = max(0, (page - 1) * par_page)
-    page_courante = resultats_tous[offset:offset + par_page]
+    page_courante = resultats_tous[offset : offset + par_page]
     # `cap_atteint` signale qu'un type a dépassé le cap dur (et donc
     # qu'on a tronqué côté SQL) — utile pour afficher un message
     # discret + capper `nb_pages` à `paginable_max` (sinon clic sur
     # la dernière page tomberait sur une page vide).
     cap_atteint = any(totaux.get(t, 0) > cap_par_type for t in types_eff)
-    paginable_max = (
-        cap_par_type * len(types_eff) if cap_atteint else None
-    )
+    paginable_max = cap_par_type * len(types_eff) if cap_atteint else None
     return ResultatsRecherche(
         resultats=page_courante,
         total_par_type=totaux,
@@ -377,7 +376,9 @@ def _clause_filtres_items(filtres: FiltresRecherche) -> tuple[str, dict]:
     if filtres.etats:
         # WHERE item.etat_catalogage IN (:etat_0, :etat_1, ...)
         cles = [f"etat_{i}" for i in range(len(filtres.etats))]
-        fragments.append(f"item.etat_catalogage IN ({', '.join(':' + c for c in cles)})")
+        fragments.append(
+            f"item.etat_catalogage IN ({', '.join(':' + c for c in cles)})"
+        )
         params.update({c: v for c, v in zip(cles, filtres.etats, strict=True)})
     if filtres.langues:
         cles = [f"lang_{i}" for i in range(len(filtres.langues))]
@@ -462,7 +463,9 @@ def _compter_fonds(db: Session, requete_fts: str | None, scope: Scope) -> int:
 
 
 def _compter_collections(
-    db: Session, requete_fts: str | None, scope: Scope,
+    db: Session,
+    requete_fts: str | None,
+    scope: Scope,
 ) -> int:
     where_supp = ""
     params: dict = {}
@@ -588,7 +591,10 @@ def _rechercher_items(
 
 
 def _rechercher_fonds(
-    db: Session, requete_fts: str | None, scope: Scope, limite: int,
+    db: Session,
+    requete_fts: str | None,
+    scope: Scope,
+    limite: int,
 ) -> list[ResultatRecherche]:
     """Fonds matchés. Le scope `fonds_id` limite au fonds courant,
     `collection_id` exclut tous les fonds (le scope est plus étroit
@@ -618,8 +624,11 @@ def _rechercher_fonds(
         return [
             ResultatRecherche(
                 type_entite="fonds",
-                id=row.id, cote=row.cote, titre=row.titre or "",
-                snippet="", score=0.0,
+                id=row.id,
+                cote=row.cote,
+                titre=row.titre or "",
+                snippet="",
+                score=0.0,
             )
             for row in rows
         ]
@@ -655,7 +664,10 @@ def _rechercher_fonds(
 
 
 def _rechercher_collections(
-    db: Session, requete_fts: str | None, scope: Scope, limite: int,
+    db: Session,
+    requete_fts: str | None,
+    scope: Scope,
+    limite: int,
 ) -> list[ResultatRecherche]:
     """Collections matchées. `scope.fonds_id` limite aux collections
     du fonds (miroir + libres rattachées). `scope.collection_id`
@@ -762,15 +774,13 @@ def calculer_options_filtres_recherche(
     from archives_tool.models import Item, ItemCollection
 
     scope = scope or Scope()
-    requete = select(
-        Item.etat_catalogage, Item.langue, Item.type_coar, Item.annee
-    )
+    requete = select(Item.etat_catalogage, Item.langue, Item.type_coar, Item.annee)
     if scope.fonds_id is not None:
         requete = requete.where(Item.fonds_id == scope.fonds_id)
     elif scope.collection_id is not None:
-        requete = requete.join(
-            ItemCollection, ItemCollection.item_id == Item.id
-        ).where(ItemCollection.collection_id == scope.collection_id)
+        requete = requete.join(ItemCollection, ItemCollection.item_id == Item.id).where(
+            ItemCollection.collection_id == scope.collection_id
+        )
 
     etats_set: set[str] = set()
     langues_set: set[str] = set()
@@ -820,12 +830,8 @@ def parser_filtres_recherche(
     langues = tuple(lang for lang in csv_to_liste(langue) if lang in options.langues)
     types_coar = tuple(t for t in csv_to_liste(type_coar) if t in options.types_coar)
 
-    a_min = clamper_annee(
-        annee_min, options.annee_min_base, options.annee_max_base
-    )
-    a_max = clamper_annee(
-        annee_max, options.annee_min_base, options.annee_max_base
-    )
+    a_min = clamper_annee(annee_min, options.annee_min_base, options.annee_max_base)
+    a_max = clamper_annee(annee_max, options.annee_min_base, options.annee_max_base)
     if a_min is not None and a_max is not None and a_min > a_max:
         a_min, a_max = a_max, a_min
 

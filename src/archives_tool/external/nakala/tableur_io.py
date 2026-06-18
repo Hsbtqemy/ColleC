@@ -24,7 +24,7 @@ from openpyxl.styles import Font
 from archives_tool.external.nakala.tableur import TableurNakala
 
 #: Caractères interdits par Excel dans un nom de feuille + longueur max.
-_INTERDITS_FEUILLE = set('[]:*?/\\')
+_INTERDITS_FEUILLE = set("[]:*?/\\")
 _TITRE_FEUILLE_MAX = 31
 
 #: Types MIME pour servir les tableurs en téléchargement (route web).

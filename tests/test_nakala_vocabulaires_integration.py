@@ -100,8 +100,7 @@ def test_projections_types_internes_tombent_dans_le_live(
         and cible not in vocab_live["types"]
     }
     assert not hors_live, (
-        "Projections COAR internes→Nakala hors du set accepté : "
-        f"{sorted(hors_live)}"
+        f"Projections COAR internes→Nakala hors du set accepté : {sorted(hors_live)}"
     )
 
 
@@ -113,6 +112,5 @@ def test_property_uris_emises_connues_de_nakala(
     emises = {v["propertyUri"] for v in SLUG_TO_NAKALA.values()}
     inconnues = emises - vocab_live["props"]
     assert not inconnues, (
-        "propertyUri émises par ColleC inconnues de Nakala : "
-        f"{sorted(inconnues)}"
+        f"propertyUri émises par ColleC inconnues de Nakala : {sorted(inconnues)}"
     )

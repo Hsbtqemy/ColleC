@@ -40,8 +40,10 @@ def _nkl_title(v: str, lang: str | None = None) -> dict:
     return m
 
 
-def _faire_fake_rw(metas_distantes: list[dict] | None = None,
-                   metas_collection: list[dict] | None = None):
+def _faire_fake_rw(
+    metas_distantes: list[dict] | None = None,
+    metas_collection: list[dict] | None = None,
+):
     """Fabrique une classe de faux client lecture+écriture, état par-classe
     (les routes instancient lecture et écriture séparément → état partagé)."""
 
@@ -56,22 +58,32 @@ def _faire_fake_rw(metas_distantes: list[dict] | None = None,
             pass
 
         def lire_depot(self, doi: str) -> dict:
-            return {"identifier": doi, "metas": list(type(self)._metas),
-                    "modDate": "2024-01-01", "files": [], "status": "pending"}
+            return {
+                "identifier": doi,
+                "metas": list(type(self)._metas),
+                "modDate": "2024-01-01",
+                "files": [],
+                "status": "pending",
+            }
 
         def modifier_depot(self, identifiant, *, metas, status=None):
-            type(self).puts.append({"doi": identifiant, "metas": metas,
-                                    "status": status})
+            type(self).puts.append(
+                {"doi": identifiant, "metas": metas, "status": status}
+            )
             type(self)._metas = metas
             return {}
 
         def lire_collection(self, doi: str) -> dict:
-            return {"identifier": doi, "metas": list(type(self)._metas_col),
-                    "status": "private"}
+            return {
+                "identifier": doi,
+                "metas": list(type(self)._metas_col),
+                "status": "private",
+            }
 
         def modifier_collection(self, identifiant, *, metas, status=None):
-            type(self).puts_collection.append({"doi": identifiant, "metas": metas,
-                                               "status": status})
+            type(self).puts_collection.append(
+                {"doi": identifiant, "metas": metas, "status": status}
+            )
             type(self)._metas_col = metas
             return {}
 
@@ -100,12 +112,22 @@ def _seed_item(
     """Fonds AS + miroir AS + item AS-001 (avec doi_nakala par défaut)."""
     with _session(db) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="Titre local", fonds_id=f.id, date="1984",
-            langue="spa", description="Roman",
-            type_coar="http://purl.org/coar/resource_type/c_2f33",
-            metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Literatura"]},
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="Titre local",
+                fonds_id=f.id,
+                date="1984",
+                langue="spa",
+                description="Roman",
+                type_coar="http://purl.org/coar/resource_type/c_2f33",
+                metadonnees={
+                    "createurs": ["Somers, Armonía"],
+                    "sujets": ["Literatura"],
+                },
+            ),
+        )
         item.doi_nakala = doi
         if doi_collection:
             miroir = s.scalar(
@@ -130,9 +152,14 @@ def _ecrire_config(
 
 
 def _faire_client(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *,
-    fake_cls, avec_api_key: bool = True, lecture_seule: bool = False,
-    doi_item: str | None = _DOI_ITEM, doi_collection: str | None = None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fake_cls,
+    avec_api_key: bool = True,
+    lecture_seule: bool = False,
+    doi_item: str | None = _DOI_ITEM,
+    doi_collection: str | None = None,
 ) -> TestClient:
     cfg = tmp_path / "config.yaml"
     _ecrire_config(cfg, avec_api_key=avec_api_key, lecture_seule=lecture_seule)
@@ -173,7 +200,9 @@ def test_citation_item_rendue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "Somers, A. (1984)" in r.text
 
 
-def test_citation_item_sans_doi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_citation_item_sans_doi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client = _faire_client(
         tmp_path, monkeypatch, fake_cls=_faire_fake_citation(), doi_item=None
     )
@@ -223,8 +252,11 @@ def test_executer_pousser_item_appelle_put(
 ) -> None:
     fake = _faire_fake_rw([_nkl_title("Titre distant", lang="spa")])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake)
-    r = tc.post("/nakala/pousser", data={"cote": "AS-001", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/pousser",
+        data={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     loc = r.headers["location"]
     assert loc.startswith("/item/AS-001?fonds=AS&nakala_pousse=")
@@ -236,8 +268,11 @@ def test_pousser_item_sans_doi_redirige_message(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, doi_item=None)
-    r = tc.get("/nakala/pousser", params={"cote": "AS-001", "fonds": "AS"},
-               follow_redirects=False)
+    r = tc.get(
+        "/nakala/pousser",
+        params={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert "/item/AS-001?fonds=AS&nakala_erreur=" in r.headers["location"]
 
@@ -247,8 +282,11 @@ def test_post_pousser_bloque_en_lecture_seule(
 ) -> None:
     fake = _faire_fake_rw([_nkl_title("Titre distant")])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, lecture_seule=True)
-    r = tc.post("/nakala/pousser", data={"cote": "AS-001", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/pousser",
+        data={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 423
 
 
@@ -257,8 +295,11 @@ def test_pousser_sans_api_key_redirige(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, avec_api_key=False)
-    r = tc.get("/nakala/pousser", params={"cote": "AS-001", "fonds": "AS"},
-               follow_redirects=False)
+    r = tc.get(
+        "/nakala/pousser",
+        params={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert "nakala_erreur=" in r.headers["location"]
 
@@ -311,8 +352,11 @@ def test_executer_publier_item_put_published(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake)
-    r = tc.post("/nakala/publier", data={"cote": "AS-001", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/publier",
+        data={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert "nakala_publie=1" in r.headers["location"]
     assert fake.puts and fake.puts[0]["status"] == "published"
@@ -323,8 +367,11 @@ def test_publier_item_sans_doi_redirige(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, doi_item=None)
-    r = tc.get("/nakala/publier", params={"cote": "AS-001", "fonds": "AS"},
-               follow_redirects=False)
+    r = tc.get(
+        "/nakala/publier",
+        params={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     loc = r.headers["location"]
     assert loc.startswith("/item/AS-001?fonds=AS&nakala_erreur=")
@@ -351,8 +398,11 @@ def test_executer_pousser_collection(
 ) -> None:
     fake = _faire_fake_rw([_nkl_title("Titre distant", lang="spa")])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake)
-    r = tc.post("/nakala/pousser-collection", data={"cote": "AS", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/pousser-collection",
+        data={"cote": "AS", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     loc = r.headers["location"]
     assert loc.startswith("/fonds/AS?nakala_pousse_items=")
@@ -375,8 +425,11 @@ def test_executer_publier_collection(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake)
-    r = tc.post("/nakala/publier-collection", data={"cote": "AS", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/publier-collection",
+        data={"cote": "AS", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert r.headers["location"].startswith("/fonds/AS?nakala_publie_items=")
     assert fake.puts and fake.puts[0]["status"] == "published"
@@ -387,8 +440,11 @@ def test_post_publier_collection_bloque_en_lecture_seule(
 ) -> None:
     fake = _faire_fake_rw([])
     tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, lecture_seule=True)
-    r = tc.post("/nakala/publier-collection", data={"cote": "AS", "fonds": "AS"},
-                follow_redirects=False)
+    r = tc.post(
+        "/nakala/publier-collection",
+        data={"cote": "AS", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 423
 
 
@@ -400,10 +456,12 @@ def test_pousser_collection_pousse_entite_si_doi(
         [_nkl_title("Titre distant", lang="spa")],
         metas_collection=[_nkl_title("Ancien titre collection")],
     )
-    tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake,
-                       doi_collection=_DOI_COL)
-    r = tc.post("/nakala/pousser-collection", data={"cote": "AS", "fonds": "AS"},
-                follow_redirects=False)
+    tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, doi_collection=_DOI_COL)
+    r = tc.post(
+        "/nakala/pousser-collection",
+        data={"cote": "AS", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert fake.puts_collection and fake.puts_collection[0]["doi"] == _DOI_COL
 
@@ -454,8 +512,7 @@ def test_boutons_collection_sur_fonds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _faire_fake_rw([])
-    tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake,
-                       doi_collection=_DOI_COL)
+    tc = _faire_client(tmp_path, monkeypatch, fake_cls=fake, doi_collection=_DOI_COL)
     r = tc.get("/fonds/AS")
     assert r.status_code == 200
     assert "/nakala/pousser-collection?cote=AS&fonds=AS" in r.text

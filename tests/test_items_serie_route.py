@@ -38,15 +38,19 @@ def test_get_formulaire_serie_transversale_refuse(base_demo: Path) -> None:
     """Le bouton est masqué sur une transversale, mais l'URL directe
     doit aussi refuser (cas où l'utilisateur tape l'URL à la main)."""
     from archives_tool.api.services.collections import (
-        FormulaireCollection, creer_collection_libre,
+        FormulaireCollection,
+        creer_collection_libre,
     )
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="TRANS-X", titre="Transversale test", fonds_id=None,
+                cote="TRANS-X",
+                titre="Transversale test",
+                fonds_id=None,
             ),
         )
     engine.dispose()
@@ -81,9 +85,7 @@ def test_post_serie_succes_redirige_avec_flash(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        n = s.scalar(
-            select(func.count(Item.id)).where(Item.cote.like("HK-SERIE-%"))
-        )
+        n = s.scalar(select(func.count(Item.id)).where(Item.cote.like("HK-SERIE-%")))
         assert n == 3
     engine.dispose()
 
@@ -114,7 +116,8 @@ def test_flash_succes_lu_par_collection(base_demo: Path) -> None:
         "/collection/HK/items/serie?fonds=HK",
         data={
             "pattern_cote": "HK-FLASH-{n}",
-            "de_n": "1", "a_n": "2",
+            "de_n": "1",
+            "a_n": "2",
             "etat": "brouillon",
         },
         follow_redirects=True,
@@ -138,15 +141,19 @@ def test_bouton_masque_sur_transversale(base_demo: Path) -> None:
     (création nécessite un fonds explicite, qu'une transversale n'a
     pas par définition)."""
     from archives_tool.api.services.collections import (
-        FormulaireCollection, creer_collection_libre,
+        FormulaireCollection,
+        creer_collection_libre,
     )
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="TRANS-BTN", titre="Transversale", fonds_id=None,
+                cote="TRANS-BTN",
+                titre="Transversale",
+                fonds_id=None,
             ),
         )
     engine.dispose()
@@ -160,11 +167,13 @@ def test_bouton_masque_sur_transversale(base_demo: Path) -> None:
 
 
 def test_bouton_masque_en_lecture_seule(
-    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+    base_demo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """En lecture seule, le bouton est masqué (cohérent avec « +
     Ajouter des items » qui suit la même règle)."""
     from archives_tool.api import templating
+
     monkeypatch.setitem(
         templating.templates.env.globals, "est_lecture_seule", lambda: True
     )
@@ -175,7 +184,8 @@ def test_bouton_masque_en_lecture_seule(
 
 
 def test_post_serie_bloque_par_middleware_lecture_seule(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Même si l'utilisateur forge l'URL POST directement, le
     middleware lecture seule renvoie 423 (Locked). Garde-fou
@@ -192,9 +202,7 @@ def test_post_serie_bloque_par_middleware_lecture_seule(
     racine.mkdir()
     cfg = tmp_path / "config.yaml"
     cfg.write_text(
-        f"utilisateur: test\n"
-        f"lecture_seule: true\n"
-        f"racines:\n  demo: {racine}\n",
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  demo: {racine}\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
@@ -204,7 +212,8 @@ def test_post_serie_bloque_par_middleware_lecture_seule(
         "/collection/HK/items/serie?fonds=HK",
         data={
             "pattern_cote": "HK-PIRATE-{n}",
-            "de_n": "1", "a_n": "3",
+            "de_n": "1",
+            "a_n": "3",
         },
     )
     assert r.status_code == 423

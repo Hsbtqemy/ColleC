@@ -48,7 +48,8 @@ def test_supprimer_collab_avec_apostrophe_dans_nom(base_demo: Path) -> None:
     with factory() as s:
         hk = lire_fonds_par_cote(s, "HK")
         ajouter_collaborateur_fonds(
-            s, hk.id,
+            s,
+            hk.id,
             FormulaireCollaborateurFonds(
                 nom="L'auteur principal",  # apostrophe dans nom
                 roles=["catalogage"],
@@ -132,7 +133,8 @@ def test_supprimer_champ_dialog_reste_stable(base_demo: Path) -> None:
             )
         )
         creer_champ(
-            s, miroir.id,
+            s,
+            miroir.id,
             FormulaireChamp(cle="test_garde_fou", libelle="Test"),
         )
         s.commit()

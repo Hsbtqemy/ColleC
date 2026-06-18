@@ -81,9 +81,7 @@ def test_cartographie_fonds_avec_libres_recense_chevauchements(
         # Cohérence : somme des items des libres == nb items dans libres
         # (vrai uniquement si pas de chevauchement entre libres ; sur FA
         # demo c'est le cas)
-        items_libres = sum(
-            e.nb_items for e in carto.entrees if not e.est_miroir
-        )
+        items_libres = sum(e.nb_items for e in carto.entrees if not e.est_miroir)
         # nb_items_dans_libres compte les items distincts présents dans
         # ≥1 libre : si les libres ne chevauchent pas, c'est égal à la
         # somme ; sinon plus petit.
@@ -196,6 +194,7 @@ def test_synthese_fonds_etend_aux_items_de_toutes_collections(
     collection. Sur `FA` (fonds avec libres) on doit retrouver les 167
     items du fonds (= ceux de la miroir, par invariant)."""
     from sqlalchemy import func
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -237,9 +236,7 @@ def test_synthese_fonds_trous_a_corriger_remontent(base_demo: Path) -> None:
         s.commit()
 
         synthese = composer_synthese_fonds(s, fonds)
-        trou_corr = next(
-            (t for t in synthese.trous if t.code == "a_corriger"), None
-        )
+        trou_corr = next((t for t in synthese.trous if t.code == "a_corriger"), None)
         assert trou_corr is not None
         assert trou_corr.nb >= 1
         # Pas de deep-link (la page Fonds n'a pas de filtre par état)
@@ -345,9 +342,9 @@ def test_cartographie_ignore_les_transversales(base_demo: Path) -> None:
         )
         s.add(trans)
         s.commit()
-        items_hk = list(s.scalars(
-            select(Item).where(Item.fonds_id == fonds.id).limit(3)
-        ).all())
+        items_hk = list(
+            s.scalars(select(Item).where(Item.fonds_id == fonds.id).limit(3)).all()
+        )
         for item in items_hk:
             s.add(ItemCollection(item_id=item.id, collection_id=trans.id))
         s.commit()
@@ -424,6 +421,7 @@ def test_synthese_fonds_budget_sql_borne(base_demo: Path) -> None:
     qui pourraient ajouter une ou deux queries).
     """
     from sqlalchemy import event
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
 

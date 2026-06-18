@@ -283,9 +283,15 @@ def assurer_tables_fts(engine: Engine) -> None:
         for sql in _SQL_TABLES_FTS:
             conn.execute(text(sql))
         for trigger in (
-            "item_fts_insert", "item_fts_delete", "item_fts_update",
-            "fonds_fts_insert", "fonds_fts_delete", "fonds_fts_update",
-            "collection_fts_insert", "collection_fts_delete", "collection_fts_update",
+            "item_fts_insert",
+            "item_fts_delete",
+            "item_fts_update",
+            "fonds_fts_insert",
+            "fonds_fts_delete",
+            "fonds_fts_update",
+            "collection_fts_insert",
+            "collection_fts_delete",
+            "collection_fts_update",
         ):
             conn.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
         for sql in _SQL_TRIGGERS_FTS:

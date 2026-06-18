@@ -41,6 +41,7 @@ def _amorcer_champ(db_path: Path) -> tuple[str, str, int]:
     """Crée un champ « auteur » sur la miroir HK. Retourne (cote_col,
     cote_fonds, champ_id)."""
     from archives_tool.models import TypeCollection
+
     engine = creer_engine(db_path)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -51,7 +52,8 @@ def _amorcer_champ(db_path: Path) -> tuple[str, str, int]:
             )
         )
         c = creer_champ(
-            s, miroir.id,
+            s,
+            miroir.id,
             FormulaireChamp(cle="auteur_test", libelle="Auteur (test)"),
         )
         s.commit()
@@ -127,7 +129,8 @@ def test_supprimer_champ_avec_valeurs_existantes_les_preserve(
 
         # Crée le champ formel et vérifie qu'il est rendu en formel
         c = creer_champ(
-            s, miroir.id,
+            s,
+            miroir.id,
             FormulaireChamp(cle="auteur_test", libelle="Auteur (test)"),
         )
         cid = c.id

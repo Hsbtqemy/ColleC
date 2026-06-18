@@ -82,9 +82,7 @@ def test_post_retirer_item_retire_la_liaison(base_demo: Path) -> None:
             )
         )
         liaison = s.scalars(
-            select(ItemCollection).where(
-                ItemCollection.collection_id == libre.id
-            )
+            select(ItemCollection).where(ItemCollection.collection_id == libre.id)
         ).first()
         assert liaison is not None, "Demo doit avoir au moins une libre avec items"
         item_id = liaison.item_id
@@ -124,9 +122,7 @@ def test_post_retirer_idempotent(base_demo: Path) -> None:
             )
         )
         liaison = s.scalars(
-            select(ItemCollection).where(
-                ItemCollection.collection_id == libre.id
-            )
+            select(ItemCollection).where(ItemCollection.collection_id == libre.id)
         ).first()
         item_id = liaison.item_id
         cote = libre.cote

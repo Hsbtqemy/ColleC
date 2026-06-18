@@ -67,9 +67,7 @@ def test_post_creation_libre_redirige_vers_collection(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        fonds_id = s.scalar(
-            select(Collection.fonds_id).where(Collection.cote == "HK")
-        )
+        fonds_id = s.scalar(select(Collection.fonds_id).where(Collection.cote == "HK"))
     engine.dispose()
     assert fonds_id is not None
 
@@ -98,9 +96,7 @@ def test_post_creation_libre_redirige_vers_collection(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        col = s.scalar(
-            select(Collection).where(Collection.cote == "HK-FAVORIS-TEST")
-        )
+        col = s.scalar(select(Collection).where(Collection.cote == "HK-FAVORIS-TEST"))
         assert col is not None
         assert col.type_collection == TypeCollection.LIBRE.value
         assert col.fonds_id == fonds_id
@@ -112,9 +108,7 @@ def test_post_cote_vide_reaffiche_erreurs(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        fonds_id = s.scalar(
-            select(Collection.fonds_id).where(Collection.cote == "HK")
-        )
+        fonds_id = s.scalar(select(Collection.fonds_id).where(Collection.cote == "HK"))
     engine.dispose()
 
     client = TestClient(app)
@@ -142,9 +136,7 @@ def test_post_cote_collision_meme_fonds_reaffiche_erreurs(
     factory = creer_session_factory(engine)
     with factory() as s:
         # HK existe déjà comme miroir
-        fonds_id = s.scalar(
-            select(Collection.fonds_id).where(Collection.cote == "HK")
-        )
+        fonds_id = s.scalar(select(Collection.fonds_id).where(Collection.cote == "HK"))
     engine.dispose()
 
     client = TestClient(app)
@@ -170,9 +162,7 @@ def test_post_erreur_en_mode_selecteur_garde_selecteur(
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        fonds_id = s.scalar(
-            select(Collection.fonds_id).where(Collection.cote == "HK")
-        )
+        fonds_id = s.scalar(select(Collection.fonds_id).where(Collection.cote == "HK"))
     engine.dispose()
 
     client = TestClient(app)
@@ -220,9 +210,7 @@ def test_post_lecture_seule_bloque(
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        fonds_id = s.scalar(
-            select(Collection.fonds_id).where(Collection.cote == "HK")
-        )
+        fonds_id = s.scalar(select(Collection.fonds_id).where(Collection.cote == "HK"))
     engine.dispose()
 
     racine = tmp_path / "miniatures"

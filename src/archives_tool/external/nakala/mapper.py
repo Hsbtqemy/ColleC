@@ -37,10 +37,22 @@ PROPERTY_URI_TO_SLUG: dict[str, str] = {
 #: du chantier round-trip ; gardé local ici pour ne pas coupler
 #: `external/` à `api.services`.
 _ISO1_VERS_ISO3: dict[str, str] = {
-    "fr": "fra", "en": "eng", "es": "spa", "it": "ita", "de": "deu",
-    "pt": "por", "nl": "nld", "ar": "ara", "ru": "rus", "el": "ell",
-    "la": "lat", "oc": "oci", "br": "bre", "ca": "cat",
+    "fr": "fra",
+    "en": "eng",
+    "es": "spa",
+    "it": "ita",
+    "de": "deu",
+    "pt": "por",
+    "nl": "nld",
+    "ar": "ara",
+    "ru": "rus",
+    "el": "ell",
+    "la": "lat",
+    "oc": "oci",
+    "br": "bre",
+    "ca": "cat",
 }
+
 
 @dataclass
 class FichierNakala:
@@ -86,9 +98,9 @@ def _slug(property_uri: str) -> str:
     if property_uri in PROPERTY_URI_TO_SLUG:
         return PROPERTY_URI_TO_SLUG[property_uri]
     if property_uri.startswith(_DCT):
-        return "dcterms_" + property_uri[len(_DCT):]
+        return "dcterms_" + property_uri[len(_DCT) :]
     if property_uri.startswith(_NKL):
-        return "nkl_" + property_uri[len(_NKL):]
+        return "nkl_" + property_uri[len(_NKL) :]
     return property_uri
 
 
@@ -96,7 +108,9 @@ def _valeurs(metas: list[dict], property_uri: str) -> list[Any]:
     return [m.get("value") for m in metas if m.get("propertyUri") == property_uri]
 
 
-def _pick_label(metas: list[dict], property_uri: str, prefer_lang: str = "fr") -> str | None:
+def _pick_label(
+    metas: list[dict], property_uri: str, prefer_lang: str = "fr"
+) -> str | None:
     """Meilleur libellé parmi des valeurs multilingues (préfère `fr`)."""
     candidats = [m for m in metas if m.get("propertyUri") == property_uri]
     for m in candidats:
@@ -122,7 +136,7 @@ def normaliser_orcid(orcid: Any) -> str | None:
     s = str(orcid).strip()
     for prefixe in ("https://orcid.org/", "http://orcid.org/", "orcid.org/"):
         if s.lower().startswith(prefixe):
-            return s[len(prefixe):] or None
+            return s[len(prefixe) :] or None
     return s or None
 
 
@@ -222,21 +236,27 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
     metas: list[dict] = depot.get("metas") or []
 
     createurs = [
-        c for v in _valeurs(metas, f"{_NKL}creator")
+        c
+        for v in _valeurs(metas, f"{_NKL}creator")
         if (c := _format_createur(v)) is not None
     ]
     langues = [
-        iso for v in _valeurs(metas, f"{_DCT}language")
+        iso
+        for v in _valeurs(metas, f"{_DCT}language")
         if (iso := langue_vers_iso639_3(v)) is not None
     ]
-    sujets = [
-        str(v) for v in _valeurs(metas, f"{_DCT}subject") if v not in (None, "")
-    ]
+    sujets = [str(v) for v in _valeurs(metas, f"{_DCT}subject") if v not in (None, "")]
 
     # Reste des metas (hors champs dédiés) → metadonnees par slug.
     champs_dedies = {
-        f"{_NKL}title", f"{_NKL}creator", f"{_NKL}created", f"{_NKL}type",
-        f"{_NKL}license", f"{_DCT}description", f"{_DCT}subject", f"{_DCT}language",
+        f"{_NKL}title",
+        f"{_NKL}creator",
+        f"{_NKL}created",
+        f"{_NKL}type",
+        f"{_NKL}license",
+        f"{_DCT}description",
+        f"{_DCT}subject",
+        f"{_DCT}language",
     }
     metadonnees: dict[str, Any] = {}
     for m in metas:
@@ -250,7 +270,9 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
         if slug in metadonnees:
             existant = metadonnees[slug]
             metadonnees[slug] = (
-                existant + [valeur] if isinstance(existant, list) else [existant, valeur]
+                existant + [valeur]
+                if isinstance(existant, list)
+                else [existant, valeur]
             )
         else:
             metadonnees[slug] = valeur
@@ -284,7 +306,5 @@ def mapper_depot(depot: dict[str, Any]) -> DepotNakala:
         licence=next(iter(_valeurs(metas, f"{_NKL}license")), None),
         fichiers=fichiers,
         metadonnees=metadonnees,
-        collections_ids=[
-            str(c) for c in (depot.get("collectionsIds") or []) if c
-        ],
+        collections_ids=[str(c) for c in (depot.get("collectionsIds") or []) if c],
     )

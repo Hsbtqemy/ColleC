@@ -31,9 +31,15 @@ from archives_tool.db import _SQL_TRIGGERS_FTS
 
 
 _NOMS_TRIGGERS_FTS: list[str] = [
-    "item_fts_insert", "item_fts_delete", "item_fts_update",
-    "fonds_fts_insert", "fonds_fts_delete", "fonds_fts_update",
-    "collection_fts_insert", "collection_fts_delete", "collection_fts_update",
+    "item_fts_insert",
+    "item_fts_delete",
+    "item_fts_update",
+    "fonds_fts_insert",
+    "fonds_fts_delete",
+    "fonds_fts_update",
+    "collection_fts_insert",
+    "collection_fts_delete",
+    "collection_fts_update",
 ]
 
 

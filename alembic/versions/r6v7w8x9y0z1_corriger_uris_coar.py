@@ -31,13 +31,13 @@ _C = "http://purl.org/coar/resource_type"
 
 # ancienne URI ColleC (intention selon le label) → URI corrigée
 _REMAP: dict[str, str] = {
-    f"{_C}/c_3e5a": f"{_C}/c_2fe3",      # Périodique → journal (Nakala)
-    f"{_C}/c_0640": f"{_C}/c_2fe3",      # Numéro de périodique → Périodique
-    f"{_C}/c_18co": f"{_C}/YC9F-HGCF",   # Document d'archives
-    f"{_C}/c_ecc8": f"{_C}/c_12cd",      # Carte (c_ecc8 = image fixe → c_12cd map)
-    f"{_C}/c_8a7e": f"{_C}/c_0040",      # Manuscrit
-    f"{_C}/c_18cd": f"{_C}/c_ecc8",      # Photographie → still image
-    f"{_C}/c_12cd": f"{_C}/c_12ce",      # Vidéo (c_12cd = carte → c_12ce video)
+    f"{_C}/c_3e5a": f"{_C}/c_2fe3",  # Périodique → journal (Nakala)
+    f"{_C}/c_0640": f"{_C}/c_2fe3",  # Numéro de périodique → Périodique
+    f"{_C}/c_18co": f"{_C}/YC9F-HGCF",  # Document d'archives
+    f"{_C}/c_ecc8": f"{_C}/c_12cd",  # Carte (c_ecc8 = image fixe → c_12cd map)
+    f"{_C}/c_8a7e": f"{_C}/c_0040",  # Manuscrit
+    f"{_C}/c_18cd": f"{_C}/c_ecc8",  # Photographie → still image
+    f"{_C}/c_12cd": f"{_C}/c_12ce",  # Vidéo (c_12cd = carte → c_12ce video)
 }
 
 # Ordre critique — chaîne de réaffectations qui se recouvrent :

@@ -199,12 +199,7 @@ def test_analyse_colonnes_stats_de_base(tmp_path: Path) -> None:
 def test_analyse_colonnes_sentinelles_nulles_ignorees(tmp_path: Path) -> None:
     csv = tmp_path / "t.csv"
     csv.write_text(
-        "Cote;Notes\n"
-        "HK-1;none\n"
-        "HK-2;n/a\n"
-        "HK-3;\n"
-        "HK-4;NaN\n"
-        "HK-5;reel\n",
+        "Cote;Notes\nHK-1;none\nHK-2;n/a\nHK-3;\nHK-4;NaN\nHK-5;reel\n",
         encoding="utf-8",
     )
     stats = analyser_colonnes_tableur(csv)
@@ -241,9 +236,7 @@ def test_analyse_colonnes_colonne_vide_filtree(tmp_path: Path) -> None:
     La colonne `Cote` reste, et seules les colonnes ayant au moins
     une valeur non-nulle apparaissent."""
     csv = tmp_path / "t.csv"
-    csv.write_text(
-        "Cote;Vide;Une\nHK-1;;X\nHK-2;;\n", encoding="utf-8"
-    )
+    csv.write_text("Cote;Vide;Une\nHK-1;;X\nHK-2;;\n", encoding="utf-8")
     stats = analyser_colonnes_tableur(csv)
     assert "Vide" not in stats
     assert "Cote" in stats
@@ -257,9 +250,7 @@ def test_analyse_colonnes_normalisation_nfc(tmp_path: Path) -> None:
     nfd = unicodedata.normalize("NFD", "café")
     nfc = unicodedata.normalize("NFC", "café")
     csv = tmp_path / "t.csv"
-    csv.write_text(
-        f"Cote;Titre\nHK-1;{nfd}\nHK-2;{nfc}\n", encoding="utf-8"
-    )
+    csv.write_text(f"Cote;Titre\nHK-1;{nfd}\nHK-2;{nfc}\n", encoding="utf-8")
     stats = analyser_colonnes_tableur(csv)
     assert stats["Titre"]["uniques"] == 1
 
@@ -283,9 +274,7 @@ def test_analyse_colonnes_fichier_absent(tmp_path: Path) -> None:
 
 def test_classif_cote_identifiee_par_nom(tmp_path: Path) -> None:
     csv = tmp_path / "t.csv"
-    csv.write_text(
-        "Cote;Titre\nHK-1;A\nHK-2;B\n", encoding="utf-8"
-    )
+    csv.write_text("Cote;Titre\nHK-1;A\nHK-2;B\n", encoding="utf-8")
     stats = analyser_colonnes_tableur(csv)
     assert stats["Cote"]["classif"] == "cote"
 
@@ -334,9 +323,7 @@ def test_classif_indetermine_si_pas_de_cote(tmp_path: Path) -> None:
     """Aucune colonne nommée cote ET aucune colonne 100% unique —
     impossible de classer les autres colonnes."""
     csv = tmp_path / "t.csv"
-    csv.write_text(
-        "a;b\nx;1\nx;1\nx;2\n", encoding="utf-8"
-    )
+    csv.write_text("a;b\nx;1\nx;1\nx;2\n", encoding="utf-8")
     stats = analyser_colonnes_tableur(csv)
     # `a` n'est pas 100% unique (x,x,x), `b` non plus (1,1,2). Pas de cote.
     assert stats["a"]["classif"] == "indetermine"
@@ -348,9 +335,7 @@ def test_classif_indetermine_si_colonne_vide(tmp_path: Path) -> None:
     (#2 V0.9.2-import) — pas besoin de la classifier. La colonne
     Cote reste."""
     csv = tmp_path / "t.csv"
-    csv.write_text(
-        "Cote;Vide\nHK-1;\nHK-2;\nHK-3;\n", encoding="utf-8"
-    )
+    csv.write_text("Cote;Vide\nHK-1;\nHK-2;\nHK-3;\n", encoding="utf-8")
     stats = analyser_colonnes_tableur(csv)
     assert stats["Cote"]["classif"] == "cote"
     assert "Vide" not in stats

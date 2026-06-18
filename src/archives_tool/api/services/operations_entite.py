@@ -50,7 +50,9 @@ def _colonnes(obj: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for attr in sa_inspect(obj).mapper.column_attrs:
         valeur = getattr(obj, attr.key)
-        out[attr.key] = valeur if valeur is None or isinstance(valeur, _PRIMITIFS) else str(valeur)
+        out[attr.key] = (
+            valeur if valeur is None or isinstance(valeur, _PRIMITIFS) else str(valeur)
+        )
     return out
 
 
@@ -74,7 +76,9 @@ def _ajouter(
             cote=cote,
             fonds_cote=fonds_cote,
             titre=titre,
-            snapshot_json=json.dumps(_colonnes(entite), ensure_ascii=False, default=str),
+            snapshot_json=json.dumps(
+                _colonnes(entite), ensure_ascii=False, default=str
+            ),
             cascade_resume=json.dumps(cascade, ensure_ascii=False, default=str),
             execute_par=execute_par,
         )

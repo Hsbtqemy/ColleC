@@ -43,7 +43,9 @@ def csv_to_liste(valeur: str | list[str] | None) -> list[str]:
 
 
 def clamper_annee(
-    v: int | None, borne_min: int | None, borne_max: int | None,
+    v: int | None,
+    borne_min: int | None,
+    borne_max: int | None,
 ) -> int | None:
     """Retourne `v` s'il est dans `[borne_min, borne_max]`, sinon `None`.
 

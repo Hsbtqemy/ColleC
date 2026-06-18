@@ -152,7 +152,10 @@ def est_job_actif() -> bool:
 
 
 def reserver_job(
-    *, fonds_cote: str, collection_cote: str, total: int,
+    *,
+    fonds_cote: str,
+    collection_cote: str,
+    total: int,
 ) -> str:
     """Réserve un job_id atomiquement et pose la garde anti-concurrent.
 
@@ -197,6 +200,7 @@ def _make_progress(job_id: str) -> Callable[[str, int, int], None]:
     réaffirmé à chaque appel pour défendre contre une dérive si la
     collection venait à changer (cas théorique).
     """
+
     def progress(cote: str, index: int, total: int) -> None:
         with _lock:
             etat = _JOBS.get(job_id)
@@ -205,6 +209,7 @@ def _make_progress(job_id: str) -> Callable[[str, int, int], None]:
             etat.cote_courante = cote
             etat.faits = index
             etat.total = total
+
     return progress
 
 
@@ -217,7 +222,8 @@ def _client_ecriture(config_nakala: Any) -> NakalaEcritureClient:
     ``config.py`` qu'on ne veut pas couper en deux pour un import.
     """
     return NakalaEcritureClient(
-        config_nakala.base_url, config_nakala.api_key,
+        config_nakala.base_url,
+        config_nakala.api_key,
         timeout=config_nakala.timeout,
         verify_ssl=config_nakala.verify_ssl,
     )
@@ -270,7 +276,10 @@ def executer_depot_collection(
             client = _client_ecriture(config_nakala)
             try:
                 rapport = deposer_collection(
-                    db, client, collection, racines=racines,
+                    db,
+                    client,
+                    collection,
+                    racines=racines,
                     statut_donnee=statut_donnee,
                     statut_collection=statut_collection,
                     cree_par=cree_par,

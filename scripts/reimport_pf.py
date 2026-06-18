@@ -52,7 +52,9 @@ def main() -> None:
         if s2 is None:
             print("Session 2 introuvable.")
             return
-        print(f"Réinitialisation session 2 (était à l'étape {s2.etape}, statut {s2.statut})…")
+        print(
+            f"Réinitialisation session 2 (était à l'étape {s2.etape}, statut {s2.statut})…"
+        )
         s2.mappings = None
         s2.etape = "mapping"
         s2.statut = "en_cours"
@@ -77,7 +79,9 @@ def main() -> None:
         print("  OK")
 
         # 3. Construire mapping via Bug B (heuristiques nominatives)
-        print("\nConstruction mapping mode simple (cote='Nouvelle cote', granularite='fichier')…")
+        print(
+            "\nConstruction mapping mode simple (cote='Nouvelle cote', granularite='fichier')…"
+        )
         s2.granularite = "fichier"
         s2.fonds_data = {"cote": "PF", "titre": "Por Favor"}
         mapping = construire_mapping_depuis_simple(

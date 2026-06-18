@@ -152,9 +152,7 @@ def generer_derives_pour_fichier(
     return res
 
 
-def _selectionner_fichiers(
-    session: Session, perimetre: Perimetre
-) -> list[Fichier]:
+def _selectionner_fichiers(session: Session, perimetre: Perimetre) -> list[Fichier]:
     """Charge les fichiers du périmètre. Les exceptions métier
     (`FondsIntrouvable`, `CollectionIntrouvable`) remontent telles
     quelles — au caller de décider quoi en faire.

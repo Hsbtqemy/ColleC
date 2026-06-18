@@ -64,9 +64,7 @@ def test_supprimer_fonds_happy_path(base_demo: Path) -> None:
     with _session(base_demo) as db:
         hk = db.scalar(select(Fonds).where(Fonds.cote == "HK"))
         assert hk is not None
-        nb_items_hk = db.scalar(
-            select(Item).where(Item.fonds_id == hk.id)
-        )
+        nb_items_hk = db.scalar(select(Item).where(Item.fonds_id == hk.id))
         assert nb_items_hk is not None  # au moins un
 
     client = TestClient(app, follow_redirects=False)
@@ -76,10 +74,14 @@ def test_supprimer_fonds_happy_path(base_demo: Path) -> None:
 
     with _session(base_demo) as db:
         assert db.scalar(select(Fonds).where(Fonds.cote == "HK")) is None
-        assert db.scalars(
-            select(Item).join(Fonds, Item.fonds_id == Fonds.id, isouter=True)
-            .where(Fonds.id.is_(None))
-        ).all() == []  # cascade complete, pas d'items orphelins
+        assert (
+            db.scalars(
+                select(Item)
+                .join(Fonds, Item.fonds_id == Fonds.id, isouter=True)
+                .where(Fonds.id.is_(None))
+            ).all()
+            == []
+        )  # cascade complete, pas d'items orphelins
 
 
 def test_supprimer_fonds_confirmation_invalide(base_demo: Path) -> None:
@@ -207,9 +209,7 @@ def test_supprimer_item_happy_path(base_demo: Path) -> None:
     with _session(base_demo) as db:
         assert db.get(Item, item_id) is None
         # Fichiers de l'item supprimés en cascade
-        assert (
-            db.scalars(select(Fichier).where(Fichier.item_id == item_id)).all() == []
-        )
+        assert db.scalars(select(Fichier).where(Fichier.item_id == item_id)).all() == []
         # Le fonds est toujours là
         assert db.scalar(select(Fonds).where(Fonds.cote == "HK")) is not None
         assert nb_fichiers_avant > 0  # garde-fou test

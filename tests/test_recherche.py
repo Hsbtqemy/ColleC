@@ -48,7 +48,10 @@ def session_avec_corpus(session: Session) -> Session:
         creer_item(
             session,
             FormulaireItem(
-                cote=cote, titre=titre, description=desc, fonds_id=fonds_hk.id,
+                cote=cote,
+                titre=titre,
+                description=desc,
+                fonds_id=fonds_hk.id,
             ),
         )
     for cote, titre, desc in [
@@ -58,7 +61,10 @@ def session_avec_corpus(session: Session) -> Session:
         creer_item(
             session,
             FormulaireItem(
-                cote=cote, titre=titre, description=desc, fonds_id=fonds_pf.id,
+                cote=cote,
+                titre=titre,
+                description=desc,
+                fonds_id=fonds_pf.id,
             ),
         )
     return session
@@ -157,7 +163,8 @@ def test_recherche_scope_fonds(session_avec_corpus: Session) -> None:
 
     fonds_hk = lire_fonds_par_cote(session_avec_corpus, "HK")
     resultats = rechercher(
-        session_avec_corpus, "caricatures",
+        session_avec_corpus,
+        "caricatures",
         scope=Scope(fonds_id=fonds_hk.id),
     )
     # Items HK uniquement (PF-002 « Caricatures politiques » exclu)
@@ -184,7 +191,8 @@ def test_recherche_synchro_apres_creation_item(session_avec_corpus: Session) -> 
     creer_item(
         session_avec_corpus,
         FormulaireItem(
-            cote="HK-NEW", titre="Tout nouveau article",
+            cote="HK-NEW",
+            titre="Tout nouveau article",
             description="Sur le sujet Esperanto",
             fonds_id=fonds_hk.id,
         ),
@@ -200,7 +208,9 @@ def test_recherche_synchro_apres_modification(
     """Trigger `item_fts_update` réindexe lors d'une modification.
     Avant modif : pas de match « Esperanto ». Après modif : match."""
     from archives_tool.api.services.items import (
-        FormulaireItem, lire_item_par_cote, modifier_item,
+        FormulaireItem,
+        lire_item_par_cote,
+        modifier_item,
     )
     from archives_tool.api.services.fonds import lire_fonds_par_cote
 
@@ -209,7 +219,9 @@ def test_recherche_synchro_apres_modification(
     assert "Esperanto" not in (item.description or "")
 
     nouveau = FormulaireItem(
-        cote=item.cote, titre=item.titre, fonds_id=fonds_hk.id,
+        cote=item.cote,
+        titre=item.titre,
+        fonds_id=fonds_hk.id,
         description="Esperanto et autres langues construites",
         version=item.version,
     )
@@ -226,7 +238,8 @@ def test_recherche_synchro_apres_suppression(
     """Trigger `item_fts_delete` retire de l'index. Un item supprimé
     n'apparaît plus dans la recherche."""
     from archives_tool.api.services.items import (
-        lire_item_par_cote, supprimer_item,
+        lire_item_par_cote,
+        supprimer_item,
     )
     from archives_tool.api.services.fonds import lire_fonds_par_cote
 
@@ -248,7 +261,8 @@ def test_recherche_dans_metadonnees(session_avec_corpus: Session) -> None:
     creer_item(
         session_avec_corpus,
         FormulaireItem(
-            cote="HK-META", titre="Item avec meta",
+            cote="HK-META",
+            titre="Item avec meta",
             description="rien dans description",
             fonds_id=fonds_hk.id,
             metadonnees={"auteur": "Topor", "rubrique": "humour noir"},
@@ -402,21 +416,28 @@ def test_calculer_options_filtres_scope_fonds(
     from archives_tool.api.services.fonds import lire_fonds_par_cote
     from archives_tool.api.services.items import FormulaireItem, creer_item
     from archives_tool.api.services.recherche import (
-        Scope, calculer_options_filtres_recherche,
+        Scope,
+        calculer_options_filtres_recherche,
     )
 
-    creer_fonds(session_avec_corpus_filtrable, FormulaireFonds(cote="MONO", titre="Mono"))
+    creer_fonds(
+        session_avec_corpus_filtrable, FormulaireFonds(cote="MONO", titre="Mono")
+    )
     fonds_mono = lire_fonds_par_cote(session_avec_corpus_filtrable, "MONO")
     creer_item(
         session_avec_corpus_filtrable,
         FormulaireItem(
-            cote="M-001", titre="seul", fonds_id=fonds_mono.id,
-            langue="ita", annee=2000,
+            cote="M-001",
+            titre="seul",
+            fonds_id=fonds_mono.id,
+            langue="ita",
+            annee=2000,
         ),
     )
 
     options_mono = calculer_options_filtres_recherche(
-        session_avec_corpus_filtrable, scope=Scope(fonds_id=fonds_mono.id),
+        session_avec_corpus_filtrable,
+        scope=Scope(fonds_id=fonds_mono.id),
     )
     assert options_mono.langues == ("ita",)
     assert "fra" not in options_mono.langues  # pas dans ce fonds
@@ -431,14 +452,16 @@ def test_parser_filtres_silencieux_hors_options(
     Jamais de 400 sur paramètre invalide (cohérent avec
     `parser_filtres_collection`)."""
     from archives_tool.api.services.recherche import (
-        OptionsFiltresRecherche, parser_filtres_recherche,
+        OptionsFiltresRecherche,
+        parser_filtres_recherche,
     )
 
     options = OptionsFiltresRecherche(
         etats=("brouillon", "valide"),
         langues=("fra",),
         types_coar=("journal",),
-        annee_min_base=1900, annee_max_base=2000,
+        annee_min_base=1900,
+        annee_max_base=2000,
     )
     filtres = parser_filtres_recherche(
         etat=["brouillon", "INEXISTANT"],  # INEXISTANT ignoré
@@ -463,14 +486,19 @@ def test_parser_filtres_swap_intervalle_inverse(
     """Si annee_min > annee_max, on swap pour donner un résultat
     exploitable plutôt qu'une plage vide muette."""
     from archives_tool.api.services.recherche import (
-        OptionsFiltresRecherche, parser_filtres_recherche,
+        OptionsFiltresRecherche,
+        parser_filtres_recherche,
     )
 
     options = OptionsFiltresRecherche(annee_min_base=1900, annee_max_base=2000)
     filtres = parser_filtres_recherche(
-        etat=None, langue=None, type_coar=None,
-        annee_min=1980, annee_max=1920,
-        q_dans_resultats=None, options=options,
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_min=1980,
+        annee_max=1920,
+        q_dans_resultats=None,
+        options=options,
     )
     assert filtres.annee_min == 1920
     assert filtres.annee_max == 1980
@@ -482,7 +510,8 @@ def test_rechercher_filtre_etat(session_avec_corpus_filtrable: Session) -> None:
     from archives_tool.api.services.recherche import FiltresRecherche
 
     res = rechercher(
-        session_avec_corpus_filtrable, "caricature",
+        session_avec_corpus_filtrable,
+        "caricature",
         filtres=FiltresRecherche(etats=("brouillon",)),
     )
     items = [r for r in res if r.type_entite == "item"]
@@ -497,7 +526,8 @@ def test_rechercher_filtre_langue(
     from archives_tool.api.services.recherche import FiltresRecherche
 
     res = rechercher(
-        session_avec_corpus_filtrable, "caricature",
+        session_avec_corpus_filtrable,
+        "caricature",
         filtres=FiltresRecherche(langues=("fra", "spa")),
     )
     items = [r for r in res if r.type_entite == "item"]
@@ -515,7 +545,8 @@ def test_rechercher_filtre_annee_plage(
     from archives_tool.api.services.recherche import FiltresRecherche
 
     res = rechercher(
-        session_avec_corpus_filtrable, "caricature",
+        session_avec_corpus_filtrable,
+        "caricature",
         filtres=FiltresRecherche(annee_min=1970, annee_max=1985),
     )
     items = [r for r in res if r.type_entite == "item"]
@@ -537,7 +568,8 @@ def test_rechercher_q_dans_resultats_raffine(
 
     # Avec raffinement sur "R-003"
     avec = rechercher(
-        session_avec_corpus_filtrable, "caricature",
+        session_avec_corpus_filtrable,
+        "caricature",
         filtres=FiltresRecherche(q_dans_resultats="R-003"),
     )
     items = [r for r in avec if r.type_entite == "item"]
@@ -555,7 +587,8 @@ def test_rechercher_filtres_items_n_affecte_pas_fonds(
 
     # Filtre très restrictif sur les items (état seulement)
     res = rechercher(
-        session_avec_corpus_filtrable, "Revues",
+        session_avec_corpus_filtrable,
+        "Revues",
         filtres=FiltresRecherche(etats=("brouillon",)),
     )
     # Le fonds REVS matche son titre "Revues" et doit toujours apparaître
@@ -592,7 +625,8 @@ def test_rechercher_tout_afficher_via_filtre(
     from archives_tool.api.services.recherche import FiltresRecherche
 
     res = rechercher(
-        session_avec_corpus_filtrable, "",
+        session_avec_corpus_filtrable,
+        "",
         filtres=FiltresRecherche(etats=("brouillon",)),
     )
     items = [r for r in res if r.type_entite == "item"]

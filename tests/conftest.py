@@ -129,9 +129,7 @@ def session_avec_export(session: Session) -> Session:
         ),
     )
 
-    favoris = lire_collection_par_cote(
-        session, "HK-FAVORIS", fonds_id=fonds_hk_obj.id
-    )
+    favoris = lire_collection_par_cote(session, "HK-FAVORIS", fonds_id=fonds_hk_obj.id)
     transv = lire_collection_par_cote(session, "TRANSV")
     hk_001 = session.scalar(
         select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds_hk_obj.id)

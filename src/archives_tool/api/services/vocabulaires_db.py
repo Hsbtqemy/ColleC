@@ -169,9 +169,7 @@ def _valider_vocabulaire(
     return erreurs
 
 
-def creer_vocabulaire(
-    db: Session, formulaire: FormulaireVocabulaire
-) -> Vocabulaire:
+def creer_vocabulaire(db: Session, formulaire: FormulaireVocabulaire) -> Vocabulaire:
     """Crée un vocabulaire vide. Les valeurs s'ajoutent ensuite via
     :func:`ajouter_valeur`."""
     erreurs = _valider_vocabulaire(db, formulaire)
@@ -262,9 +260,7 @@ def _valider_valeur(
         if ignorer_id is not None:
             stmt = stmt.where(ValeurControlee.id != ignorer_id)
         if db.scalar(stmt) is not None:
-            erreurs["code"] = (
-                f"Le code {code!r} existe déjà dans ce vocabulaire."
-            )
+            erreurs["code"] = f"Le code {code!r} existe déjà dans ce vocabulaire."
     if not formulaire.libelle.strip():
         erreurs["libelle"] = "Le libellé est obligatoire."
     return erreurs

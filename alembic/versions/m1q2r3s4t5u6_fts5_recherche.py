@@ -92,9 +92,15 @@ def upgrade() -> None:
     # peut les avoir créés au startup de l'app avant que cette
     # migration ne soit appliquée sur une base pré-FTS.
     for trigger in (
-        "item_fts_insert", "item_fts_delete", "item_fts_update",
-        "fonds_fts_insert", "fonds_fts_delete", "fonds_fts_update",
-        "collection_fts_insert", "collection_fts_delete", "collection_fts_update",
+        "item_fts_insert",
+        "item_fts_delete",
+        "item_fts_update",
+        "fonds_fts_insert",
+        "fonds_fts_delete",
+        "fonds_fts_update",
+        "collection_fts_insert",
+        "collection_fts_delete",
+        "collection_fts_update",
     ):
         bind.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
     for sql in _SQL_TRIGGERS_FTS:
@@ -106,9 +112,15 @@ def downgrade() -> None:
     # DROP TRIGGER avant DROP TABLE pour éviter des références orphelines
     # à des tables qui ne seraient plus là.
     for trigger in [
-        "item_fts_insert", "item_fts_delete", "item_fts_update",
-        "fonds_fts_insert", "fonds_fts_delete", "fonds_fts_update",
-        "collection_fts_insert", "collection_fts_delete", "collection_fts_update",
+        "item_fts_insert",
+        "item_fts_delete",
+        "item_fts_update",
+        "fonds_fts_insert",
+        "fonds_fts_delete",
+        "fonds_fts_update",
+        "collection_fts_insert",
+        "collection_fts_delete",
+        "collection_fts_update",
     ]:
         bind.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
     for table in ("item_fts", "fonds_fts", "collection_fts"):

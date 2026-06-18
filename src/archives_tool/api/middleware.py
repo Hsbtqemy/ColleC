@@ -77,9 +77,7 @@ async def middleware_lecture_seule(
         if _prefere_html(request):
             return HTMLResponse(
                 status_code=423,
-                content=_PAGE_HTML_LECTURE_SEULE.format(
-                    message=_MESSAGE_LECTURE_SEULE
-                ),
+                content=_PAGE_HTML_LECTURE_SEULE.format(message=_MESSAGE_LECTURE_SEULE),
             )
         return JSONResponse(
             status_code=423,

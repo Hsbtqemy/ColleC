@@ -64,9 +64,7 @@ def racine_scans(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def session_avec_fichiers(
-    session: Session, racine_scans: Path
-) -> Session:
+def session_avec_fichiers(session: Session, racine_scans: Path) -> Session:
     """1 fonds HK + 2 items + 5 fichiers physiques + 1 libre rattachée.
 
     HK-001 : 3 fichiers (HK-001-001.tif à HK-001-003.tif).
@@ -87,9 +85,7 @@ def session_avec_fichiers(
 
     creer_collection_libre(
         session,
-        FormulaireCollection(
-            cote="HK-FAVORIS", titre="Favoris", fonds_id=fonds.id
-        ),
+        FormulaireCollection(cote="HK-FAVORIS", titre="Favoris", fonds_id=fonds.id),
     )
     fav = lire_collection_par_cote(session, "HK-FAVORIS", fonds_id=fonds.id)
     session.add(ItemCollection(item_id=item_001.id, collection_id=fav.id))
@@ -157,9 +153,7 @@ def test_template_variable_inconnue_leve(
 ) -> None:
     fichier = session_avec_fichiers.scalar(select(Fichier).limit(1))
     with pytest.raises(EchecTemplate, match="inconnue"):
-        evaluer_template(
-            "{xxx}.tif", fichier, fichier.item, fichier.item.fonds
-        )
+        evaluer_template("{xxx}.tif", fichier, fichier.item, fichier.item.fonds)
 
 
 def test_template_vide_leve(session_avec_fichiers: Session) -> None:
@@ -206,9 +200,7 @@ def test_plan_perimetre_collection_libre(
         session_avec_fichiers,
         template="fav/{cote}-{ordre:03d}.{ext}",
         racines=_racines(racine_scans),
-        perimetre=Perimetre(
-            collection_cote="HK-FAVORIS", collection_fonds_cote="HK"
-        ),
+        perimetre=Perimetre(collection_cote="HK-FAVORIS", collection_fonds_cote="HK"),
     )
     assert len(plan.operations) == 3
 
@@ -309,9 +301,7 @@ def test_execution_appliquee_modifie_db_et_disque(
     # Journal : 5 OperationFichier avec ce batch_id.
     ops = list(
         session_avec_fichiers.scalars(
-            select(OperationFichier).where(
-                OperationFichier.batch_id == rap.batch_id
-            )
+            select(OperationFichier).where(OperationFichier.batch_id == rap.batch_id)
         )
     )
     assert len(ops) == 5

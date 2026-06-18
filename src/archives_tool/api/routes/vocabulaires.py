@@ -50,9 +50,7 @@ from archives_tool.models import ValeurControlee
 router = APIRouter()
 
 
-def _valider_appartenance_valeur(
-    valeur: ValeurControlee, vocab_id: int
-) -> None:
+def _valider_appartenance_valeur(valeur: ValeurControlee, vocab_id: int) -> None:
     """Garde anti-confused-deputy : POST sur
     ``/vocabulaires/A/valeurs/<id>/...`` où ``id`` est en réalité dans
     le vocab B doit être rejeté en 404."""
@@ -180,9 +178,7 @@ def page_vocabulaire(
     valeur_en_modification: int | None = None
     formulaire_valeur = FormulaireValeur()
     if modifier is not None:
-        valeur = next(
-            (v for v in vocab.valeurs if v.id == modifier), None
-        )
+        valeur = next((v for v in vocab.valeurs if v.id == modifier), None)
         if valeur is not None:
             valeur_en_modification = valeur.id
             formulaire_valeur = FormulaireValeur(
@@ -453,9 +449,7 @@ def _fonds_par_cote_ou_404(db: Session, cote: str):
 
     fonds = db.scalar(sa_select(Fonds).where(Fonds.cote == cote))
     if fonds is None:
-        raise HTTPException(
-            status_code=404, detail=f"Fonds « {cote} » introuvable."
-        )
+        raise HTTPException(status_code=404, detail=f"Fonds « {cote} » introuvable.")
     return fonds
 
 
@@ -532,16 +526,22 @@ def page_enrichissement_preview(
     vocab = vocabulaire_par_id(db, vocab_id)
     fonds = _fonds_par_cote_ou_404(db, cote)
     rapport = enrichir_annotations_par_vocab(
-        db, vocab_id, fonds.id, dry_run=True,
+        db,
+        vocab_id,
+        fonds.id,
+        dry_run=True,
     )
     contexte = _contexte_base(
-        nom_base, utilisateur,
+        nom_base,
+        utilisateur,
         vocabulaire=vocab,
         fonds=fonds,
         rapport=rapport,
     )
     return templates.TemplateResponse(
-        request, "pages/enrichissement_preview.html", contexte,
+        request,
+        "pages/enrichissement_preview.html",
+        contexte,
     )
 
 
@@ -568,7 +568,9 @@ def soumettre_enrichissement(
     vocabulaire_par_id(db, vocab_id)
     fonds = _fonds_par_cote_ou_404(db, cote)
     rapport = enrichir_annotations_par_vocab(
-        db, vocab_id, fonds.id,
+        db,
+        vocab_id,
+        fonds.id,
         dry_run=False,
         modifie_par=utilisateur,
     )

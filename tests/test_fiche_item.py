@@ -96,9 +96,9 @@ def test_composer_fiche_item_agregats_si_meta_fichiers(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
-        fichiers = list(s.scalars(
-            select(Fichier).where(Fichier.item_id == item.id).limit(5)
-        ).all())
+        fichiers = list(
+            s.scalars(select(Fichier).where(Fichier.item_id == item.id).limit(5)).all()
+        )
         # Injecte des méta documentaires sur 5 fichiers : 3 « Topor »,
         # 2 « Reiser ».
         for i, f in enumerate(fichiers):
@@ -130,9 +130,14 @@ def test_composer_fiche_item_lignes_avec_badge_meta(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
-        fichiers = list(s.scalars(
-            select(Fichier).where(Fichier.item_id == item.id).order_by(Fichier.ordre).limit(3)
-        ).all())
+        fichiers = list(
+            s.scalars(
+                select(Fichier)
+                .where(Fichier.item_id == item.id)
+                .order_by(Fichier.ordre)
+                .limit(3)
+            ).all()
+        )
         # F1 = juste data_url (technique) → pas de badge
         fichiers[0].metadonnees = {"data_url": "https://x"}
         flag_modified(fichiers[0], "metadonnees")
@@ -165,9 +170,13 @@ def test_composer_fiche_item_position_independante_de_ordre(base_demo: Path) -> 
     factory = creer_session_factory(engine)
     with factory() as s:
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
-        fichiers = list(s.scalars(
-            select(Fichier).where(Fichier.item_id == item.id).order_by(Fichier.ordre)
-        ).all())
+        fichiers = list(
+            s.scalars(
+                select(Fichier)
+                .where(Fichier.item_id == item.id)
+                .order_by(Fichier.ordre)
+            ).all()
+        )
         if len(fichiers) < 3:
             pytest.skip("Item de demo avec trop peu de fichiers pour ce test.")
         # Crée un saut : on supprime le fichier d'ordre 2 (s'il existe).

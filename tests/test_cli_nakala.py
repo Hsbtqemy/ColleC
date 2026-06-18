@@ -32,8 +32,10 @@ _DEPOT_JSON = {
     "metas": [
         {"propertyUri": f"{_NKL}title", "value": "Titre Nakala", "lang": "fr"},
         {"propertyUri": f"{_NKL}created", "value": "1969-09"},
-        {"propertyUri": f"{_NKL}type",
-         "value": "http://purl.org/coar/resource_type/c_2fe3"},
+        {
+            "propertyUri": f"{_NKL}type",
+            "value": "http://purl.org/coar/resource_type/c_2fe3",
+        },
         {"propertyUri": f"{_NKL}creator", "value": "Topor"},
         {"propertyUri": f"{_DCT}language", "value": "fr"},
     ],
@@ -109,7 +111,8 @@ def test_montrer_text(config_nakala: Path) -> None:
 
 def test_montrer_json(config_nakala: Path) -> None:
     r = runner.invoke(
-        app, ["nakala", "montrer", _DOI, "--config", str(config_nakala), "--format", "json"]
+        app,
+        ["nakala", "montrer", _DOI, "--config", str(config_nakala), "--format", "json"],
     )
     assert r.exit_code == 0, r.output
     charge = json.loads(r.output)
@@ -133,7 +136,8 @@ def test_citer_text(config_nakala: Path) -> None:
 
 def test_citer_json(config_nakala: Path) -> None:
     r = runner.invoke(
-        app, ["nakala", "citer", _DOI, "--config", str(config_nakala), "--format", "json"]
+        app,
+        ["nakala", "citer", _DOI, "--config", str(config_nakala), "--format", "json"],
     )
     assert r.exit_code == 0, r.output
     charge = json.loads(r.output)
@@ -156,8 +160,8 @@ def test_montrer_json_expose_liste_fichiers(
     expose, un script consommateur doit faire un 2e appel pour
     auditer la coherence locale ↔ Nakala."""
     r = runner.invoke(
-        app, ["nakala", "montrer", _DOI,
-              "--config", str(config_nakala), "--format", "json"]
+        app,
+        ["nakala", "montrer", _DOI, "--config", str(config_nakala), "--format", "json"],
     )
     assert r.exit_code == 0, r.output
     charge = json.loads(r.output)
@@ -179,8 +183,7 @@ def test_montrer_text_liste_fichiers_si_peu(
 ) -> None:
     """Trou AC — format text liste les fichiers si N ≤ 20. Le user
     voit directement le contenu sans devoir aller sur nakala.fr."""
-    r = runner.invoke(app, ["nakala", "montrer", _DOI,
-                            "--config", str(config_nakala)])
+    r = runner.invoke(app, ["nakala", "montrer", _DOI, "--config", str(config_nakala)])
     assert r.exit_code == 0, r.output
     # Nom du fichier dans la sortie
     assert "p1.jpg" in r.output
@@ -203,13 +206,21 @@ def test_montrer_sans_config_nakala_exit2(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_rapatrier_dry_run_par_defaut(
-    config_nakala: Path, db_avec_fonds: Path
-) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rapatrier", _DOI, "--fonds", "PF",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+def test_rapatrier_dry_run_par_defaut(config_nakala: Path, db_avec_fonds: Path) -> None:
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier",
+            _DOI,
+            "--fonds",
+            "PF",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output
     with _session(db_avec_fonds) as s:
@@ -225,19 +236,41 @@ def test_rapatrier_cote_en_collision_erreur_propre(
         f = lire_fonds_par_cote(s, "PF")
         creer_item(s, FormulaireItem(cote="abcdef12", titre="Autre", fonds_id=f.id))
         s.commit()
-    r = runner.invoke(app, [
-        "nakala", "rapatrier", _DOI, "--fonds", "PF", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier",
+            _DOI,
+            "--fonds",
+            "PF",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 1
     assert "cote" in r.output.lower()
 
 
 def test_rapatrier_reel_cree_item(config_nakala: Path, db_avec_fonds: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rapatrier", _DOI, "--fonds", "PF", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier",
+            _DOI,
+            "--fonds",
+            "PF",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "créé" in r.output
     with _session(db_avec_fonds) as s:
@@ -263,10 +296,18 @@ def test_rafraichir_dry_run_montre_diff(
         item.doi_nakala = _DOI
         s.commit()
 
-    r = runner.invoke(app, [
-        "nakala", "rafraichir", _DOI,
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir",
+            _DOI,
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "Ancien" in r.output and "Titre Nakala" in r.output  # diff titre
     assert "DRY-RUN" in r.output
@@ -278,10 +319,18 @@ def test_rafraichir_dry_run_montre_diff(
 def test_rafraichir_sans_item_lie_exit1(
     config_nakala: Path, db_avec_fonds: Path
 ) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rafraichir", _DOI,
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir",
+            _DOI,
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 1
     assert "Aucun item" in r.output or "rapatrier" in r.output.lower()
 
@@ -295,10 +344,22 @@ def test_rapatrier_format_json_dry_run(
     config_nakala: Path, db_avec_fonds: Path
 ) -> None:
     """`rapatrier --format json` (dry-run) : 8 cles minimum."""
-    r = runner.invoke(app, [
-        "nakala", "rapatrier", _DOI, "--fonds", "PF", "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier",
+            _DOI,
+            "--fonds",
+            "PF",
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert data["doi"] == _DOI
@@ -310,16 +371,26 @@ def test_rapatrier_format_json_dry_run(
     assert data["nb_fichiers"] == 0
 
 
-def test_rapatrier_format_json_reel(
-    config_nakala: Path, db_avec_fonds: Path
-) -> None:
+def test_rapatrier_format_json_reel(config_nakala: Path, db_avec_fonds: Path) -> None:
     """`rapatrier --no-dry-run --format json` : item_id pose, nb_fichiers
     reflet de la materialisation."""
-    r = runner.invoke(app, [
-        "nakala", "rapatrier", _DOI, "--fonds", "PF",
-        "--no-dry-run", "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier",
+            _DOI,
+            "--fonds",
+            "PF",
+            "--no-dry-run",
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert data["dry_run"] is False
@@ -340,10 +411,20 @@ def test_rafraichir_format_json_dry_run_montre_diff(
         item.doi_nakala = _DOI
         s.commit()
 
-    r = runner.invoke(app, [
-        "nakala", "rafraichir", _DOI, "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir",
+            _DOI,
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert data["doi"] == _DOI
@@ -354,9 +435,7 @@ def test_rafraichir_format_json_dry_run_montre_diff(
     # Diffs sont une liste de {champ, avant, apres}
     assert isinstance(data["diffs"], list)
     assert len(data["diffs"]) > 0
-    diff_titre = next(
-        (d for d in data["diffs"] if d["champ"] == "titre"), None
-    )
+    diff_titre = next((d for d in data["diffs"] if d["champ"] == "titre"), None)
     assert diff_titre is not None
     assert diff_titre["avant"] == "Ancien"
     assert diff_titre["apres"] == "Titre Nakala"
@@ -376,10 +455,22 @@ def test_pousser_format_accepte(config_nakala: Path, db_avec_fonds: Path) -> Non
     de l'option). Le scenario complet est couvert par les tests
     services + web."""
     # Sans item lie au DOI → exit 1 mais le parse de --format passe
-    r = runner.invoke(app, [
-        "nakala", "pousser", "PF-001", "--fonds", "PF", "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser",
+            "PF-001",
+            "--fonds",
+            "PF",
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     # Exit 1 attendu (item introuvable) - ce qui compte : pas de
     # crash sur --format inconnue.
     assert r.exit_code == 1
@@ -389,9 +480,21 @@ def test_pousser_format_accepte(config_nakala: Path, db_avec_fonds: Path) -> Non
 
 def test_publier_format_accepte(config_nakala: Path, db_avec_fonds: Path) -> None:
     """Symetrie : `publier --format json` accepte (parse OK)."""
-    r = runner.invoke(app, [
-        "nakala", "publier", "PF-001", "--fonds", "PF", "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_avec_fonds),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "publier",
+            "PF-001",
+            "--fonds",
+            "PF",
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_fonds),
+        ],
+    )
     assert r.exit_code == 1
     assert "Invalid value" not in r.output

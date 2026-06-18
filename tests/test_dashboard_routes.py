@@ -114,7 +114,7 @@ def test_dashboard_compteurs_corrects(client_demo: TestClient) -> None:
     response = client_demo.get("/")
     # Compteurs nb_items connus de la base de démo, fonds HK et FA.
     for n in ("40", "167"):
-        assert f'>{n}</span>' in response.text
+        assert f">{n}</span>" in response.text
 
 
 def test_dashboard_lien_fonds(client_demo: TestClient) -> None:
@@ -214,13 +214,16 @@ def test_fonds_lecture_section_avancement_jalons(client_demo: TestClient) -> Non
 
 
 def test_fonds_lecture_section_jalons_masquee_si_fonds_vide(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fonds sans items : la section *Avancement par jalons* ne rend pas
     (avancement_jalons.vide=True, conditional dans le template)."""
     from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
     from archives_tool.db import (
-        assurer_tables_fts, creer_engine, creer_session_factory,
+        assurer_tables_fts,
+        creer_engine,
+        creer_session_factory,
     )
     from archives_tool.models import Base
 

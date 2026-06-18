@@ -61,7 +61,9 @@ def _new_console() -> tuple[Console, StringIO]:
 def _ou_absent(valeur: Any) -> str:
     """`valeur` en str si non vide, sinon marqueur absent. S'aligne sur
     `chaine_ou_none` (services/_erreurs) pour la définition de « vide »."""
-    nettoye = chaine_ou_none(valeur) if valeur is None or isinstance(valeur, str) else valeur
+    nettoye = (
+        chaine_ou_none(valeur) if valeur is None or isinstance(valeur, str) else valeur
+    )
     return _ABSENT if nettoye is None else str(nettoye)
 
 
@@ -69,7 +71,9 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _section_tracabilite_text(console: Console, entite: Any, *, verbe: str = "Créé") -> None:
+def _section_tracabilite_text(
+    console: Console, entite: Any, *, verbe: str = "Créé"
+) -> None:
     """Section « Traçabilité » commune à fonds / collection / item / fichier.
 
     `verbe` permet d'adapter (« Créé » vs « Ajouté » pour les fichiers).
@@ -78,9 +82,7 @@ def _section_tracabilite_text(console: Console, entite: Any, *, verbe: str = "Cr
     cree_le = getattr(entite, "cree_le", None) or getattr(entite, "ajoute_le", None)
     cree_par = getattr(entite, "cree_par", None) or getattr(entite, "ajoute_par", None)
     console.print("[bold]Traçabilité[/bold]")
-    console.print(
-        f"  {verbe} le {_iso(cree_le) or '~'} par {_ou_absent(cree_par)}"
-    )
+    console.print(f"  {verbe} le {_iso(cree_le) or '~'} par {_ou_absent(cree_par)}")
     if entite.modifie_le:
         console.print(
             f"  Modifié {temps_relatif(entite.modifie_le)} "
@@ -176,9 +178,7 @@ def rendu_text_fonds_detail(detail: FondsDetail) -> str:
     console.print(table)
 
     console.print()
-    console.print(
-        f"[bold]Collections ({len(detail.collections_resume)})[/bold]"
-    )
+    console.print(f"[bold]Collections ({len(detail.collections_resume)})[/bold]")
     cols = Table(show_header=True, header_style="cle", box=None, padding=(0, 2))
     cols.add_column("Cote")
     cols.add_column("Titre")
@@ -346,9 +346,7 @@ def rendu_text_collection_detail(detail: CollectionDetail) -> str:
     if c.description_publique:
         table.add_row("Description publique", c.description_publique)
     table.add_row("DOI Nakala", _ou_absent(c.doi_nakala))
-    table.add_row(
-        "DOI collection parente", _ou_absent(c.doi_collection_nakala_parent)
-    )
+    table.add_row("DOI collection parente", _ou_absent(c.doi_collection_nakala_parent))
     table.add_row("Items", str(detail.nb_items))
     console.print(table)
 
@@ -391,8 +389,7 @@ def rendu_json_collection_detail(detail: CollectionDetail) -> str:
                     else None
                 ),
                 "fonds_representes": [
-                    {"cote": f.cote, "titre": f.titre}
-                    for f in detail.fonds_representes
+                    {"cote": f.cote, "titre": f.titre} for f in detail.fonds_representes
                 ],
                 "tracabilite": _dict_tracabilite(c),
             },
@@ -453,9 +450,7 @@ def rendu_text_item_detail(
             console.print(f"  [cle]{cle}[/cle] : {val_str}")
 
     console.print()
-    console.print(
-        f"[bold]Présent dans {len(detail.collections)} collection(s)[/bold]"
-    )
+    console.print(f"[bold]Présent dans {len(detail.collections)} collection(s)[/bold]")
     for c in detail.collections:
         type_lbl = "miroir" if c.est_miroir else "libre"
         console.print(f"  • {c.titre} ([bold]{c.cote}[/bold]) [{type_lbl}]")
@@ -463,7 +458,9 @@ def rendu_text_item_detail(
     console.print()
     console.print(f"[bold]Fichiers ({detail.nb_fichiers})[/bold]")
     if detail.fichiers:
-        files_table = Table(show_header=True, header_style="cle", box=None, padding=(0, 2))
+        files_table = Table(
+            show_header=True, header_style="cle", box=None, padding=(0, 2)
+        )
         files_table.add_column("#", justify="right")
         files_table.add_column("Nom")
         files_table.add_column("Type")
@@ -486,9 +483,9 @@ def rendu_text_item_detail(
         console.print(
             f"[bold]Dernières modifications ({min(len(item.modifications), max_evenements)})[/bold]"
         )
-        recents = sorted(
-            item.modifications, key=lambda m: m.modifie_le, reverse=True
-        )[:max_evenements]
+        recents = sorted(item.modifications, key=lambda m: m.modifie_le, reverse=True)[
+            :max_evenements
+        ]
         for mod in recents:
             ts = mod.modifie_le.isoformat() if mod.modifie_le else "?"
             console.print(
@@ -564,8 +561,7 @@ def rendu_text_fichier_detail(
     item = fichier.item
     fonds = item.fonds
     console.print(
-        f"[bold cyan]Fichier {fichier.nom_fichier}[/bold cyan] "
-        f"(id={fichier.id})"
+        f"[bold cyan]Fichier {fichier.nom_fichier}[/bold cyan] (id={fichier.id})"
     )
     console.print()
 
@@ -620,7 +616,9 @@ def rendu_text_fichier_detail(
     if fichier.notes_techniques:
         tech.add_row("Notes techniques", fichier.notes_techniques)
     if fichier.description_externe:
-        tech.add_row("Transcription (description publique)", fichier.description_externe)
+        tech.add_row(
+            "Transcription (description publique)", fichier.description_externe
+        )
     console.print(tech)
 
     if fichier.operations:
@@ -629,9 +627,9 @@ def rendu_text_fichier_detail(
             f"[bold]Dernières opérations "
             f"({min(len(fichier.operations), max_evenements)})[/bold]"
         )
-        recents = sorted(
-            fichier.operations, key=lambda o: o.execute_le, reverse=True
-        )[:max_evenements]
+        recents = sorted(fichier.operations, key=lambda o: o.execute_le, reverse=True)[
+            :max_evenements
+        ]
         for op in recents:
             ts = op.execute_le.isoformat() if op.execute_le else "?"
             console.print(

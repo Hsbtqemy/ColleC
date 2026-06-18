@@ -87,9 +87,7 @@ def test_liseuse_route_position_clampee(client_demo: TestClient) -> None:
     assert response.status_code == 200
 
 
-def test_partial_visionneuse_rend_200(
-    client_demo: TestClient, db_demo_factory
-) -> None:
+def test_partial_visionneuse_rend_200(client_demo: TestClient, db_demo_factory) -> None:
     """GET /lire/<fonds>/<cote>/visionneuse/<id> renvoie le HTML d'une
     visionneuse pour swap HTMX (sans le chrome page complet)."""
     with db_demo_factory() as db:
@@ -108,8 +106,7 @@ def test_partial_visionneuse_rend_200(
     # Le composant visionneuse_osd produit un .visionneuse-osd ou un
     # fallback message — l'un ou l'autre doit être présent.
     assert (
-        "visionneuse-osd" in response.text
-        or "Aucun aperçu disponible" in response.text
+        "visionneuse-osd" in response.text or "Aucun aperçu disponible" in response.text
     )
 
 
@@ -142,8 +139,7 @@ def test_partial_visionneuse_contient_les_3_fragments_oob(
     assert 'hx-swap-oob="true"' in response.text
     # Cible principale : visionneuse OU fallback "Aucun aperçu" (HK demo).
     assert (
-        "visionneuse-osd" in response.text
-        or "Aucun aperçu disponible" in response.text
+        "visionneuse-osd" in response.text or "Aucun aperçu disponible" in response.text
     )
 
 
@@ -202,10 +198,12 @@ def test_liseuse_item_sans_fichier_rend_sans_crash(
     proprement (visionneuse vide, panneau "Aucun fichier rattaché",
     boutons Page disabled, pas de crash 500)."""
     from archives_tool.api.services.fonds import (
-        FormulaireFonds, creer_fonds,
+        FormulaireFonds,
+        creer_fonds,
     )
     from archives_tool.api.services.items import (
-        FormulaireItem, creer_item,
+        FormulaireItem,
+        creer_item,
     )
 
     # Crée un fonds + item sans Fichier dans la base demo.
@@ -217,7 +215,9 @@ def test_liseuse_item_sans_fichier_rend_sans_crash(
         creer_item(
             db,
             FormulaireItem(
-                cote="VIDE-001", titre="Item vide", fonds_id=fonds_vide.id,
+                cote="VIDE-001",
+                titre="Item vide",
+                fonds_id=fonds_vide.id,
             ),
         )
 
@@ -462,7 +462,7 @@ def test_liseuse_dispatcher_pdf_charge_pdfjs(
         assert 'data-action="zoom-in"' in response.text
         assert 'data-action="zoom-out"' in response.text
         assert 'data-action="rotate"' in response.text
-        assert 'data-page-input' in response.text
+        assert "data-page-input" in response.text
     finally:
         with db_demo_factory() as db:
             obj = db.get(Fichier, fid)

@@ -53,13 +53,19 @@ def upgrade() -> None:
         sa.Column("execute_par", sa.Text(), nullable=True),
     )
     op.create_index(
-        "ix_op_push_nakala_batch", "operation_push_nakala", ["batch_id"],
+        "ix_op_push_nakala_batch",
+        "operation_push_nakala",
+        ["batch_id"],
     )
     op.create_index(
-        "ix_op_push_nakala_doi", "operation_push_nakala", ["doi"],
+        "ix_op_push_nakala_doi",
+        "operation_push_nakala",
+        ["doi"],
     )
     op.create_index(
-        "ix_op_push_nakala_date", "operation_push_nakala", ["execute_le"],
+        "ix_op_push_nakala_date",
+        "operation_push_nakala",
+        ["execute_le"],
     )
 
 

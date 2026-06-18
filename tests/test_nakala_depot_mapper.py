@@ -57,21 +57,28 @@ def test_creator_et_created_emettent_toujours_une_meta() -> None:
 
 
 def test_multilingue_titre_et_description() -> None:
-    metas = slugs_vers_metas({
-        "nkl_title": [{"value": "Titre", "lang": "fr"}, {"value": "Title", "lang": "en"}],
-        "dcterms_description": [{"value": "Desc", "lang": "fr"}],
-    })
+    metas = slugs_vers_metas(
+        {
+            "nkl_title": [
+                {"value": "Titre", "lang": "fr"},
+                {"value": "Title", "lang": "en"},
+            ],
+            "dcterms_description": [{"value": "Desc", "lang": "fr"}],
+        }
+    )
     titres = [m for m in metas if m["propertyUri"] == f"{_NKL}title"]
     assert len(titres) == 2
     assert titres[0]["lang"] == "fr" and titres[1]["lang"] == "en"
 
 
 def test_creator_liste_et_sujets() -> None:
-    metas = slugs_vers_metas({
-        "nkl_creator": ["Somers, Armonía", "[s.n.]"],
-        "dcterms_subject": [{"value": "Littérature", "lang": "es"}],
-        "dcterms_language": ["spa", "fra"],
-    })
+    metas = slugs_vers_metas(
+        {
+            "nkl_creator": ["Somers, Armonía", "[s.n.]"],
+            "dcterms_subject": [{"value": "Littérature", "lang": "es"}],
+            "dcterms_language": ["spa", "fra"],
+        }
+    )
     creators = [m for m in metas if m["propertyUri"] == f"{_NKL}creator"]
     assert creators[0]["value"] == {"surname": "Somers", "givenname": "Armonía"}
     assert creators[1]["value"] is None  # [s.n.] → null
@@ -80,10 +87,12 @@ def test_creator_liste_et_sujets() -> None:
 
 
 def test_scalaires_type_license() -> None:
-    metas = slugs_vers_metas({
-        "nkl_type": "http://purl.org/coar/resource_type/c_2f33",
-        "nkl_license": "CC-BY-4.0",
-    })
+    metas = slugs_vers_metas(
+        {
+            "nkl_type": "http://purl.org/coar/resource_type/c_2f33",
+            "nkl_license": "CC-BY-4.0",
+        }
+    )
     by = {m["propertyUri"]: m for m in metas}
     assert by[f"{_NKL}type"]["value"].endswith("c_2f33")
     assert by[f"{_NKL}type"]["typeUri"] == "http://www.w3.org/2001/XMLSchema#anyURI"
@@ -91,10 +100,19 @@ def test_scalaires_type_license() -> None:
 
 
 def test_spatial_point_en_dcsv() -> None:
-    metas = slugs_vers_metas({
-        "dcterms_spatial": [{"kind": "Point", "east": "2.35", "north": "48.85",
-                             "name": "Paris", "lang": "fr"}],
-    })
+    metas = slugs_vers_metas(
+        {
+            "dcterms_spatial": [
+                {
+                    "kind": "Point",
+                    "east": "2.35",
+                    "north": "48.85",
+                    "name": "Paris",
+                    "lang": "fr",
+                }
+            ],
+        }
+    )
     m = [m for m in metas if m["propertyUri"] == f"{_DCT}spatial"][0]
     assert "east=2.35" in m["value"] and "north=48.85" in m["value"]
     assert m["typeUri"] == "http://purl.org/dc/terms/Point"
@@ -102,25 +120,33 @@ def test_spatial_point_en_dcsv() -> None:
 
 
 def test_temporal_periode_en_dcsv() -> None:
-    metas = slugs_vers_metas({
-        "dcterms_temporal": [{"start": "1960", "end": "1969", "name": "60s", "lang": "fr"}],
-    })
+    metas = slugs_vers_metas(
+        {
+            "dcterms_temporal": [
+                {"start": "1960", "end": "1969", "name": "60s", "lang": "fr"}
+            ],
+        }
+    )
     m = [m for m in metas if m["propertyUri"] == f"{_DCT}temporal"][0]
     assert "start=1960" in m["value"] and "end=1969" in m["value"]
     assert m["typeUri"] == "http://purl.org/dc/terms/Period"
 
 
 def test_slug_inconnu_ignore() -> None:
-    metas = slugs_vers_metas({"champ_bidon": "x", "nkl_title": [{"value": "T", "lang": "fr"}]})
+    metas = slugs_vers_metas(
+        {"champ_bidon": "x", "nkl_title": [{"value": "T", "lang": "fr"}]}
+    )
     assert _uris(metas) == [f"{_NKL}title"]
     assert slugs_inconnus({"champ_bidon": "x", "nkl_title": []}) == ["champ_bidon"]
 
 
 def test_dcterms_dates_et_relations() -> None:
-    metas = slugs_vers_metas({
-        "dcterms_isPartOf": ["Collection mère"],
-        "dcterms_issued": ["1984"],
-    })
+    metas = slugs_vers_metas(
+        {
+            "dcterms_isPartOf": ["Collection mère"],
+            "dcterms_issued": ["1984"],
+        }
+    )
     by = {m["propertyUri"]: m for m in metas}
     assert by[f"{_DCT}isPartOf"]["value"] == "Collection mère"
     assert by[f"{_DCT}issued"]["typeUri"] == "http://purl.org/dc/terms/W3CDTF"

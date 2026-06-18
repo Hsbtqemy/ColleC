@@ -196,8 +196,6 @@ def test_cli_renommer_historique(tmp_path: Path) -> None:
             str(conf),
         ],
     )
-    result = runner.invoke(
-        app, ["renommer", "historique", "--db-path", str(db)]
-    )
+    result = runner.invoke(app, ["renommer", "historique", "--db-path", str(db)])
     assert result.exit_code == 0, result.output
     assert "Batch" in result.output  # entête du tableau

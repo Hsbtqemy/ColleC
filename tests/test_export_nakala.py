@@ -14,9 +14,7 @@ from archives_tool.exporters.nakala import COLONNES_NAKALA, exporter_nakala_csv
 # Fixture `session_avec_export` partagée définie dans tests/conftest.py.
 
 
-def test_export_nakala_csv_format(
-    session_avec_export: Session, tmp_path: Path
-) -> None:
+def test_export_nakala_csv_format(session_avec_export: Session, tmp_path: Path) -> None:
     """Le CSV contient l'en-tête attendu + une ligne par item."""
     fonds = lire_fonds_par_cote(session_avec_export, "HK")
     miroir = lire_collection_par_cote(session_avec_export, "HK", fonds_id=fonds.id)
@@ -111,7 +109,8 @@ def test_export_nakala_langue_convertie_rfc5646(
     with sortie.open(encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f, delimiter=";")
         ligne = next(
-            row for row in reader
+            row
+            for row in reader
             if row.get("http://purl.org/dc/terms/identifier") == "HK-001"
         )
     assert ligne["http://purl.org/dc/terms/language"] == "es"
@@ -143,7 +142,11 @@ def test_export_nakala_createur_singulier_reconnu(
 
     with sortie.open(encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f, delimiter=";")
-        ligne_hk001 = next(row for row in reader if row.get("http://purl.org/dc/terms/identifier") == "HK-001")
+        ligne_hk001 = next(
+            row
+            for row in reader
+            if row.get("http://purl.org/dc/terms/identifier") == "HK-001"
+        )
     assert ligne_hk001["http://purl.org/dc/terms/creator"] == "Reiser"
     assert ligne_hk001["http://purl.org/dc/terms/subject"] == "satire"
     # HK-001 n'est plus dans incomplets sur le critère créateur (date

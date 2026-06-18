@@ -40,6 +40,7 @@ def est_extension_image_iiif(nom_fichier: str | None) -> bool:
     ext = nom_fichier.rsplit(".", 1)[-1].lower()
     return ext in EXTENSIONS_IMAGE_IIIF
 
+
 #: URL Nakala reconnue (data, embed ou IIIF image) — capture le
 #: hostname, le DOI (2 segments) et le SHA pour reconstruire toute
 #: variante. Le suffixe après `<sha>` (ex. `/full/!200,200/0/default.jpg`

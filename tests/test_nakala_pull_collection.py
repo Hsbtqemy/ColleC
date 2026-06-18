@@ -35,8 +35,12 @@ def _donnee(suffixe: str, *, files: int = 1) -> dict:
             {"propertyUri": f"{_DCT}language", "value": "es"},
         ],
         "files": [
-            {"name": f"{suffixe}-{i}.jpg", "sha1": f"{suffixe}{i}", "size": 10,
-             "mime_type": "image/jpeg"}
+            {
+                "name": f"{suffixe}-{i}.jpg",
+                "sha1": f"{suffixe}{i}",
+                "size": 10,
+                "mime_type": "image/jpeg",
+            }
             for i in range(files)
         ],
     }
@@ -48,16 +52,30 @@ class _FakeClient:
     base_url = "https://apitest.nakala.fr"
 
     def __init__(self, donnees: list[dict] | None = None) -> None:
-        self._donnees = donnees if donnees is not None else [
-            _donnee("aaa1", files=2), _donnee("bbb2", files=2), _donnee("ccc3", files=2)
-        ]
+        self._donnees = (
+            donnees
+            if donnees is not None
+            else [
+                _donnee("aaa1", files=2),
+                _donnee("bbb2", files=2),
+                _donnee("ccc3", files=2),
+            ]
+        )
 
     def lire_collection(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": [{"propertyUri": f"{_NKL}title",
-                                              "value": "Collection Test"}]}
+        return {
+            "identifier": doi,
+            "metas": [{"propertyUri": f"{_NKL}title", "value": "Collection Test"}],
+        }
 
-    def lister_depots_collection(self, doi: str, *, page: int = 1, taille: int = 50) -> dict:
-        return {"data": self._donnees if page == 1 else [], "currentPage": page, "lastPage": 1}
+    def lister_depots_collection(
+        self, doi: str, *, page: int = 1, taille: int = 50
+    ) -> dict:
+        return {
+            "data": self._donnees if page == 1 else [],
+            "currentPage": page,
+            "lastPage": 1,
+        }
 
 
 @pytest.fixture
@@ -146,15 +164,25 @@ def test_fichier_non_image_donne_url_data(db_path: Path) -> None:
         "status": "published",
         "version": 1,
         "metas": [{"propertyUri": f"{_NKL}title", "value": "Un PDF"}],
-        "files": [{"name": "numero.pdf", "sha1": "deadbeef", "size": "999",
-                   "extension": "pdf", "mime_type": "application/pdf"}],
+        "files": [
+            {
+                "name": "numero.pdf",
+                "sha1": "deadbeef",
+                "size": "999",
+                "extension": "pdf",
+                "mime_type": "application/pdf",
+            }
+        ],
     }
     with _session(db_path) as s:
         rapatrier_collection(s, _FakeClient([donnee]), _DOI_COL, cree_par="T")
     with _session(db_path) as s:
         f = s.scalar(select(Fichier))
         # Non-image → URL data binaire (pas de IIIF info.json qui 404erait).
-        assert f.iiif_url_nakala == "https://apitest.nakala.fr/data/10.34847/nkl.pdf1/deadbeef"
+        assert (
+            f.iiif_url_nakala
+            == "https://apitest.nakala.fr/data/10.34847/nkl.pdf1/deadbeef"
+        )
         assert f.format == "pdf"
         assert f.taille_octets == 999
 
@@ -167,12 +195,17 @@ def test_collision_cote_collectee_sans_arreter_le_lot(db_path: Path) -> None:
         creer_item(s, FormulaireItem(cote="bbb2", titre="Occupant", fonds_id=f.id))
         s.commit()
     with _session(db_path) as s:
-        rapport = rapatrier_collection(s, _FakeClient(), _DOI_COL, fonds_cote="collec01")
+        rapport = rapatrier_collection(
+            s, _FakeClient(), _DOI_COL, fonds_cote="collec01"
+        )
     assert len(rapport.erreurs) == 1
     assert rapport.erreurs[0][0] == "10.34847/nkl.bbb2"
     assert len(rapport.crees) == 2  # aaa1 + ccc3 passent
     with _session(db_path) as s:
-        assert s.scalar(select(Item).where(Item.doi_nakala == "10.34847/nkl.aaa1")) is not None
+        assert (
+            s.scalar(select(Item).where(Item.doi_nakala == "10.34847/nkl.aaa1"))
+            is not None
+        )
 
 
 def test_fonds_existant_reutilise(db_path: Path) -> None:

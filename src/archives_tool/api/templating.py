@@ -133,9 +133,7 @@ def _snippet_fts_safe(snippet: str | None) -> str:
     if not snippet:
         return ""
     safe = str(escape(snippet))  # str pour .replace() sans réescape
-    safe = safe.replace("&lt;mark&gt;", "<mark>").replace(
-        "&lt;/mark&gt;", "</mark>"
-    )
+    safe = safe.replace("&lt;mark&gt;", "<mark>").replace("&lt;/mark&gt;", "</mark>")
     return Markup(safe)
 
 

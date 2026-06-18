@@ -67,14 +67,18 @@ def nettoyage_collections(client_ecriture):
 
 
 def _metas(titre: str) -> list[dict]:
-    metas, _ = preflight_appliquer(slugs_vers_metas({
-        "nkl_title": [{"value": titre, "lang": "fr"}],
-        "nkl_creator": ["Test, ColleC"],
-        "nkl_created": "2024",
-        "nkl_type": _TYPE_LIVRE,
-        "nkl_license": "CC-BY-4.0",
-        "dcterms_subject": [{"value": "Test round-trip", "lang": "fr"}],
-    }))
+    metas, _ = preflight_appliquer(
+        slugs_vers_metas(
+            {
+                "nkl_title": [{"value": titre, "lang": "fr"}],
+                "nkl_creator": ["Test, ColleC"],
+                "nkl_created": "2024",
+                "nkl_type": _TYPE_LIVRE,
+                "nkl_license": "CC-BY-4.0",
+                "dcterms_subject": [{"value": "Test round-trip", "lang": "fr"}],
+            }
+        )
+    )
     return metas
 
 
@@ -106,7 +110,8 @@ def test_round_trip_idempotent_et_modif(
     client_ecriture.modifier_depot(doi, metas=metas2)
     distant2 = client_lecture.lire_depot(doi)["metas"]
     titres = [
-        m["value"] for m in distant2
+        m["value"]
+        for m in distant2
         if m.get("propertyUri") == "http://nakala.fr/terms#title"
     ]
     assert any("RÉVISÉ" in t for t in titres)
@@ -117,10 +122,12 @@ def test_round_trip_collection_metadonnees(
     client_ecriture, client_lecture, nettoyage_collections
 ) -> None:
     """Round-trip métadonnées de collection (PUT /collections/{id})."""
-    metas = slugs_vers_metas({
-        "nkl_title": [{"value": "ColleC — collection round-trip", "lang": "fr"}],
-        "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
-    })
+    metas = slugs_vers_metas(
+        {
+            "nkl_title": [{"value": "ColleC — collection round-trip", "lang": "fr"}],
+            "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
+        }
+    )
     rep = client_ecriture.creer_collection(metas=metas, status="private")
     doi = extraire_doi(rep)
     assert doi
@@ -131,14 +138,19 @@ def test_round_trip_collection_metadonnees(
     assert diff_push(distant, metas) == []
 
     # Update : PUT titre modifié → re-lire → changé + toujours idempotent.
-    metas2 = slugs_vers_metas({
-        "nkl_title": [{"value": "ColleC — collection round-trip (RÉVISÉ)", "lang": "fr"}],
-        "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
-    })
+    metas2 = slugs_vers_metas(
+        {
+            "nkl_title": [
+                {"value": "ColleC — collection round-trip (RÉVISÉ)", "lang": "fr"}
+            ],
+            "dcterms_description": [{"value": "Description initiale", "lang": "fr"}],
+        }
+    )
     client_ecriture.modifier_collection(doi, metas=metas2)
     distant2 = client_lecture.lire_collection(doi)["metas"]
     titres = [
-        m["value"] for m in distant2
+        m["value"]
+        for m in distant2
         if m.get("propertyUri") == "http://nakala.fr/terms#title"
     ]
     assert any("RÉVISÉ" in t for t in titres)

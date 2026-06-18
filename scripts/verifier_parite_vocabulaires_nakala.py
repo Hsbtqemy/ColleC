@@ -81,10 +81,13 @@ def main() -> int:
 
     types_live = _set_uris(depot_charge)
     props_live = _set_uris(props_charge)
-    print(f"depositTypes live : {len(types_live)} | properties live : {len(props_live)}")
+    print(
+        f"depositTypes live : {len(types_live)} | properties live : {len(props_live)}"
+    )
     if not types_live or not props_live:
         # Aide au diagnostic si l'extraction a raté la forme.
         import json
+
         print("\n[!] Extraction vide — forme brute (1er element) :")
         print("  depositTypes:", json.dumps(depot_charge, ensure_ascii=False)[:400])
         print("  properties  :", json.dumps(props_charge, ensure_ascii=False)[:400])
@@ -96,19 +99,23 @@ def main() -> int:
     _print_section("1 - Snapshot types COAR Nakala (ColleC) vs live")
     snap = set(types_coar_nakala().keys())
     print(f"snapshot ColleC : {len(snap)} types | live : {len(types_live)}")
-    faux = snap - types_live   # ColleC croit accepté, Nakala ne connait pas
+    faux = snap - types_live  # ColleC croit accepté, Nakala ne connait pas
     manques = types_live - snap  # Nakala accepte, snapshot ColleC l'ignore
     if faux:
         anomalies += 1
-        print(f"\n[!] DÉRIVE — {len(faux)} type(s) du snapshot ColleC ABSENT(s) "
-              f"du live (rejet 422 au dépôt) :")
+        print(
+            f"\n[!] DÉRIVE — {len(faux)} type(s) du snapshot ColleC ABSENT(s) "
+            f"du live (rejet 422 au dépôt) :"
+        )
         for u in sorted(faux):
             print(f"    {u}")
     else:
         print("\n[OK] snapshot ⊆ live : aucun type fantôme côté ColleC.")
     if manques:
-        print(f"\n[i] {len(manques)} type(s) acceptés par Nakala mais hors snapshot "
-              f"ColleC (couverture, pas un bug) :")
+        print(
+            f"\n[i] {len(manques)} type(s) acceptés par Nakala mais hors snapshot "
+            f"ColleC (couverture, pas un bug) :"
+        )
         for u in sorted(manques):
             label = _label(depot_charge, u)
             print(f"    {u}  {label}")
@@ -125,15 +132,19 @@ def main() -> int:
             emis_hors_live.append((uri, label, cible))
     if emis_hors_live:
         anomalies += 1
-        print(f"[!] DÉRIVE — {len(emis_hors_live)} type(s) interne(s) projeté(s) "
-              f"vers une cible HORS live :")
+        print(
+            f"[!] DÉRIVE — {len(emis_hors_live)} type(s) interne(s) projeté(s) "
+            f"vers une cible HORS live :"
+        )
         for uri, label, cible in emis_hors_live:
             print(f"    {label} ({uri}) → {cible}  [absent du live]")
     else:
         print("[OK] toutes les projections tombent dans depositTypes live.")
     if sans_projection:
-        print(f"\n[i] {len(sans_projection)} type(s) interne(s) sans projection "
-              f"(type_coar_pour_nakala→None ; à l'export = type omis) :")
+        print(
+            f"\n[i] {len(sans_projection)} type(s) interne(s) sans projection "
+            f"(type_coar_pour_nakala→None ; à l'export = type omis) :"
+        )
         for uri, label in sans_projection:
             extra = " (extra connu)" if uri in COAR_INTERNE_VERS_NAKALA else ""
             print(f"    {label} ({uri}){extra}")
@@ -145,8 +156,10 @@ def main() -> int:
     props_inconnues = props_emises - props_live
     if props_inconnues:
         anomalies += 1
-        print(f"\n[!] DÉRIVE — {len(props_inconnues)} propertyUri émise(s) par "
-              f"ColleC INCONNUE(s) de Nakala (risque drop/rejet) :")
+        print(
+            f"\n[!] DÉRIVE — {len(props_inconnues)} propertyUri émise(s) par "
+            f"ColleC INCONNUE(s) de Nakala (risque drop/rejet) :"
+        )
         for u in sorted(props_inconnues):
             slugs = [s for s, v in SLUG_TO_NAKALA.items() if v["propertyUri"] == u]
             print(f"    {u}  (slugs: {', '.join(slugs)})")
@@ -156,8 +169,10 @@ def main() -> int:
     # --- Bilan ----------------------------------------------------------
     _print_section("Bilan")
     if anomalies == 0:
-        print("[OK] Aucune dérive bloquante : tout ce que ColleC émet est accepté "
-              "par Nakala (snapshot, types projetés, propriétés).")
+        print(
+            "[OK] Aucune dérive bloquante : tout ce que ColleC émet est accepté "
+            "par Nakala (snapshot, types projetés, propriétés)."
+        )
     else:
         print(f"[!] {anomalies} catégorie(s) de dérive détectée(s) — voir ci-dessus.")
     return 1 if anomalies else 0

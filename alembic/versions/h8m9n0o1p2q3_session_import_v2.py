@@ -74,9 +74,7 @@ def _creer_table_v2() -> None:
             name="ck_session_import_etape",
         ),
     )
-    op.create_index(
-        "ix_session_import_utilisateur", "session_import", ["utilisateur"]
-    )
+    op.create_index("ix_session_import_utilisateur", "session_import", ["utilisateur"])
     op.create_index("ix_session_import_statut", "session_import", ["statut"])
 
 
@@ -116,9 +114,7 @@ def _creer_table_v1() -> None:
             name="ck_session_import_statut",
         ),
     )
-    op.create_index(
-        "ix_session_import_utilisateur", "session_import", ["utilisateur"]
-    )
+    op.create_index("ix_session_import_utilisateur", "session_import", ["utilisateur"])
     op.create_index("ix_session_import_statut", "session_import", ["statut"])
 
 

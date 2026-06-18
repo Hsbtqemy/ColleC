@@ -102,19 +102,33 @@ def test_item_resume_date_incertaine_via_property() -> None:
 
     # Cas archivistique typique : « vers 1969 » est incertain.
     item = ItemResume(
-        id=1, cote="X-001", titre="T", fonds_id=1, fonds_cote="X",
-        etat="brouillon", date="vers 1969",
+        id=1,
+        cote="X-001",
+        titre="T",
+        fonds_id=1,
+        fonds_cote="X",
+        etat="brouillon",
+        date="vers 1969",
     )
     assert item.date_incertaine is True
     # Date précise.
     item2 = ItemResume(
-        id=2, cote="X-002", titre="T", fonds_id=1, fonds_cote="X",
-        etat="brouillon", date="1969-03-15",
+        id=2,
+        cote="X-002",
+        titre="T",
+        fonds_id=1,
+        fonds_cote="X",
+        etat="brouillon",
+        date="1969-03-15",
     )
     assert item2.date_incertaine is False
     # None.
     item3 = ItemResume(
-        id=3, cote="X-003", titre="T", fonds_id=1, fonds_cote="X",
+        id=3,
+        cote="X-003",
+        titre="T",
+        fonds_id=1,
+        fonds_cote="X",
         etat="brouillon",
     )
     assert item3.date_incertaine is False

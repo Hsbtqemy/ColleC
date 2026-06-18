@@ -42,9 +42,7 @@ def charger_fonds_ou_404(db: Session, cote: str) -> Fonds:
         ) from e
 
 
-def resoudre_item_ou_404(
-    db: Session, cote: str, fonds_cote: str
-) -> tuple[Item, Fonds]:
+def resoudre_item_ou_404(db: Session, cote: str, fonds_cote: str) -> tuple[Item, Fonds]:
     """Charge un item par (cote, fonds_cote). Lève 404 si l'un des deux
     est introuvable."""
     fonds_obj = charger_fonds_ou_404(db, fonds_cote)
@@ -77,9 +75,7 @@ def resoudre_collection_ou_404(
         ) from e
 
 
-def charger_session_import_ou_404(
-    db: Session, session_id: int
-) -> SessionImport:
+def charger_session_import_ou_404(db: Session, session_id: int) -> SessionImport:
     """Charge une session d'import par id. Lève 404 si absente."""
     try:
         return lire_session(db, session_id)

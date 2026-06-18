@@ -60,7 +60,7 @@ class ProfilIncomplet(Exception):
 
 
 # Cibles sentinelles du mapping (hors champs dédiés / metadonnées).
-CIBLE_META = "__meta__"      # → metadonnees.<slug de la colonne>
+CIBLE_META = "__meta__"  # → metadonnees.<slug de la colonne>
 CIBLE_META_FICHIER = "__meta_fichier__"  # → fichier.metadonnees.<slug>
 CIBLE_IGNORE = "__ignore__"  # colonne non importée
 
@@ -94,9 +94,7 @@ def lire_session(db: Session, session_id: int) -> SessionImport:
     """Charge une session par id. Lève `SessionImportIntrouvable`."""
     session = db.get(SessionImport, session_id)
     if session is None:
-        raise SessionImportIntrouvable(
-            f"Session d'import {session_id} introuvable."
-        )
+        raise SessionImportIntrouvable(f"Session d'import {session_id} introuvable.")
     return session
 
 
@@ -164,9 +162,7 @@ def _avancer_etape(session: SessionImport, vers: str) -> None:
         session.etape = vers
 
 
-def lire_colonnes_tableur(
-    chemin: Path, feuille: str | None = None
-) -> list[str]:
+def lire_colonnes_tableur(chemin: Path, feuille: str | None = None) -> list[str]:
     """Détecte les colonnes d'un tableur, en traduisant l'erreur de
     lecture en `TableurInvalide` (exception de l'assistant web).
 
@@ -263,9 +259,7 @@ def enregistrer_fonds(
     db.commit()
 
 
-def construire_mapping(
-    colonnes: list[str], cibles: list[str]
-) -> dict[str, str]:
+def construire_mapping(colonnes: list[str], cibles: list[str]) -> dict[str, str]:
     """Construit le dict de mapping `champ_cible → colonne` du profil.
 
     `colonnes` et `cibles` sont alignés par position (la cible i
@@ -284,9 +278,7 @@ def construire_mapping(
     # ci-dessous attrape le cas d'un select manquant — la seule
     # incohérence réaliste.
     if len(colonnes) != len(cibles):
-        raise MappingInvalide(
-            "Nombre de cibles incohérent avec le nombre de colonnes."
-        )
+        raise MappingInvalide("Nombre de cibles incohérent avec le nombre de colonnes.")
     mapping: dict[str, str] = {}
     slugs_pris: set[str] = set()
     slugs_pris_fichier: set[str] = set()
@@ -473,7 +465,9 @@ class ApercuRepartitionSimple:
     grossièrement les champs dédiés.
     """
 
-    promues_dediees: list[str]  # cote/titre/date dédiés + DC canoniques + Fichier dédiés
+    promues_dediees: list[
+        str
+    ]  # cote/titre/date dédiés + DC canoniques + Fichier dédiés
     libres_item: list[str]  # metadonnees.<slug> libres
     libres_fichier: list[str]  # fichier.metadonnees.<slug> libres
 
@@ -641,10 +635,7 @@ def construire_mapping_depuis_simple(
     # choisie explicitement, on re-analyse le tableur en forçant cette
     # cote pour faire émerger les vraies classifs par-fichier.
     cote_auto = next(
-        (
-            col for col, s in echantillons.items()
-            if (s or {}).get("classif") == "cote"
-        ),
+        (col for col, s in echantillons.items() if (s or {}).get("classif") == "cote"),
         None,
     )
     if cote_auto != colonne_cote and session.chemin_tableur:
@@ -721,9 +712,9 @@ def construire_mapping_depuis_simple(
         if cible is None:
             continue
         if cible.startswith("metadonnees."):
-            slugs_item.add(cible[len("metadonnees."):])
+            slugs_item.add(cible[len("metadonnees.") :])
         elif cible.startswith("fichier.metadonnees."):
-            slugs_fichier.add(cible[len("fichier.metadonnees."):])
+            slugs_fichier.add(cible[len("fichier.metadonnees.") :])
 
     # Suivi des cibles dédiées déjà posées pour défense en profondeur :
     # même après le filtre `_ROLES_EXPLICITES`, deux heuristiques sur
@@ -909,9 +900,7 @@ def composer_profil(
     documentation en pied d'inventaire).
     """
     if not session.fonds_data or not session.mappings:
-        raise ProfilIncomplet(
-            "Le fonds ou le mapping n'a pas été renseigné."
-        )
+        raise ProfilIncomplet("Le fonds ou le mapping n'a pas été renseigné.")
     chemin = _chemin_tableur_absolu(session)
     if chemin is None or not chemin.is_file():
         raise ProfilIncomplet("Le tableur de la session est introuvable.")
@@ -968,9 +957,7 @@ def apercu_import(
     ignorer_lignes_sans_cote: bool = False,
 ) -> RapportImport:
     """Exécute l'import en dry-run et retourne le rapport (rien écrit)."""
-    profil = composer_profil(
-        session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote
-    )
+    profil = composer_profil(session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote)
     return importer(
         profil,
         _chemin_profil_notionnel(session),
@@ -998,9 +985,7 @@ def executer_import(
     le sache. Acceptable à l'échelle du projet (équipe réduite, pas
     d'édition simultanée) — un statut transitoire en base serait
     sur-ingénierie ici."""
-    profil = composer_profil(
-        session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote
-    )
+    profil = composer_profil(session, ignorer_lignes_sans_cote=ignorer_lignes_sans_cote)
     rapport = importer(
         profil,
         _chemin_profil_notionnel(session),

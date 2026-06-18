@@ -186,9 +186,7 @@ def test_dashboard_activite_recente_limite_10_par_defaut(
     for i in range(15):
         creer_item(
             session_neuve,
-            FormulaireItem(
-                cote=f"X-{i:03d}", titre=f"Item {i}", fonds_id=fonds.id
-            ),
+            FormulaireItem(cote=f"X-{i:03d}", titre=f"Item {i}", fonds_id=fonds.id),
         )
     ref = datetime(2026, 1, 1, 12, 0, 0)
     for i, item in enumerate(session_neuve.scalars(select(Item)).all()):
@@ -398,23 +396,38 @@ def test_avancement_jalons_verifies_inclut_valides(session_neuve: Session) -> No
     """`verifies` est la somme des items en état `verifie` OU `valide` —
     un item validé compte aussi comme vérifié (sémantique du workflow)."""
     fonds = creer_fonds(session_neuve, FormulaireFonds(cote="W", titre="Workflow"))
-    creer_item(session_neuve, FormulaireItem(
-        cote="W-001", titre="A", fonds_id=fonds.id,
-        etat_catalogage=EtatCatalogage.VERIFIE,
-    ))
-    creer_item(session_neuve, FormulaireItem(
-        cote="W-002", titre="B", fonds_id=fonds.id,
-        etat_catalogage=EtatCatalogage.VALIDE,
-    ))
-    creer_item(session_neuve, FormulaireItem(
-        cote="W-003", titre="C", fonds_id=fonds.id,
-        etat_catalogage=EtatCatalogage.BROUILLON,
-    ))
+    creer_item(
+        session_neuve,
+        FormulaireItem(
+            cote="W-001",
+            titre="A",
+            fonds_id=fonds.id,
+            etat_catalogage=EtatCatalogage.VERIFIE,
+        ),
+    )
+    creer_item(
+        session_neuve,
+        FormulaireItem(
+            cote="W-002",
+            titre="B",
+            fonds_id=fonds.id,
+            etat_catalogage=EtatCatalogage.VALIDE,
+        ),
+    )
+    creer_item(
+        session_neuve,
+        FormulaireItem(
+            cote="W-003",
+            titre="C",
+            fonds_id=fonds.id,
+            etat_catalogage=EtatCatalogage.BROUILLON,
+        ),
+    )
     detail = composer_page_fonds(session_neuve, "W")
     j = detail.avancement_jalons
     assert j.planifies == 3
     assert j.verifies == 2  # W-001 (vérifié) + W-002 (validé)
-    assert j.valides == 1   # W-002
+    assert j.valides == 1  # W-002
 
 
 def test_avancement_jalons_numerises_compte_items_pas_fichiers(
@@ -425,18 +438,33 @@ def test_avancement_jalons_numerises_compte_items_pas_fichiers(
     from archives_tool.models import Fichier
 
     fonds = creer_fonds(session_neuve, FormulaireFonds(cote="N", titre="Numerise"))
-    item_avec = creer_item(session_neuve, FormulaireItem(
-        cote="N-001", titre="Avec fichiers", fonds_id=fonds.id,
-    ))
-    creer_item(session_neuve, FormulaireItem(
-        cote="N-002", titre="Sans fichier", fonds_id=fonds.id,
-    ))
+    item_avec = creer_item(
+        session_neuve,
+        FormulaireItem(
+            cote="N-001",
+            titre="Avec fichiers",
+            fonds_id=fonds.id,
+        ),
+    )
+    creer_item(
+        session_neuve,
+        FormulaireItem(
+            cote="N-002",
+            titre="Sans fichier",
+            fonds_id=fonds.id,
+        ),
+    )
     # 3 fichiers sur le même item.
     for i in range(3):
-        session_neuve.add(Fichier(
-            item_id=item_avec.id, nom_fichier=f"f{i}.jpg",
-            racine="scans", chemin_relatif=f"f{i}.jpg", ordre=i + 1,
-        ))
+        session_neuve.add(
+            Fichier(
+                item_id=item_avec.id,
+                nom_fichier=f"f{i}.jpg",
+                racine="scans",
+                chemin_relatif=f"f{i}.jpg",
+                ordre=i + 1,
+            )
+        )
     session_neuve.commit()
 
     detail = composer_page_fonds(session_neuve, "N")
@@ -800,7 +828,11 @@ def test_composer_page_item_charge_metadonnees_par_section(
     assert champ_etat.options is not None
     valeurs_options = {v for v, _ in champ_etat.options}
     assert valeurs_options == {
-        "brouillon", "a_verifier", "verifie", "valide", "a_corriger",
+        "brouillon",
+        "a_verifier",
+        "verifie",
+        "valide",
+        "a_corriger",
     }
     # La section Identifiants externes liste les 2 DOI (pré-définis)
     cles_doi = [c.cle for c in sections["Identifiants externes"]]
@@ -912,12 +944,18 @@ def test_metadonnees_par_section_champs_perso_dedupliques(
     item.metadonnees = {"editeur": "Acme Press"}
     champs = [
         ChampPersonnalise(
-            collection_id=1, cle="editeur", libelle="Éditeur",
-            type="texte", ordre=1,
+            collection_id=1,
+            cle="editeur",
+            libelle="Éditeur",
+            type="texte",
+            ordre=1,
         ),
         ChampPersonnalise(
-            collection_id=2, cle="editeur", libelle="Editeur (alias)",
-            type="texte", ordre=2,
+            collection_id=2,
+            cle="editeur",
+            libelle="Editeur (alias)",
+            type="texte",
+            ordre=2,
         ),
     ]
     sections = composer_metadonnees_par_section(item, champs)
@@ -940,8 +978,11 @@ def test_metadonnees_par_section_liste_rendue_csv(session_demo: Session) -> None
     item.metadonnees = {"sujets": ["révolution", "almanach", "satire"]}
     champs = [
         ChampPersonnalise(
-            collection_id=1, cle="sujets", libelle="Sujets",
-            type="liste", ordre=1,
+            collection_id=1,
+            cle="sujets",
+            libelle="Sujets",
+            type="liste",
+            ordre=1,
         ),
     ]
     sections = composer_metadonnees_par_section(item, champs)
@@ -1005,8 +1046,11 @@ def test_metadonnees_par_section_champs_perso_prime_sur_libre(
     item.metadonnees = {"editeur": "Acme Press", "autre": "libre"}
     champs = [
         ChampPersonnalise(
-            collection_id=1, cle="editeur", libelle="Éditeur officiel",
-            type="texte", ordre=1,
+            collection_id=1,
+            cle="editeur",
+            libelle="Éditeur officiel",
+            type="texte",
+            ordre=1,
         ),
     ]
     sections = composer_metadonnees_par_section(item, champs)
@@ -1043,12 +1087,18 @@ def test_metadonnees_par_section_ordre_formels_avant_libres(
     }
     champs = [
         ChampPersonnalise(
-            collection_id=1, cle="editeur", libelle="Éditeur",
-            type="texte", ordre=2,
+            collection_id=1,
+            cle="editeur",
+            libelle="Éditeur",
+            type="texte",
+            ordre=2,
         ),
         ChampPersonnalise(
-            collection_id=1, cle="auteur", libelle="Auteur",
-            type="texte", ordre=1,
+            collection_id=1,
+            cle="auteur",
+            libelle="Auteur",
+            type="texte",
+            ordre=1,
         ),
     ]
     sections = composer_metadonnees_par_section(item, champs)

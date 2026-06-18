@@ -53,9 +53,7 @@ def test_panneau_colonnes_js_n_a_pas_d_interpolation_dataset_dans_innerhtml() ->
     import re
 
     # Pattern : `.innerHTML = \`...${...dataset...}...\`` (template literal)
-    fragments_innerhtml = re.findall(
-        r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL
-    )
+    fragments_innerhtml = re.findall(r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL)
     for frag in fragments_innerhtml:
         # Recherche $ {...dataset...}
         if re.search(r"\$\{[^}]*dataset[^}]*\}", frag):
@@ -85,12 +83,12 @@ def test_visionneuse_osd_js_fallback_n_a_pas_d_interpolation_user_data() -> None
 
     import re
 
-    fragments_innerhtml = re.findall(
-        r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL
-    )
+    fragments_innerhtml = re.findall(r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL)
     for frag in fragments_innerhtml:
         # Variables clés du data.source qui pourraient venir d'user
-        if re.search(r"\$\{\s*(nom|telecharger|data\.nom|data\.telecharger)\s*\}", frag):
+        if re.search(
+            r"\$\{\s*(nom|telecharger|data\.nom|data\.telecharger)\s*\}", frag
+        ):
             pytest.fail(
                 "visionneuse_osd.js contient `innerHTML` avec interpolation "
                 "de nom/telecharger — XSS via nom_fichier malicieux. Utiliser "
@@ -114,15 +112,11 @@ def test_aucun_js_app_n_a_de_template_literal_dans_innerhtml_avec_data_user() ->
         if "vendor" in str(fjs):
             continue
         contenu = fjs.read_text(encoding="utf-8")
-        fragments = re.findall(
-            r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL
-        )
+        fragments = re.findall(r"\.innerHTML\s*=\s*`([^`]*)`", contenu, re.DOTALL)
         for frag in fragments:
             # `${data.X}` ou `${dataset.X}` ou `${X}` où X est un nom
             # connu pour porter du user data (label, nom, titre…).
-            suspects = re.findall(
-                r"\$\{\s*([^}]+)\s*\}", frag
-            )
+            suspects = re.findall(r"\$\{\s*([^}]+)\s*\}", frag)
             for s in suspects:
                 # Constantes / appels surs : encodeURIComponent, ${i+1},
                 # ${r.status}, ${id} (entier), CSS.escape…
@@ -169,7 +163,7 @@ def test_metadonnee_avec_cle_html_se_rend_safe_en_attribut(
             .limit(1)
         )
         meta = dict(item.metadonnees or {})
-        meta['<img src=x onerror=alert(1)>'] = "valeur"
+        meta["<img src=x onerror=alert(1)>"] = "valeur"
         item.metadonnees = meta
         flag_modified(item, "metadonnees")
         s.commit()

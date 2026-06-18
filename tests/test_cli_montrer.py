@@ -66,9 +66,7 @@ def _base_demo_petite(tmp_path: Path) -> Path:
         )
         creer_collection_libre(
             s,
-            FormulaireCollection(
-                cote="TRANSV", titre="Transversale", fonds_id=None
-            ),
+            FormulaireCollection(cote="TRANSV", titre="Transversale", fonds_id=None),
         )
         s.add_all(
             [
@@ -152,10 +150,14 @@ def test_montrer_fonds_detail_json(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "fonds",
-            "--cote", "HK",
-            "--format", "json",
-            "--db-path", str(db),
+            "montrer",
+            "fonds",
+            "--cote",
+            "HK",
+            "--format",
+            "json",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -205,10 +207,14 @@ def test_montrer_collection_detail_libre(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "collection",
-            "--cote", "FA-OEUVRES",
-            "--fonds", "FA",
-            "--db-path", str(db),
+            "montrer",
+            "collection",
+            "--cote",
+            "FA-OEUVRES",
+            "--fonds",
+            "FA",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -234,10 +240,14 @@ def test_montrer_collection_detail_json_transversale(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "collection",
-            "--cote", "TRANSV",
-            "--format", "json",
-            "--db-path", str(db),
+            "montrer",
+            "collection",
+            "--cote",
+            "TRANSV",
+            "--format",
+            "json",
+            "--db-path",
+            str(db),
         ],
     )
     data = json.loads(result.output)
@@ -257,10 +267,13 @@ def test_montrer_item_detail(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "item",
+            "montrer",
+            "item",
             "HK-001",
-            "--fonds", "HK",
-            "--db-path", str(db),
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -275,9 +288,7 @@ def test_montrer_item_detail(tmp_path: Path) -> None:
 
 def test_montrer_item_sans_fonds_422(tmp_path: Path) -> None:
     db = _base_demo_petite(tmp_path)
-    result = runner.invoke(
-        app, ["montrer", "item", "HK-001", "--db-path", str(db)]
-    )
+    result = runner.invoke(app, ["montrer", "item", "HK-001", "--db-path", str(db)])
     # `--fonds` requis (Typer renvoie 2 si argument requis manquant).
     assert result.exit_code == 2
 
@@ -287,10 +298,13 @@ def test_montrer_item_inexistant(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "item",
+            "montrer",
+            "item",
             "INEXISTANT",
-            "--fonds", "HK",
-            "--db-path", str(db),
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
@@ -302,11 +316,15 @@ def test_montrer_item_format_json(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "item",
+            "montrer",
+            "item",
             "HK-001",
-            "--fonds", "HK",
-            "--format", "json",
-            "--db-path", str(db),
+            "--fonds",
+            "HK",
+            "--format",
+            "json",
+            "--db-path",
+            str(db),
         ],
     )
     data = json.loads(result.output)
@@ -349,16 +367,27 @@ def test_montrer_fichier_description_externe(tmp_path: Path) -> None:
         s.commit()
         fichier_id = fichier.id
 
-    text = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
-                               "--db-path", str(db)])
+    text = runner.invoke(
+        app, ["montrer", "fichier", str(fichier_id), "--db-path", str(db)]
+    )
     assert text.exit_code == 0, text.output
     # Pince la VALEUR, pas le label : « Transcription » apparaît aussi dans
     # l'intitulé de la ligne, donc ne prouverait rien seul. « page de titre »
     # est propre à la valeur seedée. (L'assertion JSON ci-dessous est exacte.)
     assert "page de titre" in text.output
 
-    js = runner.invoke(app, ["montrer", "fichier", str(fichier_id),
-                             "--format", "json", "--db-path", str(db)])
+    js = runner.invoke(
+        app,
+        [
+            "montrer",
+            "fichier",
+            str(fichier_id),
+            "--format",
+            "json",
+            "--db-path",
+            str(db),
+        ],
+    )
     data = json.loads(js.output)
     assert data["fichier"]["technique"]["description_externe"] == (
         "Transcription : page de titre, 1969."
@@ -367,9 +396,7 @@ def test_montrer_fichier_description_externe(tmp_path: Path) -> None:
 
 def test_montrer_fichier_inexistant(tmp_path: Path) -> None:
     db = _base_demo_petite(tmp_path)
-    result = runner.invoke(
-        app, ["montrer", "fichier", "9999999", "--db-path", str(db)]
-    )
+    result = runner.invoke(app, ["montrer", "fichier", "9999999", "--db-path", str(db)])
     assert result.exit_code == 1
     assert "introuvable" in result.output.lower()
 
@@ -383,9 +410,13 @@ def test_montrer_fichier_format_json(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "montrer", "fichier", str(fichier_id),
-            "--format", "json",
-            "--db-path", str(db),
+            "montrer",
+            "fichier",
+            str(fichier_id),
+            "--format",
+            "json",
+            "--db-path",
+            str(db),
         ],
     )
     data = json.loads(result.output)

@@ -125,8 +125,7 @@ def _valider_sha1_uploade(desc: object, contexte: str) -> str:
         )
     if not all(c in _HEX_LOWERCASE for c in sha1_norm):
         raise UploadInvalide(
-            f"uploader_fichier({contexte!r}) : sha1 contient des "
-            f"caractères non-hex."
+            f"uploader_fichier({contexte!r}) : sha1 contient des caractères non-hex."
         )
     return sha1_norm
 
@@ -148,7 +147,9 @@ class OrphelinsDetectes(Exception):
 
     def __init__(self, orphelins: list["FichierOrphelin"]) -> None:
         self.orphelins = orphelins
-        noms = ", ".join(f"{o.nom_fichier} (sha1: {o.sha1[:12]}…)" for o in orphelins[:5])
+        noms = ", ".join(
+            f"{o.nom_fichier} (sha1: {o.sha1[:12]}…)" for o in orphelins[:5]
+        )
         suffixe = "" if len(orphelins) <= 5 else f" (+ {len(orphelins) - 5} autres)"
         super().__init__(
             f"{len(orphelins)} orphelin(s) distant(s) détecté(s) : {noms}{suffixe}. "
@@ -603,7 +604,8 @@ def comparer_fichiers_item(
     ]
 
     rapport = RapportComparaisonFichiers(
-        cote_item=item.cote, doi=item.doi_nakala,
+        cote_item=item.cote,
+        doi=item.doi_nakala,
         mod_date_distant=depot.get("modDate"),
         statut_distant=depot.get("status"),
         files_distants_snapshot=snapshot_distants,
@@ -631,14 +633,16 @@ def comparer_fichiers_item(
             sha1_nakala_norm_na = f.sha1_nakala.lower() if f.sha1_nakala else None
             if sha1_nakala_norm_na and sha1_index.get(sha1_nakala_norm_na):
                 sha1_index[sha1_nakala_norm_na].pop(0)
-                rapport.non_actifs_a_retirer.append(FichierCompare(
-                    fichier_id=f.id,
-                    cote_item=item.cote,
-                    nom_fichier=f.nom_fichier,
-                    ordre=f.ordre,
-                    sha1_local=None,
-                    sha1_distant=f.sha1_nakala,
-                ))
+                rapport.non_actifs_a_retirer.append(
+                    FichierCompare(
+                        fichier_id=f.id,
+                        cote_item=item.cote,
+                        nom_fichier=f.nom_fichier,
+                        ordre=f.ordre,
+                        sha1_local=None,
+                        sha1_distant=f.sha1_nakala,
+                    )
+                )
             continue
 
         # Binaire local résolvable et lisible ?
@@ -814,35 +818,47 @@ def _construire_plan(
     """
     plan: list[PlanPushFichier] = []
     for fc in rapport_cmp.inchanges:
-        plan.append(PlanPushFichier(
-            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
-            sha1=fc.sha1_local or "",  # garanti non-None côté inchanges
-            categorie="inchange",
-            ordre=fc.ordre,
-        ))
+        plan.append(
+            PlanPushFichier(
+                fichier_id=fc.fichier_id,
+                nom_fichier=fc.nom_fichier,
+                sha1=fc.sha1_local or "",  # garanti non-None côté inchanges
+                categorie="inchange",
+                ordre=fc.ordre,
+            )
+        )
     for fc in rapport_cmp.modifies:
-        plan.append(PlanPushFichier(
-            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
-            sha1=fc.sha1_local or "",  # sera ré-uploadé
-            categorie="modifie",
-            ordre=fc.ordre,
-        ))
+        plan.append(
+            PlanPushFichier(
+                fichier_id=fc.fichier_id,
+                nom_fichier=fc.nom_fichier,
+                sha1=fc.sha1_local or "",  # sera ré-uploadé
+                categorie="modifie",
+                ordre=fc.ordre,
+            )
+        )
     for fc in rapport_cmp.nouveaux:
-        plan.append(PlanPushFichier(
-            fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
-            sha1=fc.sha1_local or "",  # sera uploadé
-            categorie="nouveau",
-            ordre=fc.ordre,
-        ))
+        plan.append(
+            PlanPushFichier(
+                fichier_id=fc.fichier_id,
+                nom_fichier=fc.nom_fichier,
+                sha1=fc.sha1_local or "",  # sera uploadé
+                categorie="nouveau",
+                ordre=fc.ordre,
+            )
+        )
     for fc in rapport_cmp.nakala_only_sans_local:
         # Préservés : on les inclut avec leur sha1_nakala connu.
         if fc.sha1_distant:
-            plan.append(PlanPushFichier(
-                fichier_id=fc.fichier_id, nom_fichier=fc.nom_fichier,
-                sha1=fc.sha1_distant,
-                categorie="nakala_only",
-                ordre=fc.ordre,
-            ))
+            plan.append(
+                PlanPushFichier(
+                    fichier_id=fc.fichier_id,
+                    nom_fichier=fc.nom_fichier,
+                    sha1=fc.sha1_distant,
+                    categorie="nakala_only",
+                    ordre=fc.ordre,
+                )
+            )
     # Tri par `Fichier.ordre` : Nakala respecte l'ordre du `files[]`
     # envoyé (H5 validée). Sans ce tri, le PUT mettrait inchanges en
     # premier puis modifies puis nouveaux puis nakala_only, perdant
@@ -922,7 +938,8 @@ def _reordonner_files(
         # écraser la distante (limite assumée, cf. note de module).
         desc_local = (
             normaliser_transcription(descriptions_locales.get(fid))
-            if fid is not None else None
+            if fid is not None
+            else None
         )
         description = desc_local if desc_local else (fd.get("description") or None)
         if description:
@@ -1040,11 +1057,16 @@ def pousser_fichiers_item(
 
     # 1. Comparer
     rapport_cmp = comparer_fichiers_item(
-        db, client_lecture, item, racines=racines,
+        db,
+        client_lecture,
+        item,
+        racines=racines,
     )
 
     rapport = RapportPushFichiers(
-        cote_item=item.cote, doi=item.doi_nakala, dry_run=dry_run,
+        cote_item=item.cote,
+        doi=item.doi_nakala,
+        dry_run=dry_run,
         compare=rapport_cmp,
     )
 
@@ -1139,14 +1161,11 @@ def pousser_fichiers_item(
     #    `sha1_nakala` matchait un sha1 distant — retrait acté par
     #    l'état du Fichier (cf. Trou O passe 6 : explicite au lieu
     #    de silencieux).
-    rapport.sha1s_retires = (
-        [o.sha1 for o in rapport_cmp.orphelins_distants]
-        + [
-            (nac.sha1_distant or "").strip().lower()
-            for nac in rapport_cmp.non_actifs_a_retirer
-            if nac.sha1_distant
-        ]
-    )
+    rapport.sha1s_retires = [o.sha1 for o in rapport_cmp.orphelins_distants] + [
+        (nac.sha1_distant or "").strip().lower()
+        for nac in rapport_cmp.non_actifs_a_retirer
+        if nac.sha1_distant
+    ]
 
     # 5. Dry-run : on ne touche pas au distant.
     if dry_run:
@@ -1154,11 +1173,16 @@ def pousser_fichiers_item(
             "push fichiers dry-run cote=%s doi=%s plan=%d nouveaux=%d "
             "modifies=%d inchanges=%d nakala_only=%d orphelins=%d "
             "non_actifs=%d derive=%s",
-            item.cote, item.doi_nakala, len(rapport.plan),
-            len(rapport_cmp.nouveaux), len(rapport_cmp.modifies),
-            len(rapport_cmp.inchanges), len(rapport_cmp.nakala_only_sans_local),
+            item.cote,
+            item.doi_nakala,
+            len(rapport.plan),
+            len(rapport_cmp.nouveaux),
+            len(rapport_cmp.modifies),
+            len(rapport_cmp.inchanges),
+            len(rapport_cmp.nakala_only_sans_local),
             len(rapport_cmp.orphelins_distants),
-            len(rapport_cmp.non_actifs_a_retirer), rapport.derive,
+            len(rapport_cmp.non_actifs_a_retirer),
+            rapport.derive,
         )
         return rapport
 
@@ -1166,9 +1190,13 @@ def pousser_fichiers_item(
     logger.info(
         "push fichiers START cote=%s doi=%s plan=%d nouveaux=%d "
         "modifies=%d retraits=%d derive=%s",
-        item.cote, item.doi_nakala, len(rapport.plan),
-        len(rapport_cmp.nouveaux), len(rapport_cmp.modifies),
-        len(rapport.sha1s_retires), rapport.derive,
+        item.cote,
+        item.doi_nakala,
+        len(rapport.plan),
+        len(rapport_cmp.nouveaux),
+        len(rapport_cmp.modifies),
+        len(rapport.sha1s_retires),
+        rapport.derive,
     )
     # Map fichier_id → sha1 fraîchement uploadé, pour mettre à jour
     # `Fichier.sha1_nakala` après le push réussi.
@@ -1205,7 +1233,9 @@ def pousser_fichiers_item(
                     "pousser (race condition ou mutation tierce)."
                 )
             chemin = resoudre_chemin(
-                racines, fichier_orm.racine, fichier_orm.chemin_relatif,
+                racines,
+                fichier_orm.racine,
+                fichier_orm.chemin_relatif,
             )
             desc = client_ecriture.uploader_fichier(chemin, fc.nom_fichier)
             # Defense en profondeur : valider la reponse avant de
@@ -1215,7 +1245,8 @@ def pousser_fichiers_item(
             nouveaux_sha1_par_fichier[fc.fichier_id] = sha1_neuf
             logger.debug(
                 "push fichiers upload OK nom=%s sha1=%s…",
-                fc.nom_fichier, sha1_neuf[:12],
+                fc.nom_fichier,
+                sha1_neuf[:12],
             )
 
         # 7a. POST additifs (T2) : on ATTACHE les nouveaux + modifies via
@@ -1235,7 +1266,8 @@ def pousser_fichiers_item(
         for fc in rapport_cmp.modifies:
             if fc.sha1_distant:
                 client_ecriture.supprimer_fichier_donnee(
-                    item.doi_nakala, fc.sha1_distant,
+                    item.doi_nakala,
+                    fc.sha1_distant,
                 )
         if retirer_orphelins:
             for orph in rapport_cmp.orphelins_distants:
@@ -1243,7 +1275,8 @@ def pousser_fichiers_item(
         for nac in rapport_cmp.non_actifs_a_retirer:
             if nac.sha1_distant:
                 client_ecriture.supprimer_fichier_donnee(
-                    item.doi_nakala, nac.sha1_distant,
+                    item.doi_nakala,
+                    nac.sha1_distant,
                 )
 
         # 7c. Réordonnancement (T2) : relit l'état distant RÉEL après les
@@ -1251,7 +1284,8 @@ def pousser_fichiers_item(
         # (le POST est LIFO et ne contrôle pas l'ordre, sonde C). Le PUT
         # réémettant la vérité distante ne peut rien dropper (≠ ancien push).
         apres_ops = _valider_depot_lu(
-            client_lecture.lire_depot(item.doi_nakala), item.doi_nakala,
+            client_lecture.lire_depot(item.doi_nakala),
+            item.doi_nakala,
         )
         files_cible = _reordonner_files(
             apres_ops.get("files") or [],
@@ -1263,7 +1297,9 @@ def pousser_fichiers_item(
         logger.info(
             "push fichiers granulaire OK cote=%s doi=%s ajouts=%d "
             "suppressions=%d files_final=%d",
-            item.cote, item.doi_nakala, len(sha1s_postes),
+            item.cote,
+            item.doi_nakala,
+            len(sha1s_postes),
             len(rapport.sha1s_retires) + len(rapport_cmp.modifies),
             len(files_cible),
         )
@@ -1278,8 +1314,11 @@ def pousser_fichiers_item(
         logger.warning(
             "push fichiers ECHEC cote=%s doi=%s uploads=%d attaches=%d "
             "cleanup_temp=%d (etat distant possiblement partiel)",
-            item.cote, item.doi_nakala, len(sha1s_uploades),
-            len(sha1s_postes), len(non_attaches),
+            item.cote,
+            item.doi_nakala,
+            len(sha1s_uploades),
+            len(sha1s_postes),
+            len(non_attaches),
         )
         for sha1 in non_attaches:
             try:
@@ -1287,7 +1326,8 @@ def pousser_fichiers_item(
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "push fichiers cleanup KO sha1=%s… : %s",
-                    sha1[:12], exc,
+                    sha1[:12],
+                    exc,
                 )
         raise
 
@@ -1331,7 +1371,8 @@ def pousser_fichiers_item(
             fichier.sha1_nakala = sha1_neuf
             if fichier.iiif_url_nakala:
                 fichier.iiif_url_nakala = remplacer_sha(
-                    fichier.iiif_url_nakala, sha1_neuf,
+                    fichier.iiif_url_nakala,
+                    sha1_neuf,
                 )
             # Re-caracterisation binaire (passe 25, dette pass 12)
             # Recalcule sur le chemin local actuel : hash_sha256 +
@@ -1343,7 +1384,9 @@ def pousser_fichiers_item(
             if fichier.racine and fichier.chemin_relatif:
                 try:
                     chemin_local = _rc(
-                        racines, fichier.racine, fichier.chemin_relatif,
+                        racines,
+                        fichier.racine,
+                        fichier.chemin_relatif,
                     )
                     if chemin_local.is_file():
                         fichier.hash_sha256 = hash_sha256(chemin_local)
@@ -1407,14 +1450,17 @@ def pousser_fichiers_item(
     from archives_tool.api.services.nakala import mettre_en_cache_depot
 
     brut2 = _valider_depot_lu(
-        client_lecture.lire_depot(item.doi_nakala), item.doi_nakala,
+        client_lecture.lire_depot(item.doi_nakala),
+        item.doi_nakala,
     )
     mettre_en_cache_depot(db, mapper_depot(brut2), brut2, cree_par=modifie_par)
 
     db.commit()
     logger.info(
         "push fichiers COMMIT cote=%s doi=%s uploades=%d retires=%d",
-        item.cote, item.doi_nakala, len(sha1s_uploades),
+        item.cote,
+        item.doi_nakala,
+        len(sha1s_uploades),
         len(rapport.sha1s_retires),
     )
 

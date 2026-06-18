@@ -254,9 +254,7 @@ def test_slugifier(entree: str, attendu: str) -> None:
         ("source", "metadonnees.source"),
     ],
 )
-def test_proposer_mapping_pattern_detecte(
-    colonne: str, cible_attendue: str
-) -> None:
+def test_proposer_mapping_pattern_detecte(colonne: str, cible_attendue: str) -> None:
     """Chaque pattern enrichi en V0.9.2-import #5 doit être détecté
     comme structurant (detecte=True) et router vers la bonne cible."""
     triplets = proposer_mapping([colonne])
@@ -295,9 +293,7 @@ def test_proposer_mapping_fichier_metadonnee_multiples_distinctes() -> None:
     """Plusieurs colonnes scan-niveau peuvent être pré-classées en
     `fichier.metadonnees.*` ensemble — pas de collision sur un champ
     dédié unique (les slugs sont dédoublonnés indépendamment)."""
-    triplets = proposer_mapping(
-        ["thumb_url", "data_url", "embed_url", "preview_url"]
-    )
+    triplets = proposer_mapping(["thumb_url", "data_url", "embed_url", "preview_url"])
     cibles = [c for c, _, _ in triplets]
     assert all(c.startswith("fichier.metadonnees.") for c in cibles)
     assert len(set(cibles)) == 4  # 4 slugs distincts, pas de collision

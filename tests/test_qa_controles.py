@@ -61,21 +61,15 @@ def session_un_fonds(session: Session) -> Session:
     fonds = lire_fonds_par_cote(session, "HK")
     item_a = creer_item(
         session,
-        FormulaireItem(
-            cote="HK-001", titre="N°1", fonds_id=fonds.id, annee=1969
-        ),
+        FormulaireItem(cote="HK-001", titre="N°1", fonds_id=fonds.id, annee=1969),
     )
     item_b = creer_item(
         session,
-        FormulaireItem(
-            cote="HK-002", titre="N°2", fonds_id=fonds.id, annee=1970
-        ),
+        FormulaireItem(cote="HK-002", titre="N°2", fonds_id=fonds.id, annee=1970),
     )
     creer_item(
         session,
-        FormulaireItem(
-            cote="HK-003", titre="N°3", fonds_id=fonds.id, annee=1971
-        ),
+        FormulaireItem(cote="HK-003", titre="N°3", fonds_id=fonds.id, annee=1971),
     )
     session.add_all(
         [
@@ -196,9 +190,7 @@ def test_file_missing_passe_avec_fichiers_reels(
     (racine / "HK-002" / "01.tif").write_bytes(b"fake")
 
     perimetre = composer_perimetre(session_un_fonds)
-    res = controler_file_missing(
-        session_un_fonds, perimetre, racines={"s": racine}
-    )
+    res = controler_file_missing(session_un_fonds, perimetre, racines={"s": racine})
     assert res.passe
 
 
@@ -404,9 +396,7 @@ def test_perimetre_par_collection(session_un_fonds: Session) -> None:
     item_hk1 = session_un_fonds.scalar(
         select(Item).where(Item.cote == "HK-001", Item.fonds_id == fonds.id)
     )
-    session_un_fonds.add(
-        ItemCollection(item_id=item_hk1.id, collection_id=fav.id)
-    )
+    session_un_fonds.add(ItemCollection(item_id=item_hk1.id, collection_id=fav.id))
     session_un_fonds.commit()
 
     perimetre = composer_perimetre(session_un_fonds, collection_id=fav.id)

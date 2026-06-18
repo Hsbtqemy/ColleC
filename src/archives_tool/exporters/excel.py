@@ -47,7 +47,7 @@ _TITRE_FEUILLE_MAX = 31
 
 
 def _slug_feuille(titre: str) -> str:
-    interdits = set('[]:*?/\\')
+    interdits = set("[]:*?/\\")
     nettoye = "".join(c for c in titre if c not in interdits)
     return nettoye[:_TITRE_FEUILLE_MAX] or "Export"
 
@@ -84,7 +84,9 @@ def exporter_excel(
     ws["A2"] = f"Cote : {collection.cote}"
     ws["A3"] = f"Type : {type_libelle}"
     if export.fonds_parent is not None:
-        ws["A4"] = f"Fonds parent : {export.fonds_parent.titre} ({export.fonds_parent.cote})"
+        ws["A4"] = (
+            f"Fonds parent : {export.fonds_parent.titre} ({export.fonds_parent.cote})"
+        )
     elif export.fonds_representes:
         cotes = ", ".join(f.cote for f in export.fonds_representes)
         ws["A4"] = f"Fonds représentés : {cotes}"

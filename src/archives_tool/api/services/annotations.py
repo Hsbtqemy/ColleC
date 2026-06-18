@@ -35,9 +35,18 @@ from archives_tool.models import AnnotationRegion, Fichier
 #: motivation hors norme (réversibilité W3C compromise sinon).
 MOTIVATIONS_W3C: frozenset[str] = frozenset(
     {
-        "assessing", "bookmarking", "classifying", "commenting",
-        "describing", "editing", "highlighting", "identifying",
-        "linking", "moderating", "questioning", "replying",
+        "assessing",
+        "bookmarking",
+        "classifying",
+        "commenting",
+        "describing",
+        "editing",
+        "highlighting",
+        "identifying",
+        "linking",
+        "moderating",
+        "questioning",
+        "replying",
         "tagging",
     }
 )
@@ -118,7 +127,9 @@ def _valider(formulaire: FormulaireAnnotation) -> dict[str, str]:
     return erreurs
 
 
-def serialiser_w3c(annotation: AnnotationRegion, *, base_url: str = "") -> dict[str, Any]:
+def serialiser_w3c(
+    annotation: AnnotationRegion, *, base_url: str = ""
+) -> dict[str, Any]:
     """Sérialise une AnnotationRegion en JSON-LD W3C Web Annotation.
 
     ``base_url`` (ex `"https://colle-c.example"`) préfixe les URIs des
@@ -295,9 +306,7 @@ def supprimer_annotation(db: Session, annotation_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def lister_annotations_item(
-    db: Session, item_id: int
-) -> tuple[AnnotationRegion, ...]:
+def lister_annotations_item(db: Session, item_id: int) -> tuple[AnnotationRegion, ...]:
     """Toutes les annotations des fichiers d'un item, triées par
     (fichier_id, cree_le). Pour l'export par item (granularité
     typique Nakala : un AnnotationCollection par numéro de revue)."""
@@ -494,7 +503,8 @@ def enrichir_annotations_par_vocab(
     from archives_tool.models.profil import Vocabulaire
 
     vocab = db.get(
-        Vocabulaire, vocabulaire_id,
+        Vocabulaire,
+        vocabulaire_id,
         options=[selectinload(Vocabulaire.valeurs)],
     )
     if vocab is None:
@@ -530,8 +540,10 @@ def enrichir_annotations_par_vocab(
     if not index:
         # Vocab sans valeur exploitable : rapport vide, pas de scan.
         return RapportEnrichissement(
-            matches=(), deja_enrichies=0,
-            annotations_modifiees=0, dry_run=dry_run,
+            matches=(),
+            deja_enrichies=0,
+            annotations_modifiees=0,
+            dry_run=dry_run,
         )
 
     annotations = _lister_annotations_fonds(db, fonds_id)
@@ -548,7 +560,8 @@ def enrichir_annotations_par_vocab(
                 if body.get("type") == "SpecificResource":
                     source = body.get("source")
                     uri_courante = (
-                        source if isinstance(source, str)
+                        source
+                        if isinstance(source, str)
                         else (source.get("id") if isinstance(source, dict) else None)
                     )
                     if uri_courante and uri_courante in uris_vocab:
@@ -568,23 +581,27 @@ def enrichir_annotations_par_vocab(
                 continue
 
             vid, vlibelle, vuri = cible
-            matches.append(MatchEnrichissement(
-                annotation_id=ann.id,
-                fichier_id=ann.fichier_id,
-                body_index=idx,
-                libelle_libre=valeur,
-                valeur_id=vid,
-                valeur_libelle=vlibelle,
-                valeur_uri=vuri,
-            ))
+            matches.append(
+                MatchEnrichissement(
+                    annotation_id=ann.id,
+                    fichier_id=ann.fichier_id,
+                    body_index=idx,
+                    libelle_libre=valeur,
+                    valeur_id=vid,
+                    valeur_libelle=vlibelle,
+                    valeur_uri=vuri,
+                )
+            )
             # On préserve la purpose initiale (tagging par défaut, mais
             # un body peut avoir purpose=describing par ex).
             purpose = body.get("purpose", "tagging")
-            nouveau_corps.append({
-                "type": "SpecificResource",
-                "purpose": purpose,
-                "source": {"id": vuri, "label": vlibelle},
-            })
+            nouveau_corps.append(
+                {
+                    "type": "SpecificResource",
+                    "purpose": purpose,
+                    "source": {"id": vuri, "label": vlibelle},
+                }
+            )
             ann_a_change = True
 
         if ann_a_change:

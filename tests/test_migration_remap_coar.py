@@ -42,14 +42,14 @@ def test_remap_uris_coar_y_compris_chaine_recouvrante(
 
     # Items avec les anciennes URIs (selon leur intention de label).
     cas = {
-        "HK-VID": f"{_C}/c_12cd",   # Vidéo  → attendu c_12ce
-        "HK-CAR": f"{_C}/c_ecc8",   # Carte  → attendu c_12cd
-        "HK-PHO": f"{_C}/c_18cd",   # Photo  → attendu c_ecc8
-        "HK-PER": f"{_C}/c_3e5a",   # Périodique → c_2fe3
-        "HK-NUM": f"{_C}/c_0640",   # Numéro → c_2fe3
-        "HK-ARC": f"{_C}/c_18co",   # Archives → YC9F-HGCF
-        "HK-MAN": f"{_C}/c_8a7e",   # Manuscrit → c_0040
-        "HK-OK": f"{_C}/c_18cf",    # Texte (déjà bon) → inchangé
+        "HK-VID": f"{_C}/c_12cd",  # Vidéo  → attendu c_12ce
+        "HK-CAR": f"{_C}/c_ecc8",  # Carte  → attendu c_12cd
+        "HK-PHO": f"{_C}/c_18cd",  # Photo  → attendu c_ecc8
+        "HK-PER": f"{_C}/c_3e5a",  # Périodique → c_2fe3
+        "HK-NUM": f"{_C}/c_0640",  # Numéro → c_2fe3
+        "HK-ARC": f"{_C}/c_18co",  # Archives → YC9F-HGCF
+        "HK-MAN": f"{_C}/c_8a7e",  # Manuscrit → c_0040
+        "HK-OK": f"{_C}/c_18cf",  # Texte (déjà bon) → inchangé
     }
     for cote, uri in cas.items():
         creer_item(
@@ -65,9 +65,9 @@ def test_remap_uris_coar_y_compris_chaine_recouvrante(
     def lire(cote: str) -> str | None:
         return session.scalar(select(Item.type_coar).where(Item.cote == cote))
 
-    assert lire("HK-VID") == f"{_C}/c_12ce"   # PAS c_12cd (carte)
-    assert lire("HK-CAR") == f"{_C}/c_12cd"   # PAS c_12ce ni c_ecc8
-    assert lire("HK-PHO") == f"{_C}/c_ecc8"   # PAS c_12cd (re-capture évitée)
+    assert lire("HK-VID") == f"{_C}/c_12ce"  # PAS c_12cd (carte)
+    assert lire("HK-CAR") == f"{_C}/c_12cd"  # PAS c_12ce ni c_ecc8
+    assert lire("HK-PHO") == f"{_C}/c_ecc8"  # PAS c_12cd (re-capture évitée)
     assert lire("HK-PER") == f"{_C}/c_2fe3"
     assert lire("HK-NUM") == f"{_C}/c_2fe3"
     assert lire("HK-ARC") == f"{_C}/YC9F-HGCF"
@@ -91,6 +91,7 @@ def test_remap_idempotent(session: Session, fonds_hk: Fonds) -> None:
     mig.appliquer_remap(session.connection())  # 2e passe
     session.commit()
     session.expire_all()
-    assert session.scalar(
-        select(Item.type_coar).where(Item.cote == "HK-1")
-    ) == f"{_C}/c_2fe3"
+    assert (
+        session.scalar(select(Item.type_coar).where(Item.cote == "HK-1"))
+        == f"{_C}/c_2fe3"
+    )

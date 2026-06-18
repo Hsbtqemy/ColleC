@@ -75,7 +75,9 @@ class _FakeClientLecture:
     tester la dérive."""
 
     def __init__(
-        self, files: list[dict[str, Any]], *,
+        self,
+        files: list[dict[str, Any]],
+        *,
         mod_date: str | None = None,
         statut: str | None = None,
     ) -> None:
@@ -95,8 +97,10 @@ class _FakeClientLecture:
 
 
 def _setup_item_avec_fichiers(
-    s: Session, tmp_path: Path,
-    *, fichiers_specs: list[dict[str, Any]],
+    s: Session,
+    tmp_path: Path,
+    *,
+    fichiers_specs: list[dict[str, Any]],
     doi_nakala: str = "10.34847/nkl.x1",
 ) -> Item:
     """Crée fonds AS + miroir + 1 item AS-001 avec `doi_nakala` posé +
@@ -110,9 +114,14 @@ def _setup_item_avec_fichiers(
       - `sha1_nakala` (str | None) : valeur de la colonne dédiée
     """
     f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-    item = creer_item(s, FormulaireItem(
-        cote="AS-001", titre="X", fonds_id=f.id,
-    ))
+    item = creer_item(
+        s,
+        FormulaireItem(
+            cote="AS-001",
+            titre="X",
+            fonds_id=f.id,
+        ),
+    )
     item.doi_nakala = doi_nakala
     for spec in fichiers_specs:
         nom = spec["nom"]
@@ -123,16 +132,18 @@ def _setup_item_avec_fichiers(
         else:
             racine = None
             chemin_rel = None
-        s.add(Fichier(
-            item_id=item.id,
-            nom_fichier=nom,
-            racine=racine,
-            chemin_relatif=chemin_rel,
-            iiif_url_nakala=spec.get("iiif_url_nakala"),
-            ordre=spec["ordre"],
-            sha1_nakala=spec.get("sha1_nakala"),
-            description_externe=spec.get("description_externe"),
-        ))
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier=nom,
+                racine=racine,
+                chemin_relatif=chemin_rel,
+                iiif_url_nakala=spec.get("iiif_url_nakala"),
+                ordre=spec["ordre"],
+                sha1_nakala=spec.get("sha1_nakala"),
+                description_externe=spec.get("description_externe"),
+            )
+        )
     s.commit()
     return item
 
@@ -143,39 +154,56 @@ def _setup_item_avec_fichiers(
 
 
 def test_comparer_leve_si_pas_de_doi_nakala(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item sans `doi_nakala` → ComparaisonImpossible (aucun pull
     distant ne peut être fait)."""
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         # `doi_nakala` reste None.
         with pytest.raises(ComparaisonImpossible):
             comparer_fichiers_item(
-                s, client, item, racines={"scans": tmp_path / "scans"},
+                s,
+                client,
+                item,
+                racines={"scans": tmp_path / "scans"},
             )
     # Aucun pull tenté côté distant.
     assert client.appels == []
 
 
 def test_comparer_item_vide_avec_distant_vide_aucun_changement(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item sans Fichier ColleC ni distant : aucun changement à signaler."""
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[])
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.aucun_changement
     assert (
-        rapport.nouveaux == rapport.modifies == rapport.inchanges
-        == rapport.nakala_only_sans_local == rapport.orphelins_distants == []
+        rapport.nouveaux
+        == rapport.modifies
+        == rapport.inchanges
+        == rapport.nakala_only_sans_local
+        == rapport.orphelins_distants
+        == []
     )
 
 
@@ -185,7 +213,8 @@ def test_comparer_item_vide_avec_distant_vide_aucun_changement(
 
 
 def test_inchange_quand_sha1_local_egal_sha1_distant(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Binaire local existant, sha1 calculé matche un sha1 distant → inchangé.
     Cas typique : fichier déposé, jamais modifié depuis."""
@@ -193,11 +222,18 @@ def test_inchange_quand_sha1_local_egal_sha1_distant(
     sha1 = _sha1(contenu)
     client = _FakeClientLecture(files=[{"sha1": sha1, "name": "a.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.inchanges) == 1
     assert rapport.inchanges[0].nom_fichier == "a.jpg"
@@ -206,7 +242,8 @@ def test_inchange_quand_sha1_local_egal_sha1_distant(
 
 
 def test_modifie_quand_sha1_local_diff_mais_sha1_nakala_connu_cote_distant(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Binaire local changé : sha1 local nouveau mais sha1_nakala (ancien)
     encore présent côté distant → modifié."""
@@ -219,12 +256,23 @@ def test_modifie_quand_sha1_local_diff_mais_sha1_nakala_connu_cote_distant(
     # mais le binaire local porte le nouveau.
     client = _FakeClientLecture(files=[{"sha1": sha1_ancien, "name": "a.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg",
-             "contenu": nouveau_contenu, "sha1_nakala": sha1_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "a.jpg",
+                    "contenu": nouveau_contenu,
+                    "sha1_nakala": sha1_ancien,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.modifies) == 1
     fc = rapport.modifies[0]
@@ -235,7 +283,8 @@ def test_modifie_quand_sha1_local_diff_mais_sha1_nakala_connu_cote_distant(
 
 
 def test_nouveau_quand_sha1_local_jamais_connu(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Binaire local, pas de sha1_nakala posé, sha1 calculé absent du
     distant → nouveau (à uploader)."""
@@ -244,11 +293,18 @@ def test_nouveau_quand_sha1_local_jamais_connu(
     # Distant vide.
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.nouveaux) == 1
     assert rapport.nouveaux[0].sha1_local == sha1
@@ -256,7 +312,8 @@ def test_nouveau_quand_sha1_local_jamais_connu(
 
 
 def test_nakala_only_sans_local_signale_separement(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Fichier Nakala-only (pas de binaire local) : ne tombe pas en
     nouveau/modifié/inchangé — dans `nakala_only_sans_local`. Préserve le
@@ -264,13 +321,24 @@ def test_nakala_only_sans_local_signale_separement(
     sha1 = "deadbeef" * 5  # 40 hex
     client = _FakeClientLecture(files=[{"sha1": sha1, "name": "a.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/iiif/x/y/info.json",
-             "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "a.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/iiif/x/y/info.json",
+                    "sha1_nakala": sha1,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.nakala_only_sans_local) == 1
     nol = rapport.nakala_only_sans_local[0]
@@ -283,20 +351,26 @@ def test_nakala_only_sans_local_signale_separement(
 
 
 def test_orphelin_distant_quand_fichier_local_absent(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Sha1 distant sans Fichier ColleC apparié → orphelin distant.
     Cas typique : fichier supprimé localement. Au push, serait retiré
     côté Nakala (refusé sans flag explicite au palier c)."""
     sha1_orphan = "cafebabe" * 5
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1_orphan, "name": "perdu.jpg"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_orphan, "name": "perdu.jpg"},
+        ]
+    )
     with _session(db_path) as s:
         # Item sans aucun Fichier.
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[])
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.orphelins_distants) == 1
     assert rapport.orphelins_distants[0].sha1 == sha1_orphan
@@ -305,7 +379,8 @@ def test_orphelin_distant_quand_fichier_local_absent(
 
 
 def test_distant_avec_sha1_vide_est_ignore(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas dégénéré côté Nakala : un `files[i]` distant sans sha1 (ou
     avec sha1 vide). Le code défensif `if sha1:` skip cette entrée du
@@ -314,17 +389,26 @@ def test_distant_avec_sha1_vide_est_ignore(
     de la comparaison fonctionne normalement."""
     contenu = b"hello"
     sha1 = _sha1(contenu)
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "a.jpg"},
-        {"sha1": "", "name": "degenere.jpg"},      # sha1 vide
-        {"sha1": None, "name": "null.jpg"},        # sha1 absent
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "a.jpg"},
+            {"sha1": "", "name": "degenere.jpg"},  # sha1 vide
+            {"sha1": None, "name": "null.jpg"},  # sha1 absent
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     # Le fichier valide est inchangé. Les 2 distants dégénérés ne
     # remontent pas en orphelins (ils ne font pas partie du sha1_index).
@@ -334,7 +418,8 @@ def test_distant_avec_sha1_vide_est_ignore(
 
 
 def test_racine_inconnue_dans_config_traite_comme_nakala_only(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas réaliste : la config locale a une racine manquante pour ce
     poste. `resoudre_chemin` lève `KeyError` — le code catch silencieux
@@ -352,10 +437,19 @@ def test_racine_inconnue_dans_config_traite_comme_nakala_only(
         # chemin_relatif après insertion pour pointer sur une racine
         # absente de la config — situation qu'on rencontre quand un
         # dev a une config_local.yaml partielle.
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": None,
-             "iiif_url_nakala": "https://x/y", "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://x/y",
+                    "sha1_nakala": sha1,
+                },
+            ],
+        )
         fichier = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
         ).one()
@@ -365,7 +459,10 @@ def test_racine_inconnue_dans_config_traite_comme_nakala_only(
         # Racines de config ne contiennent PAS "racine_qui_nexiste_pas"
         # → resoudre_chemin lève KeyError, catché par le service.
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     # Le KeyError est catché → fichier traité comme Nakala-only
     # (pas de binaire local résolvable).
@@ -376,7 +473,8 @@ def test_racine_inconnue_dans_config_traite_comme_nakala_only(
 
 
 def test_sha1_normalise_lowercase_cote_distant_et_stockage(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Garde-fou défensif : si Nakala renvoie un sha1 en uppercase
     (changement futur improbable) OU si la base legacy a un
@@ -393,16 +491,28 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
 
     # Cas 1 : sha1 distant en UPPER, sha1_nakala stocké en lower.
     # `hexdigest()` du binaire local = lower ; doit matcher.
-    client_distant_upper = _FakeClientLecture(files=[
-        {"sha1": sha1_upper, "name": "x.jpg"},
-    ])
+    client_distant_upper = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_upper, "name": "x.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu,
-             "sha1_nakala": sha1_lower},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1_lower,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client_distant_upper, item,
+            s,
+            client_distant_upper,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.inchanges) == 1
@@ -414,18 +524,30 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
     engine = creer_engine(db2)
     Base.metadata.create_all(engine)
     engine.dispose()
-    client_distant_lower = _FakeClientLecture(files=[
-        {"sha1": sha1_lower, "name": "x.jpg"},
-    ])
+    client_distant_lower = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_lower, "name": "x.jpg"},
+        ]
+    )
     nouveau_contenu = b"contenu_modifie"
     nouveau_sha1 = _sha1(nouveau_contenu)
     with _session(db2) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "y.jpg", "contenu": nouveau_contenu,
-             "sha1_nakala": sha1_upper},  # stocké UPPER (legacy)
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "y.jpg",
+                    "contenu": nouveau_contenu,
+                    "sha1_nakala": sha1_upper,
+                },  # stocké UPPER (legacy)
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client_distant_lower, item,
+            s,
+            client_distant_lower,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
     # Le sha1_local (lower) != sha1_distant. Mais sha1_nakala (upper)
@@ -437,15 +559,16 @@ def test_sha1_normalise_lowercase_cote_distant_et_stockage(
 @pytest.mark.parametrize(
     "files_malforme",
     [
-        "not_a_list",       # string : iter sur chars
-        {"k": "v"},         # dict : iter sur keys
-        None,               # null
-        42,                 # int
+        "not_a_list",  # string : iter sur chars
+        {"k": "v"},  # dict : iter sur keys
+        None,  # null
+        42,  # int
     ],
     ids=["str", "dict", "null", "int"],
 )
 def test_files_distants_non_list_ne_crashe_pas(
-    tmp_path: Path, files_malforme,
+    tmp_path: Path,
+    files_malforme,
 ) -> None:
     """Defense contre une API Nakala / proxy qui retourne un `files`
     non-list — ne doit pas crash en `AttributeError: 'X' object has
@@ -473,12 +596,18 @@ def test_files_distants_non_list_ne_crashe_pas(
 
     factory = creer_session_factory(creer_engine(db))
     with factory() as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         # Pas de crash, classification cote distant vide.
         rapport = comparer_fichiers_item(
-            s, StubAvecFilesMalforme(), item,
+            s,
+            StubAvecFilesMalforme(),
+            item,
             racines={"scans": tmp_path / "scans"},
         )
         assert len(rapport.nouveaux) == 1
@@ -487,26 +616,35 @@ def test_files_distants_non_list_ne_crashe_pas(
 
 
 def test_fd_individuel_non_dict_ignore(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Defense double : si la liste `files` est valide mais contient
     des entrees heterogenes (`[{...}, "str_in_middle", null, ...]`),
     skip les non-dict sans crash."""
     contenu = b"hello"
     sha1 = _sha1(contenu)
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "a.jpg"},
-        "string_at_index_1",  # entree degenere
-        None,                  # null au milieu
-        {"sha1": "b" * 40, "name": "b.jpg"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "a.jpg"},
+            "string_at_index_1",  # entree degenere
+            None,  # null au milieu
+            {"sha1": "b" * 40, "name": "b.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu,
-             "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     # Le fichier valide cote local matche le 1er distant → inchange.
     assert len(rapport.inchanges) == 1
@@ -517,7 +655,8 @@ def test_fd_individuel_non_dict_ignore(
 
 
 def test_oserror_pendant_lecture_binaire_traite_comme_nakala_only(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Si le binaire local existe à `is_file()` mais que la lecture
@@ -542,13 +681,20 @@ def test_oserror_pendant_lecture_binaire_traite_comme_nakala_only(
     monkeypatch.setattr(nf_mod, "_sha1_du_binaire", _sha1_qui_leve)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         # Le binaire existe à `is_file()` (`_setup_item_avec_fichiers`
         # l'a créé via `_ecrire_binaire`), mais `_sha1_du_binaire` lève.
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
 
     # Pas de crash → catché par le `except OSError`.
@@ -565,7 +711,8 @@ def test_oserror_pendant_lecture_binaire_traite_comme_nakala_only(
 
 
 def test_fichiers_non_actif_sont_ignores(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cohérence projet : `comparer_fichiers_item` ignore les Fichier
     dont `etat != ACTIF` (REMPLACE, CORBEILLE). Pattern aligne sur
@@ -588,23 +735,43 @@ def test_fichiers_non_actif_sont_ignores(
     sha1_corbeille = _sha1(contenu_corbeille)
 
     # Distant connaît les 3 sha1.
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1_actif, "name": "actif.jpg"},
-        {"sha1": sha1_remplace, "name": "remplace.jpg"},
-        {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_actif, "name": "actif.jpg"},
+            {"sha1": sha1_remplace, "name": "remplace.jpg"},
+            {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "actif.jpg", "contenu": contenu_actif,
-             "sha1_nakala": sha1_actif},
-            {"ordre": 2, "nom": "remplace.jpg", "contenu": contenu_remplace,
-             "sha1_nakala": sha1_remplace},
-            {"ordre": 3, "nom": "corbeille.jpg", "contenu": contenu_corbeille,
-             "sha1_nakala": sha1_corbeille},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "actif.jpg",
+                    "contenu": contenu_actif,
+                    "sha1_nakala": sha1_actif,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "remplace.jpg",
+                    "contenu": contenu_remplace,
+                    "sha1_nakala": sha1_remplace,
+                },
+                {
+                    "ordre": 3,
+                    "nom": "corbeille.jpg",
+                    "contenu": contenu_corbeille,
+                    "sha1_nakala": sha1_corbeille,
+                },
+            ],
+        )
         # Pose les états non-ACTIF sur les fichiers 2 et 3.
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         fichiers[1].etat = EtatFichier.REMPLACE.value
@@ -612,7 +779,10 @@ def test_fichiers_non_actif_sont_ignores(
         s.commit()
 
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
 
     # Seul le fichier ACTIF est dans `inchanges`.
@@ -644,7 +814,8 @@ def test_fichiers_non_actif_sont_ignores(
 
 
 def test_combinaison_des_5_categories_simultanees(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item avec un cas de chaque catégorie : vérifie qu'aucune classification
     n'écrase une autre + qu'`aucun_changement=False`."""
@@ -658,26 +829,52 @@ def test_combinaison_des_5_categories_simultanees(
     sha_nakala_only = "nakaonly" + "0" * 32
     sha_orphan = "orphan00" + "0" * 32
 
-    client = _FakeClientLecture(files=[
-        {"sha1": sha_inchange, "name": "a.jpg"},
-        {"sha1": sha_modif_ancien, "name": "b.jpg"},
-        {"sha1": sha_nakala_only, "name": "c.jpg"},
-        {"sha1": sha_orphan, "name": "d.jpg"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha_inchange, "name": "a.jpg"},
+            {"sha1": sha_modif_ancien, "name": "b.jpg"},
+            {"sha1": sha_nakala_only, "name": "c.jpg"},
+            {"sha1": sha_orphan, "name": "d.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": inchange,
-             "sha1_nakala": sha_inchange},  # inchangé
-            {"ordre": 2, "nom": "b.jpg", "contenu": modif_nouveau,
-             "sha1_nakala": sha_modif_ancien},  # modifié
-            {"ordre": 3, "nom": "c.jpg", "contenu": None,
-             "iiif_url_nakala": "https://x/y", "sha1_nakala": sha_nakala_only},  # nakala-only
-            {"ordre": 4, "nom": "e.jpg", "contenu": nouveau,
-             "sha1_nakala": None},  # nouveau (e.jpg pas dans distant)
-            # `d.jpg` du distant n'a pas de pendant local → orphelin
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "a.jpg",
+                    "contenu": inchange,
+                    "sha1_nakala": sha_inchange,
+                },  # inchangé
+                {
+                    "ordre": 2,
+                    "nom": "b.jpg",
+                    "contenu": modif_nouveau,
+                    "sha1_nakala": sha_modif_ancien,
+                },  # modifié
+                {
+                    "ordre": 3,
+                    "nom": "c.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://x/y",
+                    "sha1_nakala": sha_nakala_only,
+                },  # nakala-only
+                {
+                    "ordre": 4,
+                    "nom": "e.jpg",
+                    "contenu": nouveau,
+                    "sha1_nakala": None,
+                },  # nouveau (e.jpg pas dans distant)
+                # `d.jpg` du distant n'a pas de pendant local → orphelin
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert [fc.nom_fichier for fc in rapport.inchanges] == ["a.jpg"]
     assert [fc.nom_fichier for fc in rapport.modifies] == ["b.jpg"]
@@ -715,10 +912,10 @@ class _FakeClientEcriture:
         self.lecture = lecture
         self.uploads: list[str] = []
         self.uploads_sha1s: list[str] = []
-        self.ajouts: list[str] = []          # sha1 POSTés (ajouter_fichier)
-        self.suppressions: list[str] = []     # sha1 DELETEés (supprimer_fichier_donnee)
-        self.puts: list[dict] = []            # PUT de réordonnancement
-        self.supprimes: list[str] = []        # supprimer_upload (cleanup temp)
+        self.ajouts: list[str] = []  # sha1 POSTés (ajouter_fichier)
+        self.suppressions: list[str] = []  # sha1 DELETEés (supprimer_fichier_donnee)
+        self.puts: list[dict] = []  # PUT de réordonnancement
+        self.supprimes: list[str] = []  # supprimer_upload (cleanup temp)
         self._noms_par_sha1: dict[str, str] = {}
 
     def uploader_fichier(self, chemin, nom=None):
@@ -746,8 +943,9 @@ class _FakeClientEcriture:
             ]
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
-        self.puts.append({"id": identifiant, "metas": metas, "files": files,
-                          "status": status})
+        self.puts.append(
+            {"id": identifiant, "metas": metas, "files": files, "status": status}
+        )
         if files is not None and self.lecture is not None:
             self.lecture._files = [dict(f) for f in files]
         return {}
@@ -757,7 +955,8 @@ class _FakeClientEcriture:
 
 
 def test_pousser_sans_doi_nakala_leve_depot_impossible(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     from archives_tool.api.services.nakala_depot import DepotImpossible
 
@@ -765,20 +964,29 @@ def test_pousser_sans_doi_nakala_leve_depot_impossible(
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         # doi_nakala reste None
         with pytest.raises(DepotImpossible):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
             )
     assert ecriture.puts == []  # aucun PUT
 
 
 def test_pousser_dry_run_aucun_changement_no_op(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item ou tout matche le distant → no-op, raison="aucun_changement"."""
     contenu = b"identical"
@@ -786,11 +994,18 @@ def test_pousser_dry_run_aucun_changement_no_op(
     lecture = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
     assert rapport.dry_run is True
@@ -801,24 +1016,34 @@ def test_pousser_dry_run_aucun_changement_no_op(
 
 
 def test_pousser_orphelins_distants_sans_flag_leve(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """orphelins_distants > 0 et retirer_orphelins=False → OrphelinsDetectes."""
     contenu = b"local content"
     sha1 = _sha1(contenu)
     sha1_orphan = "deadbeef" * 5
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "x.jpg"},
-        {"sha1": sha1_orphan, "name": "orphan.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "x.jpg"},
+            {"sha1": sha1_orphan, "name": "orphan.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         with pytest.raises(OrphelinsDetectes) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 retirer_orphelins=False,
             )
@@ -830,26 +1055,37 @@ def test_pousser_orphelins_distants_sans_flag_leve(
 
 
 def test_pousser_avec_flag_retirer_orphelins_les_exclut(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """retirer_orphelins=True + dry_run=False → orphelin exclu de files[],
     PUT envoyé, fichier inchangé préservé."""
     contenu = b"local content"
     sha1 = _sha1(contenu)
     sha1_orphan = "deadbeef" * 5
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "x.jpg"},
-        {"sha1": sha1_orphan, "name": "orphan.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "x.jpg"},
+            {"sha1": sha1_orphan, "name": "orphan.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
-            dry_run=False, retirer_orphelins=True,
+            dry_run=False,
+            retirer_orphelins=True,
         )
     assert rapport.applique is True
     assert len(ecriture.puts) == 1
@@ -864,7 +1100,8 @@ def test_pousser_avec_flag_retirer_orphelins_les_exclut(
 
 
 def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cycle complet : 1 inchange + 1 modifie + 1 nouveau →
     2 uploads (modifie + nouveau), PUT avec 3 entrees,
@@ -875,25 +1112,47 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
     sha1_modifie_ancien = "a" * 40
     contenu_nouveau = b"brand new file"
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_inchange, "name": "i.jpg"},
-        {"sha1": sha1_modifie_ancien, "name": "m.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_inchange, "name": "i.jpg"},
+            {"sha1": sha1_modifie_ancien, "name": "m.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu_inchange,
-             "sha1_nakala": sha1_inchange},
-            {"ordre": 2, "nom": "m.jpg", "contenu": contenu_modifie_nouveau,
-             "sha1_nakala": sha1_modifie_ancien},  # ancien sha1 connu
-            {"ordre": 3, "nom": "n.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "i.jpg",
+                    "contenu": contenu_inchange,
+                    "sha1_nakala": sha1_inchange,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "m.jpg",
+                    "contenu": contenu_modifie_nouveau,
+                    "sha1_nakala": sha1_modifie_ancien,
+                },  # ancien sha1 connu
+                {
+                    "ordre": 3,
+                    "nom": "n.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
-            dry_run=False, modifie_par="hugo",
+            dry_run=False,
+            modifie_par="hugo",
         )
 
     assert rapport.applique is True
@@ -920,7 +1179,9 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
     # garde son ancien
     with _session(db_path) as s:
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         assert fichiers[0].sha1_nakala == sha1_inchange  # inchange
@@ -929,7 +1190,8 @@ def test_pousser_effectif_upload_nouveau_et_modifie_et_pose_sha1_nakala(
 
 
 def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Passe revue P3+c.1 : le plan envoye au PUT respecte
     `Fichier.ordre`, pas l'ordre des categories.
@@ -950,31 +1212,56 @@ def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
     sha1_nakala_only = "y" * 40
 
     # Distant : sha1_inchange + sha1_modifie_ancien + sha1_nakala_only
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_modifie_ancien, "name": "ordre1.jpg"},
-        {"sha1": sha1_inchange, "name": "ordre2.jpg"},
-        {"sha1": sha1_nakala_only, "name": "ordre3.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_modifie_ancien, "name": "ordre1.jpg"},
+            {"sha1": sha1_inchange, "name": "ordre2.jpg"},
+            {"sha1": sha1_nakala_only, "name": "ordre3.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # ordre=1 : modifie (binaire change + sha1_nakala ancien connu)
-            {"ordre": 1, "nom": "ordre1.jpg", "contenu": contenu_modifie,
-             "sha1_nakala": sha1_modifie_ancien},
-            # ordre=2 : inchange (sha1 matche distant)
-            {"ordre": 2, "nom": "ordre2.jpg", "contenu": contenu_inchange,
-             "sha1_nakala": sha1_inchange},
-            # ordre=3 : nakala-only (binaire local absent)
-            {"ordre": 3, "nom": "ordre3.jpg", "contenu": None,
-             "iiif_url_nakala": "https://x/y",
-             "sha1_nakala": sha1_nakala_only},
-            # ordre=4 : nouveau (jamais depose)
-            {"ordre": 4, "nom": "ordre4.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # ordre=1 : modifie (binaire change + sha1_nakala ancien connu)
+                {
+                    "ordre": 1,
+                    "nom": "ordre1.jpg",
+                    "contenu": contenu_modifie,
+                    "sha1_nakala": sha1_modifie_ancien,
+                },
+                # ordre=2 : inchange (sha1 matche distant)
+                {
+                    "ordre": 2,
+                    "nom": "ordre2.jpg",
+                    "contenu": contenu_inchange,
+                    "sha1_nakala": sha1_inchange,
+                },
+                # ordre=3 : nakala-only (binaire local absent)
+                {
+                    "ordre": 3,
+                    "nom": "ordre3.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://x/y",
+                    "sha1_nakala": sha1_nakala_only,
+                },
+                # ordre=4 : nouveau (jamais depose)
+                {
+                    "ordre": 4,
+                    "nom": "ordre4.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -982,17 +1269,24 @@ def test_pousser_preserve_ordre_fichier_dans_plan_et_put(
     # Le plan respecte l'ordre Fichier (1-2-3-4)
     assert [p.ordre for p in rapport.plan] == [1, 2, 3, 4]
     assert [p.nom_fichier for p in rapport.plan] == [
-        "ordre1.jpg", "ordre2.jpg", "ordre3.jpg", "ordre4.jpg",
+        "ordre1.jpg",
+        "ordre2.jpg",
+        "ordre3.jpg",
+        "ordre4.jpg",
     ]
     # Et le PUT envoye preserve aussi cet ordre (H5)
     files_envoyes = ecriture.puts[0]["files"]
     assert [f["name"] for f in files_envoyes] == [
-        "ordre1.jpg", "ordre2.jpg", "ordre3.jpg", "ordre4.jpg",
+        "ordre1.jpg",
+        "ordre2.jpg",
+        "ordre3.jpg",
+        "ordre4.jpg",
     ]
 
 
 def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Passe revue P3+c.1 : verifier la tracabilite de la mutation.
 
@@ -1006,21 +1300,37 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
     sha1_inchange = _sha1(contenu_inchange)
     contenu_nouveau = b"brand new"
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_inchange, "name": "i.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_inchange, "name": "i.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu_inchange,
-             "sha1_nakala": sha1_inchange},
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "i.jpg",
+                    "contenu": contenu_inchange,
+                    "sha1_nakala": sha1_inchange,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         # Snapshot avant push
         avant = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         version_i_avant = avant[0].version
@@ -1028,7 +1338,10 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
         modifie_le_i_avant = avant[0].modifie_le
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -1036,7 +1349,9 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
     # Apres push : verif tracabilite
     with _session(db_path) as s:
         apres = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Inchange : non touche
@@ -1048,7 +1363,8 @@ def test_pousser_pose_modifie_le_et_incremente_version_sur_modifies_nouveaux(
 
 
 def test_pousser_cleanup_uploads_si_op_granulaire_echoue(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """T2 : si une op granulaire échoue après un upload mais avant son
     `POST .../files`, l'upload temporaire orphelin est nettoyé
@@ -1070,13 +1386,21 @@ def test_pousser_cleanup_uploads_si_op_granulaire_echoue(
     lecture = _FakeClientLecture(files=[])  # distant vide → tout en nouveau
     ecriture = _EcritureQuiFaitFlopAuPost(lecture)
     from archives_tool.external.nakala.client import ErreurNakala
+
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(ErreurNakala):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1093,18 +1417,26 @@ def test_pousser_cleanup_uploads_si_op_granulaire_echoue(
 
 
 def test_pousser_dry_run_construit_plan_sans_uploader(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """dry_run=True (defaut) : plan complet mais aucun upload ni PUT."""
     contenu = b"new file content"
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
     assert rapport.dry_run is True
@@ -1118,7 +1450,8 @@ def test_pousser_dry_run_construit_plan_sans_uploader(
 
 
 def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas extreme : tous les fichiers locaux deviennent orphelins
     distants (ex. binaires supprimes localement, distants encore la)
@@ -1126,10 +1459,12 @@ def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
     (Nakala ignore silencieusement PUT files=[])."""
     sha1_orphan_a = "a" * 40
     sha1_orphan_b = "b" * 40
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_orphan_a, "name": "a.jpg"},
-        {"sha1": sha1_orphan_b, "name": "b.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_orphan_a, "name": "a.jpg"},
+            {"sha1": sha1_orphan_b, "name": "b.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
         # Item sans aucun Fichier local (tous les binaires
@@ -1137,9 +1472,13 @@ def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
         item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[])
         with pytest.raises(PushImpossible) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
-                dry_run=False, retirer_orphelins=True,
+                dry_run=False,
+                retirer_orphelins=True,
             )
     assert "files_cible vide" in str(exc_info.value)
     assert "supprimer_depot" in str(exc_info.value)
@@ -1147,23 +1486,31 @@ def test_pousser_garde_fou_h3_files_cible_vide_leve_push_impossible(
 
 
 def test_pousser_contenu_duplique_refuse_avant_toute_mutation(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Garde-fou pré-vol (revue T2) : deux fichiers de contenu identique
     (même sha1) dans le set final → Nakala refuserait (POST /datas dup →
     422, re-POST → 409). On refuse AVANT tout upload/POST/DELETE pour ne
     pas laisser un état distant partiel (échec au 2e POST sinon)."""
     contenu = b"contenu identique des deux"  # même binaire → même sha1
-    lecture = _FakeClientLecture(files=[])   # distant vide → 2 nouveaux
+    lecture = _FakeClientLecture(files=[])  # distant vide → 2 nouveaux
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
-            {"ordre": 2, "nom": "b.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "a.jpg", "contenu": contenu, "sha1_nakala": None},
+                {"ordre": 2, "nom": "b.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(ContenuDuplique) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1178,7 +1525,8 @@ def test_pousser_contenu_duplique_refuse_avant_toute_mutation(
 
 
 def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Bonus H7 : un Fichier inchange (sha1 matche le distant) mais
     avec un `nom_fichier` local different → le PUT envoie le nouveau
@@ -1198,21 +1546,38 @@ def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
     sha1_renomme = _sha1(contenu_renomme)
     contenu_nouveau = b"new file"
     # Le distant a fichier renomme avec un autre nom.
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_renomme, "name": "ancien_nom.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_renomme, "name": "ancien_nom.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # Fichier renomme (sha1 inchange, nom different)
-            {"ordre": 1, "nom": "nouveau_nom.jpg", "contenu": contenu_renomme,
-             "sha1_nakala": sha1_renomme},
-            # Fichier nouveau pour declencher le PUT
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # Fichier renomme (sha1 inchange, nom different)
+                {
+                    "ordre": 1,
+                    "nom": "nouveau_nom.jpg",
+                    "contenu": contenu_renomme,
+                    "sha1_nakala": sha1_renomme,
+                },
+                # Fichier nouveau pour declencher le PUT
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -1235,7 +1600,8 @@ def test_pousser_rename_gratuit_via_inchange_si_autre_changement_declenche_put(
 
 
 def test_pousser_backfill_incomplet_leve_avant_put(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou J — perte silencieuse de fichier sur scenario legacy mixte.
 
@@ -1256,24 +1622,40 @@ def test_pousser_backfill_incomplet_leve_avant_put(
     sha1_b = _sha1(contenu_b)
     sha1_a_distant = "aaaaaaaaaaaa" + "0" * 28  # 40 hex chars
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_a_distant, "name": "A.jpg"},
-        {"sha1": sha1_b, "name": "B.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_a_distant, "name": "A.jpg"},
+            {"sha1": sha1_b, "name": "B.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "A.jpg",
-             "contenu": None,  # pas de binaire local
-             "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
-             "sha1_nakala": None},  # LEGACY : backfill pas joué
-            {"ordre": 2, "nom": "B.jpg",
-             "contenu": contenu_b, "sha1_nakala": sha1_b},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "A.jpg",
+                    "contenu": None,  # pas de binaire local
+                    "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
+                    "sha1_nakala": None,
+                },  # LEGACY : backfill pas joué
+                {
+                    "ordre": 2,
+                    "nom": "B.jpg",
+                    "contenu": contenu_b,
+                    "sha1_nakala": sha1_b,
+                },
+            ],
+        )
         with pytest.raises(BackfillIncomplet) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1288,24 +1670,39 @@ def test_pousser_backfill_incomplet_leve_avant_put(
 
 
 def test_pousser_backfill_incomplet_message_liste_les_fichiers(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Le message d'erreur de BackfillIncomplet liste les noms (≤5)."""
-    lecture = _FakeClientLecture(files=[
-        {"sha1": "aa" + "0" * 38, "name": "A.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": "aa" + "0" * 38, "name": "A.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "A.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "A.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/iiif/.../info.json",
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         with pytest.raises(BackfillIncomplet) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
-                dry_run=False, retirer_orphelins=True,
+                dry_run=False,
+                retirer_orphelins=True,
             )
     msg = str(exc_info.value)
     assert "A.jpg" in msg
@@ -1314,7 +1711,8 @@ def test_pousser_backfill_incomplet_message_liste_les_fichiers(
 
 
 def test_pousser_derive_detection_signalee_dans_rapport(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou K — drift detection (symétrie avec `pousser_item` P3).
 
@@ -1335,10 +1733,18 @@ def test_pousser_derive_detection_signalee_dans_rapport(
     ecriture = _FakeClientEcriture(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg",
-             "contenu": contenu, "sha1_nakala": sha1_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1_ancien,
+                },
+            ],
+        )
         # Cache RessourceExterne avec modDate ancien.
         source = SourceExterne(
             code="nakala",
@@ -1348,15 +1754,20 @@ def test_pousser_derive_detection_signalee_dans_rapport(
         )
         s.add(source)
         s.flush()
-        s.add(RessourceExterne(
-            source_id=source.id,
-            identifiant_externe=item.doi_nakala,
-            metadonnees_brutes={"modDate": "2026-01-01T08:00:00"},
-        ))
+        s.add(
+            RessourceExterne(
+                source_id=source.id,
+                identifiant_externe=item.doi_nakala,
+                metadonnees_brutes={"modDate": "2026-01-01T08:00:00"},
+            )
+        )
         s.commit()
 
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=True,
         )
@@ -1366,7 +1777,8 @@ def test_pousser_derive_detection_signalee_dans_rapport(
 
 
 def test_pousser_pas_de_derive_si_baseline_egale_distant(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Pas de cache ou cache à jour → `derive=False`."""
     contenu = b"sain"
@@ -1377,13 +1789,19 @@ def test_pousser_pas_de_derive_si_baseline_egale_distant(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg",
-             "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         # Pas de RessourceExterne → baseline=None → derive=False
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
     assert rapport.derive is False
@@ -1395,7 +1813,8 @@ def test_pousser_pas_de_derive_si_baseline_egale_distant(
 
 
 def test_comparer_preserve_doublons_sha1_distants_inchanges_apparies(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou M — deux fichiers distants ont le même sha1 (cas légitime :
     deux pages blanches scannees, deux planches vides…).
@@ -1413,21 +1832,38 @@ def test_comparer_preserve_doublons_sha1_distants_inchanges_apparies(
     contenu = b"page blanche"
     sha1 = _sha1(contenu)
     # Distant : 2 fichiers avec le MEME sha1, noms differents.
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "page-blanche-debut.jpg"},
-        {"sha1": sha1, "name": "page-blanche-fin.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "page-blanche-debut.jpg"},
+            {"sha1": sha1, "name": "page-blanche-fin.jpg"},
+        ]
+    )
     with _session(db_path) as s:
         # Cote ColleC : 2 Fichier avec le meme contenu binaire.
         # Reutilise le helper en posant 2 binaires de meme contenu.
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "page-blanche-debut.jpg",
-             "contenu": contenu, "sha1_nakala": sha1},
-            {"ordre": 2, "nom": "page-blanche-fin.jpg",
-             "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "page-blanche-debut.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "page-blanche-fin.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, lecture, item, racines={"scans": tmp_path / "scans"},
+            s,
+            lecture,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     # 2 inchanges (1 par Fichier ColleC).
     assert len(rapport.inchanges) == 2
@@ -1439,24 +1875,38 @@ def test_comparer_preserve_doublons_sha1_distants_inchanges_apparies(
 
 
 def test_comparer_doublons_sha1_distants_avec_1_seul_fichier_local_classe_2e_en_orphelin(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Distant a 2 fichiers avec meme sha1, ColleC n'a qu'1 Fichier
     correspondant. Le 2e doublon distant DOIT ressortir en orphelin
     (regression test : avant le fix il etait silencieusement perdu)."""
     contenu = b"page blanche"
     sha1 = _sha1(contenu)
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "premier.jpg"},
-        {"sha1": sha1, "name": "doublon-perdu.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "premier.jpg"},
+            {"sha1": sha1, "name": "doublon-perdu.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "premier.jpg",
-             "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "premier.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, lecture, item, racines={"scans": tmp_path / "scans"},
+            s,
+            lecture,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.inchanges) == 1
     # CRITIQUE : le 2e doublon distant ressort en orphelin propre.
@@ -1468,7 +1918,8 @@ def test_comparer_doublons_sha1_distants_avec_1_seul_fichier_local_classe_2e_en_
 
 
 def test_pousser_contenu_duplique_refuse_cote_push(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Revue T2 — correction du contrat « doublons sha1 au push ».
 
@@ -1487,24 +1938,45 @@ def test_pousser_contenu_duplique_refuse_cote_push(
     contenu_modif = b"a modifier"
     sha1_ancien = _sha1(b"ancien contenu")  # pre-modif
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_doublon, "name": "a.jpg"},
-        {"sha1": sha1_doublon, "name": "b.jpg"},  # MEME sha1
-        {"sha1": sha1_ancien, "name": "c.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_doublon, "name": "a.jpg"},
+            {"sha1": sha1_doublon, "name": "b.jpg"},  # MEME sha1
+            {"sha1": sha1_ancien, "name": "c.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "a.jpg",
-             "contenu": contenu_doublon, "sha1_nakala": sha1_doublon},
-            {"ordre": 2, "nom": "b.jpg",
-             "contenu": contenu_doublon, "sha1_nakala": sha1_doublon},
-            {"ordre": 3, "nom": "c.jpg",
-             "contenu": contenu_modif, "sha1_nakala": sha1_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "a.jpg",
+                    "contenu": contenu_doublon,
+                    "sha1_nakala": sha1_doublon,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "b.jpg",
+                    "contenu": contenu_doublon,
+                    "sha1_nakala": sha1_doublon,
+                },
+                {
+                    "ordre": 3,
+                    "nom": "c.jpg",
+                    "contenu": contenu_modif,
+                    "sha1_nakala": sha1_ancien,
+                },
+            ],
+        )
         with pytest.raises(ContenuDuplique) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1523,7 +1995,8 @@ def test_pousser_contenu_duplique_refuse_cote_push(
 
 
 def test_comparer_fichier_corbeille_sans_pendant_distant_pas_de_categorie(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Un Fichier CORBEILLE sans `sha1_nakala` posé OU sans matching
     distant n'apparait dans aucune categorie - il n'y a rien a retirer
@@ -1535,24 +2008,36 @@ def test_comparer_fichier_corbeille_sans_pendant_distant_pas_de_categorie(
     """
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "deja_supprime.jpg",
-             "contenu": b"x", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "deja_supprime.jpg",
+                    "contenu": b"x",
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
         ).all()
         fichiers[0].etat = EtatFichier.CORBEILLE.value
         s.commit()
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.non_actifs_a_retirer == []
     assert rapport.aucun_changement
 
 
 def test_pousser_non_actifs_inclus_dans_sha1s_retires_au_put(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Un Fichier CORBEILLE avec sha1_nakala matchant le distant est
     retire au PUT (exclus de `files_cible`) ET trace dans
@@ -1566,27 +2051,46 @@ def test_pousser_non_actifs_inclus_dans_sha1s_retires_au_put(
     contenu_actif_neuf = b"modifie"
     sha1_actif_ancien = _sha1(b"ancien actif")
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
-        {"sha1": sha1_actif_ancien, "name": "actif.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_corbeille, "name": "corbeille.jpg"},
+            {"sha1": sha1_actif_ancien, "name": "actif.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "actif.jpg",
-             "contenu": contenu_actif_neuf, "sha1_nakala": sha1_actif_ancien},
-            {"ordre": 2, "nom": "corbeille.jpg",
-             "contenu": contenu_corbeille, "sha1_nakala": sha1_corbeille},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "actif.jpg",
+                    "contenu": contenu_actif_neuf,
+                    "sha1_nakala": sha1_actif_ancien,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "corbeille.jpg",
+                    "contenu": contenu_corbeille,
+                    "sha1_nakala": sha1_corbeille,
+                },
+            ],
+        )
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         fichiers[1].etat = EtatFichier.CORBEILLE.value
         s.commit()
 
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -1607,7 +2111,8 @@ def test_pousser_non_actifs_inclus_dans_sha1s_retires_au_put(
 
 
 def test_comparer_dry_run_aucun_changement_si_seul_non_actif_existe(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item ne contenant QUE des Fichier non-ACTIF avec pendant distant
     → `aucun_changement` est False (un retrait est planifie)."""
@@ -1615,17 +2120,23 @@ def test_comparer_dry_run_aucun_changement_si_seul_non_actif_existe(
     sha1 = _sha1(contenu)
     client = _FakeClientLecture(files=[{"sha1": sha1, "name": "x.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg",
-             "contenu": contenu, "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1},
+            ],
+        )
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
         ).all()
         fichiers[0].etat = EtatFichier.CORBEILLE.value
         s.commit()
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.non_actifs_a_retirer) == 1
     assert not rapport.aucun_changement
@@ -1653,25 +2164,32 @@ class _FakeClientEcritureUploadMalforme:
         return self.pattern
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
-        self.puts.append({"id": identifiant, "metas": metas, "files": files,
-                          "status": status})
+        self.puts.append(
+            {"id": identifiant, "metas": metas, "files": files, "status": status}
+        )
         return {}
 
     def supprimer_upload(self, sha1):
         self.supprimes.append(sha1)
 
 
-@pytest.mark.parametrize("reponse,motif", [
-    (None, "dict"),  # pas un dict
-    ({}, "absent"),  # sha1 absent
-    ({"sha1": None}, "non-string"),  # sha1 None
-    ({"sha1": ""}, "longueur 0"),  # sha1 vide
-    ({"sha1": "   "}, "longueur 0"),  # sha1 whitespace
-    ({"sha1": "abc"}, "longueur 3"),  # sha1 trop court
-    ({"sha1": "z" * 40}, "non-hex"),  # 40 chars mais non-hex
-])
+@pytest.mark.parametrize(
+    "reponse,motif",
+    [
+        (None, "dict"),  # pas un dict
+        ({}, "absent"),  # sha1 absent
+        ({"sha1": None}, "non-string"),  # sha1 None
+        ({"sha1": ""}, "longueur 0"),  # sha1 vide
+        ({"sha1": "   "}, "longueur 0"),  # sha1 whitespace
+        ({"sha1": "abc"}, "longueur 3"),  # sha1 trop court
+        ({"sha1": "z" * 40}, "non-hex"),  # 40 chars mais non-hex
+    ],
+)
 def test_pousser_upload_invalide_leve_exception_propre(
-    db_path: Path, tmp_path: Path, reponse, motif,
+    db_path: Path,
+    tmp_path: Path,
+    reponse,
+    motif,
 ) -> None:
     """Toute reponse degradee d'`uploader_fichier` doit lever
     `UploadInvalide` AVANT le PUT, pas planter en KeyError / TypeError /
@@ -1682,12 +2200,19 @@ def test_pousser_upload_invalide_leve_exception_propre(
     ecriture = _FakeClientEcritureUploadMalforme(reponse)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(UploadInvalide) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1699,7 +2224,8 @@ def test_pousser_upload_invalide_leve_exception_propre(
 
 
 def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si on a N fichiers a uploader et que le 2e retourne un sha1
     invalide, le 1er upload reussi doit etre nettoye via
@@ -1727,8 +2253,7 @@ def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
             # 2e upload : sha1 vide → UploadInvalide
             return {"sha1": ""}
 
-        def modifier_depot(self, identifiant, *, metas=None, files=None,
-                          status=None):
+        def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
             self.puts.append({"id": identifiant})
             return {}
 
@@ -1739,15 +2264,30 @@ def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
     ecriture = _StubAvecPremierOK()
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "premier.jpg",
-             "contenu": b"premier", "sha1_nakala": None},
-            {"ordre": 2, "nom": "second.jpg",
-             "contenu": b"second", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "premier.jpg",
+                    "contenu": b"premier",
+                    "sha1_nakala": None,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "second.jpg",
+                    "contenu": b"second",
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         with pytest.raises(UploadInvalide):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1766,7 +2306,8 @@ def test_pousser_upload_invalide_declenche_cleanup_des_uploads_precedents(
 
 
 def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Race condition : une autre session supprime un Fichier entre
     `comparer_fichiers_item` (qui le classe en "nouveau") et le
@@ -1780,9 +2321,13 @@ def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         # Patche db.get pour simuler une suppression concurrente.
         original_get = s.get
 
@@ -1795,7 +2340,10 @@ def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
 
         with pytest.raises(IncoherenceFichierORM) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1808,7 +2356,8 @@ def test_pousser_fichier_supprime_apres_comparer_leve_incoherence(
 
 
 def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Race condition variant : le Fichier existe encore mais a perdu
     sa `racine` ou son `chemin_relatif` (une autre session a bascule
@@ -1818,9 +2367,13 @@ def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         # Patche db.get pour retourner un Fichier mute (racine effacee).
         # On garde le Fichier ORM original mais on simule la perte de
         # racine APRES le comparer.
@@ -1839,12 +2392,18 @@ def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
 
         with pytest.raises(IncoherenceFichierORM) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
 
-    assert "racine" in str(exc_info.value).lower() or "perdu" in str(exc_info.value).lower()
+    assert (
+        "racine" in str(exc_info.value).lower()
+        or "perdu" in str(exc_info.value).lower()
+    )
     assert ecriture.uploads == []
     assert ecriture.puts == []
 
@@ -1855,61 +2414,89 @@ def test_pousser_fichier_perdu_racine_apres_comparer_leve_incoherence(
 
 
 def test_pousser_emet_log_info_au_demarrage_et_commit(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """Verifie qu'un push reel emet bien les logs INFO de demarrage et
     de COMMIT. Niveau minimum pour debug post-mortem en prod."""
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_fichiers")
 
     contenu = b"a uploader"
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
 
-    messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
+    messages = [
+        rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")
+    ]
     assert any("push fichiers START" in m for m in messages)
     assert any("push fichiers granulaire OK" in m for m in messages)
     assert any("push fichiers COMMIT" in m for m in messages)
 
 
 def test_pousser_emet_log_warning_au_cleanup(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """Si une opération granulaire échoue après un upload réussi mais
     AVANT son `POST .../files` (fichier pas encore attaché), log WARNING
     explicite + cleanup du seul upload temporaire orphelin (T2)."""
     import logging as _logging
-    caplog.set_level(_logging.WARNING, logger="archives_tool.api.services.nakala_fichiers")
+
+    caplog.set_level(
+        _logging.WARNING, logger="archives_tool.api.services.nakala_fichiers"
+    )
 
     class _StubAddKO(_FakeClientEcriture):
         def ajouter_fichier(self, *args, **kwargs):
             from archives_tool.external.nakala.client import ErreurNakala
+
             raise ErreurNakala("POST .../files simule KO")
 
     lecture = _FakeClientLecture(files=[])
     ecriture = _StubAddKO(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+            ],
+        )
         from archives_tool.external.nakala.client import ErreurNakala
+
         with pytest.raises(ErreurNakala):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
 
-    messages = [rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")]
+    messages = [
+        rec.message for rec in caplog.records if rec.name.endswith("nakala_fichiers")
+    ]
     # Échec → WARNING "ECHEC" + 1 upload temp orphelin nettoyé.
     assert any("ECHEC" in m and "cleanup_temp=1" in m for m in messages)
     # Cleanup du seul upload non attaché.
@@ -1922,7 +2509,8 @@ def test_pousser_emet_log_warning_au_cleanup(
 
 
 def test_pousser_refuse_item_publie_par_defaut(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Un item `status=published` cote Nakala a des DOIs DataCite mintes
     sur ses fichiers. Toute modif de `files[]` casse l'integrite des
@@ -1935,14 +2523,25 @@ def test_pousser_refuse_item_publie_par_defaut(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # binaire modifie
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha1_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # binaire modifie
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha1_ancien,
+                },
+            ],
+        )
         with pytest.raises(DepotPublie) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -1957,7 +2556,8 @@ def test_pousser_refuse_item_publie_par_defaut(
 
 
 def test_pousser_avec_forcer_publie_passe_quand_meme(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Avec `forcer_publie=True`, le user a explicitement accepte le
     risque. Le push procede normalement (= upload + PUT)."""
@@ -1969,12 +2569,23 @@ def test_pousser_avec_forcer_publie_passe_quand_meme(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha1_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha1_ancien,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
             forcer_publie=True,
@@ -1989,7 +2600,8 @@ def test_pousser_avec_forcer_publie_passe_quand_meme(
 
 
 def test_pousser_dry_run_publie_pas_de_refus_pas_de_lievre(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Dry-run sur item publié : refus quand meme (l'exception sert
     aussi d'aperçu - le user comprend qu'il faut `--force-published`
@@ -2003,23 +2615,35 @@ def test_pousser_dry_run_publie_pas_de_refus_pas_de_lievre(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # binaire modifie pour declencher push
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha1},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # binaire modifie pour declencher push
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha1,
+                },
+            ],
+        )
         # Refus en dry-run aussi (sans flag) - dry-run ne contourne pas
         # les garde-fous metiers, seulement les ecritures distantes.
         with pytest.raises(DepotPublie):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=True,
             )
 
 
 def test_pousser_pending_ne_refuse_pas(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie : sur item `pending` (defaut Nakala apres depot),
     pas de refus, comportement normal."""
@@ -2030,11 +2654,18 @@ def test_pousser_pending_ne_refuse_pas(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2043,7 +2674,8 @@ def test_pousser_pending_ne_refuse_pas(
 
 
 def test_pousser_statut_absent_du_distant_ne_refuse_pas(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si Nakala omet le champ `status` (cas degenere ou ancien format),
     on ne refuse pas - on traite comme non-publié (precaution
@@ -2053,11 +2685,18 @@ def test_pousser_statut_absent_du_distant_ne_refuse_pas(
     lecture = _FakeClientLecture(files=[])  # pas de statut
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2071,7 +2710,8 @@ def test_pousser_statut_absent_du_distant_ne_refuse_pas(
 
 
 def test_comparer_classe_fichier_fantome_distinct_de_nakala_only(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Fichier ColleC sans binaire local avec `sha1_nakala="abc"` ET
     distant ne contient plus "abc" (mais "def" autre fichier) →
@@ -2085,19 +2725,32 @@ def test_comparer_classe_fichier_fantome_distinct_de_nakala_only(
     """
     sha1_fantome = "abc" + "0" * 37
     sha1_present = "def" + "0" * 37
-    client = _FakeClientLecture(files=[
-        # Distant a "def" mais pas "abc".
-        {"sha1": sha1_present, "name": "actuel.jpg"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            # Distant a "def" mais pas "abc".
+            {"sha1": sha1_present, "name": "actuel.jpg"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # Fichier ColleC : sha1_nakala=fantome, pas de binaire local.
-            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": sha1_fantome},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # Fichier ColleC : sha1_nakala=fantome, pas de binaire local.
+                {
+                    "ordre": 1,
+                    "nom": "fantome.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha1_fantome,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
 
     # Classe en fantome, pas en nakala_only_sans_local
@@ -2112,7 +2765,8 @@ def test_comparer_classe_fichier_fantome_distinct_de_nakala_only(
 
 
 def test_pousser_refuse_si_fichiers_fantomes(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Au push, lever `FichierFantomeDistant` avant tout PUT.
 
@@ -2123,14 +2777,25 @@ def test_pousser_refuse_si_fichiers_fantomes(
     lecture = _FakeClientLecture(files=[])  # distant vide, fantome confirmé
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": sha1_fantome},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "fantome.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha1_fantome,
+                },
+            ],
+        )
         with pytest.raises(FichierFantomeDistant) as exc_info:
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -2147,7 +2812,8 @@ def test_pousser_refuse_si_fichiers_fantomes(
 
 
 def test_pousser_garde_fou_fantome_precede_garde_fou_backfill(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si on a a la fois fantomes ET backfill incomplet, le garde-fou
     fantome se declenche en premier (ordre dans pousser_fichiers_item).
@@ -2160,20 +2826,35 @@ def test_pousser_garde_fou_fantome_precede_garde_fou_backfill(
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # Fichier 1 : fantome
-            {"ordre": 1, "nom": "fantome.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": sha1_fantome},
-            # Fichier 2 : backfill incomplet
-            {"ordre": 2, "nom": "backfill.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # Fichier 1 : fantome
+                {
+                    "ordre": 1,
+                    "nom": "fantome.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha1_fantome,
+                },
+                # Fichier 2 : backfill incomplet
+                {
+                    "ordre": 2,
+                    "nom": "backfill.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         # Le fantome est leve en premier (BackfillIncomplet jamais atteint)
         with pytest.raises(FichierFantomeDistant):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -2181,7 +2862,8 @@ def test_pousser_garde_fou_fantome_precede_garde_fou_backfill(
 
 
 def test_comparer_aucun_changement_avec_fantome_seul_est_false(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Un fantome IMPOSE `aucun_changement = False` (mise a jour
     semantique passe 10) : il y a un probleme a fixer (desync DB ↔
@@ -2193,13 +2875,24 @@ def test_comparer_aucun_changement_avec_fantome_seul_est_false(
     sha1_fantome = "abc" + "0" * 37
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "f.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": sha1_fantome},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "f.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha1_fantome,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     # CRITIQUE : fantome force aucun_changement=False (sinon push
     # silencieux ne signale rien).
@@ -2213,7 +2906,8 @@ def test_comparer_aucun_changement_avec_fantome_seul_est_false(
 
 
 def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Apres un push qui change le sha cote Nakala (upload binaire
     modifie), `Fichier.iiif_url_nakala` doit etre recalee — sinon
@@ -2228,18 +2922,31 @@ def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
     DOI = "10.34847/nkl.abc"
     iiif_url_ancienne = f"https://api-test.nakala.fr/iiif/{DOI}/{sha_ancien}/info.json"
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha_ancien, "name": "x.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha_ancien, "name": "x.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien,
-             "iiif_url_nakala": iiif_url_ancienne},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                    "iiif_url_nakala": iiif_url_ancienne,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2250,9 +2957,7 @@ def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
 
     # iiif_url_nakala doit pointer vers le nouveau sha
     with _session(db_path) as s:
-        f = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
-        ).first()
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
         assert f is not None
         assert sha_neuf in f.iiif_url_nakala
         assert sha_ancien not in f.iiif_url_nakala
@@ -2263,7 +2968,8 @@ def test_pousser_met_a_jour_iiif_url_nakala_apres_changement_sha(
 
 
 def test_pousser_ne_touche_pas_iiif_url_si_pas_pose(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si `iiif_url_nakala` est None (Fichier sans URL pré-existante),
     le service n'invente pas d'URL. iiif_url_nakala reste None apres push."""
@@ -2271,24 +2977,35 @@ def test_pousser_ne_touche_pas_iiif_url_si_pas_pose(
     lecture = _FakeClientLecture(files=[])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None,
-             "iiif_url_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": None,
+                    "iiif_url_nakala": None,
+                },
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
     with _session(db_path) as s:
-        f = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
-        ).first()
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
         assert f.iiif_url_nakala is None
 
 
 def test_pousser_inchange_ne_recale_pas_iiif_url(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie negative : si le Fichier est inchange (sha matche
     distant), aucun upload, donc nouveaux_sha1_par_fichier vide, donc
@@ -2303,25 +3020,46 @@ def test_pousser_inchange_ne_recale_pas_iiif_url(
 
     # On declenche un PUT en ajoutant un 2e Fichier nouveau
     contenu_nouveau = b"nouveau"
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha, "name": "i.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha, "name": "i.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha,
-             "iiif_url_nakala": url},
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None, "iiif_url_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "i.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha,
+                    "iiif_url_nakala": url,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                    "iiif_url_nakala": None,
+                },
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
     with _session(db_path) as s:
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Fichier i (inchange) : url inchangee
@@ -2337,7 +3075,8 @@ def test_pousser_inchange_ne_recale_pas_iiif_url(
 
 
 def test_pousser_met_a_jour_metadonnees_sha1_miroir(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou W — `materialiser_fichiers_nakala` (rapatrier) ecrit le sha1
     en miroir dans `metadonnees["sha1"]` pour compat retro
@@ -2351,10 +3090,18 @@ def test_pousser_met_a_jour_metadonnees_sha1_miroir(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         # Pose le miroir compat retro
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
@@ -2363,7 +3110,10 @@ def test_pousser_met_a_jour_metadonnees_sha1_miroir(
         s.commit()
 
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2379,7 +3129,8 @@ def test_pousser_met_a_jour_metadonnees_sha1_miroir(
 
 
 def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si `metadonnees["sha1"]` n'existe pas, le service ne l'invente
     pas (semantique neutre : un Fichier importe via tableur n'a pas
@@ -2392,10 +3143,18 @@ def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         # metadonnees vide (cas typique import tableur)
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
@@ -2404,7 +3163,10 @@ def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2417,7 +3179,8 @@ def test_pousser_ne_cree_pas_metadonnees_sha1_si_absent(
 
 
 def test_pousser_metadonnees_None_pas_d_erreur(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si `Fichier.metadonnees is None` (jamais initialise), le service
     ne plante pas. Filet de robustesse anti-AttributeError."""
@@ -2427,10 +3190,18 @@ def test_pousser_metadonnees_None_pas_d_erreur(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
         ).all()
@@ -2438,7 +3209,10 @@ def test_pousser_metadonnees_None_pas_d_erreur(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2449,7 +3223,8 @@ def test_pousser_metadonnees_None_pas_d_erreur(
 
 
 def test_pousser_invalide_derives_locaux_apres_changement_binaire(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou X — apres un push qui change le binaire local (categorie
     `modifie`), les derives locaux (vignette, apercu, DZI) generes
@@ -2462,10 +3237,18 @@ def test_pousser_invalide_derives_locaux_apres_changement_binaire(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         # Pose des derives "deja generes" du contenu ancien
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
@@ -2477,7 +3260,10 @@ def test_pousser_invalide_derives_locaux_apres_changement_binaire(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2491,7 +3277,8 @@ def test_pousser_invalide_derives_locaux_apres_changement_binaire(
 
 
 def test_pousser_inchange_n_invalide_pas_derives(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie negative : Fichier inchange (sha local == sha distant)
     ne voit pas ses derives invalides (le binaire n'a pas change, la
@@ -2506,13 +3293,23 @@ def test_pousser_inchange_n_invalide_pas_derives(
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Pose un derive sur l'inchange uniquement
@@ -2521,13 +3318,18 @@ def test_pousser_inchange_n_invalide_pas_derives(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
     with _session(db_path) as s:
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Inchange : derive preserve
@@ -2555,14 +3357,20 @@ class _ClientLectureRetour:
         return self._retour
 
 
-@pytest.mark.parametrize("retour,motif", [
-    (None, "NoneType"),
-    ("just a string", "str"),
-    (42, "int"),
-    ([1, 2, 3], "list"),
-])
+@pytest.mark.parametrize(
+    "retour,motif",
+    [
+        (None, "NoneType"),
+        ("just a string", "str"),
+        (42, "int"),
+        ([1, 2, 3], "list"),
+    ],
+)
 def test_comparer_lire_depot_retour_non_dict_leve_proprement(
-    db_path: Path, tmp_path: Path, retour, motif,
+    db_path: Path,
+    tmp_path: Path,
+    retour,
+    motif,
 ) -> None:
     """`lire_depot` retournant un non-dict → `ReponseLectureInvalide`
     avec message diagnostique (cite le DOI et le type recu).
@@ -2572,12 +3380,19 @@ def test_comparer_lire_depot_retour_non_dict_leve_proprement(
     """
     client = _ClientLectureRetour(retour)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(ReponseLectureInvalide) as exc_info:
             comparer_fichiers_item(
-                s, client, item, racines={"scans": tmp_path / "scans"},
+                s,
+                client,
+                item,
+                racines={"scans": tmp_path / "scans"},
             )
     msg = str(exc_info.value)
     # Message cite le DOI + le type recu
@@ -2586,7 +3401,8 @@ def test_comparer_lire_depot_retour_non_dict_leve_proprement(
 
 
 def test_pousser_lire_depot_initial_retour_non_dict_leve_proprement(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Le push utilise `comparer_fichiers_item` en interne — la validation
     se declenche bien au pull initial (pas seulement dans comparer
@@ -2594,23 +3410,36 @@ def test_pousser_lire_depot_initial_retour_non_dict_leve_proprement(
     client = _ClientLectureRetour(None)
 
     class _StubEcriture:
-        def uploader_fichier(self, *a, **kw): pass
-        def modifier_depot(self, *a, **kw): pass
-        def supprimer_upload(self, *a, **kw): pass
+        def uploader_fichier(self, *a, **kw):
+            pass
+
+        def modifier_depot(self, *a, **kw):
+            pass
+
+        def supprimer_upload(self, *a, **kw):
+            pass
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(ReponseLectureInvalide):
             pousser_fichiers_item(
-                s, client, _StubEcriture(), item,
+                s,
+                client,
+                _StubEcriture(),
+                item,
                 racines={"scans": tmp_path / "scans"},
             )
 
 
 def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Variant subtil : le re-pull APRES le PUT (refresh cache) retourne
     un non-dict. Le PUT est deja applique cote distant, mais le cache
@@ -2637,18 +3466,24 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
             self.compteur += 1
             if self.compteur == 3:
                 return None  # refresh cache post-PUT KO
-            return {"identifier": doi, "files": list(self._files),
-                    "status": "pending"}
+            return {"identifier": doi, "files": list(self._files), "status": "pending"}
 
     lecture = _LectureTroisEtats()
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         with pytest.raises(ReponseLectureInvalide):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
@@ -2664,7 +3499,8 @@ def test_pousser_lire_depot_post_put_retour_non_dict_leve_proprement(
 
 
 def test_pousser_journalise_operation_push_nakala(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Apres un push reel, une ligne `OperationPushNakala` est inseree
     dans la meme transaction (atomique avec les mutations DB)."""
@@ -2676,14 +3512,26 @@ def test_pousser_journalise_operation_push_nakala(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
-            dry_run=False, modifie_par="hugo",
+            dry_run=False,
+            modifie_par="hugo",
         )
 
     # Une ligne en base
@@ -2698,6 +3546,7 @@ def test_pousser_journalise_operation_push_nakala(
         assert op.execute_par == "hugo"
         # Snapshot avant : 1 fichier distant (sha_ancien)
         import json as _json
+
         avant = _json.loads(op.snapshot_avant)
         assert len(avant) == 1
         assert avant[0]["sha1"] == sha_ancien
@@ -2712,7 +3561,8 @@ def test_pousser_journalise_operation_push_nakala(
 
 
 def test_pousser_journalise_sha1s_retires_orphelins(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si des orphelins distants sont retires (avec flag), ils
     apparaissent dans `sha1s_retires` du journal."""
@@ -2721,22 +3571,33 @@ def test_pousser_journalise_sha1s_retires_orphelins(
     contenu = b"local"
     sha = _sha1(contenu)
     sha_orphan = "or" + "1" * 38
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha, "name": "x.jpg"},
-        {"sha1": sha_orphan, "name": "orphan.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha, "name": "x.jpg"},
+            {"sha1": sha_orphan, "name": "orphan.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
-            dry_run=False, retirer_orphelins=True,
+            dry_run=False,
+            retirer_orphelins=True,
         )
 
     import json as _json
+
     with _session(db_path) as s:
         op = s.scalars(select(OperationPushNakala)).first()
         retires = _json.loads(op.sha1s_retires)
@@ -2744,7 +3605,8 @@ def test_pousser_journalise_sha1s_retires_orphelins(
 
 
 def test_pousser_dry_run_n_inscrit_aucun_journal(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Le journal ne doit etre ecrit qu'au push reel (pas en dry-run)."""
     from archives_tool.models import OperationPushNakala
@@ -2755,12 +3617,23 @@ def test_pousser_dry_run_n_inscrit_aucun_journal(
     lecture = _FakeClientLecture(files=[{"sha1": sha_ancien, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=True,  # ← dry-run
         )
@@ -2770,7 +3643,8 @@ def test_pousser_dry_run_n_inscrit_aucun_journal(
 
 
 def test_pousser_aucun_changement_n_inscrit_aucun_journal(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """No-op idempotent (rien a pousser) → pas de ligne journal
     inutile."""
@@ -2781,11 +3655,18 @@ def test_pousser_aucun_changement_n_inscrit_aucun_journal(
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "x.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha},
+            ],
+        )
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -2799,7 +3680,8 @@ def test_pousser_aucun_changement_n_inscrit_aucun_journal(
 
 
 def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Apres push d'un fichier modifie, `hash_sha256` (SHA-256 disque,
     distinct du sha1 Nakala) et `taille_octets` sont recalcules sur
@@ -2817,15 +3699,25 @@ def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
     sha256_neuf_attendu = hashlib.sha256(contenu_neuf).hexdigest()
     taille_attendue = len(contenu_neuf)
 
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_ancien_nakala, "name": "x.jpg"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_ancien_nakala, "name": "x.jpg"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha1_ancien_nakala},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha1_ancien_nakala,
+                },
+            ],
+        )
         # Pose des valeurs OBSOLETES sur hash_sha256 + taille_octets
         fichiers = s.scalars(
             select(Fichier).join(Item).where(Item.cote == "AS-001")
@@ -2835,15 +3727,16 @@ def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
 
     with _session(db_path) as s:
-        f = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
-        ).first()
+        f = s.scalars(select(Fichier).join(Item).where(Item.cote == "AS-001")).first()
         # hash_sha256 recalcule = vrai SHA-256 du contenu_neuf
         assert f.hash_sha256 == sha256_neuf_attendu
         # taille_octets recalcule = vraie taille
@@ -2851,7 +3744,8 @@ def test_pousser_recalcule_hash_sha256_et_taille_pour_modifies(
 
 
 def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie : un Fichier inchange (sha local == sha distant) garde
     son `hash_sha256` ET `taille_octets` precedents. Seuls les
@@ -2864,13 +3758,23 @@ def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
     lecture = _FakeClientLecture(files=[{"sha1": sha, "name": "i.jpg"}])
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": None,
+                },
+            ],
+        )
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Pose un hash_sha256 connu sur l'inchange
@@ -2879,13 +3783,18 @@ def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
         s.commit()
 
         pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
     with _session(db_path) as s:
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         # Inchange : hash_sha256 + taille preserves
@@ -2894,26 +3803,41 @@ def test_pousser_inchange_ne_recalcule_pas_hash_sha256(
 
 
 def test_lister_push_nakala_filtre_par_doi(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """`lister_push_nakala(doi=…)` retourne les ops du DOI cible."""
     from archives_tool.api.services.operations_push_nakala import (
-        journaliser_push_fichiers, lister_push_nakala, nouveau_batch_id,
+        journaliser_push_fichiers,
+        lister_push_nakala,
+        nouveau_batch_id,
     )
 
     with _session(db_path) as s:
         # 2 ops sur 2 DOIs differents
         journaliser_push_fichiers(
-            s, batch_id=nouveau_batch_id(), cote_item="A-001",
-            fonds_cote="A", doi="10.34847/nkl.A",
-            snapshot_avant=[], snapshot_apres=[],
-            sha1s_uploades=[], sha1s_retires=[], execute_par="hugo",
+            s,
+            batch_id=nouveau_batch_id(),
+            cote_item="A-001",
+            fonds_cote="A",
+            doi="10.34847/nkl.A",
+            snapshot_avant=[],
+            snapshot_apres=[],
+            sha1s_uploades=[],
+            sha1s_retires=[],
+            execute_par="hugo",
         )
         journaliser_push_fichiers(
-            s, batch_id=nouveau_batch_id(), cote_item="B-001",
-            fonds_cote="B", doi="10.34847/nkl.B",
-            snapshot_avant=[], snapshot_apres=[],
-            sha1s_uploades=[], sha1s_retires=[], execute_par="hugo",
+            s,
+            batch_id=nouveau_batch_id(),
+            cote_item="B-001",
+            fonds_cote="B",
+            doi="10.34847/nkl.B",
+            snapshot_avant=[],
+            snapshot_apres=[],
+            sha1s_uploades=[],
+            sha1s_retires=[],
+            execute_par="hugo",
         )
         s.commit()
 
@@ -2924,7 +3848,8 @@ def test_lister_push_nakala_filtre_par_doi(
 
 
 def test_cli_montrer_push_nakala_json(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """`archives-tool montrer push-nakala --format json` retourne la
     liste des operations journalisees."""
@@ -2932,18 +3857,23 @@ def test_cli_montrer_push_nakala_json(
     from typer.testing import CliRunner
 
     from archives_tool.api.services.operations_push_nakala import (
-        journaliser_push_fichiers, nouveau_batch_id,
+        journaliser_push_fichiers,
+        nouveau_batch_id,
     )
     from archives_tool.cli import app as cli_app
 
     # Setup : poser au moins 1 ligne
     with _session(db_path) as s:
         journaliser_push_fichiers(
-            s, batch_id=nouveau_batch_id(), cote_item="X-001",
-            fonds_cote="X", doi="10.34847/nkl.test",
+            s,
+            batch_id=nouveau_batch_id(),
+            cote_item="X-001",
+            fonds_cote="X",
+            doi="10.34847/nkl.test",
             snapshot_avant=[{"sha1": "a" * 40, "name": "x.jpg"}],
             snapshot_apres=[{"sha1": "b" * 40, "name": "x.jpg"}],
-            sha1s_uploades=["b" * 40], sha1s_retires=[],
+            sha1s_uploades=["b" * 40],
+            sha1s_retires=[],
             execute_par="alice",
         )
         s.commit()
@@ -2951,8 +3881,7 @@ def test_cli_montrer_push_nakala_json(
     runner = CliRunner()
     r = runner.invoke(
         cli_app,
-        ["montrer", "push-nakala", "--db-path", str(db_path),
-         "--format", "json"],
+        ["montrer", "push-nakala", "--db-path", str(db_path), "--format", "json"],
     )
     assert r.exit_code == 0, r.output
     data = _json.loads(r.output)
@@ -2965,14 +3894,14 @@ def test_cli_montrer_push_nakala_json(
     assert op["snapshot_avant"][0]["name"] == "x.jpg"
 
 
-
 # ---------------------------------------------------------------------------
 # P3+c.2 passe 14 — Trou Z : ordre des garde-fous diagnostic > consent
 # ---------------------------------------------------------------------------
 
 
 def test_garde_fou_fantome_precede_published(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou Z — si item published ET fichier fantome, c'est le fantome
     qui doit etre signale en premier (diagnostic > consent).
@@ -2988,23 +3917,35 @@ def test_garde_fou_fantome_precede_published(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "f.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": sha1_fantome},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "f.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha1_fantome,
+                },
+            ],
+        )
         # FichierFantomeDistant en premier (DIAGNOSTIC), pas DepotPublie
         # (CONSENT)
         with pytest.raises(FichierFantomeDistant):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
 
 
 def test_garde_fou_backfill_precede_published(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie : backfill incomplet est aussi un DIAGNOSTIC, doit
     preceder DepotPublie (CONSENT)."""
@@ -3014,22 +3955,34 @@ def test_garde_fou_backfill_precede_published(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "X.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
-             "sha1_nakala": None},  # backfill incomplet (sha1 absent)
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "X.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": None,
+                },  # backfill incomplet (sha1 absent)
+            ],
+        )
         # BackfillIncomplet en premier (DIAGNOSTIC), pas DepotPublie
         with pytest.raises(BackfillIncomplet):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
 
 
 def test_garde_fou_published_precede_orphelins(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Entre 2 CONSENTS (published + orphelins), published vient en
     premier car il est plus dangereux (DOI DataCite minte vs orphelin
@@ -3047,14 +4000,18 @@ def test_garde_fou_published_precede_orphelins(
         # OrphelinsDetectes
         with pytest.raises(DepotPublie):
             pousser_fichiers_item(
-                s, lecture, ecriture, item,
+                s,
+                lecture,
+                ecriture,
+                item,
                 racines={"scans": tmp_path / "scans"},
                 dry_run=False,
             )
 
 
 def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas important : un item published mais SANS changement (push
     no-op idempotent) ne doit PAS lever DepotPublie - rien ne va
@@ -3072,12 +4029,19 @@ def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
     )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "i.jpg", "contenu": contenu, "sha1_nakala": sha},
+            ],
+        )
         # Aucun changement → return early. DepotPublie PAS leve.
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -3092,7 +4056,8 @@ def test_published_avec_aucun_changement_ne_leve_pas_depot_publie(
 
 
 def test_idempotence_push_modifie_2x_consecutifs(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Contrat : push effectif d'un fichier modifie, puis push immediat
     (binaire inchange depuis) → 2e push doit etre no-op (aucun_changement).
@@ -3116,6 +4081,7 @@ def test_idempotence_push_modifie_2x_consecutifs(
 
     class _LectureMutable:
         """Reflete le PUT distant entre push 1 et push 2."""
+
         def __init__(self, files_initiaux):
             self.files = list(files_initiaux)
             self.appels = 0
@@ -3127,6 +4093,7 @@ def test_idempotence_push_modifie_2x_consecutifs(
     class _EcritureRealistePourIdempotence:
         """Calcule le vrai sha du chemin upload (contrat reel Nakala)
         au lieu d'un sha sequentiel bidon."""
+
         def __init__(self, lecture_mutable):
             self._lecture = lecture_mutable  # pour synchro distant post-PUT
             self.uploads = []
@@ -3143,8 +4110,9 @@ def test_idempotence_push_modifie_2x_consecutifs(
             self._noms_par_sha1[sha] = n
             return {"sha1": sha, "name": n}
 
-        def ajouter_fichier(self, identifiant, sha1, *, description=None,
-                            embargoed=None):
+        def ajouter_fichier(
+            self, identifiant, sha1, *, description=None, embargoed=None
+        ):
             # Additif : mute le distant simulé pour que le lire_depot du
             # réordonnancement voie la vérité post-mutations.
             self.ajouts.append(sha1)
@@ -3159,8 +4127,7 @@ def test_idempotence_push_modifie_2x_consecutifs(
                 f for f in self._lecture.files if f.get("sha1") != sha1
             ]
 
-        def modifier_depot(self, identifiant, *, metas=None, files=None,
-                          status=None):
+        def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
             self.puts.append({"id": identifiant, "files": files})
             # Synchronise le distant simule avec ce qui a ete envoye
             if files is not None:
@@ -3174,13 +4141,24 @@ def test_idempotence_push_modifie_2x_consecutifs(
     ecriture = _EcritureRealistePourIdempotence(lecture)
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu_neuf,
-             "sha1_nakala": sha_ancien},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu_neuf,
+                    "sha1_nakala": sha_ancien,
+                },
+            ],
+        )
         # Push 1 reel
         rapport_1 = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -3191,12 +4169,13 @@ def test_idempotence_push_modifie_2x_consecutifs(
 
     # Re-charger l'item depuis la session sache que sha1_nakala est commit
     with _session(db_path) as s:
-        item_recharge = s.scalar(
-            select(Item).where(Item.cote == "AS-001")
-        )
+        item_recharge = s.scalar(select(Item).where(Item.cote == "AS-001"))
         # Push 2 immediat - meme binaire local, sha1_nakala = sha_neuf
         rapport_2 = pousser_fichiers_item(
-            s, lecture, ecriture, item_recharge,
+            s,
+            lecture,
+            ecriture,
+            item_recharge,
             racines={"scans": tmp_path / "scans"},
             dry_run=False,
         )
@@ -3211,7 +4190,8 @@ def test_idempotence_push_modifie_2x_consecutifs(
 
 
 def test_idempotence_push_dry_run_2x(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Dry-run idempotent : 2 dry-run consecutifs donnent le meme plan,
     aucun touch DB ni distant. Documente l'invariant : le dry-run est
@@ -3220,15 +4200,25 @@ def test_idempotence_push_dry_run_2x(
     lecture = _FakeClientLecture(files=[])  # nouveau
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": None},
+            ],
+        )
         rapport_1 = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
         rapport_2 = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
         )
 
@@ -3239,7 +4229,8 @@ def test_idempotence_push_dry_run_2x(
 
 
 def test_invariant_cardinalite_distante_scenario_riche(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Invariant de conservation : pour tout `comparer_fichiers_item`,
 
@@ -3275,32 +4266,63 @@ def test_invariant_cardinalite_distante_scenario_riche(
     nb_distants_initial = 7  # cf. liste de 7 files dans la lecture ci-dessous
 
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "f1.jpg", "contenu": contenu_1, "sha1_nakala": sha_1},
-            {"ordre": 2, "nom": "f2.jpg", "contenu": contenu_2_neuf, "sha1_nakala": sha_2_ancien},
-            {"ordre": 3, "nom": "f3.jpg", "contenu": contenu_3, "sha1_nakala": None},
-            {"ordre": 4, "nom": "f4.jpg", "contenu": None,
-             "iiif_url_nakala": "https://api.nakala.fr/.../info.json", "sha1_nakala": sha_4},
-            {"ordre": 5, "nom": "f5.jpg", "contenu": b"x", "sha1_nakala": sha_5},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "f1.jpg",
+                    "contenu": contenu_1,
+                    "sha1_nakala": sha_1,
+                },
+                {
+                    "ordre": 2,
+                    "nom": "f2.jpg",
+                    "contenu": contenu_2_neuf,
+                    "sha1_nakala": sha_2_ancien,
+                },
+                {
+                    "ordre": 3,
+                    "nom": "f3.jpg",
+                    "contenu": contenu_3,
+                    "sha1_nakala": None,
+                },
+                {
+                    "ordre": 4,
+                    "nom": "f4.jpg",
+                    "contenu": None,
+                    "iiif_url_nakala": "https://api.nakala.fr/.../info.json",
+                    "sha1_nakala": sha_4,
+                },
+                {"ordre": 5, "nom": "f5.jpg", "contenu": b"x", "sha1_nakala": sha_5},
+            ],
+        )
         # f5 en CORBEILLE
         fichiers = s.scalars(
-            select(Fichier).join(Item).where(Item.cote == "AS-001")
+            select(Fichier)
+            .join(Item)
+            .where(Item.cote == "AS-001")
             .order_by(Fichier.ordre)
         ).all()
         fichiers[4].etat = EtatFichier.CORBEILLE.value
         s.commit()
 
         rapport = comparer_fichiers_item(
-            s, _FakeClientLecture(files=[
-                {"sha1": sha_1, "name": "f1.jpg"},
-                {"sha1": sha_2_ancien, "name": "f2.jpg"},
-                {"sha1": sha_4, "name": "f4.jpg"},
-                {"sha1": sha_5, "name": "f5.jpg"},
-                {"sha1": sha_orphan, "name": "orphan.jpg"},
-                {"sha1": sha_doublon, "name": "doublon-a.jpg"},
-                {"sha1": sha_doublon, "name": "doublon-b.jpg"},
-            ]), item, racines={"scans": tmp_path / "scans"},
+            s,
+            _FakeClientLecture(
+                files=[
+                    {"sha1": sha_1, "name": "f1.jpg"},
+                    {"sha1": sha_2_ancien, "name": "f2.jpg"},
+                    {"sha1": sha_4, "name": "f4.jpg"},
+                    {"sha1": sha_5, "name": "f5.jpg"},
+                    {"sha1": sha_orphan, "name": "orphan.jpg"},
+                    {"sha1": sha_doublon, "name": "doublon-a.jpg"},
+                    {"sha1": sha_doublon, "name": "doublon-b.jpg"},
+                ]
+            ),
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
 
     # Verifications par categorie
@@ -3318,7 +4340,8 @@ def test_invariant_cardinalite_distante_scenario_riche(
     #   4 consommes (f1, f2, f4, f5 match leur sha distant)
     # + 3 orphelins distants (orphan + 2 doublons sans match)
     nb_consommes = (
-        len(rapport.inchanges) + len(rapport.modifies)
+        len(rapport.inchanges)
+        + len(rapport.modifies)
         + len(rapport.nakala_only_sans_local)
         + len(rapport.non_actifs_a_retirer)
     )
@@ -3328,24 +4351,33 @@ def test_invariant_cardinalite_distante_scenario_riche(
 
 
 def test_invariant_aucun_consomme_si_distant_vide(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas degenere : distant vide → aucun fichier consomme, aucun
     orphelin. Documente l'invariant trivial."""
     client = _FakeClientLecture(files=[])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {"ordre": 1, "nom": "x.jpg", "contenu": b"x", "sha1_nakala": None},
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.orphelins_distants == []
     # 1 nouveau (binaire local sans pendant distant)
     assert len(rapport.nouveaux) == 1
     # 0 consommes (rien a consommer dans un index vide)
     assert (
-        len(rapport.inchanges) + len(rapport.modifies)
+        len(rapport.inchanges)
+        + len(rapport.modifies)
         + len(rapport.nakala_only_sans_local)
         + len(rapport.non_actifs_a_retirer)
     ) == 0
@@ -3357,31 +4389,47 @@ def test_invariant_aucun_consomme_si_distant_vide(
 
 
 def test_comparer_detecte_divergence_description_inchange(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Binaire identique (sha1 match) mais transcription locale éditée →
     `descriptions_divergentes` non vide ET `aucun_changement` False, pour
     qu'un push propage la nouvelle transcription (S7)."""
     contenu = b"page content"
     sha1 = _sha1(contenu)
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "p.jpg", "description": "Ancienne transcription"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "p.jpg", "description": "Ancienne transcription"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": "Nouvelle transcription"},
-        ])
-        rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": "Nouvelle transcription",
+                },
+            ],
         )
-    assert len(rapport.inchanges) == 1            # contenu inchangé
+        rapport = comparer_fichiers_item(
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
+        )
+    assert len(rapport.inchanges) == 1  # contenu inchangé
     assert len(rapport.descriptions_divergentes) == 1
-    assert rapport.aucun_changement is False       # le push doit proceder
+    assert rapport.aucun_changement is False  # le push doit proceder
 
 
 def test_comparer_pas_de_divergence_si_description_identique(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Description locale == distante (et None ≡ "" après normalisation) →
     pas de divergence, `aucun_changement` True (no-op propre)."""
@@ -3390,37 +4438,64 @@ def test_comparer_pas_de_divergence_si_description_identique(
     # Distant sans clé description ; local None → équivalents (None ≡ absent).
     client = _FakeClientLecture(files=[{"sha1": sha1, "name": "p.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": None,
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.descriptions_divergentes == []
     assert rapport.aucun_changement is True
 
 
 def test_comparer_divergence_description_sur_nakala_only(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Fichier Nakala-only (pas de binaire local) dont la transcription a
     été éditée localement → divergence détectée (poussable via le PUT de
     réordonnancement, local gagne)."""
     sha1 = "ab" * 20
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "p.jpg", "description": "Distante"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "p.jpg", "description": "Distante"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            # Nakala-only : pas de binaire local → source = iiif_url_nakala
-            # (CHECK `ck_fichier_source_au_moins_une`).
-            {"ordre": 1, "nom": "p.jpg", "contenu": None, "sha1_nakala": sha1,
-             "iiif_url_nakala": "https://apitest.nakala.fr/iiif/x/y/info.json",
-             "description_externe": "Locale éditée"},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                # Nakala-only : pas de binaire local → source = iiif_url_nakala
+                # (CHECK `ck_fichier_source_au_moins_une`).
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": None,
+                    "sha1_nakala": sha1,
+                    "iiif_url_nakala": "https://apitest.nakala.fr/iiif/x/y/info.json",
+                    "description_externe": "Locale éditée",
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert len(rapport.nakala_only_sans_local) == 1
     assert len(rapport.descriptions_divergentes) == 1
@@ -3432,8 +4507,11 @@ def test_reordonner_files_porte_description_locale_qui_gagne() -> None:
     (édition = source de vérité)."""
     sha1 = "cd" * 20
     files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
-    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
-                            categorie="inchange", ordre=1)]
+    plan = [
+        PlanPushFichier(
+            fichier_id=7, nom_fichier="p.jpg", sha1=sha1, categorie="inchange", ordre=1
+        )
+    ]
     sortie = _reordonner_files(files_distants, plan, {}, {7: "locale"})
     assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "locale"}]
 
@@ -3444,8 +4522,11 @@ def test_reordonner_files_preserve_description_distante_si_locale_vide() -> None
     qu'on ne gère pas localement)."""
     sha1 = "ef" * 20
     files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
-    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
-                            categorie="inchange", ordre=1)]
+    plan = [
+        PlanPushFichier(
+            fichier_id=7, nom_fichier="p.jpg", sha1=sha1, categorie="inchange", ordre=1
+        )
+    ]
     # Locale None (et idem si fichier_id absent de la map).
     sortie = _reordonner_files(files_distants, plan, {}, {7: None})
     assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
@@ -3457,8 +4538,11 @@ def test_reordonner_files_locale_espaces_seuls_preserve_distante() -> None:
     l'émission, `"   "` (truthy) écraserait la distante par du blanc."""
     sha1 = "9a" * 20
     files_distants = [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
-    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
-                            categorie="inchange", ordre=1)]
+    plan = [
+        PlanPushFichier(
+            fichier_id=7, nom_fichier="p.jpg", sha1=sha1, categorie="inchange", ordre=1
+        )
+    ]
     sortie = _reordonner_files(files_distants, plan, {}, {7: "   "})
     assert sortie == [{"sha1": sha1, "name": "p.jpg", "description": "distante"}]
 
@@ -3468,61 +4552,95 @@ def test_reordonner_files_preserve_embargoed_distant() -> None:
     préservé tel quel depuis le distant — même principe anti-wipe."""
     sha1 = "12" * 20
     files_distants = [{"sha1": sha1, "name": "p.jpg", "embargoed": "2999-01-01"}]
-    plan = [PlanPushFichier(fichier_id=7, nom_fichier="p.jpg", sha1=sha1,
-                            categorie="inchange", ordre=1)]
+    plan = [
+        PlanPushFichier(
+            fichier_id=7, nom_fichier="p.jpg", sha1=sha1, categorie="inchange", ordre=1
+        )
+    ]
     sortie = _reordonner_files(files_distants, plan, {}, {})
     assert sortie[0]["embargoed"] == "2999-01-01"
 
 
 def test_pousser_description_seule_declenche_put_avec_nouvelle_description(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Bout-en-bout (fakes) : seule la transcription a changé (binaire
     identique) → le push n'est PAS un no-op, et le PUT porte la NOUVELLE
     transcription locale."""
     contenu = b"identical bytes"
     sha1 = _sha1(contenu)
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": "Après (édité localement)"},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": "Après (édité localement)",
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
-            dry_run=False, modifie_par="hugo",
+            dry_run=False,
+            modifie_par="hugo",
         )
     assert rapport.applique is True
     assert rapport.raison != "aucun_changement"
-    assert ecriture.uploads == []                  # aucun ré-upload (binaire identique)
+    assert ecriture.uploads == []  # aucun ré-upload (binaire identique)
     assert len(ecriture.puts) == 1
     entree = ecriture.puts[0]["files"][0]
     assert entree["description"] == "Après (édité localement)"
 
 
 def test_pousser_description_seule_dry_run_n_est_pas_un_no_op(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Une édition de transcription seule en dry-run remonte la divergence
     et un plan non vide (l'utilisateur voit qu'il y a quelque chose à
     pousser), au lieu d'être classée `aucun_changement`."""
     contenu = b"identical bytes"
     sha1 = _sha1(contenu)
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "x.jpg", "description": "Avant"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "x.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": "Après"},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "x.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": "Après",
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
+            s,
+            lecture,
+            ecriture,
+            item,
             racines={"scans": tmp_path / "scans"},
             dry_run=True,
         )
@@ -3534,7 +4652,8 @@ def test_pousser_description_seule_dry_run_n_est_pas_un_no_op(
 
 
 def test_comparer_effacement_local_non_classe_divergence(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Revue : effacer une transcription localement (description_externe None)
     alors que la distante en porte une N'EST PAS classé divergence — non
@@ -3543,23 +4662,38 @@ def test_comparer_effacement_local_non_classe_divergence(
     honnête)."""
     contenu = b"page content"
     sha1 = _sha1(contenu)
-    client = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "p.jpg", "description": "Transcription distante"},
-    ])
+    client = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "p.jpg", "description": "Transcription distante"},
+        ]
+    )
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": None},  # effacée localement
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": None,
+                },  # effacée localement
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.descriptions_divergentes == []
     assert rapport.aucun_changement is True
 
 
 def test_comparer_transcription_espaces_seuls_equivaut_a_vide(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Revue : transcription locale espaces-seuls ≡ vide (normalisation) →
     pas de divergence vs distante vide."""
@@ -3567,36 +4701,64 @@ def test_comparer_transcription_espaces_seuls_equivaut_a_vide(
     sha1 = _sha1(contenu)
     client = _FakeClientLecture(files=[{"sha1": sha1, "name": "p.jpg"}])
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": "   "},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": "   ",
+                },
+            ],
+        )
         rapport = comparer_fichiers_item(
-            s, client, item, racines={"scans": tmp_path / "scans"},
+            s,
+            client,
+            item,
+            racines={"scans": tmp_path / "scans"},
         )
     assert rapport.descriptions_divergentes == []
 
 
 def test_pousser_effacement_local_est_no_op(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Revue : pousser un effacement local seul est un no-op (aucun PUT) —
     on ne prétend pas pouvoir effacer la transcription distante, qui est
     préservée."""
     contenu = b"page content"
     sha1 = _sha1(contenu)
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1, "name": "p.jpg", "description": "Distante conservée"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1, "name": "p.jpg", "description": "Distante conservée"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "p.jpg", "contenu": contenu, "sha1_nakala": sha1,
-             "description_externe": None},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "p.jpg",
+                    "contenu": contenu,
+                    "sha1_nakala": sha1,
+                    "description_externe": None,
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
-            racines={"scans": tmp_path / "scans"}, dry_run=False,
+            s,
+            lecture,
+            ecriture,
+            item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
         )
     assert rapport.raison == "aucun_changement"
     assert ecriture.puts == []
@@ -3605,7 +4767,8 @@ def test_pousser_effacement_local_est_no_op(
 
 
 def test_pousser_modifie_et_nouveau_portent_leur_description(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Revue (trou HIGH) : un fichier MODIFIÉ (binaire changé, ré-uploadé) et
     un NOUVEAU portent bien leur transcription locale jusqu'au PUT. Chemin
@@ -3615,21 +4778,40 @@ def test_pousser_modifie_et_nouveau_portent_leur_description(
     contenu_modifie = b"new modified content"
     sha1_modifie_ancien = "a" * 40
     contenu_nouveau = b"brand new file"
-    lecture = _FakeClientLecture(files=[
-        {"sha1": sha1_modifie_ancien, "name": "m.jpg", "description": "ancienne m"},
-    ])
+    lecture = _FakeClientLecture(
+        files=[
+            {"sha1": sha1_modifie_ancien, "name": "m.jpg", "description": "ancienne m"},
+        ]
+    )
     ecriture = _FakeClientEcriture(lecture)
     with _session(db_path) as s:
-        item = _setup_item_avec_fichiers(s, tmp_path, fichiers_specs=[
-            {"ordre": 1, "nom": "m.jpg", "contenu": contenu_modifie,
-             "sha1_nakala": sha1_modifie_ancien,
-             "description_externe": "Transcription m"},
-            {"ordre": 2, "nom": "n.jpg", "contenu": contenu_nouveau,
-             "sha1_nakala": None, "description_externe": "Transcription n"},
-        ])
+        item = _setup_item_avec_fichiers(
+            s,
+            tmp_path,
+            fichiers_specs=[
+                {
+                    "ordre": 1,
+                    "nom": "m.jpg",
+                    "contenu": contenu_modifie,
+                    "sha1_nakala": sha1_modifie_ancien,
+                    "description_externe": "Transcription m",
+                },
+                {
+                    "ordre": 2,
+                    "nom": "n.jpg",
+                    "contenu": contenu_nouveau,
+                    "sha1_nakala": None,
+                    "description_externe": "Transcription n",
+                },
+            ],
+        )
         rapport = pousser_fichiers_item(
-            s, lecture, ecriture, item,
-            racines={"scans": tmp_path / "scans"}, dry_run=False,
+            s,
+            lecture,
+            ecriture,
+            item,
+            racines={"scans": tmp_path / "scans"},
+            dry_run=False,
         )
     assert rapport.applique is True
     assert sorted(ecriture.uploads) == ["m.jpg", "n.jpg"]  # binaires (ré)uploadés

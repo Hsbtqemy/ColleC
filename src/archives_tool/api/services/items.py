@@ -179,6 +179,7 @@ class ItemResume:
             TYPES_COAR_OPTIONS,
             libelle_pour_valeur,
         )
+
         if not self.type_coar:
             return None
         libelle = libelle_pour_valeur(self.type_coar, TYPES_COAR_OPTIONS)
@@ -704,13 +705,10 @@ def creer_items_en_serie(
         try:
             cote_test = pattern_cote.format(n=de_n)
             if not cote_test.strip():
-                erreurs["pattern_cote"] = (
-                    "Le pattern produit une cote vide."
-                )
+                erreurs["pattern_cote"] = "Le pattern produit une cote vide."
         except (KeyError, IndexError, ValueError) as e:
             erreurs["pattern_cote"] = (
-                f"Pattern invalide : {e}. Utilisez {{n}} ou {{n:03d}} "
-                f"comme variable."
+                f"Pattern invalide : {e}. Utilisez {{n}} ou {{n:03d}} comme variable."
             )
 
     # ---- Validation titre template (si fourni) ----
@@ -754,23 +752,20 @@ def creer_items_en_serie(
     cible_id = collection_id if collection_id is not None else miroir_id
     cible_collection = db.get(Collection, cible_id)
     if cible_collection is None:
-        raise OperationItemInterdite(
-            f"La collection {cible_id} n'existe pas."
-        )
+        raise OperationItemInterdite(f"La collection {cible_id} n'existe pas.")
     # Une collection rattachée à un autre fonds est interdite. Une
     # transversale (fonds_id NULL) est OK — elle peut accueillir des
     # items de n'importe quel fonds.
-    if (
-        cible_collection.fonds_id is not None
-        and cible_collection.fonds_id != fonds.id
-    ):
-        raise ItemInvalide({
-            "collection_id": (
-                f"La collection {cible_collection.cote!r} appartient au "
-                f"fonds {cible_collection.fonds_id}, pas au fonds "
-                f"{fonds.cote!r}."
-            )
-        })
+    if cible_collection.fonds_id is not None and cible_collection.fonds_id != fonds.id:
+        raise ItemInvalide(
+            {
+                "collection_id": (
+                    f"La collection {cible_collection.cote!r} appartient au "
+                    f"fonds {cible_collection.fonds_id}, pas au fonds "
+                    f"{fonds.cote!r}."
+                )
+            }
+        )
 
     # ---- Génération des cotes + détection des conflits ----
     cotes_demandees: list[str] = []
@@ -785,16 +780,19 @@ def creer_items_en_serie(
     if len(set(cotes_demandees)) != len(cotes_demandees):
         # Identifie les cotes répétées pour le message d'erreur.
         from collections import Counter as _Counter
+
         compte = _Counter(cotes_demandees)
         doublons = sorted(c for c, n in compte.items() if n > 1)
-        raise ItemInvalide({
-            "pattern_cote": (
-                f"Le pattern produit des cotes en doublon dans la série "
-                f"({len(doublons)} cote(s) répétée(s) : "
-                f"{', '.join(doublons[:5])}). Vérifier que le pattern "
-                f"contient bien la variable `{{n}}` (ex : `PF-{{n:03d}}`)."
-            )
-        })
+        raise ItemInvalide(
+            {
+                "pattern_cote": (
+                    f"Le pattern produit des cotes en doublon dans la série "
+                    f"({len(doublons)} cote(s) répétée(s) : "
+                    f"{', '.join(doublons[:5])}). Vérifier que le pattern "
+                    f"contient bien la variable `{{n}}` (ex : `PF-{{n:03d}}`)."
+                )
+            }
+        )
 
     cotes_existantes = set(
         db.scalars(
@@ -813,14 +811,16 @@ def creer_items_en_serie(
             if len(cotes_existantes) > 10
             else ""
         )
-        raise ItemInvalide({
-            "cotes_en_conflit": (
-                f"{len(cotes_existantes)} cote(s) déjà présente(s) "
-                f"dans le fonds {fonds.cote!r} : "
-                f"{', '.join(exemples)}{suffixe}. Utiliser "
-                f"`ignorer_existants=True` pour les sauter."
-            )
-        })
+        raise ItemInvalide(
+            {
+                "cotes_en_conflit": (
+                    f"{len(cotes_existantes)} cote(s) déjà présente(s) "
+                    f"dans le fonds {fonds.cote!r} : "
+                    f"{', '.join(exemples)}{suffixe}. Utiliser "
+                    f"`ignorer_existants=True` pour les sauter."
+                )
+            }
+        )
 
     # ---- Création en bulk ----
     items_a_creer: list[tuple[Item, str]] = []  # (item, cote_pour_log)

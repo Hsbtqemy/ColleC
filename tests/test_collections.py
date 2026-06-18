@@ -42,9 +42,7 @@ from _helpers import make_item as _item
 def test_creer_libre_rattachee(session: Session, fonds_hk: Fonds) -> None:
     col = creer_collection_libre(
         session,
-        FormulaireCollection(
-            cote="HK-OEUVRES", titre="Œuvres", fonds_id=fonds_hk.id
-        ),
+        FormulaireCollection(cote="HK-OEUVRES", titre="Œuvres", fonds_id=fonds_hk.id),
     )
     assert col.id is not None
     assert col.type_collection == TypeCollection.LIBRE.value
@@ -88,9 +86,7 @@ def test_creer_libre_titre_vide_rejete(session: Session) -> None:
 
 def test_creer_libre_cote_caracteres_speciaux_rejete(session: Session) -> None:
     with pytest.raises(CollectionInvalide) as exc:
-        creer_collection_libre(
-            session, FormulaireCollection(cote="ma cote", titre="X")
-        )
+        creer_collection_libre(session, FormulaireCollection(cote="ma cote", titre="X"))
     assert "cote" in exc.value.erreurs
 
 
@@ -119,9 +115,7 @@ def test_creer_libre_cote_doublon_meme_fonds_rejete(
     with pytest.raises(CollectionInvalide):
         creer_collection_libre(
             session,
-            FormulaireCollection(
-                cote="HK-OEUVRES", titre="B", fonds_id=fonds_hk.id
-            ),
+            FormulaireCollection(cote="HK-OEUVRES", titre="B", fonds_id=fonds_hk.id),
         )
 
 
@@ -250,9 +244,7 @@ def test_lister_filtre_libre(session: Session, fonds_hk: Fonds) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_modifier_libre_change_titre(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_modifier_libre_change_titre(session: Session, fonds_hk: Fonds) -> None:
     col = creer_collection_libre(
         session,
         FormulaireCollection(cote="HK-OEUV", titre="Ancien", fonds_id=fonds_hk.id),
@@ -265,9 +257,7 @@ def test_modifier_libre_change_titre(
     assert nouv.titre == "Nouveau"
 
 
-def test_modifier_libre_devient_transversale(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_modifier_libre_devient_transversale(session: Session, fonds_hk: Fonds) -> None:
     col = creer_collection_libre(
         session,
         FormulaireCollection(cote="MOVE", titre="Move", fonds_id=fonds_hk.id),
@@ -314,9 +304,7 @@ def test_modifier_cote_conflit_meme_fonds_rejete(
 
 def test_modifier_inexistant(session: Session) -> None:
     with pytest.raises(CollectionIntrouvable):
-        modifier_collection(
-            session, 99999, FormulaireCollection(cote="X", titre="X")
-        )
+        modifier_collection(session, 99999, FormulaireCollection(cote="X", titre="X"))
 
 
 # ---------------------------------------------------------------------------

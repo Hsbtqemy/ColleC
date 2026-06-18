@@ -101,9 +101,7 @@ def test_construire_mapping_simple_passe_par_le_helper_securise() -> None:
     import re
 
     # Extrait toutes les occurences de RACINE_IMPORT_TMP / X
-    occurrences = re.findall(
-        r"RACINE_IMPORT_TMP\s*/\s*([^\s,)]+)", contenu
-    )
+    occurrences = re.findall(r"RACINE_IMPORT_TMP\s*/\s*([^\s,)]+)", contenu)
     for op in occurrences:
         # Acceptes : nom_stocke (cree par attacher_tableur), f-strings
         # avec session.id (literal entier), helper lui-meme.

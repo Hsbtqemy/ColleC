@@ -16,7 +16,11 @@ def _tableur() -> TableurNakala:
         colonnes=["identifier", "nkl:title", "dcterms:subject"],
         lignes=[
             {"identifier": "d1", "nkl:title": "Titre A", "dcterms:subject": "x | y"},
-            {"identifier": "d2", "nkl:title": "Avec ; point-virgule", "dcterms:subject": ""},
+            {
+                "identifier": "d2",
+                "nkl:title": "Avec ; point-virgule",
+                "dcterms:subject": "",
+            },
         ],
     )
 

@@ -246,7 +246,7 @@ def test_filet_securite_javascript_present_en_lecture_seule(
     client = TestClient(app)
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "addEventListener(\"submit\"" in resp.text
+    assert 'addEventListener("submit"' in resp.text
     assert "preventDefault" in resp.text
 
 
@@ -257,7 +257,7 @@ def test_filet_securite_javascript_absent_en_mode_normal(
     client = TestClient(app)
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "addEventListener(\"submit\"" not in resp.text
+    assert 'addEventListener("submit"' not in resp.text
 
 
 def test_import_etape_tableur_desactive_en_lecture_seule(
@@ -305,6 +305,7 @@ def test_panneau_colonnes_data_lecture_seule_present(
     # On utilise la base demo dans la fixture, on récupère son chemin
     # via ARCHIVES_DB (posé par client_demo_lecture_seule).
     import os
+
     db_path = os.environ.get("ARCHIVES_DB")
     if not db_path:
         return  # skip silencieux si fixture n'a pas posé l'env

@@ -236,9 +236,7 @@ def creer_champ(
     collection = db.get(Collection, collection_id)
     if collection is None:
         raise EntiteIntrouvable(f"Collection {collection_id} introuvable.")
-    erreurs = _valider_formulaire(
-        db, collection_id, formulaire, exiger_cle=True
-    )
+    erreurs = _valider_formulaire(db, collection_id, formulaire, exiger_cle=True)
     if erreurs:
         raise ChampInvalide(erreurs)
     champ = ChampPersonnalise(
@@ -271,7 +269,9 @@ def modifier_champ(
     """
     champ = champ_par_id(db, champ_id)
     erreurs = _valider_formulaire(
-        db, champ.collection_id or 0, formulaire,
+        db,
+        champ.collection_id or 0,
+        formulaire,
         exiger_cle=False,
     )
     if erreurs:
@@ -434,12 +434,14 @@ def promouvoir_cle_libre_en_champ(
         raise CleNonPromouvable({"cle": "La clé est obligatoire."})
     if not PATTERN_CLE.match(cle_strip):
         raise CleNonPromouvable(
-            {"cle": (
-                "Cette clé n'est pas un slug valide — la promouvoir "
-                "exige des minuscules / chiffres / underscores. "
-                "Renommer la clé en amont (édition métadonnées) avant "
-                "de réessayer."
-            )}
+            {
+                "cle": (
+                    "Cette clé n'est pas un slug valide — la promouvoir "
+                    "exige des minuscules / chiffres / underscores. "
+                    "Renommer la clé en amont (édition métadonnées) avant "
+                    "de réessayer."
+                )
+            }
         )
     meta = item.metadonnees or {}
     if cle_strip not in meta:
@@ -461,10 +463,12 @@ def promouvoir_cle_libre_en_champ(
     )
     if miroir is None:
         raise CleNonPromouvable(
-            {"cle": (
-                f"Aucune collection miroir trouvée pour le fonds {item.fonds_id} "
-                "— état incohérent."
-            )}
+            {
+                "cle": (
+                    f"Aucune collection miroir trouvée pour le fonds {item.fonds_id} "
+                    "— état incohérent."
+                )
+            }
         )
 
     # Idempotence : si un champ existe déjà avec cette clé (actif ou

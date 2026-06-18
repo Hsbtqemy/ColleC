@@ -290,7 +290,5 @@ def test_invariant_cote_item_peut_se_repeter_entre_fonds(session: Session) -> No
     fonds_b = creer_fonds(session, FormulaireFonds(cote="B", titre="B"))
     session.add_all([_item(fonds_a, "001"), _item(fonds_b, "001")])
     session.commit()
-    nb = session.scalar(
-        select(func.count(Item.id)).where(Item.cote == "001")
-    )
+    nb = session.scalar(select(func.count(Item.id)).where(Item.cote == "001"))
     assert nb == 2

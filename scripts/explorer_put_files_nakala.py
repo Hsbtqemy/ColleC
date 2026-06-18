@@ -50,13 +50,18 @@ def _session(db: Path):
 
 
 def _deposer_avec_n_fichiers(
-    ecriture: NakalaEcritureClient, parent: Path,
-    *, n: int, cote: str = "AS-001", fonds_cote: str = "AS",
+    ecriture: NakalaEcritureClient,
+    parent: Path,
+    *,
+    n: int,
+    cote: str = "AS-001",
+    fonds_cote: str = "AS",
 ) -> tuple[str, list[str]]:
     """Cree un depot pending avec n fichiers via le pipeline `deposer_item`.
     Renvoie (doi, sha1s_dans_l_ordre). Cree son propre sous-rep tmp_dir
     pour eviter les collisions entre hypotheses."""
     import uuid
+
     tmp_dir = parent / f"explo_{uuid.uuid4().hex[:8]}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     db = _amorcer_db(tmp_dir)
@@ -65,33 +70,45 @@ def _deposer_avec_n_fichiers(
     racines = {"scans": scans}
 
     with _session(db) as s:
-        f = creer_fonds(s, FormulaireFonds(cote=fonds_cote, titre=f"{fonds_cote} exploration"))
-        item = creer_item(s, FormulaireItem(
-            cote=cote, titre="Exploration P3+c", fonds_id=f.id,
-            date="2026", langue="fra", description="Exploration H1/H2",
-            type_coar=TYPE_LIVRE,
-            metadonnees={"createurs": ["Test, Hugo"], "sujets": ["Expl"]},
-        ))
+        f = creer_fonds(
+            s, FormulaireFonds(cote=fonds_cote, titre=f"{fonds_cote} exploration")
+        )
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote=cote,
+                titre="Exploration P3+c",
+                fonds_id=f.id,
+                date="2026",
+                langue="fra",
+                description="Exploration H1/H2",
+                type_coar=TYPE_LIVRE,
+                metadonnees={"createurs": ["Test, Hugo"], "sujets": ["Expl"]},
+            ),
+        )
         for i in range(1, n + 1):
             nom = f"fichier{i}.jpg"
-            (scans / nom).write_bytes(
-                b"\xff\xd8\xff EXPLORATION " + bytes([0x30 + i])
+            (scans / nom).write_bytes(b"\xff\xd8\xff EXPLORATION " + bytes([0x30 + i]))
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    nom_fichier=nom,
+                    racine="scans",
+                    chemin_relatif=nom,
+                    ordre=i,
+                )
             )
-            s.add(Fichier(
-                item_id=item.id, nom_fichier=nom, racine="scans",
-                chemin_relatif=nom, ordre=i,
-            ))
         s.commit()
-        rapport = deposer_item(s, ecriture, item, racines=racines,
-                                dry_run=False, cree_par="explo")
+        rapport = deposer_item(
+            s, ecriture, item, racines=racines, dry_run=False, cree_par="explo"
+        )
         doi = rapport.doi
         assert doi
         # Recupere les sha1 capturés en base par P3+a.
         sha1s = [
-            f.sha1_nakala for f in sorted(
-                s.scalars(
-                    select(Fichier).join(Item).where(Item.cote == cote)
-                ).all(),
+            f.sha1_nakala
+            for f in sorted(
+                s.scalars(select(Fichier).join(Item).where(Item.cote == cote)).all(),
                 key=lambda x: x.ordre,
             )
         ]
@@ -115,7 +132,9 @@ def hypothese_h1(ecriture, lecture, tmp_dir: Path) -> None:
     assert sha1_a in sha1s_avant and sha1_b in sha1s_avant
 
     metas_distantes = avant.get("metas") or []
-    print(f"\nPUT files=[fichier1 seul] + metas distantes ({len(metas_distantes)} metas)")
+    print(
+        f"\nPUT files=[fichier1 seul] + metas distantes ({len(metas_distantes)} metas)"
+    )
     ecriture.modifier_depot_files_exploration(
         doi,
         metas=metas_distantes,
@@ -148,7 +167,11 @@ def hypothese_h2(ecriture, lecture, tmp_dir: Path) -> None:
     """H2 : PUT sans metas -> metas preservees ou wipe ?"""
     _print_section("H2 - PUT {files: [...]} SANS metas -> metas preservees ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="BS-001", fonds_cote="BS",
+        ecriture,
+        tmp_dir,
+        n=2,
+        cote="BS-001",
+        fonds_cote="BS",
     )
     sha1_a, sha1_b = sha1s
     print(f"Depot cree : {doi}")
@@ -156,8 +179,9 @@ def hypothese_h2(ecriture, lecture, tmp_dir: Path) -> None:
     avant = lecture.lire_depot(doi)
     metas_avant = avant.get("metas") or []
     print(f"\nAvant PUT : {len(metas_avant)} metas distantes")
-    titres_avant = [m.get("value") for m in metas_avant
-                    if m.get("propertyUri") == f"{NKL}title"]
+    titres_avant = [
+        m.get("value") for m in metas_avant if m.get("propertyUri") == f"{NKL}title"
+    ]
     print(f"  titre(s) : {titres_avant}")
 
     print("\nPUT corps = {files: [fichier1+fichier2]} SEUL (metas omis)")
@@ -173,8 +197,9 @@ def hypothese_h2(ecriture, lecture, tmp_dir: Path) -> None:
         apres = lecture.lire_depot(doi)
         metas_apres = apres.get("metas") or []
         print(f"\nApres PUT : {len(metas_apres)} metas distantes")
-        titres_apres = [m.get("value") for m in metas_apres
-                        if m.get("propertyUri") == f"{NKL}title"]
+        titres_apres = [
+            m.get("value") for m in metas_apres if m.get("propertyUri") == f"{NKL}title"
+        ]
         print(f"  titre(s) : {titres_apres}")
 
         if len(metas_apres) == len(metas_avant):
@@ -202,14 +227,19 @@ def hypothese_h3(ecriture, lecture, tmp_dir: Path) -> None:
     locaux sont orphelins."""
     _print_section("H3 - PUT files=[] (vide) -> Nakala accepte ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="CS-001", fonds_cote="CS",
+        ecriture,
+        tmp_dir,
+        n=2,
+        cote="CS-001",
+        fonds_cote="CS",
     )
     print(f"Depot cree : {doi} (2 fichiers)")
 
     print("\nPUT files=[] (liste vide)")
     try:
         ecriture.modifier_depot_files_exploration(
-            doi, files=[],
+            doi,
+            files=[],
         )
         apres = lecture.lire_depot(doi)
         files_apres = apres.get("files") or []
@@ -220,8 +250,7 @@ def hypothese_h3(ecriture, lecture, tmp_dir: Path) -> None:
         else:
             print(f"\n[?] H3 PARTIEL : {len(files_apres)} fichiers restent.")
     except Exception as e:  # noqa: BLE001
-        print(f"\n[REFUS] H3 : Nakala refuse PUT files=[] : "
-              f"{type(e).__name__}: {e}")
+        print(f"\n[REFUS] H3 : Nakala refuse PUT files=[] : {type(e).__name__}: {e}")
         print("     -> Le flag --retirer-orphelins doit PRESERVER >=1 fichier,")
         print("        ou refuser explicitement le cas 'tout est orphelin'.")
 
@@ -237,7 +266,11 @@ def hypothese_h4(ecriture, lecture, tmp_dir: Path) -> None:
     Critique pour les cas d'erreur / cleanup en P3+c."""
     _print_section("H4 - PUT avec sha1 jamais uploade -> erreur ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="DS-001", fonds_cote="DS",
+        ecriture,
+        tmp_dir,
+        n=1,
+        cote="DS-001",
+        fonds_cote="DS",
     )
     sha1_existant = sha1s[0]
     sha1_fantome = "deadbeef" * 5  # 40 hex valides mais jamais uploade
@@ -245,7 +278,7 @@ def hypothese_h4(ecriture, lecture, tmp_dir: Path) -> None:
     print(f"  sha1 existant : {sha1_existant}")
     print(f"  sha1 fantome  : {sha1_fantome}")
 
-    print(f"\nPUT files=[existant, fantome]")
+    print("\nPUT files=[existant, fantome]")
     try:
         ecriture.modifier_depot_files_exploration(
             doi,
@@ -265,8 +298,7 @@ def hypothese_h4(ecriture, lecture, tmp_dir: Path) -> None:
             print("\n[OK] H4 SILENCE : Nakala ignore le sha1 fantome,")
             print("     garde l'existant. Pas d'erreur HTTP.")
     except Exception as e:  # noqa: BLE001
-        print(f"\n[REFUS] H4 : Nakala refuse explicitement : "
-              f"{type(e).__name__}: {e}")
+        print(f"\n[REFUS] H4 : Nakala refuse explicitement : {type(e).__name__}: {e}")
         print("     -> P3+c doit valider que tous les sha1 viennent")
         print("        d'un upload reussi de la session courante.")
 
@@ -283,14 +315,19 @@ def hypothese_h10(ecriture, lecture, tmp_dir: Path) -> None:
     visibles ? Critique pour le smoke live qui chaine push -> re-comparer."""
     _print_section("H10 - Eventual consistency : lire_depot immediat apres PUT ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="ES-001", fonds_cote="ES",
+        ecriture,
+        tmp_dir,
+        n=2,
+        cote="ES-001",
+        fonds_cote="ES",
     )
     sha1_a, sha1_b = sha1s
     print(f"Depot cree : {doi} (2 fichiers)")
 
     print("\nPUT files=[fichier1 seul] (retire fichier2)")
     ecriture.modifier_depot_files_exploration(
-        doi, files=[{"sha1": sha1_a, "name": "fichier1.jpg"}],
+        doi,
+        files=[{"sha1": sha1_a, "name": "fichier1.jpg"}],
     )
 
     # Lecture immediate (pas de sleep)
@@ -307,6 +344,7 @@ def hypothese_h10(ecriture, lecture, tmp_dir: Path) -> None:
         print("     -> Smoke live doit sleep ou re-essayer.")
         # Re-test avec sleep
         import time
+
         time.sleep(2)
         retard = lecture.lire_depot(doi)
         sha1s_retard = [f.get("sha1") for f in retard.get("files") or []]
@@ -325,7 +363,11 @@ def hypothese_h5(ecriture, lecture, tmp_dir: Path) -> None:
     l'ordre cote distant."""
     _print_section("H5 - Ordre files[] preserve dans la reponse ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=3, cote="FS-001", fonds_cote="FS",
+        ecriture,
+        tmp_dir,
+        n=3,
+        cote="FS-001",
+        fonds_cote="FS",
     )
     print(f"Depot cree : {doi} (3 fichiers, ordres 1/2/3)")
 
@@ -342,7 +384,8 @@ def hypothese_h5(ecriture, lecture, tmp_dir: Path) -> None:
     print("\nPUT files=[fichier3, fichier2, fichier1] (ordre inverse)")
     sha1_1, sha1_2, sha1_3 = sha1s
     ecriture.modifier_depot_files_exploration(
-        doi, files=[
+        doi,
+        files=[
             {"sha1": sha1_3, "name": "fichier3.jpg"},
             {"sha1": sha1_2, "name": "fichier2.jpg"},
             {"sha1": sha1_1, "name": "fichier1.jpg"},
@@ -375,7 +418,11 @@ def hypothese_h6(ecriture, lecture, tmp_dir: Path) -> None:
     de duplication, juste un no-op silencieux."""
     _print_section("H6 - Idempotence : re-PUT avec liste identique ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="GS-001", fonds_cote="GS",
+        ecriture,
+        tmp_dir,
+        n=2,
+        cote="GS-001",
+        fonds_cote="GS",
     )
     print(f"Depot cree : {doi}")
     files_cible = [
@@ -417,16 +464,21 @@ def hypothese_h7(ecriture, lecture, tmp_dir: Path) -> None:
     changer le binaire."""
     _print_section("H7 - PUT sha1 inchange + name nouveau -> rename Nakala ?")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="HS-001", fonds_cote="HS",
+        ecriture,
+        tmp_dir,
+        n=1,
+        cote="HS-001",
+        fonds_cote="HS",
     )
     sha1_a = sha1s[0]
     print(f"Depot cree : {doi}")
     print(f"  fichier1.jpg sha1 : {sha1_a}")
 
-    print(f"\nPUT files=[{{sha1: meme, name: 'RENOMME.jpg'}}]")
+    print("\nPUT files=[{sha1: meme, name: 'RENOMME.jpg'}]")
     try:
         ecriture.modifier_depot_files_exploration(
-            doi, files=[{"sha1": sha1_a, "name": "RENOMME.jpg"}],
+            doi,
+            files=[{"sha1": sha1_a, "name": "RENOMME.jpg"}],
         )
         apres = lecture.lire_depot(doi)
         files_apres = apres.get("files") or []
@@ -459,7 +511,11 @@ def hypothese_h11(ecriture, lecture, tmp_dir: Path) -> None:
     embargo) — accepte ? preserve ?"""
     _print_section("H11 - Champs additionnels files[i] (description, embargo)")
     doi, sha1s = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="IS-001", fonds_cote="IS",
+        ecriture,
+        tmp_dir,
+        n=1,
+        cote="IS-001",
+        fonds_cote="IS",
     )
     sha1_a = sha1s[0]
     print(f"Depot cree : {doi}")
@@ -467,12 +523,15 @@ def hypothese_h11(ecriture, lecture, tmp_dir: Path) -> None:
     print("\nPUT files=[{sha1, name, description, embargoed: false}]")
     try:
         ecriture.modifier_depot_files_exploration(
-            doi, files=[{
-                "sha1": sha1_a,
-                "name": "fichier1.jpg",
-                "description": "Description test par H11",
-                "embargoed": False,
-            }],
+            doi,
+            files=[
+                {
+                    "sha1": sha1_a,
+                    "name": "fichier1.jpg",
+                    "description": "Description test par H11",
+                    "embargoed": False,
+                }
+            ],
         )
         apres = lecture.lire_depot(doi)
         files_apres = apres.get("files") or []
@@ -498,7 +557,12 @@ def hypothese_h11(ecriture, lecture, tmp_dir: Path) -> None:
 
 def main() -> None:
     def modifier_depot_exploration(
-        self, identifiant, *, metas=None, files=None, status=None,
+        self,
+        identifiant,
+        *,
+        metas=None,
+        files=None,
+        status=None,
     ):
         corps: dict = {}
         if metas is not None:
@@ -512,9 +576,7 @@ def main() -> None:
         self._verifier_statut(reponse, contexte=f"PUT /datas/{identifiant} (explo)")
         return reponse
 
-    NakalaEcritureClient.modifier_depot_files_exploration = (
-        modifier_depot_exploration
-    )
+    NakalaEcritureClient.modifier_depot_files_exploration = modifier_depot_exploration
 
     print(f"Cible : {HOTE}")
     print(f"Cle    : {CLE[:13]}... (publique apitest)")

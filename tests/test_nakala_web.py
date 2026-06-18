@@ -29,8 +29,15 @@ def _donnee(suffixe: str, titre: str) -> dict:
             {"propertyUri": f"{_NKL}title", "value": titre},
             {"propertyUri": f"{_DCT}subject", "value": "Sujet"},
         ],
-        "files": [{"name": f"{suffixe}.jpg", "sha1": f"{suffixe}sha", "size": "10",
-                   "extension": "jpg", "mime_type": "image/jpeg"}],
+        "files": [
+            {
+                "name": f"{suffixe}.jpg",
+                "sha1": f"{suffixe}sha",
+                "size": "10",
+                "extension": "jpg",
+                "mime_type": "image/jpeg",
+            }
+        ],
     }
 
 
@@ -41,11 +48,19 @@ class _FakeClient:
         pass
 
     def lire_collection(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": [{"propertyUri": f"{_NKL}title",
-                                              "value": "Collection Test"}]}
+        return {
+            "identifier": doi,
+            "metas": [{"propertyUri": f"{_NKL}title", "value": "Collection Test"}],
+        }
 
-    def lister_depots_collection(self, doi: str, *, page: int = 1, taille: int = 50) -> dict:
-        data = [_donnee("aaa1", "Titre A"), _donnee("bbb2", "Titre B")] if page == 1 else []
+    def lister_depots_collection(
+        self, doi: str, *, page: int = 1, taille: int = 50
+    ) -> dict:
+        data = (
+            [_donnee("aaa1", "Titre A"), _donnee("bbb2", "Titre B")]
+            if page == 1
+            else []
+        )
         return {"data": data, "currentPage": page, "lastPage": 1}
 
     def fermer(self) -> None:
@@ -61,7 +76,9 @@ def _amorcer_db(tmp_path: Path) -> Path:
     return db
 
 
-def _ecrire_config(chemin: Path, *, avec_nakala: bool, lecture_seule: bool = False) -> None:
+def _ecrire_config(
+    chemin: Path, *, avec_nakala: bool, lecture_seule: bool = False
+) -> None:
     data: dict = {"utilisateur": "testweb", "lecture_seule": lecture_seule}
     if avec_nakala:
         data["nakala"] = {"base_url": "https://apitest.nakala.fr"}
@@ -100,7 +117,9 @@ def test_page_nakala_rendue(client: TestClient) -> None:
     assert "Rapatrier en base" in r.text
 
 
-def test_page_nakala_non_configure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_page_nakala_non_configure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     cfg = tmp_path / "config.yaml"
     _ecrire_config(cfg, avec_nakala=False)
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
@@ -127,16 +146,19 @@ def test_export_csv_telechargement(client: TestClient) -> None:
 
 
 def test_export_xlsx_telechargement(client: TestClient) -> None:
-    r = client.get("/nakala/tableur", params={"doi": _DOI_COL, "format": "xlsx",
-                                              "granularite": "fichier"})
+    r = client.get(
+        "/nakala/tableur",
+        params={"doi": _DOI_COL, "format": "xlsx", "granularite": "fichier"},
+    )
     assert r.status_code == 200
     assert "spreadsheetml" in r.headers["content-type"]
     assert len(r.content) > 0
 
 
 def test_export_url_acceptee(client: TestClient) -> None:
-    r = client.get("/nakala/tableur",
-                   params={"doi": f"https://nakala.fr/collection/{_DOI_COL}"})
+    r = client.get(
+        "/nakala/tableur", params={"doi": f"https://nakala.fr/collection/{_DOI_COL}"}
+    )
     assert r.status_code == 200
     assert "attachment" in r.headers["content-disposition"]
 
@@ -149,8 +171,9 @@ def test_export_sans_nakala_redirige(
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
     monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_db(tmp_path)))
     monkeypatch.setattr(nakala_web, "ClientLectureNakala", _FakeClient)
-    r = TestClient(app).get("/nakala/tableur", params={"doi": _DOI_COL},
-                            follow_redirects=False)
+    r = TestClient(app).get(
+        "/nakala/tableur", params={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]
 
@@ -168,8 +191,9 @@ def test_apercu_rapatrier(client: TestClient) -> None:
 
 
 def test_executer_rapatrier_cree_fonds_items(client: TestClient, db_path: Path) -> None:
-    r = client.post("/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": ""},
-                    follow_redirects=False)
+    r = client.post(
+        "/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": ""}, follow_redirects=False
+    )
     assert r.status_code == 303
     loc = r.headers["location"]
     assert loc.startswith("/fonds/col1") and "nakala_crees=2" in loc
@@ -186,8 +210,9 @@ def test_post_rapatrier_bloque_en_lecture_seule(
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
     monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_db(tmp_path)))
     monkeypatch.setattr(nakala_web, "ClientLectureNakala", _FakeClient)
-    r = TestClient(app).post("/nakala/rapatrier", data={"doi": _DOI_COL},
-                             follow_redirects=False)
+    r = TestClient(app).post(
+        "/nakala/rapatrier", data={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 423
 
 
@@ -227,8 +252,9 @@ def test_executer_rafraichir_applique_overwrite(
             return {"data": data, "currentPage": page, "lastPage": 1}
 
     monkeypatch.setattr(nakala_web, "ClientLectureNakala", _ClientModifie)
-    r = client.post("/nakala/rafraichir", data={"doi": _DOI_COL},
-                    follow_redirects=False)
+    r = client.post(
+        "/nakala/rafraichir", data={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert "nakala_modifies=1" in r.headers["location"]
     with _session(db_path) as s:
@@ -262,8 +288,7 @@ def test_export_erreur_nakala_redirige(
             raise NakalaIntrouvable(doi)
 
     monkeypatch.setattr(nakala_web, "ClientLectureNakala", _Client404)
-    r = client.get("/nakala/tableur", params={"doi": _DOI_COL},
-                   follow_redirects=False)
+    r = client.get("/nakala/tableur", params={"doi": _DOI_COL}, follow_redirects=False)
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]
     assert "introuvable" in r.headers["location"]
@@ -302,8 +327,9 @@ def test_apercu_rapatrier_messages_erreur(
 
     exc = getattr(nc, exc_cls)("boom")
     monkeypatch.setattr(nakala_web, "ClientLectureNakala", _fake_qui_leve(exc))
-    r = client.get("/nakala/rapatrier", params={"doi": _DOI_COL},
-                   follow_redirects=False)
+    r = client.get(
+        "/nakala/rapatrier", params={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 303
     loc = r.headers["location"]
     assert loc.startswith("/nakala?erreur=") and attendu in loc
@@ -343,22 +369,29 @@ def test_executer_rafraichir_erreur_nakala_redirige(
     monkeypatch.setattr(
         nakala_web, "ClientLectureNakala", _fake_qui_leve(NakalaInjoignable("x"))
     )
-    r = client.post("/nakala/rafraichir", data={"doi": _DOI_COL},
-                    follow_redirects=False)
+    r = client.post(
+        "/nakala/rafraichir", data={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]
 
 
 def test_executer_rapatrier_fonds_inexistant_redirige(client: TestClient) -> None:
-    r = client.post("/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": "INEXISTANT"},
-                    follow_redirects=False)
+    r = client.post(
+        "/nakala/rapatrier",
+        data={"doi": _DOI_COL, "fonds": "INEXISTANT"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert "introuvable" in r.headers["location"]
 
 
 def test_apercu_rapatrier_fonds_inexistant_redirige(client: TestClient) -> None:
-    r = client.get("/nakala/rapatrier", params={"doi": _DOI_COL, "fonds": "INEXISTANT"},
-                   follow_redirects=False)
+    r = client.get(
+        "/nakala/rapatrier",
+        params={"doi": _DOI_COL, "fonds": "INEXISTANT"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert "introuvable" in r.headers["location"]
 
@@ -371,8 +404,9 @@ def test_executer_rapatrier_erreur_nakala_redirige(
     monkeypatch.setattr(
         nakala_web, "ClientLectureNakala", _fake_qui_leve(ErreurNakala("boom"))
     )
-    r = client.post("/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": ""},
-                    follow_redirects=False)
+    r = client.post(
+        "/nakala/rapatrier", data={"doi": _DOI_COL, "fonds": ""}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]
 
@@ -385,7 +419,8 @@ def test_apercu_rafraichir_erreur_nakala_redirige(
     monkeypatch.setattr(
         nakala_web, "ClientLectureNakala", _fake_qui_leve(ErreurNakala("boom"))
     )
-    r = client.get("/nakala/rafraichir", params={"doi": _DOI_COL},
-                   follow_redirects=False)
+    r = client.get(
+        "/nakala/rafraichir", params={"doi": _DOI_COL}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert "/nakala?erreur=" in r.headers["location"]

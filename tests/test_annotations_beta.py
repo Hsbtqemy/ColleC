@@ -69,7 +69,8 @@ def test_visionneuse_data_fichier_id_expose(base_demo: Path) -> None:
 
 
 def test_visionneuse_pas_d_annotorious_en_lecture_seule(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """En lecture seule, on ne charge pas Annotorious : le mode
     édition serait inutile (le POST serait bloqué par le middleware
@@ -82,9 +83,7 @@ def test_visionneuse_pas_d_annotorious_en_lecture_seule(
     racine.mkdir()
     cfg = tmp_path / "config.yaml"
     cfg.write_text(
-        f"utilisateur: test\n"
-        f"lecture_seule: true\n"
-        f"racines:\n  demo: {racine}\n",
+        f"utilisateur: test\nlecture_seule: true\nracines:\n  demo: {racine}\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
@@ -110,6 +109,7 @@ def test_routes_annotations_accessibles_depuis_visionneuse(
     resp = client.get("/item/HK-001/visionneuse?fonds=HK")
     assert resp.status_code == 200
     import re
+
     m = re.search(r'data-fichier-id="(\d+)"', resp.text)
     assert m, "data-fichier-id introuvable dans la page visionneuse"
     fichier_id = int(m.group(1))
@@ -164,9 +164,7 @@ def test_visionneuse_navigation_page_si_plusieurs_fichiers(
     assert "Navigation pages" in resp.text
     # Liens prev (fichier_courant=1) + next (fichier_courant=3) sont
     # sur la même URL /visionneuse (pas /item/<cote>)
-    assert (
-        "/item/HK-001/visionneuse?fonds=HK&fichier_courant=1" in resp.text
-    )
+    assert "/item/HK-001/visionneuse?fonds=HK&fichier_courant=1" in resp.text
 
 
 def test_visionneuse_navigation_page_premier_fichier_desactive_prev(
@@ -194,6 +192,7 @@ def test_panneau_fichiers_mode_visionneuse_garde_la_visionneuse(
     assert resp.status_code == 200
     # Au moins un lien vers /visionneuse?fichier_courant=N
     import re
+
     liens_visionneuse = re.findall(
         r"/item/HK-001/visionneuse\?fonds=HK&fichier_courant=\d+",
         resp.text,
@@ -208,7 +207,6 @@ def test_panneau_fichiers_mode_visionneuse_garde_la_visionneuse(
     assert liens_fiche_avec_fichier == []
 
 
-
 def test_fiche_item_vignettes_pointent_sur_visionneuse(base_demo: Path) -> None:
     """Les vignettes de la grille fiche pointent sur la visionneuse
     OSD du fichier ciblé (V0.9.5 : workflow d'entrée fiche →
@@ -219,6 +217,7 @@ def test_fiche_item_vignettes_pointent_sur_visionneuse(base_demo: Path) -> None:
     resp = client.get("/item/HK-001?fonds=HK")
     assert resp.status_code == 200
     import re
+
     # Les vignettes pointent sur /visionneuse?fichier_courant=N
     liens = re.findall(
         r"/item/HK-001/visionneuse\?fonds=HK&fichier_courant=\d+",
@@ -308,12 +307,11 @@ def test_panneau_annotations_absent_sur_pdf(base_demo: Path) -> None:
             s.add(f)
             s.commit()
             fichier_pdf_id = f.id
-            position = (
-                s.execute(
-                    select(Fichier).where(Fichier.item_id == item.id)
-                    .order_by(Fichier.ordre)
-                ).all()
-            )
+            position = s.execute(
+                select(Fichier)
+                .where(Fichier.item_id == item.id)
+                .order_by(Fichier.ordre)
+            ).all()
             pdf_position = next(
                 i + 1 for i, row in enumerate(position) if row[0].id == fichier_pdf_id
             )
@@ -336,7 +334,8 @@ def test_panneau_annotations_absent_sur_pdf(base_demo: Path) -> None:
 
 
 def test_panneau_annotations_visible_meme_en_lecture_seule(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """En lecture seule, le bouton Annoter est masqué (cohérent : pas
     d'édition possible) mais le panneau d'annotations RESTE rendu

@@ -162,10 +162,19 @@ def test_agreger_meta_filtre_cles_techniques_synthese() -> None:
     `data_url`...) ne polluent pas les agrégats — sinon on aurait par
     item un agrégat « 173 hashes uniques » qui dit rien."""
     metas = [
-        {"auteur": "Topor", "num_files": "39", "hash": "abc123",
-         "categories": "image; pdf", "data_url": "https://nakala/X"},
-        {"auteur": "Reiser", "num_files": "55", "hash": "def456",
-         "categories": "image; pdf"},
+        {
+            "auteur": "Topor",
+            "num_files": "39",
+            "hash": "abc123",
+            "categories": "image; pdf",
+            "data_url": "https://nakala/X",
+        },
+        {
+            "auteur": "Reiser",
+            "num_files": "55",
+            "hash": "def456",
+            "categories": "image; pdf",
+        },
     ]
     par_cle = _agreger_item_metadonnees_quali(metas)
     assert set(par_cle.keys()) == {"auteur"}
@@ -309,9 +318,7 @@ def test_synthese_top_n_capacite(base_demo: Path) -> None:
         s.commit()
 
         synthese = composer_synthese_collection(s, col, fonds_query="HK")
-        ag = next(
-            (a for a in synthese.agregats if a.cle == "dessinateur"), None
-        )
+        ag = next((a for a in synthese.agregats if a.cle == "dessinateur"), None)
         assert ag is not None
         assert len(ag.top) <= 5  # cap
         assert ag.nb_distinct == 8  # vrai total préservé
@@ -338,9 +345,7 @@ def test_synthese_trous_a_corriger_avec_filtre_url(base_demo: Path) -> None:
         s.commit()
 
         synthese = composer_synthese_collection(s, col, fonds_query="HK")
-        trou_corr = next(
-            (t for t in synthese.trous if t.code == "a_corriger"), None
-        )
+        trou_corr = next((t for t in synthese.trous if t.code == "a_corriger"), None)
         assert trou_corr is not None
         assert trou_corr.filtre_url is not None
         assert "etat=a_corriger" in trou_corr.filtre_url
@@ -486,9 +491,7 @@ def test_synthese_langue_iso1_resolue_en_libelle_humain(
         s.commit()
 
         synthese = composer_synthese_collection(s, col, fonds_query="HK")
-        ag_langue = next(
-            (a for a in synthese.agregats if a.cle == "langue"), None
-        )
+        ag_langue = next((a for a in synthese.agregats if a.cle == "langue"), None)
         assert ag_langue is not None
         valeurs = {tv.valeur for tv in ag_langue.top}
         assert "es" not in valeurs  # code brut absent
@@ -519,9 +522,7 @@ def test_synthese_agregat_est_uniforme_quand_une_seule_valeur(
         s.commit()
 
         synthese = composer_synthese_collection(s, col, fonds_query="HK")
-        ag_langue = next(
-            (a for a in synthese.agregats if a.cle == "langue"), None
-        )
+        ag_langue = next((a for a in synthese.agregats if a.cle == "langue"), None)
         assert ag_langue is not None
         assert ag_langue.est_uniforme
         # Libellé bascule au singulier dans ce cas
@@ -603,9 +604,7 @@ def test_synthese_pas_dans_swap_htmx(base_demo: Path) -> None:
     from archives_tool.api.main import app
 
     client = TestClient(app)
-    resp = client.get(
-        "/collection/HK?fonds=HK", headers={"HX-Request": "true"}
-    )
+    resp = client.get("/collection/HK?fonds=HK", headers={"HX-Request": "true"})
     assert resp.status_code == 200
     assert "Synthèse" not in resp.text
     assert "<details open" not in resp.text

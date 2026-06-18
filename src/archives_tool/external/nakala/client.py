@@ -174,7 +174,9 @@ class ClientLectureNakala:
             raise ErreurNakala(f"Requête Nakala échouée : {exc}") from exc
 
     @staticmethod
-    def _verifier_statut(reponse: httpx.Response, *, ressource: str | None = None) -> None:
+    def _verifier_statut(
+        reponse: httpx.Response, *, ressource: str | None = None
+    ) -> None:
         if reponse.is_success:
             return
         cible = ressource or str(reponse.url)
@@ -250,9 +252,7 @@ class ClientLectureNakala:
         """
         self._garde_scope(scope)
         params = {"page": page, "limit": taille}
-        reponse = self._requete(
-            "POST", f"/users/datas/{scope}", params=params, json={}
-        )
+        reponse = self._requete("POST", f"/users/datas/{scope}", params=params, json={})
         self._verifier_statut(reponse, ressource=f"/users/datas/{scope}")
         return reponse.json()
 

@@ -168,5 +168,3 @@ def test_tableau_items_date_none_pas_de_litteral(env) -> None:
     out = _render_macro(env, "components/tableau_items.html", "tableau_items", ctx)
     assert "None" not in out
     assert "—" in out
-
-

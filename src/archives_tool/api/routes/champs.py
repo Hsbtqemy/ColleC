@@ -54,16 +54,15 @@ def _url_champs(cote: str, fonds: str | None) -> str:
     return f"/collection/{cote}/champs" + (f"?fonds={fonds}" if fonds else "")
 
 
-def _valider_appartenance(
-    champ: ChampPersonnalise, collection_id: int
-) -> None:
+def _valider_appartenance(champ: ChampPersonnalise, collection_id: int) -> None:
     """Garde anti-confused-deputy : un POST sur
     ``/collection/COTE_A/champs/ID`` où l'ID appartient en réalité à
     la collection B doit être rejeté en 404. Sinon un utilisateur qui
     bricole l'URL pourrait modifier un champ d'une autre collection."""
     if champ.collection_id != collection_id:
         raise HTTPException(
-            status_code=404, detail=f"Champ {champ.id} introuvable sur cette collection."
+            status_code=404,
+            detail=f"Champ {champ.id} introuvable sur cette collection.",
         )
 
 
@@ -330,9 +329,7 @@ def soumettre_promouvoir_cle(
         # s'afficher que sur les clés promouvables. Si on arrive
         # ici, c'est un bricolage URL — silent fallback.
         pass
-    return RedirectResponse(
-        f"/item/{cote}?fonds={fonds}", status_code=303
-    )
+    return RedirectResponse(f"/item/{cote}?fonds={fonds}", status_code=303)
 
 
 @router.post(

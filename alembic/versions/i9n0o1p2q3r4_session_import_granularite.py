@@ -38,7 +38,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     with op.batch_alter_table("session_import") as batch:
-        batch.drop_constraint(
-            "ck_session_import_granularite", type_="check"
-        )
+        batch.drop_constraint("ck_session_import_granularite", type_="check")
         batch.drop_column("granularite")

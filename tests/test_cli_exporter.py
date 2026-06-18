@@ -42,9 +42,7 @@ def _base_avec_collection(tmp_path: Path) -> Path:
         )
         creer_collection_libre(
             s,
-            FormulaireCollection(
-                cote="HK-FAVORIS", titre="Favoris", fonds_id=fonds.id
-            ),
+            FormulaireCollection(cote="HK-FAVORIS", titre="Favoris", fonds_id=fonds.id),
         )
     engine.dispose()
     return db
@@ -176,6 +174,7 @@ def test_cli_exporter_annotations_succes(tmp_path: Path) -> None:
     """Export d'une collection sans annotation : produit un JSON
     AnnotationCollection W3C avec total=0."""
     import json
+
     db = _base_avec_collection(tmp_path)
     sortie = tmp_path / "annotations.json"
     result = runner.invoke(
@@ -184,8 +183,10 @@ def test_cli_exporter_annotations_succes(tmp_path: Path) -> None:
             "exporter",
             "annotations",
             "HK",
-            "--db-path", str(db),
-            "--sortie", str(sortie),
+            "--db-path",
+            str(db),
+            "--sortie",
+            str(sortie),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -202,7 +203,8 @@ def test_cli_exporter_annotations_avec_donnees(tmp_path: Path) -> None:
     le AnnotationPage, format W3C complet préservé."""
     import json
     from archives_tool.api.services.annotations import (
-        FormulaireAnnotation, creer_annotation,
+        FormulaireAnnotation,
+        creer_annotation,
     )
     from archives_tool.models import Fichier, Item
     from sqlalchemy import select
@@ -214,32 +216,56 @@ def test_cli_exporter_annotations_avec_donnees(tmp_path: Path) -> None:
     with factory() as s:
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
         f = Fichier(
-            item_id=item.id, racine="demo",
-            chemin_relatif="p.jpg", nom_fichier="p.jpg", ordre=1,
+            item_id=item.id,
+            racine="demo",
+            chemin_relatif="p.jpg",
+            nom_fichier="p.jpg",
+            ordre=1,
         )
         s.add(f)
         s.commit()
-        creer_annotation(s, f.id, FormulaireAnnotation(
-            selecteur="xywh=0,0,10,10",
-            corps=[
-                {"type": "TextualBody", "purpose": "tagging", "value": "Copi"},
-                {"type": "SpecificResource", "purpose": "tagging",
-                 "source": {"id": "https://www.wikidata.org/entity/Q733678",
-                            "label": "Copi"}},
-            ],
-        ))
-        creer_annotation(s, f.id, FormulaireAnnotation(
-            selecteur="xywh=20,20,10,10",
-            corps=[{"type": "TextualBody", "purpose": "tagging",
-                    "value": "Forges"}],
-        ))
+        creer_annotation(
+            s,
+            f.id,
+            FormulaireAnnotation(
+                selecteur="xywh=0,0,10,10",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"},
+                    {
+                        "type": "SpecificResource",
+                        "purpose": "tagging",
+                        "source": {
+                            "id": "https://www.wikidata.org/entity/Q733678",
+                            "label": "Copi",
+                        },
+                    },
+                ],
+            ),
+        )
+        creer_annotation(
+            s,
+            f.id,
+            FormulaireAnnotation(
+                selecteur="xywh=20,20,10,10",
+                corps=[
+                    {"type": "TextualBody", "purpose": "tagging", "value": "Forges"}
+                ],
+            ),
+        )
     engine.dispose()
 
     sortie = tmp_path / "ann.json"
     result = runner.invoke(
         app,
-        ["exporter", "annotations", "HK",
-         "--db-path", str(db), "--sortie", str(sortie)],
+        [
+            "exporter",
+            "annotations",
+            "HK",
+            "--db-path",
+            str(db),
+            "--sortie",
+            str(sortie),
+        ],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(sortie.read_text(encoding="utf-8"))

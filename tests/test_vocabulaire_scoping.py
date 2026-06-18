@@ -55,6 +55,7 @@ def _slugifier(s: str) -> str:
     """Produit un code ASCII alphanumérique + underscores, pour
     passer le validator `_valider_valeur` qui refuse les accents."""
     import unicodedata
+
     norm = unicodedata.normalize("NFD", s)
     sans_accents = norm.encode("ascii", "ignore").decode("ascii")
     return "".join(c if c.isalnum() else "_" for c in sans_accents.lower())
@@ -147,6 +148,7 @@ def test_cascade_suppression_fonds_retire_le_lien(session: Session) -> None:
     attacher_vocabulaire_au_fonds(session, vocab.id, hk.id)
 
     from archives_tool.api.services.fonds import supprimer_fonds
+
     supprimer_fonds(session, hk.id)
 
     # Le vocab existe toujours et n'a plus de fonds rattaché.
@@ -165,6 +167,7 @@ def test_cascade_suppression_vocab_retire_le_lien(session: Session) -> None:
     attacher_vocabulaire_au_fonds(session, v2.id, hk.id)
 
     from archives_tool.api.services.vocabulaires_db import supprimer_vocabulaire
+
     supprimer_vocabulaire(session, v1.id)
 
     session.refresh(hk)
@@ -186,12 +189,8 @@ def _amorcer_pour_autocomplete(s: Session) -> tuple[int, int, int, int]:
     """
     hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
     pf = creer_fonds(s, FormulaireFonds(cote="PF", titre="Por Favor"))
-    item_hk = creer_item(
-        s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id)
-    )
-    item_pf = creer_item(
-        s, FormulaireItem(cote="PF-001", titre="N°1", fonds_id=pf.id)
-    )
+    item_hk = creer_item(s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id))
+    item_pf = creer_item(s, FormulaireItem(cote="PF-001", titre="N°1", fonds_id=pf.id))
     f_hk = Fichier(
         item_id=item_hk.id,
         racine="x",
@@ -292,12 +291,18 @@ def test_autocomplete_vocab_rattache_a_plusieurs_fonds(
             s, FormulaireItem(cote="FA-001", titre="N°1", fonds_id=fa.id)
         )
         f_hk = Fichier(
-            item_id=item_hk.id, racine="x", chemin_relatif="hk/01.tif",
-            nom_fichier="hk-01.tif", ordre=1,
+            item_id=item_hk.id,
+            racine="x",
+            chemin_relatif="hk/01.tif",
+            nom_fichier="hk-01.tif",
+            ordre=1,
         )
         f_fa = Fichier(
-            item_id=item_fa.id, racine="x", chemin_relatif="fa/01.tif",
-            nom_fichier="fa-01.tif", ordre=1,
+            item_id=item_fa.id,
+            racine="x",
+            chemin_relatif="fa/01.tif",
+            nom_fichier="fa-01.tif",
+            ordre=1,
         )
         s.add_all([f_hk, f_fa])
         s.flush()
@@ -334,12 +339,13 @@ def test_autocomplete_valeur_inactive_exclue(
 
     with db_factory() as s:
         hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
-        item = creer_item(
-            s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id)
-        )
+        item = creer_item(s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id))
         f = Fichier(
-            item_id=item.id, racine="x", chemin_relatif="x.tif",
-            nom_fichier="x.tif", ordre=1,
+            item_id=item.id,
+            racine="x",
+            chemin_relatif="x.tif",
+            nom_fichier="x.tif",
+            ordre=1,
         )
         s.add(f)
         s.flush()
@@ -383,14 +389,12 @@ def test_page_vocabulaire_detail_affiche_section_fonds(
     assert r.status_code == 200
     assert "Fonds rattachés" in r.text
     # Le fonds PF est coché (rattaché) → bouton détacher
-    assert f'/vocabulaires/{vid}/fonds/PF/detacher' in r.text
+    assert f"/vocabulaires/{vid}/fonds/PF/detacher" in r.text
     # Le fonds HK n'est pas coché → bouton attacher
-    assert f'/vocabulaires/{vid}/fonds/HK/attacher' in r.text
+    assert f"/vocabulaires/{vid}/fonds/HK/attacher" in r.text
 
 
-def test_attacher_via_route(
-    db_factory, monkeypatch, tmp_path: Path
-) -> None:
+def test_attacher_via_route(db_factory, monkeypatch, tmp_path: Path) -> None:
     with db_factory() as s:
         creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
         v = _vocab_avec_valeurs(s, "test", ["A"])
@@ -408,9 +412,7 @@ def test_attacher_via_route(
         assert [f.cote for f in v_relu.fonds_rattaches] == ["HK"]
 
 
-def test_detacher_via_route(
-    db_factory, monkeypatch, tmp_path: Path
-) -> None:
+def test_detacher_via_route(db_factory, monkeypatch, tmp_path: Path) -> None:
     with db_factory() as s:
         hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
         v = _vocab_avec_valeurs(s, "test", ["A"])
@@ -428,9 +430,7 @@ def test_detacher_via_route(
         assert v_relu.fonds_rattaches == []
 
 
-def test_attacher_idempotent_via_route(
-    db_factory, monkeypatch, tmp_path: Path
-) -> None:
+def test_attacher_idempotent_via_route(db_factory, monkeypatch, tmp_path: Path) -> None:
     """POST attacher sur un vocab DÉJÀ rattaché → 303 sans erreur ni
     doublon (contrat idempotent du service, vérifié au niveau route)."""
     with db_factory() as s:
@@ -451,9 +451,7 @@ def test_attacher_idempotent_via_route(
         assert [f.cote for f in v_relu.fonds_rattaches] == ["HK"]
 
 
-def test_attacher_fonds_inconnu_404(
-    db_factory, monkeypatch, tmp_path: Path
-) -> None:
+def test_attacher_fonds_inconnu_404(db_factory, monkeypatch, tmp_path: Path) -> None:
     with db_factory() as s:
         v = _vocab_avec_valeurs(s, "test", ["A"])
         s.commit()
@@ -551,41 +549,49 @@ def _amorcer_pour_enrichissement(s: Session) -> tuple[int, str, int, int]:
     Retourne `(vocab_id, fonds_cote, fichier_id, annotation_id)`.
     """
     from archives_tool.api.services.annotations import (
-        FormulaireAnnotation, creer_annotation,
+        FormulaireAnnotation,
+        creer_annotation,
     )
     from archives_tool.models import ValeurControlee
+
     hk = creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
     item = creer_item(
-        s, FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id),
+        s,
+        FormulaireItem(cote="HK-001", titre="N°1", fonds_id=hk.id),
     )
     fichier = Fichier(
-        item_id=item.id, racine="x",
-        chemin_relatif="hk/01.tif", nom_fichier="hk-01.tif", ordre=1,
+        item_id=item.id,
+        racine="x",
+        chemin_relatif="hk/01.tif",
+        nom_fichier="hk-01.tif",
+        ordre=1,
     )
     s.add(fichier)
     s.flush()
     vocab = creer_vocabulaire(
-        s, FormulaireVocabulaire(code="dessinateurs", libelle="Dessinateurs"),
+        s,
+        FormulaireVocabulaire(code="dessinateurs", libelle="Dessinateurs"),
     )
     s.flush()
     # Ajoute directement la ValeurControlee avec URI (le FormulaireValeur
     # standard la prend en charge, mais on évite la dépendance pour
     # rester local au helper).
-    s.add(ValeurControlee(
-        vocabulaire_id=vocab.id,
-        code="copi",
-        libelle="Copi",
-        uri="https://www.wikidata.org/entity/Q733678",
-        actif=True,
-    ))
+    s.add(
+        ValeurControlee(
+            vocabulaire_id=vocab.id,
+            code="copi",
+            libelle="Copi",
+            uri="https://www.wikidata.org/entity/Q733678",
+            actif=True,
+        )
+    )
     attacher_vocabulaire_au_fonds(s, vocab.id, hk.id)
     ann = creer_annotation(
-        s, fichier.id,
+        s,
+        fichier.id,
         FormulaireAnnotation(
             selecteur="xywh=0,0,100,100",
-            corps=[
-                {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-            ],
+            corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
         ),
     )
     s.commit()
@@ -633,10 +639,7 @@ def test_post_enrichissement_applique_et_redirige(
         ann = s.get(AnnotationRegion, ann_id)
         assert ann is not None
         assert ann.corps[0]["type"] == "SpecificResource"
-        assert (
-            ann.corps[0]["source"]["id"]
-            == "https://www.wikidata.org/entity/Q733678"
-        )
+        assert ann.corps[0]["source"]["id"] == "https://www.wikidata.org/entity/Q733678"
 
 
 def test_page_vocab_montre_bouton_enrichir_sur_fonds_rattache(

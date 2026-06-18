@@ -79,9 +79,7 @@ def _notice_collection(export: CollectionPourExport) -> ET.Element:
             notice, _tag_dc(f"{DC}description")
         ).text = col.description_publique
     if col.doi_nakala:
-        ET.SubElement(notice, _tag_dc(f"{DC}identifier")).text = (
-            f"doi:{col.doi_nakala}"
-        )
+        ET.SubElement(notice, _tag_dc(f"{DC}identifier")).text = f"doi:{col.doi_nakala}"
 
     fonds_a_lister = (
         [export.fonds_parent]
@@ -89,9 +87,9 @@ def _notice_collection(export: CollectionPourExport) -> ET.Element:
         else list(export.fonds_representes)
     )
     for fonds in fonds_a_lister:
-        ET.SubElement(notice, _tag_dc(f"{DC}source")).text = (
-            f"{fonds.titre} ({fonds.cote})"
-        )
+        ET.SubElement(
+            notice, _tag_dc(f"{DC}source")
+        ).text = f"{fonds.titre} ({fonds.cote})"
 
     return notice
 

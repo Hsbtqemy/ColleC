@@ -41,7 +41,8 @@ def _amorcer_collab(db_path: Path) -> tuple[str, int]:
     with factory() as s:
         hk = lire_fonds_par_cote(s, "HK")
         c = ajouter_collaborateur_fonds(
-            s, hk.id,
+            s,
+            hk.id,
             FormulaireCollaborateurFonds(
                 nom="Camille Dupont",
                 roles=["numerisation"],
@@ -179,8 +180,10 @@ def test_modifier_collab_id_d_un_autre_fonds_ignore(base_demo: Path) -> None:
     with factory() as s:
         # On vérifie qu'un autre fonds existe avant de tester
         autre_fonds = s.scalars(
-            select(__import__("archives_tool.models", fromlist=["Fonds"]).Fonds)
-            .where(__import__("archives_tool.models", fromlist=["Fonds"]).Fonds.cote != "HK")
+            select(__import__("archives_tool.models", fromlist=["Fonds"]).Fonds).where(
+                __import__("archives_tool.models", fromlist=["Fonds"]).Fonds.cote
+                != "HK"
+            )
         ).first()
         assert autre_fonds is not None, "Demo doit avoir un autre fonds que HK"
         cote_autre = autre_fonds.cote

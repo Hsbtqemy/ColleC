@@ -183,8 +183,16 @@ BOX_TYPE_URI = "http://purl.org/dc/terms/Box"
 
 _POINT_KEYS = ("east", "north", "elevation", "name")
 _BOX_KEYS = (
-    "northlimit", "southlimit", "eastlimit", "westlimit",
-    "uplimit", "downlimit", "units", "zunits", "projection", "name",
+    "northlimit",
+    "southlimit",
+    "eastlimit",
+    "westlimit",
+    "uplimit",
+    "downlimit",
+    "units",
+    "zunits",
+    "projection",
+    "name",
 )
 _PERIOD_KEYS = ("start", "end", "name")
 
@@ -289,12 +297,22 @@ def _entree_spatial(item: Any) -> dict[str, Any]:
         )
     kind = item.get("kind")
     if kind == "Point":
-        return _meta("dcterms_spatial", _vers_dcsv(item, _POINT_KEYS),
-                     lang=item.get("lang"), type_uri_override=POINT_TYPE_URI)
+        return _meta(
+            "dcterms_spatial",
+            _vers_dcsv(item, _POINT_KEYS),
+            lang=item.get("lang"),
+            type_uri_override=POINT_TYPE_URI,
+        )
     if kind == "Box":
-        return _meta("dcterms_spatial", _vers_dcsv(item, _BOX_KEYS),
-                     lang=item.get("lang"), type_uri_override=BOX_TYPE_URI)
-    raise MetaInvalide(f"dcterms_spatial : 'kind' doit être 'Point' ou 'Box', reçu {kind!r}")
+        return _meta(
+            "dcterms_spatial",
+            _vers_dcsv(item, _BOX_KEYS),
+            lang=item.get("lang"),
+            type_uri_override=BOX_TYPE_URI,
+        )
+    raise MetaInvalide(
+        f"dcterms_spatial : 'kind' doit être 'Point' ou 'Box', reçu {kind!r}"
+    )
 
 
 def _entrees_pour_slug(slug: str, brut: Any) -> list[dict[str, Any]]:
@@ -350,12 +368,16 @@ def _entrees_pour_slug(slug: str, brut: Any) -> list[dict[str, Any]]:
 
     if slug == "dcterms_temporal":
         if not isinstance(brut, list):
-            raise MetaInvalide(f"dcterms_temporal : liste attendue, reçu {type(brut).__name__}")
+            raise MetaInvalide(
+                f"dcterms_temporal : liste attendue, reçu {type(brut).__name__}"
+            )
         return [_entree_temporal(item) for item in brut]
 
     if slug == "dcterms_spatial":
         if not isinstance(brut, list):
-            raise MetaInvalide(f"dcterms_spatial : liste attendue, reçu {type(brut).__name__}")
+            raise MetaInvalide(
+                f"dcterms_spatial : liste attendue, reçu {type(brut).__name__}"
+            )
         return [_entree_spatial(item) for item in brut]
 
     if slug in SCALAIRE_SLUGS:

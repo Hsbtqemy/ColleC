@@ -65,9 +65,7 @@ def test_creer_serie_dans_la_miroir(base_demo: Path) -> None:
         assert cotes == ["ZX-001", "ZX-002", "ZX-003", "ZX-004", "ZX-005"]
         # Titres formatés
         titres = [i.titre for i in rapport.crees]
-        assert titres == [
-            "Numéro 1", "Numéro 2", "Numéro 3", "Numéro 4", "Numéro 5"
-        ]
+        assert titres == ["Numéro 1", "Numéro 2", "Numéro 3", "Numéro 4", "Numéro 5"]
         # Tous rattachés à la miroir
         miroir = s.scalar(
             select(Collection).where(
@@ -76,8 +74,9 @@ def test_creer_serie_dans_la_miroir(base_demo: Path) -> None:
             )
         )
         nb_dans_miroir = s.scalar(
-            select(func.count(ItemCollection.item_id))
-            .where(ItemCollection.collection_id == miroir.id)
+            select(func.count(ItemCollection.item_id)).where(
+                ItemCollection.collection_id == miroir.id
+            )
         )
         assert nb_dans_miroir == 5
         # Tracabilité posée
@@ -96,7 +95,11 @@ def test_creer_serie_sans_titre_template(base_demo: Path) -> None:
     with factory() as s:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZY", titre="Test"))
         rapport = creer_items_en_serie(
-            s, fonds_id=fonds.id, pattern_cote="ZY-{n}", de_n=1, a_n=3,
+            s,
+            fonds_id=fonds.id,
+            pattern_cote="ZY-{n}",
+            de_n=1,
+            a_n=3,
         )
         assert rapport.nb_crees == 3
         assert all(i.titre == "" for i in rapport.crees)
@@ -114,7 +117,9 @@ def test_creer_serie_dans_collection_libre(base_demo: Path) -> None:
         libre = creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="ZA-FAV", titre="Favoris", fonds_id=fonds.id,
+                cote="ZA-FAV",
+                titre="Favoris",
+                fonds_id=fonds.id,
             ),
         )
         rapport = creer_items_en_serie(
@@ -128,8 +133,9 @@ def test_creer_serie_dans_collection_libre(base_demo: Path) -> None:
         assert rapport.nb_crees == 3
         # Items dans la libre
         nb_dans_libre = s.scalar(
-            select(func.count(ItemCollection.item_id))
-            .where(ItemCollection.collection_id == libre.id)
+            select(func.count(ItemCollection.item_id)).where(
+                ItemCollection.collection_id == libre.id
+            )
         )
         assert nb_dans_libre == 3
         # Items dans la miroir aussi (invariant 6)
@@ -140,8 +146,9 @@ def test_creer_serie_dans_collection_libre(base_demo: Path) -> None:
             )
         )
         nb_dans_miroir = s.scalar(
-            select(func.count(ItemCollection.item_id))
-            .where(ItemCollection.collection_id == miroir.id)
+            select(func.count(ItemCollection.item_id)).where(
+                ItemCollection.collection_id == miroir.id
+            )
         )
         assert nb_dans_miroir == 3
     engine.dispose()
@@ -159,7 +166,8 @@ def test_creer_serie_avec_metadonnees_par_defaut(base_demo: Path) -> None:
             s,
             fonds_id=fonds.id,
             pattern_cote="ZB-{n}",
-            de_n=1, a_n=4,
+            de_n=1,
+            a_n=4,
             etat="a_verifier",
             type_coar=type_uri,
             langue="fra",
@@ -183,7 +191,11 @@ def test_creer_serie_plage_inversee_refuse(base_demo: Path) -> None:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZC", titre="Test"))
         with pytest.raises(ItemInvalide) as exc:
             creer_items_en_serie(
-                s, fonds_id=fonds.id, pattern_cote="ZC-{n}", de_n=10, a_n=5,
+                s,
+                fonds_id=fonds.id,
+                pattern_cote="ZC-{n}",
+                de_n=10,
+                a_n=5,
             )
         assert "plage" in exc.value.erreurs
     engine.dispose()
@@ -197,8 +209,11 @@ def test_creer_serie_plage_trop_large_refuse(base_demo: Path) -> None:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZD", titre="Test"))
         with pytest.raises(ItemInvalide) as exc:
             creer_items_en_serie(
-                s, fonds_id=fonds.id, pattern_cote="ZD-{n}",
-                de_n=1, a_n=2000,
+                s,
+                fonds_id=fonds.id,
+                pattern_cote="ZD-{n}",
+                de_n=1,
+                a_n=2000,
             )
         assert "plage" in exc.value.erreurs
         assert "cap" in exc.value.erreurs["plage"]
@@ -225,7 +240,8 @@ def test_creer_serie_pattern_sans_variable_n(base_demo: Path) -> None:
                 s,
                 fonds_id=fonds.id,
                 pattern_cote="ZE-fixe",  # pas de {n}
-                de_n=1, a_n=3,
+                de_n=1,
+                a_n=3,
             )
     engine.dispose()
 
@@ -242,7 +258,8 @@ def test_creer_serie_pattern_format_invalide_refuse(base_demo: Path) -> None:
                 s,
                 fonds_id=fonds.id,
                 pattern_cote="ZF-{inconnu}",  # variable inconnue
-                de_n=1, a_n=3,
+                de_n=1,
+                a_n=3,
             )
         assert "pattern_cote" in exc.value.erreurs
     engine.dispose()
@@ -256,8 +273,12 @@ def test_creer_serie_etat_invalide_refuse(base_demo: Path) -> None:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZG", titre="Test"))
         with pytest.raises(ItemInvalide) as exc:
             creer_items_en_serie(
-                s, fonds_id=fonds.id, pattern_cote="ZG-{n}",
-                de_n=1, a_n=2, etat="inexistant",
+                s,
+                fonds_id=fonds.id,
+                pattern_cote="ZG-{n}",
+                de_n=1,
+                a_n=2,
+                etat="inexistant",
             )
         assert "etat" in exc.value.erreurs
     engine.dispose()
@@ -278,20 +299,25 @@ def test_creer_serie_conflit_refuse_par_defaut(base_demo: Path) -> None:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZH", titre="Test"))
         # 1er appel : crée ZH-001 à ZH-003
         creer_items_en_serie(
-            s, fonds_id=fonds.id, pattern_cote="ZH-{n:03d}", de_n=1, a_n=3,
+            s,
+            fonds_id=fonds.id,
+            pattern_cote="ZH-{n:03d}",
+            de_n=1,
+            a_n=3,
         )
         # 2e appel : tentative de re-créer ZH-002 à ZH-005 → conflit
         # sur ZH-002, ZH-003
         with pytest.raises(ItemInvalide) as exc:
             creer_items_en_serie(
-                s, fonds_id=fonds.id, pattern_cote="ZH-{n:03d}",
-                de_n=2, a_n=5,
+                s,
+                fonds_id=fonds.id,
+                pattern_cote="ZH-{n:03d}",
+                de_n=2,
+                a_n=5,
             )
         assert "cotes_en_conflit" in exc.value.erreurs
         # ZH-004 et ZH-005 ne doivent PAS avoir été créés
-        n = s.scalar(
-            select(func.count(Item.id)).where(Item.fonds_id == fonds.id)
-        )
+        n = s.scalar(select(func.count(Item.id)).where(Item.fonds_id == fonds.id))
         assert n == 3
     engine.dispose()
 
@@ -304,22 +330,25 @@ def test_creer_serie_conflit_ignore_si_demande(base_demo: Path) -> None:
     with factory() as s:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZI", titre="Test"))
         creer_items_en_serie(
-            s, fonds_id=fonds.id, pattern_cote="ZI-{n:03d}", de_n=1, a_n=3,
+            s,
+            fonds_id=fonds.id,
+            pattern_cote="ZI-{n:03d}",
+            de_n=1,
+            a_n=3,
         )
         rapport = creer_items_en_serie(
             s,
             fonds_id=fonds.id,
             pattern_cote="ZI-{n:03d}",
-            de_n=2, a_n=5,
+            de_n=2,
+            a_n=5,
             ignorer_existants=True,
         )
         assert rapport.nb_crees == 2  # ZI-004 + ZI-005
         assert rapport.nb_ignores == 2  # ZI-002 + ZI-003
         assert set(rapport.ignores) == {"ZI-002", "ZI-003"}
         assert {i.cote for i in rapport.crees} == {"ZI-004", "ZI-005"}
-        n = s.scalar(
-            select(func.count(Item.id)).where(Item.fonds_id == fonds.id)
-        )
+        n = s.scalar(select(func.count(Item.id)).where(Item.fonds_id == fonds.id))
         assert n == 5
     engine.dispose()
 
@@ -332,11 +361,19 @@ def test_creer_serie_tout_existe_deja_avec_ignore(base_demo: Path) -> None:
     with factory() as s:
         fonds = creer_fonds(s, FormulaireFonds(cote="ZJ", titre="Test"))
         creer_items_en_serie(
-            s, fonds_id=fonds.id, pattern_cote="ZJ-{n}", de_n=1, a_n=3,
+            s,
+            fonds_id=fonds.id,
+            pattern_cote="ZJ-{n}",
+            de_n=1,
+            a_n=3,
         )
         rapport = creer_items_en_serie(
-            s, fonds_id=fonds.id, pattern_cote="ZJ-{n}",
-            de_n=1, a_n=3, ignorer_existants=True,
+            s,
+            fonds_id=fonds.id,
+            pattern_cote="ZJ-{n}",
+            de_n=1,
+            a_n=3,
+            ignorer_existants=True,
         )
         assert rapport.nb_crees == 0
         assert rapport.nb_ignores == 3
@@ -355,7 +392,11 @@ def test_creer_serie_fonds_inexistant_refuse(base_demo: Path) -> None:
     with factory() as s:
         with pytest.raises(ItemInvalide) as exc:
             creer_items_en_serie(
-                s, fonds_id=99999, pattern_cote="X-{n}", de_n=1, a_n=3,
+                s,
+                fonds_id=99999,
+                pattern_cote="X-{n}",
+                de_n=1,
+                a_n=3,
             )
         assert "fonds_id" in exc.value.erreurs
     engine.dispose()
@@ -373,7 +414,9 @@ def test_creer_serie_collection_d_un_autre_fonds_refuse(base_demo: Path) -> None
         libre_b = creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="ZL-FAV", titre="Favoris B", fonds_id=fonds_b.id,
+                cote="ZL-FAV",
+                titre="Favoris B",
+                fonds_id=fonds_b.id,
             ),
         )
         with pytest.raises(ItemInvalide) as exc:
@@ -381,7 +424,9 @@ def test_creer_serie_collection_d_un_autre_fonds_refuse(base_demo: Path) -> None
                 s,
                 fonds_id=fonds_a.id,
                 collection_id=libre_b.id,
-                pattern_cote="ZK-{n}", de_n=1, a_n=3,
+                pattern_cote="ZK-{n}",
+                de_n=1,
+                a_n=3,
             )
         assert "collection_id" in exc.value.erreurs
     engine.dispose()
@@ -397,22 +442,27 @@ def test_creer_serie_dans_transversale_autorise(base_demo: Path) -> None:
         transversale = creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="TRANS", titre="Transversale", fonds_id=None,
+                cote="TRANS",
+                titre="Transversale",
+                fonds_id=None,
             ),
         )
         rapport = creer_items_en_serie(
             s,
             fonds_id=fonds.id,
             collection_id=transversale.id,
-            pattern_cote="ZM-{n}", de_n=1, a_n=3,
+            pattern_cote="ZM-{n}",
+            de_n=1,
+            a_n=3,
         )
         assert rapport.nb_crees == 3
         # Items dans la transversale + dans la miroir du fonds source
         # (invariant 6)
         for item in rapport.crees:
             nb_appartenance = s.scalar(
-                select(func.count(ItemCollection.collection_id))
-                .where(ItemCollection.item_id == item.id)
+                select(func.count(ItemCollection.collection_id)).where(
+                    ItemCollection.item_id == item.id
+                )
             )
             assert nb_appartenance == 2
     engine.dispose()

@@ -39,13 +39,31 @@ COLONNES_FIXES: tuple[str, ...] = ("identifier", "uri", "status", "version")
 
 #: Ordre privilégié des propriétés (le reste suit, par ordre d'apparition).
 _ORDRE_PREFERE: tuple[str, ...] = (
-    "nkl:title", "nkl:created", "nkl:type", "nkl:license", "nkl:creator",
-    "dcterms:creator", "dcterms:contributor", "dcterms:publisher",
-    "dcterms:date", "dcterms:type", "dcterms:language", "dcterms:subject",
-    "dcterms:description", "dcterms:abstract", "dcterms:spatial",
-    "dcterms:temporal", "dcterms:source", "dcterms:relation", "dcterms:rights",
-    "dcterms:rightsHolder", "dcterms:identifier", "dcterms:format",
-    "dcterms:medium", "dcterms:coverage", "dcterms:bibliographicCitation",
+    "nkl:title",
+    "nkl:created",
+    "nkl:type",
+    "nkl:license",
+    "nkl:creator",
+    "dcterms:creator",
+    "dcterms:contributor",
+    "dcterms:publisher",
+    "dcterms:date",
+    "dcterms:type",
+    "dcterms:language",
+    "dcterms:subject",
+    "dcterms:description",
+    "dcterms:abstract",
+    "dcterms:spatial",
+    "dcterms:temporal",
+    "dcterms:source",
+    "dcterms:relation",
+    "dcterms:rights",
+    "dcterms:rightsHolder",
+    "dcterms:identifier",
+    "dcterms:format",
+    "dcterms:medium",
+    "dcterms:coverage",
+    "dcterms:bibliographicCitation",
 )
 
 #: Colonnes techniques d'un fichier (granularité fichier), dans l'ordre.
@@ -76,9 +94,9 @@ def _nom_propriete(uri: str) -> str:
     """propertyUri → nom de colonne court (`nkl:title`, `dcterms:subject`,
     ou l'URI brute si hors des deux espaces de noms connus)."""
     if uri.startswith(_NKL):
-        return "nkl:" + uri[len(_NKL):]
+        return "nkl:" + uri[len(_NKL) :]
     if uri.startswith(_DCT):
-        return "dcterms:" + uri[len(_DCT):]
+        return "dcterms:" + uri[len(_DCT) :]
     return uri
 
 
@@ -188,8 +206,6 @@ def lignes_niveau_fichier(donnees: Iterable[dict]) -> TableurNakala:
             lignes.append(ligne)
 
     colonnes = (
-        list(COLONNES_FIXES)
-        + _ordonner_proprietes(props_vues)
-        + list(COLONNES_FICHIER)
+        list(COLONNES_FIXES) + _ordonner_proprietes(props_vues) + list(COLONNES_FICHIER)
     )
     return TableurNakala(colonnes=colonnes, lignes=lignes)

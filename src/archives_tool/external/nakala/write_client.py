@@ -332,7 +332,8 @@ class NakalaEcritureClient:
         """
         reponse = self._requete("DELETE", f"/datas/{identifiant}/files/{sha1}")
         self._verifier_statut(
-            reponse, contexte=f"DELETE /datas/{identifiant}/files/{sha1[:12]}…",
+            reponse,
+            contexte=f"DELETE /datas/{identifiant}/files/{sha1[:12]}…",
         )
 
     def supprimer_depot(self, depot_id: str) -> None:
@@ -343,7 +344,9 @@ class NakalaEcritureClient:
     def supprimer_collection(self, collection_id: str) -> None:
         """Supprime une collection (cleanup tests d'intégration)."""
         reponse = self._requete("DELETE", f"/collections/{collection_id}")
-        self._verifier_statut(reponse, contexte=f"suppression collection {collection_id}")
+        self._verifier_statut(
+            reponse, contexte=f"suppression collection {collection_id}"
+        )
 
     def supprimer_upload(self, identifiant_fichier: str) -> None:
         """Retire un fichier du stockage temporaire (cleanup orphelins).
@@ -351,7 +354,9 @@ class NakalaEcritureClient:
         Best-effort : l'appelant avale les échecs (l'utilisateur a déjà une
         vraie erreur sous les yeux)."""
         reponse = self._requete("DELETE", f"/datas/uploads/{identifiant_fichier}")
-        self._verifier_statut(reponse, contexte=f"suppression upload {identifiant_fichier}")
+        self._verifier_statut(
+            reponse, contexte=f"suppression upload {identifiant_fichier}"
+        )
 
 
 def extraire_doi(reponse: dict[str, Any]) -> str | None:

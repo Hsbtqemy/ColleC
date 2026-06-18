@@ -77,7 +77,9 @@ def test_borne_anti_boucle_sur_lastpage_initial() -> None:
         page = int(request.url.params.get("page", "1"))
         appels.append(page)
         # lastPage figé à 2, données non vides à chaque page.
-        return httpx.Response(200, json=_page([{"identifier": f"d{page}"}], current=page, last=2))
+        return httpx.Response(
+            200, json=_page([{"identifier": f"d{page}"}], current=page, last=2)
+        )
 
     with _client(handler) as c:
         ids = [d["identifier"] for d in iterer_donnees_collection(c, _DOI)]

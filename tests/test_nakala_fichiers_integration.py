@@ -62,15 +62,28 @@ def _seed(db: Path, scans: Path, contenu_initial: bytes) -> None:
     (scans / "as001.jpg").write_bytes(contenu_initial)
     with _session(db) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS smoke b"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id, date="1984", langue="spa",
-            description="Roman", type_coar=_TYPE_LIVRE,
-            metadonnees={"createurs": ["Somers, A."], "sujets": ["Lit"]},
-        ))
-        s.add(Fichier(
-            item_id=item.id, nom_fichier="as001.jpg", racine="scans",
-            chemin_relatif="as001.jpg", ordre=1,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+                date="1984",
+                langue="spa",
+                description="Roman",
+                type_coar=_TYPE_LIVRE,
+                metadonnees={"createurs": ["Somers, A."], "sujets": ["Lit"]},
+            ),
+        )
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="as001.jpg",
+                racine="scans",
+                chemin_relatif="as001.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
 
 
@@ -92,24 +105,29 @@ def test_comparer_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport_depot = deposer_item(
-                s, ecriture, item, racines=racines,
-                dry_run=False, cree_par="smoke",
+                s,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                cree_par="smoke",
             )
         doi = rapport_depot.doi
         assert doi
 
         # Verif persistance palier a : sha1_nakala posé en base.
         with _session(db) as s:
-            fichier = s.scalar(
-                select(Fichier).join(Item).where(Item.cote == "AS-001")
-            )
+            fichier = s.scalar(select(Fichier).join(Item).where(Item.cote == "AS-001"))
             assert fichier.sha1_nakala == sha1_initial
 
         # 2. Comparer : tout inchangé (sha1 local match distant).
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport = comparer_fichiers_item(
-                s, lecture, item, racines=racines,
+                s,
+                lecture,
+                item,
+                racines=racines,
             )
         assert rapport.aucun_changement, (
             f"Attendu aucun_changement après dépôt initial, vu : "
@@ -130,7 +148,10 @@ def test_comparer_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport2 = comparer_fichiers_item(
-                s, lecture, item, racines=racines,
+                s,
+                lecture,
+                item,
+                racines=racines,
             )
         assert not rapport2.aucun_changement
         assert len(rapport2.modifies) == 1
@@ -181,20 +202,37 @@ def test_pousser_fichiers_live_avec_retirer_orphelins(tmp_path: Path) -> None:
         # 1. Setup item avec 2 fichiers locaux + dépôt
         with _session(db) as s:
             f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS smoke orph"))
-            item = creer_item(s, FormulaireItem(
-                cote="AS-001", titre="Orph smoke", fonds_id=f.id, date="1984",
-                langue="spa", description="Smoke orph", type_coar=_TYPE_LIVRE,
-                metadonnees={"createurs": ["Test, H."]},
-            ))
+            item = creer_item(
+                s,
+                FormulaireItem(
+                    cote="AS-001",
+                    titre="Orph smoke",
+                    fonds_id=f.id,
+                    date="1984",
+                    langue="spa",
+                    description="Smoke orph",
+                    type_coar=_TYPE_LIVRE,
+                    metadonnees={"createurs": ["Test, H."]},
+                ),
+            )
             for i, nom in enumerate(["alpha.jpg", "beta.jpg"], start=1):
-                s.add(Fichier(
-                    item_id=item.id, nom_fichier=nom, racine="scans",
-                    chemin_relatif=nom, ordre=i,
-                ))
+                s.add(
+                    Fichier(
+                        item_id=item.id,
+                        nom_fichier=nom,
+                        racine="scans",
+                        chemin_relatif=nom,
+                        ordre=i,
+                    )
+                )
             s.commit()
             rapport_depot = deposer_item(
-                s, ecriture, item, racines=racines,
-                dry_run=False, cree_par="smoke-orph",
+                s,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                cree_par="smoke-orph",
             )
         doi = rapport_depot.doi
         assert doi
@@ -203,9 +241,8 @@ def test_pousser_fichiers_live_avec_retirer_orphelins(tmp_path: Path) -> None:
         with _session(db) as s:
             s.execute(
                 delete(Fichier).where(
-                    Fichier.item_id == s.scalar(
-                        select(Item.id).where(Item.cote == "AS-001")
-                    ),
+                    Fichier.item_id
+                    == s.scalar(select(Item.id).where(Item.cote == "AS-001")),
                     Fichier.nom_fichier == "beta.jpg",
                 )
             )
@@ -215,7 +252,10 @@ def test_pousser_fichiers_live_avec_retirer_orphelins(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             cmp_avant = comparer_fichiers_item(
-                s, lecture, item, racines=racines,
+                s,
+                lecture,
+                item,
+                racines=racines,
             )
         assert len(cmp_avant.orphelins_distants) == 1
         assert cmp_avant.orphelins_distants[0].nom_fichier == "beta.jpg"
@@ -225,16 +265,26 @@ def test_pousser_fichiers_live_avec_retirer_orphelins(tmp_path: Path) -> None:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             with pytest.raises(OrphelinsDetectes):
                 pousser_fichiers_item(
-                    s, lecture, ecriture, item, racines=racines,
-                    dry_run=False, retirer_orphelins=False,
+                    s,
+                    lecture,
+                    ecriture,
+                    item,
+                    racines=racines,
+                    dry_run=False,
+                    retirer_orphelins=False,
                 )
 
         # 5. Pousser avec retirer_orphelins=True → PUT, beta retire
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport_push = pousser_fichiers_item(
-                s, lecture, ecriture, item, racines=racines,
-                dry_run=False, retirer_orphelins=True,
+                s,
+                lecture,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                retirer_orphelins=True,
             )
         assert rapport_push.applique is True
         # 0 upload (alpha est inchange), beta sera retire au PUT
@@ -287,8 +337,12 @@ def test_pousser_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport_depot = deposer_item(
-                s, ecriture, item, racines=racines,
-                dry_run=False, cree_par="smoke-push",
+                s,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                cree_par="smoke-push",
             )
         doi = rapport_depot.doi
         assert doi
@@ -303,7 +357,10 @@ def test_pousser_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             cmp_avant = comparer_fichiers_item(
-                s, lecture, item, racines=racines,
+                s,
+                lecture,
+                item,
+                racines=racines,
             )
         assert len(cmp_avant.modifies) == 1
         assert cmp_avant.modifies[0].sha1_local == sha1_modifie
@@ -313,17 +370,20 @@ def test_pousser_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             rapport_push = pousser_fichiers_item(
-                s, lecture, ecriture, item, racines=racines,
-                dry_run=False, modifie_par="smoke-push",
+                s,
+                lecture,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                modifie_par="smoke-push",
             )
         assert rapport_push.applique is True
         assert len(rapport_push.sha1s_uploades) == 1
 
         # 5. Vérif base : Fichier.sha1_nakala mis à jour
         with _session(db) as s:
-            fichier = s.scalar(
-                select(Fichier).join(Item).where(Item.cote == "AS-001")
-            )
+            fichier = s.scalar(select(Fichier).join(Item).where(Item.cote == "AS-001"))
             assert fichier.sha1_nakala == sha1_modifie
             assert fichier.modifie_le is not None
 
@@ -331,7 +391,10 @@ def test_pousser_fichiers_live(tmp_path: Path) -> None:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
             cmp_apres = comparer_fichiers_item(
-                s, lecture, item, racines=racines,
+                s,
+                lecture,
+                item,
+                racines=racines,
             )
         assert cmp_apres.aucun_changement, (
             f"Attendu aucun_changement après push, vu : "

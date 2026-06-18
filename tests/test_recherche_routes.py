@@ -81,7 +81,8 @@ def test_route_recherche_filtre_types(client_demo: TestClient) -> None:
 
 
 def test_route_recherche_scope_fonds(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Avec fonds_id, les résultats sont limités aux items/collections
     du fonds. Le bandeau indique le filtre actif."""
@@ -120,7 +121,8 @@ def test_route_recherche_aucun_resultat(client_demo: TestClient) -> None:
 
 
 def test_recherche_snippet_html_echappe_protege_xss(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Passe de revue : un Item dont la description contient du HTML
     malveillant (cas réel : metadonnees libre venant d'un tableur
@@ -130,7 +132,8 @@ def test_recherche_snippet_html_echappe_protege_xss(
     snippet FTS5."""
     from archives_tool.api.services.fonds import lire_fonds_par_cote
     from archives_tool.api.services.items import (
-        FormulaireItem, creer_item,
+        FormulaireItem,
+        creer_item,
     )
 
     engine = creer_engine(base_demo_path)
@@ -158,7 +161,8 @@ def test_recherche_snippet_html_echappe_protege_xss(
 
 
 def test_combo_scope_et_types(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Passe de revue : scope (limite géographique) + types (filtre
     entité) fonctionnent en combo. Un fonds_id avec types=item ne
@@ -170,9 +174,7 @@ def test_combo_scope_et_types(
         fonds_id = fonds_hk.id
     engine.dispose()
 
-    response = client_demo.get(
-        f"/recherche?q=HK&fonds_id={fonds_id}&types=item"
-    )
+    response = client_demo.get(f"/recherche?q=HK&fonds_id={fonds_id}&types=item")
     assert response.status_code == 200
     assert "Limité au fonds" in response.text
     # Pas de badge Fonds (types=item l'exclut)
@@ -225,8 +227,9 @@ def test_route_recherche_pagination_par_page_personnalise(
     # Avec par_page=10 on a beaucoup plus de pages → au moins un
     # numéro de page plus grand
     import re
-    nums_10 = [int(m) for m in re.findall(r'>(\d+)</a>', p10)]
-    nums_50 = [int(m) for m in re.findall(r'>(\d+)</a>', p50)]
+
+    nums_10 = [int(m) for m in re.findall(r">(\d+)</a>", p10)]
+    nums_50 = [int(m) for m in re.findall(r">(\d+)</a>", p50)]
     if nums_10 and nums_50:
         assert max(nums_10) > max(nums_50)
 
@@ -239,8 +242,9 @@ def test_route_recherche_page_2_differente_de_page_1(
     p2 = client_demo.get("/recherche?q=numero&par_page=10&page=2").text
     # Au moins une cote présente sur p1 et absente sur p2 (ou inverse)
     import re
-    cotes_p1 = set(re.findall(r'/item/([A-Z]+-\d+)', p1))
-    cotes_p2 = set(re.findall(r'/item/([A-Z]+-\d+)', p2))
+
+    cotes_p1 = set(re.findall(r"/item/([A-Z]+-\d+)", p1))
+    cotes_p2 = set(re.findall(r"/item/([A-Z]+-\d+)", p2))
     assert cotes_p1 != cotes_p2
     assert cotes_p1 - cotes_p2  # au moins une cote unique à p1
 
@@ -263,6 +267,7 @@ def test_route_recherche_pagination_preserve_filtres(
     assert response.status_code == 200
     # Les liens de pagination contiennent les filtres
     import re
+
     # Cherche un href vers la page 2 (ou autre) qui devrait contenir
     # les filtres etat et types
     pattern = r'href="(/recherche\?[^"]*page=\d+[^"]*)"'
@@ -285,7 +290,7 @@ def test_route_recherche_tout_afficher_types_sans_query(
     # Compteur présent : « N résultats. »
     assert "résultats" in response.text
     # Pas de « pour "..." » (q vide)
-    assert 'pour <strong>«' not in response.text
+    assert "pour <strong>«" not in response.text
     # Liens vers des items rendus (au moins quelques-uns dans la
     # base demo qui a ~333 items)
     assert response.text.count('href="/item/') > 0
@@ -333,7 +338,8 @@ def test_route_dashboard_cartes_metric_cliquables(
 
 
 def test_route_recherche_libelles_humains_coar_et_langue(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Trou identifié au test PF : `Type COAR / c_3e5a` au lieu de
     `Périodique`. Les filtres Jinja `libelle_coar` / `libelle_langue`
@@ -348,7 +354,9 @@ def test_route_recherche_libelles_humains_coar_et_langue(
       PAS rendu comme libellé visible
     """
     from archives_tool.api.services.fonds import (
-        FormulaireFonds, creer_fonds, lire_fonds_par_cote,
+        FormulaireFonds,
+        creer_fonds,
+        lire_fonds_par_cote,
     )
     from archives_tool.api.services.items import FormulaireItem, creer_item
     from archives_tool.db import reindexer_fts
@@ -395,12 +403,11 @@ def test_route_recherche_pastille_revient_page_1(
     du nouveau résultat (pas garder la page courante d'un résultat
     différent — risque de page vide)."""
     # Pastille q2 retirée → href sans `page=` (donc page 1 par défaut)
-    response = client_demo.get(
-        "/recherche?q=numero&par_page=10&page=3&q2=foo"
-    )
+    response = client_demo.get("/recherche?q=numero&par_page=10&page=3&q2=foo")
     assert response.status_code == 200
     # Cherche le href de la pastille q2 (lien × pour retirer q2)
     import re
+
     # Le href ne doit pas contenir page=3
     pattern = r'href="(/recherche\?[^"]*)"[^>]*title="Retirer le raffinement'
     matches = re.findall(pattern, response.text)
@@ -501,9 +508,7 @@ def test_route_recherche_filtre_etat_reduit_les_items(
     d'items rendus vs la requête sans filtre. La base demo a 5 états
     variés sur ~333 items, donc le filtre discrimine vraiment."""
     sans = client_demo.get("/recherche?q=numero&types=item").text
-    avec = client_demo.get(
-        "/recherche?q=numero&types=item&etat=brouillon"
-    ).text
+    avec = client_demo.get("/recherche?q=numero&types=item&etat=brouillon").text
     # Chaque résultat item rend un lien `/item/COTE?fonds=...` —
     # le compte de ces liens est un proxy fiable du nombre d'items
     # affichés (ne dépend pas du whitespace/formatage du badge).
@@ -517,7 +522,8 @@ def test_route_recherche_filtre_etat_reduit_les_items(
 
 
 def test_route_recherche_combo_scope_fonds_et_filtre_etat(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Scope fonds + filtre etat : les deux contraintes s'appliquent
     en AND. Pas de crash, et le bandeau affiche les 2 contextes."""
@@ -550,14 +556,13 @@ def test_route_recherche_bouton_reinitialiser_apparait_2_filtres(
     un_filtre = client_demo.get("/recherche?q=Hara&q2=foo").text
     assert "Tout réinitialiser" not in un_filtre
     # 2 filtres actifs : bouton visible
-    deux_filtres = client_demo.get(
-        "/recherche?q=Hara&q2=foo&etat=brouillon"
-    ).text
+    deux_filtres = client_demo.get("/recherche?q=Hara&q2=foo&etat=brouillon").text
     assert "Tout réinitialiser" in deux_filtres
 
 
 def test_route_recherche_lever_scope_preserve_filtres_et_types(
-    client_demo: TestClient, base_demo_path: Path,
+    client_demo: TestClient,
+    base_demo_path: Path,
 ) -> None:
     """Le lien « (lever) » du scope (fonds_id / collection_id) doit
     préserver q + types + filtres avancés en cours. Sans ça, lever le
@@ -571,16 +576,20 @@ def test_route_recherche_lever_scope_preserve_filtres_et_types(
     engine.dispose()
 
     response = client_demo.get(
-        f"/recherche?q=numero&fonds_id={fonds_id}"
-        f"&etat=brouillon&q2=foo&types=item"
+        f"/recherche?q=numero&fonds_id={fonds_id}&etat=brouillon&q2=foo&types=item"
     )
     assert response.status_code == 200
     # Le lien (lever) contient le filtre etat, q2 et types — mais pas
     # le fonds_id (puisqu'on le lève).
-    assert ">\n            (lever)" in response.text or ">(lever)" in response.text or "(lever)" in response.text
+    assert (
+        ">\n            (lever)" in response.text
+        or ">(lever)" in response.text
+        or "(lever)" in response.text
+    )
     # Vérifie la composition de l'URL du lien (lever) : etat + q2 + types
     # préservés, fonds_id absent du href.
     import re
+
     # Cherche un href qui contient (lever) à proximité
     pattern = r'href="(/recherche\?[^"]+)"[^>]*>\s*\(lever\)'
     matches = re.findall(pattern, response.text)
@@ -733,5 +742,6 @@ def test_filtres_recherche_nb_filtres_actifs() -> None:
             langues=("fra",),
             types_coar=("journal",),
             q_dans_resultats="raffin",
-        ).nb_filtres_actifs == 4
+        ).nb_filtres_actifs
+        == 4
     )

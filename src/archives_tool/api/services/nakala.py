@@ -62,6 +62,7 @@ class RapatriementInvalide(FormulaireInvalide):
 class RafraichissementImpossible(Exception):
     """Aucun item ColleC n'est lié au DOI demandé (rapatrier d'abord)."""
 
+
 #: Code stable de la `SourceExterne` Nakala (unique en base).
 SOURCE_NAKALA_CODE = "nakala"
 
@@ -71,9 +72,7 @@ TYPE_RELATION_DEPOT = "depot_nakala"
 _URL_BASE_DEFAUT = "https://api.nakala.fr"
 
 
-def source_nakala(
-    db: Session, *, url_base: str = _URL_BASE_DEFAUT
-) -> SourceExterne:
+def source_nakala(db: Session, *, url_base: str = _URL_BASE_DEFAUT) -> SourceExterne:
     """Récupère (ou crée) la `SourceExterne` « nakala ». Idempotent.
 
     `url_base` ne sert qu'à la création initiale (informative) ; un appel
@@ -185,7 +184,11 @@ def mettre_en_cache_depot(
 #: `rafraichir`). Les champs ColleC-only (cote, etat_catalogage,
 #: notes_internes, numero*, fonds_id) sont préservés.
 _CHAMPS_DOCUMENTAIRES: tuple[str, ...] = (
-    "titre", "date", "type_coar", "langue", "description",
+    "titre",
+    "date",
+    "type_coar",
+    "langue",
+    "description",
 )
 
 
@@ -453,12 +456,18 @@ def _reconcilier_collections_nakala(
             and coll.fonds_id == fonds_id
         ):
             continue
-        if appliquer and item is not None and (
-            db.get(ItemCollection, (item.id, coll.id)) is None
+        if (
+            appliquer
+            and item is not None
+            and (db.get(ItemCollection, (item.id, coll.id)) is None)
         ):
-            db.add(ItemCollection(
-                item_id=item.id, collection_id=coll.id, ajoute_par=ajoute_par,
-            ))
+            db.add(
+                ItemCollection(
+                    item_id=item.id,
+                    collection_id=coll.id,
+                    ajoute_par=ajoute_par,
+                )
+            )
         liees.append(coll.cote)
     return liees, inconnues
 
@@ -493,9 +502,7 @@ def rapatrier(
             {"cote": f"cote indérivable du DOI {depot.identifiant!r} — fournir --cote"}
         )
 
-    deja = db.scalar(
-        select(Item).where(Item.doi_nakala == depot.identifiant)
-    )
+    deja = db.scalar(select(Item).where(Item.doi_nakala == depot.identifiant))
     if deja is not None:
         # Item déjà présent (rapatrié, créé manuellement, ou échec partiel
         # d'un cache antérieur) : on ne recrée pas, mais sur un run réel on
@@ -505,26 +512,42 @@ def rapatrier(
         # lecture seule (appliquer=False) pour que le preview liste ce qui
         # SERAIT lié. En réel : lie (avant le commit du cache → atomique).
         liees, inconnues = _reconcilier_collections_nakala(
-            db, deja, deja.fonds_id, depot.collections_ids,
-            ajoute_par=cree_par, appliquer=not dry_run,
+            db,
+            deja,
+            deja.fonds_id,
+            depot.collections_ids,
+            ajoute_par=cree_par,
+            appliquer=not dry_run,
         )
         if not dry_run:
             mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
         return RapportRapatriement(
-            cote=deja.cote, fonds_id=deja.fonds_id, dry_run=dry_run,
-            deja_existant=True, item_id=deja.id,
-            collections_liees=liees, collections_inconnues=inconnues,
+            cote=deja.cote,
+            fonds_id=deja.fonds_id,
+            dry_run=dry_run,
+            deja_existant=True,
+            item_id=deja.id,
+            collections_liees=liees,
+            collections_inconnues=inconnues,
         )
 
     if dry_run:
         # Aperçu lecture seule des collections qui seraient rattachées (S3).
         liees, inconnues = _reconcilier_collections_nakala(
-            db, None, fonds_id, depot.collections_ids, appliquer=False,
+            db,
+            None,
+            fonds_id,
+            depot.collections_ids,
+            appliquer=False,
         )
         return RapportRapatriement(
-            cote=cote_finale, fonds_id=fonds_id, dry_run=True,
-            deja_existant=False, item_id=None,
-            collections_liees=liees, collections_inconnues=inconnues,
+            cote=cote_finale,
+            fonds_id=fonds_id,
+            dry_run=True,
+            deja_existant=False,
+            item_id=None,
+            collections_liees=liees,
+            collections_inconnues=inconnues,
         )
 
     form = _depot_vers_formulaire(
@@ -539,14 +562,23 @@ def rapatrier(
     # Réconcilie l'appartenance aux collections Nakala (S3) avant le commit
     # du cache → persisté atomiquement avec lui.
     liees, inconnues = _reconcilier_collections_nakala(
-        db, item, item.fonds_id, depot.collections_ids,
-        ajoute_par=cree_par, appliquer=True,
+        db,
+        item,
+        item.fonds_id,
+        depot.collections_ids,
+        ajoute_par=cree_par,
+        appliquer=True,
     )
     mettre_en_cache_depot(db, depot, brut, cree_par=cree_par)
     return RapportRapatriement(
-        cote=item.cote, fonds_id=item.fonds_id, dry_run=False,
-        deja_existant=False, item_id=item.id, nb_fichiers=nb_fichiers,
-        collections_liees=liees, collections_inconnues=inconnues,
+        cote=item.cote,
+        fonds_id=item.fonds_id,
+        dry_run=False,
+        deja_existant=False,
+        item_id=item.id,
+        nb_fichiers=nb_fichiers,
+        collections_liees=liees,
+        collections_inconnues=inconnues,
     )
 
 
@@ -600,18 +632,25 @@ def rafraichir(
     """
     item = _item_lie_au_doi(db, depot.identifiant)
     base = formulaire_depuis_item(item)
-    cible = _depot_vers_formulaire(depot, fonds_id=item.fonds_id, cote=item.cote, base=base)
+    cible = _depot_vers_formulaire(
+        depot, fonds_id=item.fonds_id, cote=item.cote, base=base
+    )
 
     diffs = [
-        ChampDiff(champ=c, avant=getattr(base, c) or None, apres=getattr(cible, c) or None)
+        ChampDiff(
+            champ=c, avant=getattr(base, c) or None, apres=getattr(cible, c) or None
+        )
         for c in _CHAMPS_DOCUMENTAIRES
         if (getattr(base, c) or None) != (getattr(cible, c) or None)
     ]
     meta_modif = (base.metadonnees or {}) != (cible.metadonnees or {})
 
     rapport = RapportRafraichissement(
-        item_cote=item.cote, item_id=item.id, diffs=diffs,
-        metadonnees_modifiees=meta_modif, applique=False,
+        item_cote=item.cote,
+        item_id=item.id,
+        diffs=diffs,
+        metadonnees_modifiees=meta_modif,
+        applique=False,
     )
     if dry_run or not rapport.a_des_changements:
         return rapport
@@ -740,13 +779,20 @@ def rapatrier_collection(
         depot = mapper_depot(brut)
         if fonds is None:
             # Dry-run sur un fonds qui n'existe pas encore : tout serait créé.
-            rapport.crees.append(_cote_depuis_doi(depot.identifiant) or depot.identifiant)
+            rapport.crees.append(
+                _cote_depuis_doi(depot.identifiant) or depot.identifiant
+            )
             continue
         try:
             r = rapatrier(
-                db, depot, brut,
-                fonds_id=fonds.id, cree_par=cree_par, dry_run=dry_run,
-                doi_collection=doi_collection, base_url=client.base_url,
+                db,
+                depot,
+                brut,
+                fonds_id=fonds.id,
+                cree_par=cree_par,
+                dry_run=dry_run,
+                doi_collection=doi_collection,
+                base_url=client.base_url,
             )
         except (RapatriementInvalide, ItemInvalide) as e:
             detail = getattr(e, "erreurs", None) or str(e)
@@ -816,9 +862,7 @@ def rafraichir_collection(
     for brut in iterer_donnees_collection(client, doi_collection):
         depot = mapper_depot(brut)
         try:
-            r = rafraichir(
-                db, depot, brut, modifie_par=modifie_par, dry_run=dry_run
-            )
+            r = rafraichir(db, depot, brut, modifie_par=modifie_par, dry_run=dry_run)
         except RafraichissementImpossible:
             rapport.non_lies.append(depot.identifiant)
             continue

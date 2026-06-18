@@ -235,8 +235,12 @@ def apercu_rapatrier(
         return _redirect_erreur("Section `nakala:` absente de la config locale.")
     try:
         rapport = rapatrier_collection(
-            db, client, doi, fonds_cote=fonds_cote,
-            cree_par=utilisateur, dry_run=True,
+            db,
+            client,
+            doi,
+            fonds_cote=fonds_cote,
+            cree_par=utilisateur,
+            dry_run=True,
         )
     except FondsIntrouvable:
         return _redirect_erreur(f"Fonds {fonds_cote!r} introuvable.")
@@ -249,7 +253,11 @@ def apercu_rapatrier(
         request,
         "pages/nakala_rapatrier_apercu.html",
         _contexte_base(
-            nom_base, utilisateur, rapport=rapport, doi=doi, fonds=fonds_cote,
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            doi=doi,
+            fonds=fonds_cote,
         ),
     )
 
@@ -270,8 +278,12 @@ def executer_rapatrier(
         return _redirect_erreur("Section `nakala:` absente de la config locale.")
     try:
         rapport = rapatrier_collection(
-            db, client, doi, fonds_cote=fonds_cote,
-            cree_par=utilisateur, dry_run=False,
+            db,
+            client,
+            doi,
+            fonds_cote=fonds_cote,
+            cree_par=utilisateur,
+            dry_run=False,
         )
     except FondsIntrouvable:
         return _redirect_erreur(f"Fonds {fonds_cote!r} introuvable.")
@@ -436,7 +448,8 @@ def citation_item(
             finally:
                 _fermer(lecture)
     return templates.TemplateResponse(
-        request, "partials/nakala_citation.html",
+        request,
+        "partials/nakala_citation.html",
         _contexte_base(nom_base, utilisateur, citation=citation, erreur=erreur),
     )
 
@@ -461,8 +474,9 @@ def apercu_pousser_item(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = pousser_item(db, lecture, ecriture, item, dry_run=True,
-                               modifie_par=utilisateur)
+        rapport = pousser_item(
+            db, lecture, ecriture, item, dry_run=True, modifie_par=utilisateur
+        )
     except DepotImpossible as exc:
         return _redirect_item_erreur(cote, fonds, str(exc))
     except MetaInvalide as exc:
@@ -473,7 +487,8 @@ def apercu_pousser_item(
         _fermer(lecture)
         _fermer(ecriture)
     return templates.TemplateResponse(
-        request, "pages/nakala_pousser_apercu.html",
+        request,
+        "pages/nakala_pousser_apercu.html",
         _contexte_base(nom_base, utilisateur, rapport=rapport, cote=cote, fonds=fonds),
     )
 
@@ -493,8 +508,9 @@ def executer_pousser_item(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = pousser_item(db, lecture, ecriture, item, dry_run=False,
-                               modifie_par=utilisateur)
+        rapport = pousser_item(
+            db, lecture, ecriture, item, dry_run=False, modifie_par=utilisateur
+        )
     except (DepotImpossible, MetaInvalide) as exc:
         return _redirect_item_erreur(cote, fonds, str(exc))
     except ErreurNakala as exc:
@@ -529,9 +545,11 @@ def apercu_publier_item(
     if not item.doi_nakala:
         return _redirect_item_erreur(cote, fonds, "Item non déposé sur Nakala.")
     return templates.TemplateResponse(
-        request, "pages/nakala_publier_apercu.html",
-        _contexte_base(nom_base, utilisateur, cote=cote, fonds=fonds,
-                       doi=item.doi_nakala),
+        request,
+        "pages/nakala_publier_apercu.html",
+        _contexte_base(
+            nom_base, utilisateur, cote=cote, fonds=fonds, doi=item.doi_nakala
+        ),
     )
 
 
@@ -550,7 +568,9 @@ def executer_publier_item(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        publier_item(db, lecture, ecriture, item, dry_run=False, modifie_par=utilisateur)
+        publier_item(
+            db, lecture, ecriture, item, dry_run=False, modifie_par=utilisateur
+        )
     except (DepotImpossible, MetaInvalide) as exc:
         return _redirect_item_erreur(cote, fonds, str(exc))
     except ErreurNakala as exc:
@@ -558,13 +578,17 @@ def executer_publier_item(
     finally:
         _fermer(lecture)
         _fermer(ecriture)
-    return RedirectResponse(f"/item/{cote}?fonds={fonds}&nakala_publie=1", status_code=303)
+    return RedirectResponse(
+        f"/item/{cote}?fonds={fonds}&nakala_publie=1", status_code=303
+    )
 
 
 # ---- Collection : pousser & publier ------------------------------------
 
 
-@router.get("/nakala/pousser-collection", response_class=HTMLResponse, response_model=None)
+@router.get(
+    "/nakala/pousser-collection", response_class=HTMLResponse, response_model=None
+)
 def apercu_pousser_collection(
     request: Request,
     cote: str = Query(...),
@@ -581,17 +605,24 @@ def apercu_pousser_collection(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = pousser_collection(db, lecture, ecriture, collection, dry_run=True,
-                                     modifie_par=utilisateur)
+        rapport = pousser_collection(
+            db, lecture, ecriture, collection, dry_run=True, modifie_par=utilisateur
+        )
     except ErreurNakala as exc:
         return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
     finally:
         _fermer(lecture)
         _fermer(ecriture)
     return templates.TemplateResponse(
-        request, "pages/nakala_pousser_collection_apercu.html",
-        _contexte_base(nom_base, utilisateur, rapport=rapport, cote=collection.cote,
-                       fonds=fonds or ""),
+        request,
+        "pages/nakala_pousser_collection_apercu.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            cote=collection.cote,
+            fonds=fonds or "",
+        ),
     )
 
 
@@ -609,8 +640,9 @@ def executer_pousser_collection(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = pousser_collection(db, lecture, ecriture, collection, dry_run=False,
-                                     modifie_par=utilisateur)
+        rapport = pousser_collection(
+            db, lecture, ecriture, collection, dry_run=False, modifie_par=utilisateur
+        )
     except ErreurNakala as exc:
         return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
     finally:
@@ -622,7 +654,9 @@ def executer_pousser_collection(
     )
 
 
-@router.get("/nakala/publier-collection", response_class=HTMLResponse, response_model=None)
+@router.get(
+    "/nakala/publier-collection", response_class=HTMLResponse, response_model=None
+)
 def apercu_publier_collection(
     request: Request,
     cote: str = Query(...),
@@ -639,17 +673,24 @@ def apercu_publier_collection(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = publier_collection(db, lecture, ecriture, collection, dry_run=True,
-                                     modifie_par=utilisateur)
+        rapport = publier_collection(
+            db, lecture, ecriture, collection, dry_run=True, modifie_par=utilisateur
+        )
     except ErreurNakala as exc:
         return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
     finally:
         _fermer(lecture)
         _fermer(ecriture)
     return templates.TemplateResponse(
-        request, "pages/nakala_publier_collection_apercu.html",
-        _contexte_base(nom_base, utilisateur, rapport=rapport, cote=collection.cote,
-                       fonds=fonds or ""),
+        request,
+        "pages/nakala_publier_collection_apercu.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            cote=collection.cote,
+            fonds=fonds or "",
+        ),
     )
 
 
@@ -667,8 +708,9 @@ def executer_publier_collection(
     lecture = _client_ou_none(config)
     ecriture = _client_ecriture_ou_none(config)
     try:
-        rapport = publier_collection(db, lecture, ecriture, collection, dry_run=False,
-                                     modifie_par=utilisateur)
+        rapport = publier_collection(
+            db, lecture, ecriture, collection, dry_run=False, modifie_par=utilisateur
+        )
     except ErreurNakala as exc:
         return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
     finally:
@@ -722,21 +764,26 @@ def apercu_deposer_collection(
     ecriture = _client_ecriture_ou_none(config)
     try:
         rapport = deposer_collection(
-            db, ecriture, collection, racines=racines,
-            dry_run=True, cree_par=utilisateur,
+            db,
+            ecriture,
+            collection,
+            racines=racines,
+            dry_run=True,
+            cree_par=utilisateur,
         )
     except ErreurNakala as exc:
-        return _redirect_fonds_erreur(
-            fonds or cote, _message_erreur_nakala(exc, cote)
-        )
+        return _redirect_fonds_erreur(fonds or cote, _message_erreur_nakala(exc, cote))
     finally:
         _fermer(ecriture)
     return templates.TemplateResponse(
         request,
         "pages/nakala_deposer_collection_apercu.html",
         _contexte_base(
-            nom_base, utilisateur,
-            rapport=rapport, cote=cote, fonds=fonds or "",
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            cote=cote,
+            fonds=fonds or "",
             collection_titre=collection.titre,
         ),
     )
@@ -771,7 +818,8 @@ def lancer_depot_collection(
     try:
         job_id = reserver_job(
             fonds_cote=collection.fonds.cote if collection.fonds else "",
-            collection_cote=collection.cote, total=total,
+            collection_cote=collection.cote,
+            total=total,
         )
     except JobConcurrent as exc:
         return _redirect_fonds_erreur(fonds or cote, str(exc))
@@ -803,6 +851,7 @@ def lancer_depot_collection(
         # le job en echec pour qu'il apparaisse dans le suivi avec le
         # bon statut.
         from archives_tool.api.services import nakala_depot_jobs
+
         with nakala_depot_jobs._lock:
             etat = nakala_depot_jobs._JOBS.get(job_id)
             if etat is not None:
@@ -812,7 +861,8 @@ def lancer_depot_collection(
                 )
             nakala_depot_jobs._id_actuel = None
         return _redirect_fonds_erreur(
-            fonds or cote, f"Démarrage du dépôt échoué : {exc}",
+            fonds or cote,
+            f"Démarrage du dépôt échoué : {exc}",
         )
 
     return RedirectResponse(
@@ -849,8 +899,10 @@ def page_suivi_depot(
         request,
         "pages/nakala_deposer_suivi.html",
         _contexte_base(
-            nom_base, utilisateur,
-            etat=etat, job_id=job_id,
+            nom_base,
+            utilisateur,
+            etat=etat,
+            job_id=job_id,
         ),
     )
 
@@ -861,7 +913,8 @@ def page_suivi_depot(
     response_model=None,
 )
 def fragment_statut_depot(
-    job_id: str, request: Request,
+    job_id: str,
+    request: Request,
 ) -> HTMLResponse:
     """Fragment HTMX (every 2s) — barre + dernière cote traitée.
 
@@ -871,7 +924,8 @@ def fragment_statut_depot(
     etat = lire_etat_job(job_id)
     if etat is None:
         return HTMLResponse(
-            "<p>Job introuvable.</p>", status_code=404,
+            "<p>Job introuvable.</p>",
+            status_code=404,
         )
     return templates.TemplateResponse(
         request,

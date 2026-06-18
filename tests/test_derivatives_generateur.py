@@ -125,9 +125,7 @@ def test_generation_par_collection_libre(session: Session, tmp_path: Path) -> No
 
     rap = generer_derives(
         session,
-        perimetre=Perimetre(
-            collection_cote="HK-FAV", collection_fonds_cote="HK"
-        ),
+        perimetre=Perimetre(collection_cote="HK-FAV", collection_fonds_cote="HK"),
         racines={"src": src, "miniatures": cible},
     )
     # Les 2 fichiers de l'item rattaché.
@@ -272,12 +270,8 @@ def test_filtre_par_item(session: Session, tmp_path: Path) -> None:
     src.mkdir()
     creer_fonds(session, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
     fonds = lire_fonds_par_cote(session, "HK")
-    i1 = creer_item(
-        session, FormulaireItem(cote="HK-A", titre="A", fonds_id=fonds.id)
-    )
-    i2 = creer_item(
-        session, FormulaireItem(cote="HK-B", titre="B", fonds_id=fonds.id)
-    )
+    i1 = creer_item(session, FormulaireItem(cote="HK-A", titre="A", fonds_id=fonds.id))
+    i2 = creer_item(session, FormulaireItem(cote="HK-B", titre="B", fonds_id=fonds.id))
     for nom, item in [("a.png", i1), ("b.png", i2)]:
         _ecrire_image(src / nom)
         session.add(
@@ -308,9 +302,7 @@ def test_collection_inconnue_leve(session: Session, tmp_path: Path) -> None:
     with pytest.raises(CollectionIntrouvable):
         generer_derives(
             session,
-            perimetre=Perimetre(
-                collection_cote="INCONNUE", collection_fonds_cote="HK"
-            ),
+            perimetre=Perimetre(collection_cote="INCONNUE", collection_fonds_cote="HK"),
             racines={"src": src, "miniatures": tmp_path},
         )
 

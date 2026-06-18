@@ -95,9 +95,7 @@ def lister_push_nakala(
 ) -> list[OperationPushNakala]:
     """Liste les opérations push journalisées, plus récentes en
     premier. Filtres optionnels `doi` / `cote_item`."""
-    stmt = select(OperationPushNakala).order_by(
-        OperationPushNakala.execute_le.desc()
-    )
+    stmt = select(OperationPushNakala).order_by(OperationPushNakala.execute_le.desc())
     if doi:
         stmt = stmt.where(OperationPushNakala.doi == doi)
     if cote_item:

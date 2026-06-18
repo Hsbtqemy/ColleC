@@ -209,9 +209,7 @@ def soumettre_edition_inline_collection(
             fonds_obj = lire_fonds_par_cote(db, fonds)
             fonds_id = fonds_obj.id
         except FondsIntrouvable:
-            raise HTTPException(
-                status_code=404, detail=f"Fonds {fonds!r} introuvable."
-            )
+            raise HTTPException(status_code=404, detail=f"Fonds {fonds!r} introuvable.")
     try:
         collection = lire_collection_par_cote(db, cote, fonds_id=fonds_id)
     except CollectionIntrouvable:
@@ -300,7 +298,9 @@ def soumettre_edition_inline_fonds(
     setattr(formulaire, field, valeur)
 
     try:
-        fonds_modifie = modifier_fonds(db, fonds.id, formulaire, modifie_par=utilisateur)
+        fonds_modifie = modifier_fonds(
+            db, fonds.id, formulaire, modifie_par=utilisateur
+        )
     except ConflitVersion as e:
         return templates.TemplateResponse(
             request,

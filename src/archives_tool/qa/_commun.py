@@ -85,9 +85,7 @@ class RapportQa:
     controles: tuple[ResultatControle, ...]
 
     def _compter_severite(self, sev: Severite) -> int:
-        return sum(
-            1 for c in self.controles if c.severite == sev and not c.passe
-        )
+        return sum(1 for c in self.controles if c.severite == sev and not c.passe)
 
     @property
     def nb_erreurs(self) -> int:
@@ -140,7 +138,9 @@ def construire_resultat(
         libelle=libelle,
         passe=not problemes,
         compte_total=total,
-        compte_problemes=compte_problemes if compte_problemes is not None else len(problemes),
+        compte_problemes=compte_problemes
+        if compte_problemes is not None
+        else len(problemes),
         exemples=borner_exemples(problemes),
     )
 

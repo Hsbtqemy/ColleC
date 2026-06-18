@@ -46,9 +46,7 @@ from archives_tool.models import (
 )
 
 
-def _form(
-    fonds: Fonds, cote: str = "HK-001", titre: str = "Item HK"
-) -> FormulaireItem:
+def _form(fonds: Fonds, cote: str = "HK-001", titre: str = "Item HK") -> FormulaireItem:
     return FormulaireItem(cote=cote, titre=titre, fonds_id=fonds.id)
 
 
@@ -213,9 +211,7 @@ def test_lister_items_fonds(session: Session, fonds_hk: Fonds) -> None:
     assert [i.cote for i in listing.items] == ["HK-001", "HK-002"]
 
 
-def test_lister_items_fonds_filtre_etat(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_lister_items_fonds_filtre_etat(session: Session, fonds_hk: Fonds) -> None:
     creer_item(
         session,
         FormulaireItem(
@@ -229,16 +225,12 @@ def test_lister_items_fonds_filtre_etat(
         session,
         FormulaireItem(cote="HK-002", titre="B", fonds_id=fonds_hk.id),
     )
-    listing = lister_items_fonds(
-        session, fonds_hk.id, etat=EtatCatalogage.VALIDE.value
-    )
+    listing = lister_items_fonds(session, fonds_hk.id, etat=EtatCatalogage.VALIDE.value)
     assert listing.total == 1
     assert listing.items[0].cote == "HK-001"
 
 
-def test_lister_items_fonds_pagination(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_lister_items_fonds_pagination(session: Session, fonds_hk: Fonds) -> None:
     for i in range(1, 6):
         creer_item(session, _form(fonds_hk, cote=f"HK-{i:03d}"))
     page1 = lister_items_fonds(session, fonds_hk.id, par_page=2, page=1)
@@ -250,18 +242,14 @@ def test_lister_items_fonds_pagination(
     assert page2.items[0].cote == "HK-003"
 
 
-def test_lister_items_fonds_tri_desc(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_lister_items_fonds_tri_desc(session: Session, fonds_hk: Fonds) -> None:
     creer_item(session, _form(fonds_hk, cote="HK-001"))
     creer_item(session, _form(fonds_hk, cote="HK-002"))
     listing = lister_items_fonds(session, fonds_hk.id, tri="cote", ordre="desc")
     assert [i.cote for i in listing.items] == ["HK-002", "HK-001"]
 
 
-def test_lister_items_collection(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_lister_items_collection(session: Session, fonds_hk: Fonds) -> None:
     item1 = creer_item(session, _form(fonds_hk, cote="HK-001"))
     creer_item(session, _form(fonds_hk, cote="HK-002"))
     libre = creer_collection_libre(
@@ -379,9 +367,7 @@ def test_annee_derivee_jamais_hors_borne_validateur(
     assert formulaire.annee is None
 
 
-def test_creer_item_annee_derivee_de_date(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_creer_item_annee_derivee_de_date(session: Session, fonds_hk: Fonds) -> None:
     """Date parsable → année dérivée à la création, sans saisie."""
     item = creer_item(
         session,
@@ -467,9 +453,7 @@ def test_supprimer_item(session: Session, fonds_hk: Fonds) -> None:
     assert session.get(Item, iid) is None
 
 
-def test_supprimer_item_cascade_liaisons(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_supprimer_item_cascade_liaisons(session: Session, fonds_hk: Fonds) -> None:
     """Liaisons supprimées en cascade ; collections elles-mêmes restent."""
     item = creer_item(session, _form(fonds_hk))
     libre = creer_collection_libre(
@@ -490,9 +474,7 @@ def test_supprimer_item_cascade_liaisons(
     assert session.get(Collection, libre_id) is not None
 
 
-def test_supprimer_item_cascade_fichiers(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_supprimer_item_cascade_fichiers(session: Session, fonds_hk: Fonds) -> None:
     item = creer_item(session, _form(fonds_hk))
     session.add(
         Fichier(
@@ -524,9 +506,7 @@ def test_supprimer_item_inexistant(session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_item_dans_plusieurs_collections(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_item_dans_plusieurs_collections(session: Session, fonds_hk: Fonds) -> None:
     item = creer_item(session, _form(fonds_hk))
     libre = creer_collection_libre(
         session,

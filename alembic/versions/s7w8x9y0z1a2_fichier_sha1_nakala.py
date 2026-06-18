@@ -73,7 +73,9 @@ def upgrade() -> None:
                 sa.Column("sha1_nakala", sa.String(length=40), nullable=True),
             )
             batch.create_index(
-                "ix_fichier_sha1_nakala", ["sha1_nakala"], unique=False,
+                "ix_fichier_sha1_nakala",
+                ["sha1_nakala"],
+                unique=False,
             )
     appliquer_backfill(bind)
 

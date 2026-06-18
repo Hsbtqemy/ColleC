@@ -84,8 +84,8 @@ def _resoudre_chemin_config() -> Path:
         return Path(valeur)
     db_env = os.environ.get("ARCHIVES_DB")
     if db_env:
-        adjacent = Path(db_env).with_suffix("").with_name(
-            Path(db_env).stem + "_config.yaml"
+        adjacent = (
+            Path(db_env).with_suffix("").with_name(Path(db_env).stem + "_config.yaml")
         )
         if adjacent.is_file():
             return adjacent

@@ -56,9 +56,7 @@ def test_reel_cas_item_simple(session: Session) -> None:
     """Mode réel : fonds + miroir + items + fichiers + journal."""
     profil, chemin = _profil("cas_item_simple")
     config = _config({"scans_revues": FIXTURES / "cas_item_simple" / "arbre"})
-    rapport = importer(
-        profil, chemin, session, config, dry_run=False, cree_par="Alice"
-    )
+    rapport = importer(profil, chemin, session, config, dry_run=False, cree_par="Alice")
     assert rapport.dry_run is False
     assert rapport.batch_id is not None
     assert rapport.fonds_cree is True
@@ -101,9 +99,7 @@ def test_invariant_6_items_dans_miroir(session: Session) -> None:
 
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "HK"))
     miroir = next(
-        c
-        for c in fonds.collections
-        if c.type_collection == TypeCollection.MIROIR.value
+        c for c in fonds.collections if c.type_collection == TypeCollection.MIROIR.value
     )
     for item in fonds.items:
         liaison = session.get(ItemCollection, (item.id, miroir.id))
@@ -156,9 +152,7 @@ def test_cas_fichier_groupe_miroir_personnalisee(session: Session) -> None:
 
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "PF"))
     miroir = next(
-        c
-        for c in fonds.collections
-        if c.type_collection == TypeCollection.MIROIR.value
+        c for c in fonds.collections if c.type_collection == TypeCollection.MIROIR.value
     )
     assert miroir.doi_nakala == "10.34847/nkl.fakepfcoll"
 
@@ -178,9 +172,7 @@ def test_cas_hierarchie_cote_decomposition(session: Session) -> None:
     assert rapport.items_crees == 4
 
     # Item FA-AA-01-01 : hiérarchie {fonds: FA, sous_fonds: AA, serie: 01, numero: 01}
-    item = session.scalar(
-        select(Item).join(Fonds).where(Item.cote == "FA-AA-01-01")
-    )
+    item = session.scalar(select(Item).join(Fonds).where(Item.cote == "FA-AA-01-01"))
     assert item is not None
     assert item.metadonnees is not None
     h = item.metadonnees.get("hierarchie")
@@ -310,9 +302,7 @@ def test_divergences_aggregees_par_champ(session: Session) -> None:
     assert any("hash" in w for w in rapport.warnings)
     # Et l'agrégation est présente.
     assert len(rapport.divergences_aggregees) >= 1
-    divs_hash = [
-        d for d in rapport.divergences_aggregees if d.champ == "hash"
-    ]
+    divs_hash = [d for d in rapport.divergences_aggregees if d.champ == "hash"]
     assert len(divs_hash) == 1
     div = divs_hash[0]
     assert div.niveau == "metadonnees"
@@ -330,7 +320,10 @@ def test_divergences_aggregees_vide_si_pas_de_conflit(session: Session) -> None:
     continuent à passer)."""
     profil, chemin = _profil("cas_item_simple")
     rapport = importer(
-        profil, chemin, session, _config({"scans_revues": FIXTURES / "cas_item_simple" / "arbre"}),
+        profil,
+        chemin,
+        session,
+        _config({"scans_revues": FIXTURES / "cas_item_simple" / "arbre"}),
         dry_run=True,
     )
     assert rapport.divergences_aggregees == []
@@ -423,8 +416,7 @@ def test_promotion_url_metadonnees_si_iiif_absent(session: Session) -> None:
     # proprement sans perte de donnée).
     assert f0.metadonnees == {
         "embed_url": (
-            "https://api.nakala.fr/iiif/10.34847/nkl.x/"
-            "abc111/full/full/0/default.jpg"
+            "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/full/full/0/default.jpg"
         )
     }
 
@@ -468,15 +460,9 @@ def test_promotion_url_choisit_iiif_avant_data_url(session: Session) -> None:
     # qu'une seule colonne URL — on simule les 4 slugs en pointant
     # tous vers `iiif`, la promotion doit retenir le premier dans
     # l'ordre de préférence : `iiif`).
-    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
-        source="iiif"
-    )
-    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(
-        source="iiif"
-    )
-    profil.mapping.champs["fichier.metadonnees.iiif"] = MappingSimple(
-        source="iiif"
-    )
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(source="iiif")
+    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(source="iiif")
+    profil.mapping.champs["fichier.metadonnees.iiif"] = MappingSimple(source="iiif")
     rapport = importer(
         profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
     )
@@ -514,9 +500,7 @@ def test_pas_de_promotion_si_aucune_url_plausible(session: Session) -> None:
     # Pas d'erreur fatale — juste des warnings + 0 fichiers ajoutés.
     assert rapport.erreurs == []
     assert rapport.fichiers_ajoutes == 0
-    assert any(
-        "ni chemin disque ni URL Nakala" in w for w in rapport.warnings
-    )
+    assert any("ni chemin disque ni URL Nakala" in w for w in rapport.warnings)
 
 
 def test_pas_de_promotion_si_slug_liste_mais_valeur_non_url(
@@ -540,9 +524,7 @@ def test_pas_de_promotion_si_slug_liste_mais_valeur_non_url(
     # Le slug `thumb` est dans _SLUGS_URL_PROMUS_SOURCE — mais la
     # valeur en provenance de la colonne `hash` (abc111, def222, …)
     # n'est pas une URL.
-    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(
-        source="hash"
-    )
+    profil.mapping.champs["fichier.metadonnees.thumb"] = MappingSimple(source="hash")
     rapport = importer(
         profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
     )
@@ -550,9 +532,7 @@ def test_pas_de_promotion_si_slug_liste_mais_valeur_non_url(
     # Aucun Fichier ajouté — la garde a empêché la promotion d'un hash
     # vers iiif_url_nakala.
     assert rapport.fichiers_ajoutes == 0
-    assert any(
-        "ni chemin disque ni URL Nakala" in w for w in rapport.warnings
-    )
+    assert any("ni chemin disque ni URL Nakala" in w for w in rapport.warnings)
 
 
 def test_promotion_url_emet_warning_agrege(session: Session) -> None:
@@ -568,13 +548,9 @@ def test_promotion_url_emet_warning_agrege(session: Session) -> None:
     profil.mapping.champs["fichier.metadonnees.embed_url"] = MappingSimple(
         source="iiif"
     )
-    rapport = importer(
-        profil, chemin, session, _config({}), dry_run=True
-    )
+    rapport = importer(profil, chemin, session, _config({}), dry_run=True)
     assert rapport.erreurs == []
-    promotion_warnings = [
-        w for w in rapport.warnings if "URL promue depuis" in w
-    ]
+    promotion_warnings = [w for w in rapport.warnings if "URL promue depuis" in w]
     # Une seule ligne pour les 3 fichiers (groupés par slug source).
     assert len(promotion_warnings) == 1
     msg = promotion_warnings[0]
@@ -592,9 +568,7 @@ def test_promotion_url_pas_de_warning_si_mapping_explicite(
     warning Bug A est bien strictement informatif sur l'auto-promotion,
     pas un signal général sur les fichiers Nakala-only."""
     profil, chemin = _profil("cas_fichier_colonnes")
-    rapport = importer(
-        profil, chemin, session, _config({}), dry_run=True
-    )
+    rapport = importer(profil, chemin, session, _config({}), dry_run=True)
     assert rapport.erreurs == []
     assert not any("URL promue depuis" in w for w in rapport.warnings)
 
@@ -635,10 +609,7 @@ def test_normaliser_url_nakala_thumb_vers_info_json() -> None:
         _normaliser_url_nakala_vers_iiif,
     )
 
-    src = (
-        "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/"
-        "full/!200,200/0/default.jpg"
-    )
+    src = "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/full/!200,200/0/default.jpg"
     cible = _normaliser_url_nakala_vers_iiif(src)
     assert cible == "https://api.nakala.fr/iiif/10.34847/nkl.x/abc111/info.json"
 
@@ -768,9 +739,7 @@ def test_promotion_url_promeut_iiif_info_json_si_nakala(session: Session) -> Non
     # On la mappe en `fichier.metadonnees.data_url` pour simuler le
     # cas PF (export Nakala où la colonne s'appelle data_url et
     # contient une URL data binaire).
-    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
-        source="iiif"
-    )
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(source="iiif")
     rapport = importer(
         profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
     )
@@ -799,8 +768,7 @@ def test_propagation_doi_collection_sur_miroir(session: Session) -> None:
     assert rapport.erreurs == []
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
     miroir = next(
-        c for c in fonds.collections
-        if c.type_collection == TypeCollection.MIROIR.value
+        c for c in fonds.collections if c.type_collection == TypeCollection.MIROIR.value
     )
     # Propagation sur la miroir.
     assert miroir.doi_nakala == "10.34847/nkl.commun"
@@ -821,17 +789,14 @@ def test_propagation_doi_collection_aucune_si_valeurs_multiples(
     # PFC-1 reçoit doi A, PFC-2 reçoit doi B via une colonne du
     # tableur. La fixture a une colonne `hash` distincte par fichier
     # → on bricole en pose direct dans le mapping.
-    profil.mapping.champs["doi_collection_nakala"] = MappingSimple(
-        source="hash"
-    )
+    profil.mapping.champs["doi_collection_nakala"] = MappingSimple(source="hash")
     rapport = importer(
         profil, chemin, session, _config({}), dry_run=False, cree_par="Alice"
     )
     assert rapport.erreurs == []
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
     miroir = next(
-        c for c in fonds.collections
-        if c.type_collection == TypeCollection.MIROIR.value
+        c for c in fonds.collections if c.type_collection == TypeCollection.MIROIR.value
     )
     # Pas de propagation — chaque item a sa propre valeur.
     assert miroir.doi_nakala is None
@@ -857,8 +822,7 @@ def test_propagation_doi_collection_respecte_choix_utilisateur(
     assert rapport.erreurs == []
     fonds = session.scalar(select(Fonds).where(Fonds.cote == "PFC"))
     miroir = next(
-        c for c in fonds.collections
-        if c.type_collection == TypeCollection.MIROIR.value
+        c for c in fonds.collections if c.type_collection == TypeCollection.MIROIR.value
     )
     # Le DOI explicite du profil prime sur la propagation auto.
     assert miroir.doi_nakala == "10.34847/nkl.explicite"
@@ -952,9 +916,7 @@ def test_promotion_url_consistance_dry_run_et_reel(session: Session) -> None:
 
     profil, chemin = _profil("cas_fichier_colonnes")
     del profil.mapping.champs["fichier.iiif_url_nakala"]
-    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(
-        source="iiif"
-    )
+    profil.mapping.champs["fichier.metadonnees.data_url"] = MappingSimple(source="iiif")
     rapport_dry = importer(profil, chemin, session, _config({}), dry_run=True)
     assert rapport_dry.erreurs == []
     assert rapport_dry.fichiers_ajoutes == 3

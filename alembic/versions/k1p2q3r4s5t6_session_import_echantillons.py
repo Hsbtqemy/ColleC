@@ -26,21 +26,15 @@ def upgrade() -> None:
     # Idempotent : `session_import` peut être recréée par `create_all`
     # dans les tests qui partent d'une base vide (le modèle déclare
     # déjà la colonne). Skip si présente.
-    cols = {
-        c["name"] for c in inspect(op.get_bind()).get_columns("session_import")
-    }
+    cols = {c["name"] for c in inspect(op.get_bind()).get_columns("session_import")}
     if "colonnes_echantillon" in cols:
         return
     with op.batch_alter_table("session_import") as batch:
-        batch.add_column(
-            sa.Column("colonnes_echantillon", sa.JSON(), nullable=True)
-        )
+        batch.add_column(sa.Column("colonnes_echantillon", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
-    cols = {
-        c["name"] for c in inspect(op.get_bind()).get_columns("session_import")
-    }
+    cols = {c["name"] for c in inspect(op.get_bind()).get_columns("session_import")}
     if "colonnes_echantillon" not in cols:
         return
     with op.batch_alter_table("session_import") as batch:

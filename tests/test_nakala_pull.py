@@ -143,6 +143,7 @@ def _collection_libre_avec_doi(
         FormulaireCollection,
         creer_collection_libre,
     )
+
     col = creer_collection_libre(
         session,
         FormulaireCollection(cote=cote, titre=f"Coll {cote}", fonds_id=fonds.id),
@@ -167,8 +168,11 @@ def test_rapatrier_reconcilie_collections_nakala(
     )
 
     r = rapatrier(
-        session, _depot(collections_ids=[doi_connu, doi_inconnu]),
-        {"identifier": _DOI}, fonds_id=fonds_hk.id, cree_par="Marie",
+        session,
+        _depot(collections_ids=[doi_connu, doi_inconnu]),
+        {"identifier": _DOI},
+        fonds_id=fonds_hk.id,
+        cree_par="Marie",
     )
     assert r.collections_liees == ["HK-LIBRE"]
     assert r.collections_inconnues == [doi_inconnu]
@@ -192,7 +196,10 @@ def test_rapatrier_reconcilie_idempotent_au_re_pull(
     assert session.get(ItemCollection, (r1.item_id, col_id)) is None
     # 2e pull (déjà existant) AVEC le collectionsIds → lien posé.
     r2 = rapatrier(
-        session, _depot(collections_ids=[doi_connu]), {}, fonds_id=fonds_hk.id,
+        session,
+        _depot(collections_ids=[doi_connu]),
+        {},
+        fonds_id=fonds_hk.id,
     )
     assert r2.deja_existant is True
     assert r2.collections_liees == ["HK-LIBRE"]
@@ -215,9 +222,9 @@ def test_rapatrier_reconcilie_idempotent_meme_doi_pas_de_doublon(
     assert r2.collections_liees == ["HK-L"]  # appartenance toujours rapportée
     session.expire_all()
     n = session.scalar(
-        select(func.count()).select_from(ItemCollection).where(
-            ItemCollection.collection_id == col_id
-        )
+        select(func.count())
+        .select_from(ItemCollection)
+        .where(ItemCollection.collection_id == col_id)
     )
     assert n == 1  # un seul lien malgré deux pulls
 
@@ -232,8 +239,11 @@ def test_rapatrier_dry_run_apercu_collections_sans_ecrire(
     doi = "10.34847/nkl.collx"
     _collection_libre_avec_doi(session, fonds_hk, cote="HK-L", doi=doi)
     r = rapatrier(
-        session, _depot(collections_ids=[doi, "10.34847/nkl.inconnue"]),
-        {}, fonds_id=fonds_hk.id, dry_run=True,
+        session,
+        _depot(collections_ids=[doi, "10.34847/nkl.inconnue"]),
+        {},
+        fonds_id=fonds_hk.id,
+        dry_run=True,
     )
     assert r.dry_run is True and r.item_id is None
     assert r.collections_liees == ["HK-L"]
@@ -273,12 +283,16 @@ def test_rapatrier_match_doi_normalise_des_deux_cotes(
     from archives_tool.models import ItemCollection
 
     col_id = _collection_libre_avec_doi(
-        session, fonds_hk, cote="HK-URL",
+        session,
+        fonds_hk,
+        cote="HK-URL",
         doi="https://nakala.fr/collection/10.34847/nkl.urlform",
     )
     r = rapatrier(
-        session, _depot(collections_ids=["10.34847/nkl.urlform"]),
-        {}, fonds_id=fonds_hk.id,
+        session,
+        _depot(collections_ids=["10.34847/nkl.urlform"]),
+        {},
+        fonds_id=fonds_hk.id,
     )
     assert r.collections_liees == ["HK-URL"]
     assert session.get(ItemCollection, (r.item_id, col_id)) is not None
@@ -293,16 +307,27 @@ def test_materialiser_capture_description_par_fichier(
     from archives_tool.api.services.nakala import materialiser_fichiers_nakala
     from archives_tool.models import Fichier
 
-    item = creer_item(session, FormulaireItem(
-        cote="PF-DESC", titre="x", fonds_id=fonds_hk.id,
-    ))
-    brut = {"identifier": "10.34847/nkl.descX", "files": [
-        {"name": "p1.jpg", "sha1": "a" * 40, "description": "Recto, titre."},
-        {"name": "p2.jpg", "sha1": "b" * 40},  # clé absente → None
-        {"name": "p3.jpg", "sha1": "c" * 40, "description": ""},  # vide → None
-    ]}
+    item = creer_item(
+        session,
+        FormulaireItem(
+            cote="PF-DESC",
+            titre="x",
+            fonds_id=fonds_hk.id,
+        ),
+    )
+    brut = {
+        "identifier": "10.34847/nkl.descX",
+        "files": [
+            {"name": "p1.jpg", "sha1": "a" * 40, "description": "Recto, titre."},
+            {"name": "p2.jpg", "sha1": "b" * 40},  # clé absente → None
+            {"name": "p3.jpg", "sha1": "c" * 40, "description": ""},  # vide → None
+        ],
+    }
     n = materialiser_fichiers_nakala(
-        session, item, brut, base_url="https://apitest.nakala.fr",
+        session,
+        item,
+        brut,
+        base_url="https://apitest.nakala.fr",
     )
     session.commit()
     session.expire_all()  # force une relecture SQL (persistance, pas l'identity map)
@@ -323,11 +348,21 @@ def test_fichier_description_externe_defaut_none(
     from archives_tool.api.services.items import FormulaireItem, creer_item
     from archives_tool.models import Fichier
 
-    item = creer_item(session, FormulaireItem(
-        cote="PF-DEF", titre="x", fonds_id=fonds_hk.id,
-    ))
-    f = Fichier(item_id=item.id, nom_fichier="a.jpg", racine="scans",
-                chemin_relatif="a.jpg", ordre=1)
+    item = creer_item(
+        session,
+        FormulaireItem(
+            cote="PF-DEF",
+            titre="x",
+            fonds_id=fonds_hk.id,
+        ),
+    )
+    f = Fichier(
+        item_id=item.id,
+        nom_fichier="a.jpg",
+        racine="scans",
+        chemin_relatif="a.jpg",
+        ordre=1,
+    )
     session.add(f)
     session.commit()
     session.expire_all()
@@ -404,12 +439,20 @@ def test_rafraichir_sans_changement_ne_applique_pas(
     # métadonnées diffèrent toujours ici, donc on teste juste le no-op
     # documentaire via un dépôt minimal sans méta.)
     depot_nu = DepotNakala(
-        identifiant=_DOI, statut="published", titre="T", createurs=[],
-        date="1900", type_coar="", langues=[], description="", sujets=[],
+        identifiant=_DOI,
+        statut="published",
+        titre="T",
+        createurs=[],
+        date="1900",
+        type_coar="",
+        langues=[],
+        description="",
+        sujets=[],
         licence=None,
     )
     item = creer_item(
-        session, FormulaireItem(cote="abcdef12", titre="T", fonds_id=fonds_hk.id, date="1900")
+        session,
+        FormulaireItem(cote="abcdef12", titre="T", fonds_id=fonds_hk.id, date="1900"),
     )
     item.doi_nakala = _DOI
     session.commit()
@@ -419,6 +462,7 @@ def test_rafraichir_sans_changement_ne_applique_pas(
     assert r.metadonnees_modifiees is False
     assert r.applique is False
     session.expire_all()
-    assert session.scalar(
-        select(Item.version).where(Item.doi_nakala == _DOI)
-    ) == version_avant  # pas touché
+    assert (
+        session.scalar(select(Item.version).where(Item.doi_nakala == _DOI))
+        == version_avant
+    )  # pas touché

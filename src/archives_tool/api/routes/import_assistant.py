@@ -117,9 +117,7 @@ def page_session_import(
 ) -> RedirectResponse:
     """Ouvre une session sur son étape courante."""
     session = charger_session_import_ou_404(db, session_id)
-    return RedirectResponse(
-        f"/import/{session.id}/{session.etape}", status_code=303
-    )
+    return RedirectResponse(f"/import/{session.id}/{session.etape}", status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +126,7 @@ def page_session_import(
 
 
 def _rediriger_vers_etape_courante(session: SessionImport) -> RedirectResponse:
-    return RedirectResponse(
-        f"/import/{session.id}/{session.etape}", status_code=303
-    )
+    return RedirectResponse(f"/import/{session.id}/{session.etape}", status_code=303)
 
 
 def _etape_accessible(session: SessionImport, demandee: str) -> bool:
@@ -195,9 +191,7 @@ def soumettre_tableur(
         return templates.TemplateResponse(
             request,
             "pages/import_etape_tableur.html",
-            _contexte_base(
-                nom_base, utilisateur, session=session, erreur=str(e)
-            ),
+            _contexte_base(nom_base, utilisateur, session=session, erreur=str(e)),
             status_code=400,
         )
     return RedirectResponse(f"/import/{session.id}/fonds", status_code=303)
@@ -302,9 +296,7 @@ def soumettre_fonds(
         FondsProfil.model_validate(fonds_data)
     except ValidationError as e:
         erreurs = {
-            str(err["loc"][0]): err["msg"]
-            for err in e.errors()
-            if err.get("loc")
+            str(err["loc"][0]): err["msg"] for err in e.errors() if err.get("loc")
         }
         return templates.TemplateResponse(
             request,
@@ -389,9 +381,7 @@ _HINTS_CIBLES: dict[str, str] = {
     ),
     "langue": "Code ISO 639-3 (ex. `fra`, `eng`, `spa`).",
     "description": "Description publique destinée aux exports DC.",
-    "notes_internes": (
-        "Notes équipe pour le chantier — ne sont pas exportées en DC."
-    ),
+    "notes_internes": ("Notes équipe pour le chantier — ne sont pas exportées en DC."),
     "doi_nakala": "DOI Nakala de l'item publié (ex. `10.34847/nkl.xxx`).",
     "doi_collection_nakala": (
         "DOI Nakala de la collection-parent dans laquelle l'item est publié."
@@ -399,9 +389,7 @@ _HINTS_CIBLES: dict[str, str] = {
     # Fichier — propres à un scan.
     "fichier.nom_fichier": "Nom du scan (ex. `xxx_001.tif`).",
     "fichier.hash_sha256": "Empreinte SHA-256 du fichier source.",
-    "fichier.iiif_url_nakala": (
-        "URL `info.json` IIIF du fichier déposé sur Nakala."
-    ),
+    "fichier.iiif_url_nakala": ("URL `info.json` IIIF du fichier déposé sur Nakala."),
     # Métadonnées DC fréquentes (rangées dans `Item.metadonnees`).
     "metadonnees.auteur": "Auteur principal (DC creator), texte libre.",
     "metadonnees.editeur": "Éditeur ou maison d'édition (DC publisher).",
@@ -724,9 +712,7 @@ def soumettre_fichiers(
     if not racine.strip():
         config = {"ordre_depuis_nom": ordre} if ordre else None
         enregistrer_resolution(db, session, config)
-        return RedirectResponse(
-            f"/import/{session.id}/apercu", status_code=303
-        )
+        return RedirectResponse(f"/import/{session.id}/apercu", status_code=303)
 
     config = {
         "racine": racine.strip(),
@@ -769,10 +755,7 @@ def _autres_warnings(rapport) -> list[str]:
 
     if rapport is None:
         return []
-    return [
-        w for w in rapport.warnings
-        if MARQUEUR_WARNING_DIVERGENCE not in w
-    ]
+    return [w for w in rapport.warnings if MARQUEUR_WARNING_DIVERGENCE not in w]
 
 
 @router.get(
@@ -891,6 +874,4 @@ def executer_import_route(
     if rapport.erreurs:
         return _rerendre(None, rapport)
 
-    return RedirectResponse(
-        f"/fonds/{rapport.fonds_cote}", status_code=303
-    )
+    return RedirectResponse(f"/fonds/{rapport.fonds_cote}", status_code=303)

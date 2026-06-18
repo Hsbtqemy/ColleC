@@ -78,12 +78,20 @@ class _FakeReadClient:
         return False
 
     def lire_depot(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": list(_FakeReadClient.metas_distantes),
-                "modDate": _FakeReadClient.mod_date, "files": [], "status": "pending"}
+        return {
+            "identifier": doi,
+            "metas": list(_FakeReadClient.metas_distantes),
+            "modDate": _FakeReadClient.mod_date,
+            "files": [],
+            "status": "pending",
+        }
 
     def lire_collection(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": list(_FakeReadClient.metas_collection),
-                "status": "private"}
+        return {
+            "identifier": doi,
+            "metas": list(_FakeReadClient.metas_collection),
+            "status": "private",
+        }
 
 
 @pytest.fixture(autouse=True)
@@ -117,13 +125,27 @@ def db_avec_item(tmp_path: Path) -> Path:
     (tmp_path / "scans" / "x.jpg").write_bytes(b"\xff\xd8\xff img")
     with creer_session_factory(engine)() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="La mujer desnuda", fonds_id=f.id, date="1984",
-            langue="spa", type_coar="http://purl.org/coar/resource_type/c_2f33",
-            metadonnees={"createurs": ["Somers, Armonía"]},
-        ))
-        s.add(Fichier(item_id=item.id, nom_fichier="x.jpg", racine="scans",
-                      chemin_relatif="x.jpg", ordre=1))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="La mujer desnuda",
+                fonds_id=f.id,
+                date="1984",
+                langue="spa",
+                type_coar="http://purl.org/coar/resource_type/c_2f33",
+                metadonnees={"createurs": ["Somers, Armonía"]},
+            ),
+        )
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="x.jpg",
+                racine="scans",
+                chemin_relatif="x.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
     engine.dispose()
     return db
@@ -134,10 +156,20 @@ def _session(db: Path):
 
 
 def test_deposer_dry_run_par_defaut(config_nakala: Path, db_avec_item: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "deposer", "AS-001", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "deposer",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output and "1 fichier(s)" in r.output
     # Rien envoyé, DOI non posé.
@@ -148,10 +180,21 @@ def test_deposer_dry_run_par_defaut(config_nakala: Path, db_avec_item: Path) -> 
 
 
 def test_deposer_reel(config_nakala: Path, db_avec_item: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "deposer", "AS-001", "--fonds", "AS", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "deposer",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "déposé" in r.output
     client = _FakeWriteClient.instances[0]
@@ -164,33 +207,71 @@ def test_deposer_reel(config_nakala: Path, db_avec_item: Path) -> None:
 def test_deposer_sans_api_key_exit2(tmp_path: Path, db_avec_item: Path) -> None:
     cfg = tmp_path / "c.yaml"
     cfg.write_text(
-        yaml.safe_dump({"utilisateur": "T", "racines": {"scans": str(tmp_path / "scans")},
-                        "nakala": {"base_url": "https://apitest.nakala.fr"}}),
+        yaml.safe_dump(
+            {
+                "utilisateur": "T",
+                "racines": {"scans": str(tmp_path / "scans")},
+                "nakala": {"base_url": "https://apitest.nakala.fr"},
+            }
+        ),
         encoding="utf-8",
     )
-    r = runner.invoke(app, [
-        "nakala", "deposer", "AS-001", "--fonds", "AS",
-        "--config", str(cfg), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "deposer",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(cfg),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 2
     assert "api_key" in r.output
 
 
-def test_deposer_item_introuvable_exit1(config_nakala: Path, db_avec_item: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "deposer", "INEXISTANT", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+def test_deposer_item_introuvable_exit1(
+    config_nakala: Path, db_avec_item: Path
+) -> None:
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "deposer",
+            "INEXISTANT",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 1
     assert "introuvable" in r.output.lower()
 
 
 def test_deposer_collection_reel(config_nakala: Path, db_avec_item: Path) -> None:
     # La miroir du fonds AS contient l'item AS-001.
-    r = runner.invoke(app, [
-        "nakala", "deposer-collection", "AS", "--fonds", "AS", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "deposer-collection",
+            "AS",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "1 déposé(s)" in r.output
     client = _FakeWriteClient.instances[0]
@@ -221,10 +302,20 @@ def _poser_doi(db: Path, cote: str, doi: str) -> None:
 
 
 def test_pousser_sans_doi_exit1(config_nakala: Path, db_avec_item: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "pousser", "AS-001", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 1
     assert "deposer" in r.output.lower()
 
@@ -232,11 +323,23 @@ def test_pousser_sans_doi_exit1(config_nakala: Path, db_avec_item: Path) -> None
 def test_pousser_dry_run_montre_diff(config_nakala: Path, db_avec_item: Path) -> None:
     _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
     # Distant : titre différent du local ("La mujer desnuda").
-    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Ancien"}]
-    r = runner.invoke(app, [
-        "nakala", "pousser", "AS-001", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    _FakeReadClient.metas_distantes = [
+        {"propertyUri": f"{_NKL}title", "value": "Ancien"}
+    ]
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output and "nkl:title" in r.output
     assert _FakeWriteClient.instances[0].puts == []  # rien poussé
@@ -244,11 +347,24 @@ def test_pousser_dry_run_montre_diff(config_nakala: Path, db_avec_item: Path) ->
 
 def test_pousser_reel_applique_put(config_nakala: Path, db_avec_item: Path) -> None:
     _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
-    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Ancien"}]
-    r = runner.invoke(app, [
-        "nakala", "pousser", "AS-001", "--fonds", "AS", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    _FakeReadClient.metas_distantes = [
+        {"propertyUri": f"{_NKL}title", "value": "Ancien"}
+    ]
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "poussées" in r.output
     puts = _FakeWriteClient.instances[0].puts
@@ -257,10 +373,20 @@ def test_pousser_reel_applique_put(config_nakala: Path, db_avec_item: Path) -> N
 
 def test_publier_dry_run(config_nakala: Path, db_avec_item: Path) -> None:
     _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
-    r = runner.invoke(app, [
-        "nakala", "publier", "AS-001", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "publier",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output and "IRRÉVERSIBLE" in r.output
     assert _FakeWriteClient.instances[0].puts == []
@@ -268,10 +394,21 @@ def test_publier_dry_run(config_nakala: Path, db_avec_item: Path) -> None:
 
 def test_publier_reel(config_nakala: Path, db_avec_item: Path) -> None:
     _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
-    r = runner.invoke(app, [
-        "nakala", "publier", "AS-001", "--fonds", "AS", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "publier",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "publié" in r.output
     puts = _FakeWriteClient.instances[0].puts
@@ -294,12 +431,26 @@ def test_pousser_collection_cli_entite_et_items(
         miroir.doi_nakala = "10.34847/nkl.col1"
         s.commit()
     # Distant : titre collection ET titre item différents → diffs.
-    _FakeReadClient.metas_collection = [{"propertyUri": f"{_NKL}title", "value": "Col distante"}]
-    _FakeReadClient.metas_distantes = [{"propertyUri": f"{_NKL}title", "value": "Item distant"}]
-    r = runner.invoke(app, [
-        "nakala", "pousser-collection", "AS", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    _FakeReadClient.metas_collection = [
+        {"propertyUri": f"{_NKL}title", "value": "Col distante"}
+    ]
+    _FakeReadClient.metas_distantes = [
+        {"propertyUri": f"{_NKL}title", "value": "Item distant"}
+    ]
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser-collection",
+            "AS",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "Métadonnées de collection" in r.output
     assert "Items de AS" in r.output and "1 à pousser" in r.output
@@ -307,10 +458,21 @@ def test_pousser_collection_cli_entite_et_items(
 
 def test_publier_collection_cli(config_nakala: Path, db_avec_item: Path) -> None:
     _poser_doi(db_avec_item, "AS-001", "10.34847/nkl.x1")
-    r = runner.invoke(app, [
-        "nakala", "publier-collection", "AS", "--fonds", "AS", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_avec_item),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "publier-collection",
+            "AS",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_avec_item),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "1 publié(s)" in r.output
     puts = _FakeWriteClient.instances[0].puts

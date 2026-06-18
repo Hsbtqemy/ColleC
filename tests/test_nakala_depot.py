@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds, lire_fonds_par_cote
+from archives_tool.api.services.fonds import (
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+)
 from archives_tool.api.services.items import FormulaireItem, creer_item
 from archives_tool.api.services.nakala_depot import (
     DepotImpossible,
@@ -36,7 +40,9 @@ class _FakeWriteClient:
 
     def creer_depot(self, *, metas, files, status="pending", collections_ids=None):
         self.depot_cree = {
-            "metas": metas, "files": files, "status": status,
+            "metas": metas,
+            "files": files,
+            "status": status,
             "collectionsIds": collections_ids,
         }
         return {"payload": {"id": "10.34847/nkl.cree1"}}
@@ -63,19 +69,31 @@ def _item_avec_fichier_local(
 ) -> Item:
     """Crée un fonds + item + 1 Fichier dont le binaire existe sur disque."""
     f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers"))
-    item = creer_item(s, FormulaireItem(
-        cote="AS-001", titre="La mujer desnuda", fonds_id=f.id,
-        date=date, langue="spa", description="Roman",
-        type_coar="http://purl.org/coar/resource_type/c_2f33",
-        metadonnees={"createurs": list(createurs), "sujets": ["Literatura"]},
-    ))
+    item = creer_item(
+        s,
+        FormulaireItem(
+            cote="AS-001",
+            titre="La mujer desnuda",
+            fonds_id=f.id,
+            date=date,
+            langue="spa",
+            description="Roman",
+            type_coar="http://purl.org/coar/resource_type/c_2f33",
+            metadonnees={"createurs": list(createurs), "sujets": ["Literatura"]},
+        ),
+    )
     # Fichier avec binaire local.
     (tmp_path / "scans").mkdir(exist_ok=True)
     (tmp_path / "scans" / "as001.jpg").write_bytes(b"\xff\xd8\xff img")
-    s.add(Fichier(
-        item_id=item.id, nom_fichier="as001.jpg", racine="scans",
-        chemin_relatif="as001.jpg", ordre=1,
-    ))
+    s.add(
+        Fichier(
+            item_id=item.id,
+            nom_fichier="as001.jpg",
+            racine="scans",
+            chemin_relatif="as001.jpg",
+            ordre=1,
+        )
+    )
     s.commit()
     return item
 
@@ -87,8 +105,13 @@ def test_item_vers_slugs_coeur() -> None:
         date = "1984"
         description = "Desc"
         type_coar = "http://purl.org/coar/resource_type/c_2f33"
-        metadonnees = {"createurs": ["Somers, Armonía"], "sujets": ["Lit"],
-                       "dcterms_publisher": "CNRS", "dcterms_issued": "1984"}
+        metadonnees = {
+            "createurs": ["Somers, Armonía"],
+            "sujets": ["Lit"],
+            "dcterms_publisher": "CNRS",
+            "dcterms_issued": "1984",
+        }
+
     slugs = item_vers_slugs(_I())
     # Langue convertie 639-3 → RFC5646 pour Nakala (spa → es) : sur la VALEUR
     # `dcterms:language` ET sur l'attribut `lang` des littéraux multilingues
@@ -137,8 +160,15 @@ def test_reel_upload_et_cree_depot(db_path: Path, tmp_path: Path) -> None:
     client = _FakeWriteClient()
     with _session(db_path) as s:
         item = _item_avec_fichier_local(s, tmp_path)
-        rapport = deposer_item(s, client, item, racines=racines, dry_run=False,
-                               collection_doi="10.34847/nkl.col1", cree_par="T")
+        rapport = deposer_item(
+            s,
+            client,
+            item,
+            racines=racines,
+            dry_run=False,
+            collection_doi="10.34847/nkl.col1",
+            cree_par="T",
+        )
     assert rapport.doi == "10.34847/nkl.cree1"
     assert client.uploads == ["as001.jpg"]
     assert client.depot_cree["status"] == "pending"
@@ -153,7 +183,8 @@ def test_reel_upload_et_cree_depot(db_path: Path, tmp_path: Path) -> None:
 
 
 def test_deposer_porte_description_par_fichier(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """S7 : un Fichier avec `description_externe` (transcription) la porte
     dans son entrée `files[]` au POST /datas. Validé H11 (apitest) :
@@ -166,13 +197,13 @@ def test_deposer_porte_description_par_fichier(
         s.commit()
         deposer_item(s, client, item, racines=racines, dry_run=False)
     assert client.depot_cree["files"] == [
-        {"sha1": "sha-1", "name": "as001.jpg",
-         "description": "Recto, page de titre."},
+        {"sha1": "sha-1", "name": "as001.jpg", "description": "Recto, page de titre."},
     ]
 
 
 def test_sha1_nakala_pas_persiste_si_creer_depot_echoue(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Si `creer_depot` lève après les uploads, les `sha1_nakala` mis en
     mémoire sur les Fichier ne sont pas commités (db.commit() jamais
@@ -217,11 +248,25 @@ def test_sans_fichier_local_refuse(db_path: Path, tmp_path: Path) -> None:
     client = _FakeWriteClient()
     with _session(db_path) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(cote="AS-002", titre="T", fonds_id=f.id,
-                                            date="1984", metadonnees={"createurs": ["X, Y"]}))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-002",
+                titre="T",
+                fonds_id=f.id,
+                date="1984",
+                metadonnees={"createurs": ["X, Y"]},
+            ),
+        )
         # Fichier Nakala-only (pas de chemin local).
-        s.add(Fichier(item_id=item.id, nom_fichier="x.jpg", ordre=1,
-                      iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json"))
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="x.jpg",
+                ordre=1,
+                iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json",
+            )
+        )
         s.commit()
         with pytest.raises(DepotImpossible):
             deposer_item(s, client, item, racines=racines, dry_run=True)
@@ -304,7 +349,9 @@ def test_deposer_collection_dry_run_ne_cree_rien(db_path: Path, tmp_path: Path) 
         assert _collection_miroir(s, "AS").doi_nakala is None
 
 
-def test_deposer_collection_reel_cree_et_pose_doi(db_path: Path, tmp_path: Path) -> None:
+def test_deposer_collection_reel_cree_et_pose_doi(
+    db_path: Path, tmp_path: Path
+) -> None:
     racines = {"scans": tmp_path / "scans"}
     client = _FakeWriteClientCol()
     from archives_tool.api.services.nakala_depot import deposer_collection
@@ -312,8 +359,9 @@ def test_deposer_collection_reel_cree_et_pose_doi(db_path: Path, tmp_path: Path)
     with _session(db_path) as s:
         _item_avec_fichier_local(s, tmp_path)
         miroir = _collection_miroir(s, "AS")
-        rapport = deposer_collection(s, client, miroir, racines=racines, dry_run=False,
-                                     cree_par="T")
+        rapport = deposer_collection(
+            s, client, miroir, racines=racines, dry_run=False, cree_par="T"
+        )
     assert rapport.collection_creee and rapport.collection_doi == "10.34847/nkl.colNEW"
     assert len(rapport.deposes) == 1
     with _session(db_path) as s:
@@ -337,9 +385,13 @@ def _NKL_T(v: str, lang: str | None = None) -> dict:
 class _FakeRWClient:
     """Client combiné lecture+écriture pour les tests de push."""
 
-    def __init__(self, metas_distantes: list[dict], mod_date: str = "2024-01-01",
-                 metas_collection: list[dict] | None = None,
-                 status: str = "pending") -> None:
+    def __init__(
+        self,
+        metas_distantes: list[dict],
+        mod_date: str = "2024-01-01",
+        metas_collection: list[dict] | None = None,
+        status: str = "pending",
+    ) -> None:
         self._metas = metas_distantes
         self._mod = mod_date
         self._metas_col = metas_collection if metas_collection is not None else []
@@ -348,8 +400,13 @@ class _FakeRWClient:
         self.put_collection: dict | None = None
 
     def lire_depot(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": self._metas, "modDate": self._mod,
-                "files": [], "status": self._status}
+        return {
+            "identifier": doi,
+            "metas": self._metas,
+            "modDate": self._mod,
+            "files": [],
+            "status": self._status,
+        }
 
     def modifier_depot(self, identifiant, *, metas, status=None):
         self.put = {"metas": metas, "status": status}
@@ -367,7 +424,9 @@ class _FakeRWClient:
         return {}
 
 
-def _item_depose(s, tmp_path: Path, *, titre="Titre local", doi="10.34847/nkl.x1") -> Item:
+def _item_depose(
+    s, tmp_path: Path, *, titre="Titre local", doi="10.34847/nkl.x1"
+) -> Item:
     item = _item_avec_fichier_local(s, tmp_path)
     item.titre = titre
     item.doi_nakala = doi
@@ -387,11 +446,24 @@ def test_diff_push_createur_enrichi_par_nakala_ignore() -> None:
     stockage — le diff ne doit pas voir de faux changement."""
     from archives_tool.api.services.nakala_depot import diff_push
 
-    distant = [{"propertyUri": f"{_NKL}creator", "value": {
-        "authorId": "abc-123", "fullName": "Test, ColleC",
-        "givenname": "ColleC", "orcid": None, "surname": "Test"}}]
-    local = [{"propertyUri": f"{_NKL}creator",
-              "value": {"givenname": "ColleC", "surname": "Test"}}]
+    distant = [
+        {
+            "propertyUri": f"{_NKL}creator",
+            "value": {
+                "authorId": "abc-123",
+                "fullName": "Test, ColleC",
+                "givenname": "ColleC",
+                "orcid": None,
+                "surname": "Test",
+            },
+        }
+    ]
+    local = [
+        {
+            "propertyUri": f"{_NKL}creator",
+            "value": {"givenname": "ColleC", "surname": "Test"},
+        }
+    ]
     assert diff_push(distant, local) == []
 
 
@@ -401,13 +473,28 @@ def test_diff_push_createur_orcid_url_vs_nu_idempotent() -> None:
     un faux diff à chaque push. Vérifié live (apitest 2026-06-15)."""
     from archives_tool.api.services.nakala_depot import diff_push
 
-    distant = [{"propertyUri": f"{_NKL}creator", "value": {
-        "authorId": "df8edbe2", "fullName": "Julio Cortázar",
-        "givenname": "Julio", "surname": "Cortázar",
-        "orcid": "https://orcid.org/0000-0001-2345-6789"}}]
-    local = [{"propertyUri": f"{_NKL}creator", "value": {
-        "givenname": "Julio", "surname": "Cortázar",
-        "orcid": "0000-0001-2345-6789"}}]
+    distant = [
+        {
+            "propertyUri": f"{_NKL}creator",
+            "value": {
+                "authorId": "df8edbe2",
+                "fullName": "Julio Cortázar",
+                "givenname": "Julio",
+                "surname": "Cortázar",
+                "orcid": "https://orcid.org/0000-0001-2345-6789",
+            },
+        }
+    ]
+    local = [
+        {
+            "propertyUri": f"{_NKL}creator",
+            "value": {
+                "givenname": "Julio",
+                "surname": "Cortázar",
+                "orcid": "0000-0001-2345-6789",
+            },
+        }
+    ]
     assert diff_push(distant, local) == []
 
 
@@ -430,7 +517,9 @@ def test_pousser_item_sans_doi_refuse(db_path: Path, tmp_path: Path) -> None:
             pousser_item(s, client, client, item, dry_run=True)
 
 
-def test_pousser_item_dry_run_montre_diff_sans_ecrire(db_path: Path, tmp_path: Path) -> None:
+def test_pousser_item_dry_run_montre_diff_sans_ecrire(
+    db_path: Path, tmp_path: Path
+) -> None:
     from archives_tool.api.services.nakala_depot import pousser_item
 
     with _session(db_path) as s:
@@ -452,7 +541,9 @@ def test_pousser_item_reel_applique_put(db_path: Path, tmp_path: Path) -> None:
     assert rapport.applique
     assert client.put is not None
     # le PUT envoie les metas locales (titre local).
-    titres = [m["value"] for m in client.put["metas"] if m["propertyUri"] == f"{_NKL}title"]
+    titres = [
+        m["value"] for m in client.put["metas"] if m["propertyUri"] == f"{_NKL}title"
+    ]
     assert "Titre local" in titres
 
 
@@ -474,7 +565,8 @@ def test_pousser_item_sans_diff_n_ecrit_pas(db_path: Path, tmp_path: Path) -> No
 
 
 def test_pousser_item_published_refuse_par_defaut(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou T-cousine — item publie cote Nakala + diff metas → refus
     `DepotPublie`. Symetrie avec pousser_fichiers_item."""
@@ -498,7 +590,8 @@ def test_pousser_item_published_refuse_par_defaut(
 
 
 def test_pousser_item_published_avec_forcer_publie_passe(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Avec `forcer_publie=True`, le push procede normalement."""
     from archives_tool.api.services.nakala_depot import pousser_item
@@ -510,14 +603,20 @@ def test_pousser_item_published_avec_forcer_publie_passe(
             status="published",
         )
         rapport = pousser_item(
-            s, client, client, item, dry_run=False, forcer_publie=True,
+            s,
+            client,
+            client,
+            item,
+            dry_run=False,
+            forcer_publie=True,
         )
     assert rapport.applique is True
     assert client.put is not None
 
 
 def test_pousser_item_published_aucun_changement_ne_leve_pas(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Item publie SANS diff metas → no-op idempotent, PAS de
     DepotPublie. Le garde-fou est court-circuite par
@@ -542,7 +641,8 @@ def test_pousser_item_published_aucun_changement_ne_leve_pas(
 
 
 def test_pousser_item_pending_n_active_pas_le_garde_fou(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Symetrie negative : status=pending ne declenche pas le
     garde-fou (comportement existant prejudice 22)."""
@@ -559,7 +659,8 @@ def test_pousser_item_pending_n_active_pas_le_garde_fou(
 
 
 def test_pousser_collection_propage_forcer_publie(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """`pousser_collection` propage `forcer_publie` à `pousser_item`
     dans la boucle. Sans flag, items publies → erreur collectee
@@ -567,15 +668,21 @@ def test_pousser_collection_propage_forcer_publie(
     from archives_tool.api.services.nakala_depot import pousser_collection
     from archives_tool.api.services.fonds import lire_fonds_par_cote
     from archives_tool.api.services.collections import (
-        FormulaireCollection, creer_collection_libre,
+        FormulaireCollection,
+        creer_collection_libre,
     )
 
     with _session(db_path) as s:
         item = _item_depose(s, tmp_path, titre="Titre local")
         f = lire_fonds_par_cote(s, "AS")
-        col = creer_collection_libre(s, FormulaireCollection(
-            cote="AS-PUB", titre="C", fonds_id=f.id,
-        ))
+        col = creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="AS-PUB",
+                titre="C",
+                fonds_id=f.id,
+            ),
+        )
         col.items.append(item)
         s.commit()
 
@@ -586,7 +693,12 @@ def test_pousser_collection_propage_forcer_publie(
         # Sans flag : item publie collecte en erreur (n'arrete pas la
         # boucle)
         rapport = pousser_collection(
-            s, client, client, col, dry_run=False, forcer_publie=False,
+            s,
+            client,
+            client,
+            col,
+            dry_run=False,
+            forcer_publie=False,
         )
     assert len(rapport.erreurs) == 1
     assert "AS-001" in rapport.erreurs[0][0]
@@ -594,7 +706,8 @@ def test_pousser_collection_propage_forcer_publie(
 
 
 def test_depot_publie_re_export_depuis_nakala_fichiers(
-    db_path: Path, tmp_path: Path,
+    db_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Compat retro : `DepotPublie` reste importable depuis
     nakala_fichiers (re-export). Garde-fou anti-régression sur la
@@ -605,6 +718,7 @@ def test_depot_publie_re_export_depuis_nakala_fichiers(
     from archives_tool.api.services.nakala_depot import (
         DepotPublie as DP_depot,
     )
+
     # Meme classe (re-export)
     assert DP_fichiers is DP_depot
 
@@ -626,8 +740,16 @@ def test_publier_collection(db_path: Path, tmp_path: Path) -> None:
     with _session(db_path) as s:
         _item_depose(s, tmp_path)  # AS-001 lié (doi)
         f = lire_fonds_par_cote(s, "AS")
-        creer_item(s, FormulaireItem(cote="AS-002", titre="T2", fonds_id=f.id,
-                                     date="1985", metadonnees={"createurs": ["X, Y"]}))
+        creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-002",
+                titre="T2",
+                fonds_id=f.id,
+                date="1985",
+                metadonnees={"createurs": ["X, Y"]},
+            ),
+        )
         s.commit()
         miroir = _collection_miroir(s, "AS")
         client = _FakeRWClient([])
@@ -641,7 +763,9 @@ def _NKL_TITLE(v: str) -> dict:
     return {"propertyUri": f"{_NKL}title", "value": v}
 
 
-def test_pousser_metadonnees_collection_sans_doi_refuse(db_path: Path, tmp_path: Path) -> None:
+def test_pousser_metadonnees_collection_sans_doi_refuse(
+    db_path: Path, tmp_path: Path
+) -> None:
     from archives_tool.api.services.nakala_depot import pousser_metadonnees_collection
 
     with _session(db_path) as s:
@@ -663,11 +787,16 @@ def test_pousser_metadonnees_collection_diff_put_et_preservation(
         miroir.doi_nakala = "10.34847/nkl.col1"
         s.commit()
         # Distant : titre différent (à remplacer) + un sujet (non géré → à préserver).
-        client = _FakeRWClient([], metas_collection=[
-            _NKL_TITLE("Ancien titre"),
-            {"propertyUri": f"{_DCT}subject", "value": "Préservé"},
-        ])
-        rapport = pousser_metadonnees_collection(s, client, client, miroir, dry_run=False)
+        client = _FakeRWClient(
+            [],
+            metas_collection=[
+                _NKL_TITLE("Ancien titre"),
+                {"propertyUri": f"{_DCT}subject", "value": "Préservé"},
+            ],
+        )
+        rapport = pousser_metadonnees_collection(
+            s, client, client, miroir, dry_run=False
+        )
     assert rapport.applique and rapport.a_des_changements
     assert client.put_collection is not None
     metas = client.put_collection["metas"]
@@ -686,11 +815,15 @@ def test_pousser_collection_inclut_entite(db_path: Path, tmp_path: Path) -> None
         miroir.doi_nakala = "10.34847/nkl.col1"
         s.commit()
         # Distant : collection titre différent + item titre différent.
-        client = _FakeRWClient([_NKL_T("Distant item")],
-                               metas_collection=[_NKL_TITLE("Distant col")])
+        client = _FakeRWClient(
+            [_NKL_T("Distant item")], metas_collection=[_NKL_TITLE("Distant col")]
+        )
         rapport = pousser_collection(s, client, client, miroir, dry_run=True)
     # L'entité collection a un diff + l'item aussi.
-    assert rapport.meta_collection is not None and rapport.meta_collection.a_des_changements
+    assert (
+        rapport.meta_collection is not None
+        and rapport.meta_collection.a_des_changements
+    )
     assert len(rapport.pousses) == 1
 
 
@@ -698,12 +831,21 @@ def _seed_cache(s, doi: str, mod_date: str) -> None:
     """Amorce une RessourceExterne cachée (baseline de fraîcheur) pour un DOI."""
     from archives_tool.models import RessourceExterne, SourceExterne
 
-    src = SourceExterne(code="nakala", libelle="Nakala", type_api="nakala",
-                        url_base="https://api.nakala.fr")
+    src = SourceExterne(
+        code="nakala",
+        libelle="Nakala",
+        type_api="nakala",
+        url_base="https://api.nakala.fr",
+    )
     s.add(src)
     s.flush()
-    s.add(RessourceExterne(source_id=src.id, identifiant_externe=doi,
-                           metadonnees_brutes={"modDate": mod_date}))
+    s.add(
+        RessourceExterne(
+            source_id=src.id,
+            identifiant_externe=doi,
+            metadonnees_brutes={"modDate": mod_date},
+        )
+    )
     s.commit()
 
 
@@ -735,8 +877,16 @@ def test_pousser_collection_mixte(db_path: Path, tmp_path: Path) -> None:
     with _session(db_path) as s:
         _item_depose(s, tmp_path, titre="Titre local")  # AS-001 lié (a un doi)
         f = lire_fonds_par_cote(s, "AS")
-        creer_item(s, FormulaireItem(cote="AS-002", titre="T2", fonds_id=f.id,
-                                     date="1985", metadonnees={"createurs": ["X, Y"]}))
+        creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-002",
+                titre="T2",
+                fonds_id=f.id,
+                date="1985",
+                metadonnees={"createurs": ["X, Y"]},
+            ),
+        )
         s.commit()
         miroir = _collection_miroir(s, "AS")
         client = _FakeRWClient([_NKL_T("Titre distant")])  # AS-001 → diff
@@ -746,7 +896,9 @@ def test_pousser_collection_mixte(db_path: Path, tmp_path: Path) -> None:
     assert rapport.erreurs == []
 
 
-def test_pousser_collection_erreur_metas_collectee(db_path: Path, tmp_path: Path) -> None:
+def test_pousser_collection_erreur_metas_collectee(
+    db_path: Path, tmp_path: Path
+) -> None:
     """Un item lié dont les métadonnées sont insuffisantes (preflight) →
     collecté dans erreurs, n'arrête pas le lot."""
     from archives_tool.api.services.nakala_depot import pousser_collection
@@ -754,7 +906,9 @@ def test_pousser_collection_erreur_metas_collectee(db_path: Path, tmp_path: Path
     with _session(db_path) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
         # Item lié (doi) mais sans créateur ni date → preflight lèvera.
-        item = creer_item(s, FormulaireItem(cote="AS-009", titre="Casse", fonds_id=f.id))
+        item = creer_item(
+            s, FormulaireItem(cote="AS-009", titre="Casse", fonds_id=f.id)
+        )
         item.doi_nakala = "10.34847/nkl.casse"
         s.commit()
         miroir = _collection_miroir(s, "AS")
@@ -775,10 +929,24 @@ def test_deposer_collection_item_sans_fichier_local_collecte(
         # 1 item avec fichier local + 1 item Nakala-only (non déposable).
         _item_avec_fichier_local(s, tmp_path)
         f = lire_fonds_par_cote(s, "AS")
-        item2 = creer_item(s, FormulaireItem(cote="AS-002", titre="T2", fonds_id=f.id,
-                                             date="1985", metadonnees={"createurs": ["X, Y"]}))
-        s.add(Fichier(item_id=item2.id, nom_fichier="y.jpg", ordre=1,
-                      iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json"))
+        item2 = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-002",
+                titre="T2",
+                fonds_id=f.id,
+                date="1985",
+                metadonnees={"createurs": ["X, Y"]},
+            ),
+        )
+        s.add(
+            Fichier(
+                item_id=item2.id,
+                nom_fichier="y.jpg",
+                ordre=1,
+                iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json",
+            )
+        )
         s.commit()
         miroir = _collection_miroir(s, "AS")
         rapport = deposer_collection(s, client, miroir, racines=racines, dry_run=False)
@@ -810,28 +978,53 @@ def test_deposer_collection_progress_callback_appele_par_item(
         _item_avec_fichier_local(s, tmp_path)
         f = lire_fonds_par_cote(s, "AS")
         # Item 2 : Nakala-only, sera classe non_deposables
-        item2 = creer_item(s, FormulaireItem(
-            cote="AS-002", titre="T2", fonds_id=f.id, date="1985",
-            metadonnees={"createurs": ["X, Y"]},
-        ))
-        s.add(Fichier(
-            item_id=item2.id, nom_fichier="y.jpg", ordre=1,
-            iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json",
-        ))
+        item2 = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-002",
+                titre="T2",
+                fonds_id=f.id,
+                date="1985",
+                metadonnees={"createurs": ["X, Y"]},
+            ),
+        )
+        s.add(
+            Fichier(
+                item_id=item2.id,
+                nom_fichier="y.jpg",
+                ordre=1,
+                iiif_url_nakala="https://api.nakala.fr/iiif/a/b/info.json",
+            )
+        )
         # Item 3 : avec fichier local mais SANS createur ET sans editeur
         # → MetaInvalide (preflight echoue), classe `erreurs`.
-        item3 = creer_item(s, FormulaireItem(
-            cote="AS-003", titre="T3", fonds_id=f.id, date="1986",
-        ))
+        item3 = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-003",
+                titre="T3",
+                fonds_id=f.id,
+                date="1986",
+            ),
+        )
         (tmp_path / "scans" / "as003.jpg").write_bytes(b"\xff\xd8\xff img3")
-        s.add(Fichier(
-            item_id=item3.id, nom_fichier="as003.jpg", racine="scans",
-            chemin_relatif="as003.jpg", ordre=1,
-        ))
+        s.add(
+            Fichier(
+                item_id=item3.id,
+                nom_fichier="as003.jpg",
+                racine="scans",
+                chemin_relatif="as003.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
         miroir = _collection_miroir(s, "AS")
         rapport = deposer_collection(
-            s, client, miroir, racines=racines, dry_run=True,
+            s,
+            client,
+            miroir,
+            racines=racines,
+            dry_run=True,
             progress=lambda cote, idx, total: appels.append((cote, idx, total)),
         )
 
@@ -877,7 +1070,11 @@ def test_deposer_collection_progress_2e_run_tout_saute(
         s.commit()
         appels: list[tuple[str, int, int]] = []
         rapport = deposer_collection(
-            s, client, miroir, racines=racines, dry_run=False,
+            s,
+            client,
+            miroir,
+            racines=racines,
+            dry_run=False,
             progress=lambda c, i, t: appels.append((c, i, t)),
         )
 
@@ -929,7 +1126,11 @@ def test_deposer_collection_progress_collection_vide(
         creer_fonds(s, FormulaireFonds(cote="VIDE", titre="Vide"))
         miroir = _collection_miroir(s, "VIDE")
         rapport = deposer_collection(
-            s, client, miroir, racines=racines, dry_run=False,
+            s,
+            client,
+            miroir,
+            racines=racines,
+            dry_run=False,
             progress=lambda c, i, t: appels.append((c, i, t)),
         )
     # Aucun appel progress + collection cree (1er run, dry_run=False)
@@ -973,16 +1174,20 @@ class _FakeWriteClientP3(_FakeWriteClient):
         self.puts: list[dict] = []
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
-        self.puts.append({"id": identifiant, "metas": metas, "files": files,
-                          "status": status})
+        self.puts.append(
+            {"id": identifiant, "metas": metas, "files": files, "status": status}
+        )
         return {}
 
 
 def test_deposer_item_logging_dry_run(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """Dry-run emet INFO 'depot item dry-run' avec compteurs."""
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
 
     racines = {"scans": tmp_path / "scans"}
@@ -990,17 +1195,23 @@ def test_deposer_item_logging_dry_run(
         item = _item_avec_fichier_local(s, tmp_path)
         deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=True)
 
-    messages = [r.message for r in caplog.records
-                if r.name == "archives_tool.api.services.nakala_depot"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     assert any("depot item dry-run" in m for m in messages)
     assert any("AS-001" in m for m in messages)
 
 
 def test_deposer_item_logging_commit_reel(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """Reel : emet START + COMMIT (au moins)."""
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
 
     racines = {"scans": tmp_path / "scans"}
@@ -1008,17 +1219,23 @@ def test_deposer_item_logging_commit_reel(
         item = _item_avec_fichier_local(s, tmp_path)
         deposer_item(s, _FakeWriteClient(), item, racines=racines, dry_run=False)
 
-    messages = [r.message for r in caplog.records
-                if r.name == "archives_tool.api.services.nakala_depot"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     assert any("depot item START" in m for m in messages)
     assert any("depot item COMMIT" in m for m in messages)
 
 
 def test_deposer_item_logging_echec_cleanup(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """Echec du POST /datas : warning explicite avec cleanup compteur."""
     import logging as _logging
+
     caplog.set_level(_logging.WARNING, logger="archives_tool.api.services.nakala_depot")
 
     from archives_tool.api.services.nakala_depot import ErreurNakala
@@ -1033,18 +1250,24 @@ def test_deposer_item_logging_echec_cleanup(
         with pytest.raises(ErreurNakala):
             deposer_item(s, _ClientFlop(), item, racines=racines, dry_run=False)
 
-    messages = [r.message for r in caplog.records
-                if r.name == "archives_tool.api.services.nakala_depot"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     assert any("depot item ECHEC" in m and "cleanup=1" in m for m in messages)
 
 
 def test_publier_item_logging_warning_irreversible(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """`publier_item` reel emet un WARNING explicite IRREVERSIBLE -
     differencie d'un INFO normal car appel paiyant et non-annulable.
     """
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
 
     from archives_tool.api.services.nakala_depot import publier_item
@@ -1058,25 +1281,36 @@ def test_publier_item_logging_warning_irreversible(
 
         # Maintenant publie
         publier_item(
-            s, _FakeReadClient(), _FakeWriteClientP3(), item, dry_run=False,
+            s,
+            _FakeReadClient(),
+            _FakeWriteClientP3(),
+            item,
+            dry_run=False,
         )
 
-    records = [r for r in caplog.records
-               if r.name == "archives_tool.api.services.nakala_depot"]
+    records = [
+        r for r in caplog.records if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     # WARNING IRREVERSIBLE emis
-    warnings_irr = [r for r in records if r.levelno == _logging.WARNING
-                    and "IRREVERSIBLE" in r.message]
+    warnings_irr = [
+        r
+        for r in records
+        if r.levelno == _logging.WARNING and "IRREVERSIBLE" in r.message
+    ]
     assert len(warnings_irr) >= 1
     # INFO publication OK emis aussi
     assert any("publication item OK" in r.message for r in records)
 
 
 def test_deposer_collection_logging_start_end(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """`deposer_collection` emet START au debut et END a la fin avec
     compteurs des 4 categories de resultat."""
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
 
     from archives_tool.api.services.nakala_depot import deposer_collection
@@ -1086,29 +1320,41 @@ def test_deposer_collection_logging_start_end(
         # Setup : collection libre + item avec fichier local
         item = _item_avec_fichier_local(s, tmp_path)
         from archives_tool.api.services.collections import (
-            FormulaireCollection, creer_collection_libre,
+            FormulaireCollection,
+            creer_collection_libre,
         )
-        col = creer_collection_libre(s, FormulaireCollection(
-            cote="AS-COLLE", titre="C", fonds_id=item.fonds_id,
-        ))
+
+        col = creer_collection_libre(
+            s,
+            FormulaireCollection(
+                cote="AS-COLLE",
+                titre="C",
+                fonds_id=item.fonds_id,
+            ),
+        )
         col.items.append(item)
         s.commit()
 
-        deposer_collection(s, _FakeWriteClient(), col, racines=racines,
-                          dry_run=True)
+        deposer_collection(s, _FakeWriteClient(), col, racines=racines, dry_run=True)
 
-    messages = [r.message for r in caplog.records
-                if r.name == "archives_tool.api.services.nakala_depot"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     assert any("depot collection START" in m for m in messages)
     assert any("depot collection END" in m for m in messages)
 
 
 def test_pousser_item_logging_dry_run_vs_commit(
-    db_path: Path, tmp_path: Path, caplog,
+    db_path: Path,
+    tmp_path: Path,
+    caplog,
 ) -> None:
     """`pousser_item` emet dry-run ou no-op selon scenario, COMMIT en
     cas de push reel."""
     import logging as _logging
+
     caplog.set_level(_logging.INFO, logger="archives_tool.api.services.nakala_depot")
 
     from archives_tool.api.services.nakala_depot import pousser_item
@@ -1124,11 +1370,17 @@ def test_pousser_item_logging_dry_run_vs_commit(
         s.commit()
 
         pousser_item(
-            s, _FakeReadClient(), _FakeWriteClientP3(), item, dry_run=False,
+            s,
+            _FakeReadClient(),
+            _FakeWriteClientP3(),
+            item,
+            dry_run=False,
         )
 
-    messages = [r.message for r in caplog.records
-                if r.name == "archives_tool.api.services.nakala_depot"]
+    messages = [
+        r.message
+        for r in caplog.records
+        if r.name == "archives_tool.api.services.nakala_depot"
+    ]
     assert any("push item metas START" in m for m in messages)
     assert any("push item metas COMMIT" in m for m in messages)
-

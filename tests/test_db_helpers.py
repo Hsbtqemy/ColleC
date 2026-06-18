@@ -42,7 +42,8 @@ def test_obtenir_session_avec_chemin_explicite(base_vide: Path) -> None:
 
 
 def test_obtenir_session_sans_chemin_lit_archives_db(
-    base_vide: Path, monkeypatch: pytest.MonkeyPatch,
+    base_vide: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Sans argument, `obtenir_session()` lit `ARCHIVES_DB`."""
     monkeypatch.setenv("ARCHIVES_DB", str(base_vide))

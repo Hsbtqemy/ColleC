@@ -160,7 +160,8 @@ def page_recherche(
     fonds_id: int | None = Query(None, description="Limite au fonds (ID)"),
     collection_id: int | None = Query(None, description="Limite à la collection (ID)"),
     types: list[str] | None = Query(
-        None, description="Types entité (item/fonds/collection). Tous si vide.",
+        None,
+        description="Types entité (item/fonds/collection). Tous si vide.",
     ),
     # Filtres avancés (items only sauf q2 qui raffine tout).
     etat: list[str] | None = Query(None, description="Filtre par état (items)."),
@@ -171,11 +172,14 @@ def page_recherche(
     annee_min: str | None = Query(None, description="Année min EDTF (items)."),
     annee_max: str | None = Query(None, description="Année max EDTF (items)."),
     q2: str = Query(
-        "", description="Raffinement query (concaténé à q avec AND FTS5).",
+        "",
+        description="Raffinement query (concaténé à q avec AND FTS5).",
     ),
     page: int = Query(1, ge=1, description="Numéro de page (1-based)."),
     par_page: int = Query(
-        50, ge=10, le=200,
+        50,
+        ge=10,
+        le=200,
         description="Résultats par page (cap 200).",
     ),
     db: Session = Depends(get_db),
@@ -201,8 +205,11 @@ def page_recherche(
       pertinence (BM25). Défaut 50/page, cap 200/page.
     """
     from archives_tool.api.services.recherche import (
-        Scope, TypeEntite, calculer_options_filtres_recherche,
-        parser_filtres_recherche, rechercher,
+        Scope,
+        TypeEntite,
+        calculer_options_filtres_recherche,
+        parser_filtres_recherche,
+        rechercher,
     )
     from archives_tool.models import Collection, Fonds
 
@@ -234,8 +241,13 @@ def page_recherche(
     # ET les totaux exacts par type (COUNT séparé sans LIMIT — utile
     # pour le compteur principal et le calcul de nb_pages).
     res = rechercher(
-        db, q, scope=scope, types=types_filtres,
-        filtres=filtres, page=page, par_page=par_page,
+        db,
+        q,
+        scope=scope,
+        types=types_filtres,
+        filtres=filtres,
+        page=page,
+        par_page=par_page,
     )
 
     fonds_scope = None
@@ -337,9 +349,7 @@ def page_fonds(
         .limit(1)
     )
     consultation_url = (
-        f"/lire/{detail.fonds.cote}/{premier_item_cote}"
-        if premier_item_cote
-        else None
+        f"/lire/{detail.fonds.cote}/{premier_item_cote}" if premier_item_cote else None
     )
 
     # Mode édition inline d'un collaborateur (cf. ?modifier_collab=<id>).
@@ -429,8 +439,7 @@ def soumettre_modification_fonds(
             )
         else:
             detail = (
-                f"version {e.version_actuelle} en base, "
-                f"vous avez {e.version_attendue}"
+                f"version {e.version_actuelle} en base, vous avez {e.version_attendue}"
             )
         return templates.TemplateResponse(
             request,
@@ -646,9 +655,7 @@ def soumettre_collection_nouvelle(
     # Redirige vers la lecture de la collection créée. ?fonds=... pour
     # désambiguïser si la cote pourrait coïncider avec d'autres.
     fonds_query = col.fonds.cote if col.fonds else None
-    return RedirectResponse(
-        _url_collection(col.cote, fonds_query), status_code=303
-    )
+    return RedirectResponse(_url_collection(col.cote, fonds_query), status_code=303)
 
 
 @router.get("/collection/{cote}", response_class=HTMLResponse, response_model=None)
@@ -750,16 +757,14 @@ def page_collection(
             ),
         )
     # Premier item de la collection (cote ASC) pour le bouton « Mode
-     # consultation » du header. Transversale : pas de fonds parent
-     # → liseuse pas applicable (la liseuse exige un fonds dans l'URL).
+    # consultation » du header. Transversale : pas de fonds parent
+    # → liseuse pas applicable (la liseuse exige un fonds dans l'URL).
     consultation_url: str | None = None
     if collection.fonds_id is not None and listage.items:
         # On a déjà la 1ère page d'items via `listage` — autant la
         # réutiliser plutôt qu'une requête de plus.
         premier = min(listage.items, key=lambda i: i.cote)
-        fonds_obj = db.scalar(
-            select(Fonds.cote).where(Fonds.id == collection.fonds_id)
-        )
+        fonds_obj = db.scalar(select(Fonds.cote).where(Fonds.id == collection.fonds_id))
         if fonds_obj:
             consultation_url = f"/lire/{fonds_obj}/{premier.cote}"
 
@@ -848,8 +853,7 @@ def soumettre_collection_modifier(
             )
         else:
             detail = (
-                f"version {e.version_actuelle} en base, "
-                f"vous avez {e.version_attendue}"
+                f"version {e.version_actuelle} en base, vous avez {e.version_attendue}"
             )
         return templates.TemplateResponse(
             request,
@@ -1127,10 +1131,7 @@ def soumettre_serie_items(
     # string (lu par le template).
     url = _url_collection(cote, fonds)
     sep = "&" if "?" in url else "?"
-    flash = (
-        f"{sep}serie_crees={rapport.nb_crees}"
-        f"&serie_ignores={rapport.nb_ignores}"
-    )
+    flash = f"{sep}serie_crees={rapport.nb_crees}&serie_ignores={rapport.nb_ignores}"
     return RedirectResponse(url + flash, status_code=303)
 
 
@@ -1247,9 +1248,7 @@ def page_lire_item(
     """
     fonds_obj = _charger_fonds_ou_404(db, fonds_cote)
     try:
-        detail = composer_page_item(
-            db, cote, fonds_obj, fichier_courant_pos=fichier
-        )
+        detail = composer_page_item(db, cote, fonds_obj, fichier_courant_pos=fichier)
     except ItemIntrouvable as e:
         raise HTTPException(
             status_code=404, detail=f"Item {cote!r} introuvable."
@@ -1261,9 +1260,7 @@ def page_lire_item(
     fichiers = detail.fichiers
     pos = detail.position_courante
     fichier_precedent_id = fichiers[pos - 2].id if pos > 1 else None
-    fichier_suivant_id = (
-        fichiers[pos].id if pos < len(fichiers) else None
-    )
+    fichier_suivant_id = fichiers[pos].id if pos < len(fichiers) else None
 
     return templates.TemplateResponse(
         request,
@@ -1325,9 +1322,7 @@ def page_lire_item_visionneuse_partial(
         1,
     )
     detail = composer_page_item(db, cote, fonds_obj, fichier_courant_pos=position)
-    fichier_precedent_id = (
-        detail.fichiers[position - 2].id if position > 1 else None
-    )
+    fichier_precedent_id = detail.fichiers[position - 2].id if position > 1 else None
     fichier_suivant_id = (
         detail.fichiers[position].id if position < len(detail.fichiers) else None
     )
@@ -1377,7 +1372,8 @@ def item_fichier_transcription(
     fichier = db.get(Fichier, fichier_id)
     if fichier is None or fichier.item_id != item.id:
         raise HTTPException(
-            status_code=404, detail="Fichier introuvable dans cet item.",
+            status_code=404,
+            detail="Fichier introuvable dans cet item.",
         )
     nouvelle = normaliser_transcription(texte)
     if nouvelle != fichier.description_externe:
@@ -1588,8 +1584,7 @@ async def soumettre_modification_item(
             )
         else:
             detail = (
-                f"version {e.version_actuelle} en base, "
-                f"vous avez {e.version_attendue}"
+                f"version {e.version_actuelle} en base, vous avez {e.version_attendue}"
             )
         return templates.TemplateResponse(
             request,
@@ -1688,9 +1683,7 @@ def _re_rendre_fonds_avec_erreurs_collab(
         .limit(1)
     )
     consultation_url = (
-        f"/lire/{detail.fonds.cote}/{premier_item_cote}"
-        if premier_item_cote
-        else None
+        f"/lire/{detail.fonds.cote}/{premier_item_cote}" if premier_item_cote else None
     )
     return templates.TemplateResponse(
         request,
@@ -1794,7 +1787,9 @@ def supprimer_collaborateur_fonds_route(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/fonds/{cote}/supprimer", response_class=HTMLResponse, response_model=None)
+@router.post(
+    "/fonds/{cote}/supprimer", response_class=HTMLResponse, response_model=None
+)
 def supprimer_fonds_route(
     cote: str,
     confirmer: Annotated[str, Form()],

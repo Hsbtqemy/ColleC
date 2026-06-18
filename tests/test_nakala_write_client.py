@@ -79,8 +79,12 @@ def test_creer_depot_envoie_le_corps_et_renvoie_doi() -> None:
     metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "T"}]
     files = [{"sha1": "abc123", "name": "scan.jpg"}]
     with _client(handler) as c:
-        rep = c.creer_depot(metas=metas, files=files, status="pending",
-                            collections_ids=["10.34847/nkl.col1"])
+        rep = c.creer_depot(
+            metas=metas,
+            files=files,
+            status="pending",
+            collections_ids=["10.34847/nkl.col1"],
+        )
     assert vus["path"] == "/datas"
     body = vus["body"]
     assert body["status"] == "pending"
@@ -102,8 +106,9 @@ def test_creer_collection_envoie_status_et_metas() -> None:
 
     metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "Ma collection"}]
     with _client(handler) as c:
-        rep = c.creer_collection(metas=metas, status="private",
-                                 datas=["10.34847/nkl.d1"])
+        rep = c.creer_collection(
+            metas=metas, status="private", datas=["10.34847/nkl.d1"]
+        )
     assert vus["path"] == "/collections"
     assert vus["body"]["status"] == "private"
     assert vus["body"]["metas"] == metas
@@ -126,7 +131,9 @@ def test_ajouter_fichier_post_sur_files_avec_sha1() -> None:
 
     with _client(handler) as c:
         c.ajouter_fichier(
-            "10.34847/nkl.d1", "abc123sha", description="scan recto",
+            "10.34847/nkl.d1",
+            "abc123sha",
+            description="scan recto",
         )
     assert vus["method"] == "POST"
     assert vus["path"] == "/datas/10.34847/nkl.d1/files"
@@ -152,8 +159,11 @@ def test_ajouter_fichier_corps_minimal_sha1_seul() -> None:
 def test_ajouter_fichier_500_leve_erreur() -> None:
     """sha1 fantôme / déjà présent → 500 côté Nakala → ErreurNakala
     (l'appelant valide en amont ; la méthode ne masque pas l'échec)."""
-    with _client(lambda r: httpx.Response(
-        500, json={"code": 500, "message": "File not found on server"})) as c:
+    with _client(
+        lambda r: httpx.Response(
+            500, json={"code": 500, "message": "File not found on server"}
+        )
+    ) as c:
         with pytest.raises(ErreurNakala):
             c.ajouter_fichier("10.34847/nkl.d1", "fantome")
 
@@ -246,6 +256,7 @@ def test_modifier_depot_put_metas() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
+
         vus["method"] = request.method
         vus["path"] = request.url.path
         vus["body"] = json.loads(request.content)
@@ -264,6 +275,7 @@ def test_modifier_depot_avec_status_publie() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
+
         vus["body"] = json.loads(request.content)
         return httpx.Response(200, content=b"")  # corps vide toléré
 
@@ -285,6 +297,7 @@ def test_rattacher_a_collection() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
+
         vus["method"] = request.method
         vus["path"] = request.url.path
         vus["body"] = json.loads(request.content)
@@ -302,12 +315,15 @@ def test_modifier_collection_put() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         import json
+
         vus["method"] = request.method
         vus["path"] = request.url.path
         vus["body"] = json.loads(request.content)
         return httpx.Response(204, content=b"")  # Nakala renvoie 204 vide
 
-    metas = [{"propertyUri": "http://nakala.fr/terms#title", "value": "Collection révisée"}]
+    metas = [
+        {"propertyUri": "http://nakala.fr/terms#title", "value": "Collection révisée"}
+    ]
     with _client(handler) as c:
         rep = c.modifier_collection("10.34847/nkl.col1", metas=metas, status="public")
     assert vus["method"] == "PUT"
@@ -328,10 +344,12 @@ def test_422_annexe_les_validation_errors_au_message() -> None:
     corps = {
         "code": 422,
         "message": "Data could not be submitted because of invalid data",
-        "payload": {"validationErrors": [
-            "The metadata http://nakala.fr/terms#title is required.",
-            "The metadata http://nakala.fr/terms#type is required.",
-        ]},
+        "payload": {
+            "validationErrors": [
+                "The metadata http://nakala.fr/terms#title is required.",
+                "The metadata http://nakala.fr/terms#type is required.",
+            ]
+        },
     }
     with _client(lambda r: httpx.Response(422, json=corps)) as c:
         with pytest.raises(NakalaSoumissionInvalide) as exc:
@@ -344,8 +362,7 @@ def test_422_annexe_les_validation_errors_au_message() -> None:
 def test_4xx_sans_validation_errors_message_generique_inchange() -> None:
     """4xx sans `payload.validationErrors` → message générique conservé
     (robustesse, pas de régression)."""
-    with _client(lambda r: httpx.Response(
-        400, json={"message": "Bad request"})) as c:
+    with _client(lambda r: httpx.Response(400, json={"message": "Bad request"})) as c:
         with pytest.raises(NakalaSoumissionInvalide) as exc:
             c.creer_depot(metas=[], files=[])
     msg = str(exc.value)
@@ -353,16 +370,20 @@ def test_4xx_sans_validation_errors_message_generique_inchange() -> None:
     assert "champs en cause" not in msg
 
 
-@pytest.mark.parametrize("corps", [
-    {"message": "x", "payload": "pas un dict"},      # payload non-dict
-    {"message": "x", "payload": {}},                  # pas de validationErrors
-    {"message": "x", "payload": {"validationErrors": []}},  # liste vide
-    {"message": "x"},                                  # pas de payload
-])
+@pytest.mark.parametrize(
+    "corps",
+    [
+        {"message": "x", "payload": "pas un dict"},  # payload non-dict
+        {"message": "x", "payload": {}},  # pas de validationErrors
+        {"message": "x", "payload": {"validationErrors": []}},  # liste vide
+        {"message": "x"},  # pas de payload
+    ],
+)
 def test_detail_erreur_defensif_sans_validation_errors(corps) -> None:
     """detail_erreur_nakala reste défensif : payload absent / non-dict /
     validationErrors vide → message générique seul, sans crash."""
     from archives_tool.external.nakala.client import detail_erreur_nakala
+
     rep = httpx.Response(422, json=corps)
     detail = detail_erreur_nakala(rep)
     assert detail == "x"
@@ -372,5 +393,6 @@ def test_detail_erreur_defensif_sans_validation_errors(corps) -> None:
 def test_detail_erreur_corps_non_json() -> None:
     """Corps non-JSON → texte brut, pas de crash."""
     from archives_tool.external.nakala.client import detail_erreur_nakala
+
     rep = httpx.Response(500, text="Internal Server Error (plain text)")
     assert detail_erreur_nakala(rep) == "Internal Server Error (plain text)"

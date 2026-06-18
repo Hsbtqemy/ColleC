@@ -69,12 +69,18 @@ def _ecrire_jpg(chemin: Path, marqueur: int) -> None:
     # meme contenu rejoue entre deux runs reutilise un sha1 deja consomme
     # cote Nakala (upload a usage unique) -> 500/422 au POST /datas.
     sel = uuid.uuid4().hex.encode()
-    chemin.write_bytes(b"\xff\xd8\xff GRANULAIRE " + bytes([0x30 + marqueur]) + b" " + sel)
+    chemin.write_bytes(
+        b"\xff\xd8\xff GRANULAIRE " + bytes([0x30 + marqueur]) + b" " + sel
+    )
 
 
 def _deposer_avec_n_fichiers(
-    ecriture: NakalaEcritureClient, parent: Path,
-    *, n: int, cote: str, fonds_cote: str,
+    ecriture: NakalaEcritureClient,
+    parent: Path,
+    *,
+    n: int,
+    cote: str,
+    fonds_cote: str,
 ) -> tuple[str, list[str], Path]:
     """Dépôt pending à n fichiers via `deposer_item`. Renvoie
     (doi, sha1s_dans_l_ordre, dossier_scans) — le dossier scans est
@@ -87,27 +93,43 @@ def _deposer_avec_n_fichiers(
     racines = {"scans": scans}
 
     with _session(db) as s:
-        f = creer_fonds(s, FormulaireFonds(cote=fonds_cote, titre=f"{fonds_cote} granulaire"))
-        item = creer_item(s, FormulaireItem(
-            cote=cote, titre="Sonde granulaire T2", fonds_id=f.id,
-            date="2026", langue="fra", description="Sonde POST/DELETE files",
-            type_coar=TYPE_LIVRE,
-            metadonnees={"createurs": ["Test, Hugo"], "sujets": ["Sonde"]},
-        ))
+        f = creer_fonds(
+            s, FormulaireFonds(cote=fonds_cote, titre=f"{fonds_cote} granulaire")
+        )
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote=cote,
+                titre="Sonde granulaire T2",
+                fonds_id=f.id,
+                date="2026",
+                langue="fra",
+                description="Sonde POST/DELETE files",
+                type_coar=TYPE_LIVRE,
+                metadonnees={"createurs": ["Test, Hugo"], "sujets": ["Sonde"]},
+            ),
+        )
         for i in range(1, n + 1):
             nom = f"fichier{i}.jpg"
             _ecrire_jpg(scans / nom, i)
-            s.add(Fichier(
-                item_id=item.id, nom_fichier=nom, racine="scans",
-                chemin_relatif=nom, ordre=i,
-            ))
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    nom_fichier=nom,
+                    racine="scans",
+                    chemin_relatif=nom,
+                    ordre=i,
+                )
+            )
         s.commit()
-        rapport = deposer_item(s, ecriture, item, racines=racines,
-                               dry_run=False, cree_par="sonde")
+        rapport = deposer_item(
+            s, ecriture, item, racines=racines, dry_run=False, cree_par="sonde"
+        )
         doi = rapport.doi
         assert doi
         sha1s = [
-            fic.sha1_nakala for fic in sorted(
+            fic.sha1_nakala
+            for fic in sorted(
                 s.scalars(select(Fichier).join(Item).where(Item.cote == cote)).all(),
                 key=lambda x: x.ordre,
             )
@@ -124,7 +146,8 @@ def sonde_a_post_additif(ecriture, lecture, tmp_dir: Path) -> None:
     Le `name` est-il repris de l'upload (corps = sha1 seul) ?"""
     _print_section("A - POST /datas/{id}/files : additif ? forme reponse ? name ?")
     doi, sha1s, scans = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="GA-001", fonds_cote="GA")
+        ecriture, tmp_dir, n=1, cote="GA-001", fonds_cote="GA"
+    )
     print(f"Depot cree : {doi} (1 fichier)")
 
     avant = lecture.lire_depot(doi).get("files") or []
@@ -140,7 +163,9 @@ def sonde_a_post_additif(ecriture, lecture, tmp_dir: Path) -> None:
     # POST corps = sha1 SEUL (le schema File ne porte pas 'name').
     print("\nPOST /datas/{id}/files corps={sha1} (sans name)")
     code, charge = ecriture.ajouter_fichier_explo(doi, {"sha1": sha1_b})
-    print(f"  -> HTTP {code} ; corps reponse = {json.dumps(charge, ensure_ascii=False)[:300]}")
+    print(
+        f"  -> HTTP {code} ; corps reponse = {json.dumps(charge, ensure_ascii=False)[:300]}"
+    )
 
     apres = lecture.lire_depot(doi).get("files") or []
     print(f"\nApres POST : {len(apres)} fichier(s) : {_noms_sha1(apres)}")
@@ -160,8 +185,10 @@ def sonde_a_post_additif(ecriture, lecture, tmp_dir: Path) -> None:
         if b.get("name") == nom_upload:
             print("  [OK] A2 : le name est repris de l'upload.")
         else:
-            print("  [!] A2 : le name differe de l'upload "
-                  f"({b.get('name')!r} != {nom_upload!r}).")
+            print(
+                "  [!] A2 : le name differe de l'upload "
+                f"({b.get('name')!r} != {nom_upload!r})."
+            )
 
     try:
         ecriture.supprimer_depot(doi)
@@ -174,7 +201,8 @@ def sonde_b_delete_identifier(ecriture, lecture, tmp_dir: Path) -> None:
     """B — DELETE /datas/{id}/files/{fileIdentifier} : sha1 ou id propre ?"""
     _print_section("B - DELETE files/{fileIdentifier} : sha1 ou id propre ?")
     doi, sha1s, scans = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="GB-001", fonds_cote="GB")
+        ecriture, tmp_dir, n=2, cote="GB-001", fonds_cote="GB"
+    )
     sha1_a, sha1_b = sha1s
     print(f"Depot cree : {doi} (2 fichiers)")
 
@@ -203,8 +231,11 @@ def sonde_b_delete_identifier(ecriture, lecture, tmp_dir: Path) -> None:
         print("\n[!] B : sha1 REFUSE (404) -> fileIdentifier n'est PAS le sha1.")
         # Cherche un autre id dans la reponse GET.
         if isinstance(files_get, list) and files_get:
-            autres = {k: v for k, v in files_get[0].items()
-                      if k != "sha1" and isinstance(v, (str, int))}
+            autres = {
+                k: v
+                for k, v in files_get[0].items()
+                if k != "sha1" and isinstance(v, (str, int))
+            }
             print(f"     Candidats id alternatifs : {autres}")
             for cle in ("id", "identifier", "fileIdentifier", "uuid"):
                 val = files_get[0].get(cle)
@@ -229,7 +260,8 @@ def _poster_paire(ecriture, lecture, tmp_dir, *, cote, premier, second):
     """Depose un fichier de base puis POST deux fichiers dans l'ordre
     (premier, second). Renvoie (ordre_noms_relu, {nom: sha1})."""
     doi, _, scans = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote=cote, fonds_cote=cote.split("-")[0])
+        ecriture, tmp_dir, n=1, cote=cote, fonds_cote=cote.split("-")[0]
+    )
     sha1_par_nom = {}
     for marqueur, nom in ((7, premier), (8, second)):
         p = scans / nom
@@ -259,15 +291,18 @@ def sonde_c_ordre(ecriture, lecture, tmp_dir: Path) -> None:
     decisifs = 0
     for i in range(1, n_essais + 1):
         noms, m = _poster_paire(
-            ecriture, lecture, tmp_dir, cote=f"GC-{i:03d}",
-            premier=premier, second=second)
+            ecriture,
+            lecture,
+            tmp_dir,
+            cote=f"GC-{i:03d}",
+            premier=premier,
+            second=second,
+        )
         s_premier, s_second = m[premier], m[second]
-        pred_lifo = [second, premier]                       # dernier POSTe en tete
-        pred_fifo = [premier, second]                        # ordre d'appel
-        pred_sha1desc = ([premier, second] if s_premier > s_second
-                         else [second, premier])
-        pred_sha1asc = ([premier, second] if s_premier < s_second
-                        else [second, premier])
+        pred_lifo = [second, premier]  # dernier POSTe en tete
+        pred_fifo = [premier, second]  # ordre d'appel
+        pred_sha1desc = [premier, second] if s_premier > s_second else [second, premier]
+        pred_sha1asc = [premier, second] if s_premier < s_second else [second, premier]
         decisif = pred_lifo != pred_sha1desc  # premier a le plus grand sha1
         lifo_ok += noms == pred_lifo
         fifo_ok += noms == pred_fifo
@@ -275,12 +310,14 @@ def sonde_c_ordre(ecriture, lecture, tmp_dir: Path) -> None:
         sha1asc_ok += noms == pred_sha1asc
         decisifs += decisif
         marque = " <== DECISIF (LIFO!=sha1desc)" if decisif else ""
-        print(f"  essai {i}: relu={['…'+n[1:4] for n in noms]} "
-              f"sha1(premier={s_premier[:6]} second={s_second[:6]}) "
-              f"=> {'LIFO' if noms==pred_lifo else ''}"
-              f"{'/sha1desc' if noms==pred_sha1desc else ''}"
-              f"{'/sha1asc' if noms==pred_sha1asc else ''}"
-              f"{'/FIFO' if noms==pred_fifo else ''}{marque}")
+        print(
+            f"  essai {i}: relu={['…' + n[1:4] for n in noms]} "
+            f"sha1(premier={s_premier[:6]} second={s_second[:6]}) "
+            f"=> {'LIFO' if noms == pred_lifo else ''}"
+            f"{'/sha1desc' if noms == pred_sha1desc else ''}"
+            f"{'/sha1asc' if noms == pred_sha1asc else ''}"
+            f"{'/FIFO' if noms == pred_fifo else ''}{marque}"
+        )
 
     print(f"\n--- Diagnostic ({n_essais} essais, dont {decisifs} decisifs) ---")
     print(f"  LIFO     : {lifo_ok}/{n_essais}")
@@ -288,8 +325,9 @@ def sonde_c_ordre(ecriture, lecture, tmp_dir: Path) -> None:
     print(f"  sha1 asc : {sha1asc_ok}/{n_essais}")
     print(f"  FIFO     : {fifo_ok}/{n_essais}")
     if decisifs == 0:
-        print("\n[?] Aucun essai decisif (sha1 jamais favorable au 1er POSTe) "
-              "— relancer.")
+        print(
+            "\n[?] Aucun essai decisif (sha1 jamais favorable au 1er POSTe) — relancer."
+        )
     elif lifo_ok == n_essais and sha1desc_ok < n_essais:
         print("\n[OK] C = LIFO confirme : tient sur TOUS les essais, y compris")
         print("     les decisifs ou le tri sha1 predisait l'inverse. POST ne")
@@ -310,7 +348,8 @@ def sonde_e_delete_dernier(ecriture, lecture, tmp_dir: Path) -> None:
     TOUT est orphelin)."""
     _print_section("E - DELETE du dernier fichier -> depot a 0 fichier autorise ?")
     doi, sha1s, _ = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="GE-001", fonds_cote="GE")
+        ecriture, tmp_dir, n=1, cote="GE-001", fonds_cote="GE"
+    )
     print(f"Depot cree : {doi} (1 fichier)")
     code = ecriture.supprimer_fichier_explo(doi, sha1s[0])
     print(f"DELETE du seul fichier -> HTTP {code}")
@@ -321,8 +360,10 @@ def sonde_e_delete_dernier(ecriture, lecture, tmp_dir: Path) -> None:
         print("     granulaire (contrairement au PUT files=[] ignore, H3).")
         print("     -> cas '--retirer-orphelins, tout est orphelin' viable.")
     elif code >= 400:
-        print(f"\n[!] E REFUS : Nakala refuse de retirer le dernier fichier "
-              f"(HTTP {code}). -> preserver >=1 fichier, comme le garde-fou actuel.")
+        print(
+            f"\n[!] E REFUS : Nakala refuse de retirer le dernier fichier "
+            f"(HTTP {code}). -> preserver >=1 fichier, comme le garde-fou actuel."
+        )
     else:
         print(f"\n[?] E AMBIGU : HTTP {code}, {len(apres)} fichier(s) restant(s).")
     try:
@@ -336,7 +377,8 @@ def sonde_f_post_fantome(ecriture, lecture, tmp_dir: Path) -> None:
     """F — POST /files avec un sha1 jamais uploade : 404 comme le PUT (H4) ?"""
     _print_section("F - POST /files avec sha1 fantome -> erreur (404 ?)")
     doi, sha1s, _ = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="GF-001", fonds_cote="GF")
+        ecriture, tmp_dir, n=1, cote="GF-001", fonds_cote="GF"
+    )
     fantome = "deadbeef" * 5  # 40 hex valides mais jamais uploades
     print(f"Depot cree : {doi} ; POST sha1 fantome {fantome[:8]}...")
     code, charge = ecriture.ajouter_fichier_explo(doi, {"sha1": fantome})
@@ -362,20 +404,27 @@ def sonde_g_doublon(ecriture, lecture, tmp_dir: Path) -> None:
     """G — re-POST d'un sha1 deja attache : 409 + fichier existant intact ?"""
     _print_section("G - re-POST sha1 deja attache -> 409 + fichier intact ?")
     doi, sha1s, _ = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=1, cote="GG-001", fonds_cote="GG")
+        ecriture, tmp_dir, n=1, cote="GG-001", fonds_cote="GG"
+    )
     print(f"Depot cree : {doi} (1 fichier, sha1 {sha1s[0][:8]}...)")
     code, charge = ecriture.ajouter_fichier_explo(doi, {"sha1": sha1s[0]})
-    print(f"  re-POST meme sha1 -> HTTP {code} : "
-          f"{json.dumps(charge, ensure_ascii=False)[:160]}")
+    print(
+        f"  re-POST meme sha1 -> HTTP {code} : "
+        f"{json.dumps(charge, ensure_ascii=False)[:160]}"
+    )
     apres = lecture.lire_depot(doi).get("files") or []
     intact = len(apres) == 1 and apres[0].get("sha1") == sha1s[0]
     if code == 409 and intact:
-        print("\n[OK] G : 409 + fichier existant INTACT (pas de doublon) -> "
-              "traiter le 409 en no-op idempotent.")
+        print(
+            "\n[OK] G : 409 + fichier existant INTACT (pas de doublon) -> "
+            "traiter le 409 en no-op idempotent."
+        )
     elif intact:
         print(f"\n[OK] G : HTTP {code}, fichier intact (1 exemplaire).")
     else:
-        print(f"\n[?] G : HTTP {code}, {len(apres)} fichier(s) (doublon cote distant ?).")
+        print(
+            f"\n[?] G : HTTP {code}, {len(apres)} fichier(s) (doublon cote distant ?)."
+        )
     try:
         ecriture.supprimer_depot(doi)
         print(f"\nCleanup : {doi} supprime.")
@@ -400,14 +449,14 @@ def sonde_d_publie(ecriture, lecture, tmp_dir: Path) -> None:
         return
 
     doi, sha1s, scans = _deposer_avec_n_fichiers(
-        ecriture, tmp_dir, n=2, cote="GD-001", fonds_cote="GD")
+        ecriture, tmp_dir, n=2, cote="GD-001", fonds_cote="GD"
+    )
     print(f"Depot pending cree : {doi} (2 fichiers)")
 
     # --- versioning AVANT publication (baseline) ---
     code_v0, versions0 = ecriture.lire_versions_explo(doi)
     n0 = len(versions0.get("data") or []) if isinstance(versions0, dict) else "?"
-    print(f"\nGET /versions avant publication -> HTTP {code_v0} ; "
-          f"{n0} version(s)")
+    print(f"\nGET /versions avant publication -> HTTP {code_v0} ; {n0} version(s)")
 
     # --- S5 : publication via endpoint dedie PUT /status/{status} ---
     print("\nS5 : PUT /datas/{id}/status/published (endpoint dedie, IRREVERSIBLE)")
@@ -417,17 +466,22 @@ def sonde_d_publie(ecriture, lecture, tmp_dir: Path) -> None:
     statut = apres_pub.get("status")
     print(f"  statut relu = {statut!r}")
     if code_s5 in (200, 204) and statut == "published":
-        print("  [OK] S5 : PUT /status/{status} publie proprement "
-              "(alternative semantique au PUT /datas {status}).")
+        print(
+            "  [OK] S5 : PUT /status/{status} publie proprement "
+            "(alternative semantique au PUT /datas {status})."
+        )
     else:
-        print(f"  [?] S5 : code {code_s5}, statut {statut!r} — endpoint dedie "
-              "non concluant, garder PUT /datas {status}.")
+        print(
+            f"  [?] S5 : code {code_s5}, statut {statut!r} — endpoint dedie "
+            "non concluant, garder PUT /datas {status}."
+        )
 
     # --- versioning APRES publication ---
     code_v1, versions1 = ecriture.lire_versions_explo(doi)
     data1 = versions1.get("data") or [] if isinstance(versions1, dict) else []
-    print(f"\nGET /versions apres publication -> HTTP {code_v1} ; "
-          f"{len(data1)} version(s)")
+    print(
+        f"\nGET /versions apres publication -> HTTP {code_v1} ; {len(data1)} version(s)"
+    )
     for v in data1:
         if isinstance(v, dict):
             print(f"    version={v.get('version')} id={v.get('versionIdentifier')}")
@@ -442,18 +496,22 @@ def sonde_d_publie(ecriture, lecture, tmp_dir: Path) -> None:
     _ecrire_jpg(p, 5)
     desc = ecriture.uploader_fichier(p)
     code_add, charge_add = ecriture.ajouter_fichier_explo(doi, {"sha1": desc["sha1"]})
-    print(f"  POST /files sur publie -> HTTP {code_add} : "
-          f"{json.dumps(charge_add, ensure_ascii=False)[:160]}")
+    print(
+        f"  POST /files sur publie -> HTTP {code_add} : "
+        f"{json.dumps(charge_add, ensure_ascii=False)[:160]}"
+    )
     code_del = ecriture.supprimer_fichier_explo(doi, sha1s[0])
     print(f"  DELETE /files/{sha1s[0][:8]}… sur publie -> HTTP {code_del}")
     final = lecture.lire_depot(doi).get("files") or []
     print(f"  fichiers apres = {_noms_sha1(final)}")
     accepte_add = code_add in (200, 201)
     accepte_del = code_del in (200, 204)
-    print(f"  [=>] POST {'ACCEPTE' if accepte_add else 'REFUSE'} ; "
-          f"DELETE {'ACCEPTE' if accepte_del else 'REFUSE'} sur publie "
-          f"-> garde-fou DepotPublie de ColleC "
-          f"{'justifie' if not (accepte_add and accepte_del) else 'prudent (mutations possibles mais cassent les citations)'}.")
+    print(
+        f"  [=>] POST {'ACCEPTE' if accepte_add else 'REFUSE'} ; "
+        f"DELETE {'ACCEPTE' if accepte_del else 'REFUSE'} sur publie "
+        f"-> garde-fou DepotPublie de ColleC "
+        f"{'justifie' if not (accepte_add and accepte_del) else 'prudent (mutations possibles mais cassent les citations)'}."
+    )
 
     print(f"\n  (depot publie {doi} NON nettoye — indestructible sur apitest)")
 

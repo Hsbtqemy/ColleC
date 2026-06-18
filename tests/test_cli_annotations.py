@@ -62,21 +62,22 @@ def _base_avec_annotation_libre(
         vocab = Vocabulaire(code="dessinateurs", libelle="Dessinateurs")
         s.add(vocab)
         s.flush()
-        s.add(ValeurControlee(
-            vocabulaire_id=vocab.id,
-            code="copi",
-            libelle="Copi",
-            uri=vocab_uri,
-            actif=True,
-        ))
+        s.add(
+            ValeurControlee(
+                vocabulaire_id=vocab.id,
+                code="copi",
+                libelle="Copi",
+                uri=vocab_uri,
+                actif=True,
+            )
+        )
         # Annotation libre « Copi » avant rattachement vocab
         creer_annotation(
-            s, fichier.id,
+            s,
+            fichier.id,
             FormulaireAnnotation(
                 selecteur="xywh=0,0,100,100",
-                corps=[
-                    {"type": "TextualBody", "purpose": "tagging", "value": "Copi"}
-                ],
+                corps=[{"type": "TextualBody", "purpose": "tagging", "value": "Copi"}],
             ),
         )
         s.commit()
@@ -93,10 +94,14 @@ def test_cli_enrichir_dry_run_par_defaut(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "annotations", "enrichir",
-            "--vocabulaire", "dessinateurs",
-            "--fonds", "HK",
-            "--db-path", str(db),
+            "annotations",
+            "enrichir",
+            "--vocabulaire",
+            "dessinateurs",
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -121,12 +126,17 @@ def test_cli_enrichir_appliquer_modifie_base(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "annotations", "enrichir",
-            "--vocabulaire", "dessinateurs",
-            "--fonds", "HK",
+            "annotations",
+            "enrichir",
+            "--vocabulaire",
+            "dessinateurs",
+            "--fonds",
+            "HK",
             "--appliquer",
-            "--utilisateur", "marie",
-            "--db-path", str(db),
+            "--utilisateur",
+            "marie",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -148,10 +158,14 @@ def test_cli_enrichir_vocab_introuvable(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "annotations", "enrichir",
-            "--vocabulaire", "inexistant",
-            "--fonds", "HK",
-            "--db-path", str(db),
+            "annotations",
+            "enrichir",
+            "--vocabulaire",
+            "inexistant",
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
@@ -164,10 +178,14 @@ def test_cli_enrichir_fonds_introuvable(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "annotations", "enrichir",
-            "--vocabulaire", "dessinateurs",
-            "--fonds", "INCONNU",
-            "--db-path", str(db),
+            "annotations",
+            "enrichir",
+            "--vocabulaire",
+            "dessinateurs",
+            "--fonds",
+            "INCONNU",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
@@ -180,10 +198,14 @@ def test_cli_enrichir_no_match_silencieux(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "annotations", "enrichir",
-            "--vocabulaire", "dessinateurs",
-            "--fonds", "HK",
-            "--db-path", str(db),
+            "annotations",
+            "enrichir",
+            "--vocabulaire",
+            "dessinateurs",
+            "--fonds",
+            "HK",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output

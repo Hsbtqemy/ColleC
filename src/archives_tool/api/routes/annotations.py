@@ -98,7 +98,9 @@ def get_annotations_fichier(
     """Liste les annotations W3C d'un fichier (AnnotationPage)."""
     fichier = db.get(Fichier, fichier_id)
     if fichier is None:
-        raise HTTPException(status_code=404, detail=f"Fichier {fichier_id} introuvable.")
+        raise HTTPException(
+            status_code=404, detail=f"Fichier {fichier_id} introuvable."
+        )
     annotations = lister_annotations_fichier(db, fichier_id)
     # base_url : URL du serveur pour URIs absolues. None ou vide
     # = URIs relatives (acceptables côté Annotorious local).
@@ -136,9 +138,7 @@ async def post_annotation_fichier(
         return _erreurs_response({"payload": str(e)}, status=400)
 
     try:
-        annotation = creer_annotation(
-            db, fichier_id, formulaire, cree_par=utilisateur
-        )
+        annotation = creer_annotation(db, fichier_id, formulaire, cree_par=utilisateur)
     except AnnotationIntrouvable as e:
         raise HTTPException(status_code=404, detail=str(e))
     except AnnotationInvalide as e:

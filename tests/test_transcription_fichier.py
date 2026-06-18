@@ -34,10 +34,24 @@ def base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         it = creer_item(s, FormulaireItem(cote="AS-001", titre="x", fonds_id=f.id))
         autre = creer_item(s, FormulaireItem(cote="AS-002", titre="y", fonds_id=f.id))
         for nom, ordre in (("p1.jpg", 1), ("p2.jpg", 2)):
-            s.add(Fichier(item_id=it.id, nom_fichier=nom, racine="scans",
-                          chemin_relatif=nom, ordre=ordre))
-        s.add(Fichier(item_id=autre.id, nom_fichier="o1.jpg", racine="scans",
-                      chemin_relatif="o1.jpg", ordre=1))
+            s.add(
+                Fichier(
+                    item_id=it.id,
+                    nom_fichier=nom,
+                    racine="scans",
+                    chemin_relatif=nom,
+                    ordre=ordre,
+                )
+            )
+        s.add(
+            Fichier(
+                item_id=autre.id,
+                nom_fichier="o1.jpg",
+                racine="scans",
+                chemin_relatif="o1.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
     engine.dispose()
     monkeypatch.setenv("ARCHIVES_DB", str(db))
@@ -48,9 +62,9 @@ def _fid(db: Path, cote: str, nom: str) -> int:
     eng = creer_engine(db)
     with creer_session_factory(eng)() as s:
         fid = s.scalar(
-            select(Fichier.id).join(Item).where(
-                Item.cote == cote, Fichier.nom_fichier == nom
-            )
+            select(Fichier.id)
+            .join(Item)
+            .where(Item.cote == cote, Fichier.nom_fichier == nom)
         )
     eng.dispose()
     return fid
@@ -88,11 +102,17 @@ def test_post_transcription_enregistre_et_redirige(base: Path) -> None:
 def test_post_transcription_vide_donne_none(base: Path) -> None:
     fid = _fid(base, "AS-001", "p1.jpg")
     client = TestClient(app)
-    client.post(f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
-                data={"texte": "x", "fichier_courant": "1"}, follow_redirects=False)
+    client.post(
+        f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
+        data={"texte": "x", "fichier_courant": "1"},
+        follow_redirects=False,
+    )
     # Espaces seuls → strip → None (pas de transcription vide stockée).
-    r2 = client.post(f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
-                     data={"texte": "   ", "fichier_courant": "1"}, follow_redirects=False)
+    r2 = client.post(
+        f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
+        data={"texte": "   ", "fichier_courant": "1"},
+        follow_redirects=False,
+    )
     # 303 : le None vient bien du strip d'une requête ACCEPTÉE (pas d'un rejet).
     assert r2.status_code == 303
     assert _description(base, fid) is None
@@ -104,7 +124,8 @@ def test_post_transcription_cross_item_404(base: Path) -> None:
     fid_autre = _fid(base, "AS-002", "o1.jpg")
     r = TestClient(app).post(
         f"/item/AS-001/fichiers/{fid_autre}/transcription?fonds=AS",
-        data={"texte": "intrus", "fichier_courant": "1"}, follow_redirects=False,
+        data={"texte": "intrus", "fichier_courant": "1"},
+        follow_redirects=False,
     )
     assert r.status_code == 404
     assert _description(base, fid_autre) is None  # rien écrit
@@ -122,10 +143,12 @@ def test_viewer_catalogage_affiche_panneau_transcription(base: Path) -> None:
 
     r = TestClient(app).get("/item/AS-001/visionneuse?fonds=AS&fichier_courant=1")
     assert r.status_code == 200
-    assert "Transcription du scan" in r.text          # libellé du panneau
-    assert "Transcription test ZQX" in r.text          # valeur pré-remplie
+    assert "Transcription du scan" in r.text  # libellé du panneau
+    assert "Transcription test ZQX" in r.text  # valeur pré-remplie
     assert f"/fichiers/{fid}/transcription" in r.text  # action du form
-    assert 'name="texte"' in r.text  # surface ÉDITABLE (textarea), pas un simple affichage
+    assert (
+        'name="texte"' in r.text
+    )  # surface ÉDITABLE (textarea), pas un simple affichage
 
 
 def test_post_transcription_bloque_en_lecture_seule(
@@ -136,16 +159,23 @@ def test_post_transcription_bloque_en_lecture_seule(
     import yaml
 
     cfg = tmp_path / "config_ro.yaml"
-    cfg.write_text(yaml.safe_dump({
-        "utilisateur": "test", "racines": {"scans": str(tmp_path)},
-        "lecture_seule": True,
-    }), encoding="utf-8")
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "utilisateur": "test",
+                "racines": {"scans": str(tmp_path)},
+                "lecture_seule": True,
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
 
     fid = _fid(base, "AS-001", "p1.jpg")
     r = TestClient(app).post(
         f"/item/AS-001/fichiers/{fid}/transcription?fonds=AS",
-        data={"texte": "interdit", "fichier_courant": "1"}, follow_redirects=False,
+        data={"texte": "interdit", "fichier_courant": "1"},
+        follow_redirects=False,
     )
     assert r.status_code == 423
     assert _description(base, fid) is None  # rien écrit
@@ -165,12 +195,12 @@ def test_liseuse_affiche_transcription_lecture_seule(base: Path) -> None:
     fid_attr = f'data-transcription-lecture="{fid}"'
     r = TestClient(app).get("/lire/AS/AS-001")
     assert r.status_code == 200
-    assert fid_attr in r.text                       # le panneau lecture seule
-    assert "Transcription liseuse ABC" in r.text     # la valeur
+    assert fid_attr in r.text  # le panneau lecture seule
+    assert "Transcription liseuse ABC" in r.text  # la valeur
     # Auto-ouvert pour une image (p1.jpg) : `open` DANS la balise <details> du
     # panneau (sinon la transcription serait repliée, invisible sans clic).
     i = r.text.index(fid_attr)
-    balise_ouvrante = r.text[i:r.text.index(">", i)]
+    balise_ouvrante = r.text[i : r.text.index(">", i)]
     assert "open" in balise_ouvrante
     # Lecture seule : aucune surface d'édition (textarea du panneau éditable du
     # viewer de catalogage). Marqueur robuste, pas un substring d'URL.

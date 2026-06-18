@@ -86,7 +86,9 @@ def test_type_coar_pour_nakala_cas() -> None:
     # Les 3 extras (genres COAR valides hors set Nakala) → projetés.
     assert type_coar_pour_nakala(f"{C}/c_ecc8") == f"{C}/c_c513"  # Photo → image
     assert type_coar_pour_nakala(f"{C}/c_3248") == f"{C}/c_18cf"  # Chapitre → texte
-    assert type_coar_pour_nakala(f"{C}/c_8042") == f"{C}/c_816b"  # Doc travail → préprint
+    assert (
+        type_coar_pour_nakala(f"{C}/c_8042") == f"{C}/c_816b"
+    )  # Doc travail → préprint
     # Type déjà accepté Nakala → inchangé (identité).
     assert type_coar_pour_nakala(f"{C}/c_2fe3") == f"{C}/c_2fe3"  # Périodique
     assert type_coar_pour_nakala(f"{C}/c_18cf") == f"{C}/c_18cf"  # Texte

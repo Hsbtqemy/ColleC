@@ -86,9 +86,7 @@ class Perimetre:
             )
         # `*_fonds_cote` n'a de sens qu'avec son anchor.
         if self.collection_fonds_cote is not None and self.collection_cote is None:
-            raise ValueError(
-                "collection_fonds_cote nécessite collection_cote."
-            )
+            raise ValueError("collection_fonds_cote nécessite collection_cote.")
         if self.item_fonds_cote is not None and self.item_cote is None:
             raise ValueError("item_fonds_cote nécessite item_cote.")
 
@@ -118,9 +116,7 @@ def _selectionner_fichiers(
         stmt = base_stmt.where(Item.cote == perimetre.item_cote)
         if perimetre.item_fonds_cote is not None:
             stmt = stmt.where(Fonds.cote == perimetre.item_fonds_cote)
-        return list(
-            session.execute(stmt.order_by(Fichier.ordre, Fichier.id)).all()
-        )
+        return list(session.execute(stmt.order_by(Fichier.ordre, Fichier.id)).all())
 
     if perimetre.collection_cote is not None:
         fonds_id_filtre = None

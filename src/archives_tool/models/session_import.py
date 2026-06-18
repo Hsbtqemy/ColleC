@@ -51,9 +51,7 @@ class SessionImport(Base):
     utilisateur: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Étape courante du wizard (cf. ETAPES_IMPORT).
-    etape: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="tableur"
-    )
+    etape: Mapped[str] = mapped_column(String(20), nullable=False, default="tableur")
 
     # --- Étape tableur : fichier uploadé + colonnes détectées --------
     chemin_tableur: Mapped[str | None] = mapped_column(Text)
@@ -75,9 +73,7 @@ class SessionImport(Base):
     # Granularité du tableur : "item" (une ligne = un item) ou
     # "fichier" (une ligne = un scan ; les lignes sont regroupées
     # par cote à l'import).
-    granularite: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="item"
-    )
+    granularite: Mapped[str] = mapped_column(String(20), nullable=False, default="item")
 
     # --- Étape fichiers : racine + motif de résolution ---------------
     configuration_fichiers: Mapped[dict[str, Any] | None] = mapped_column(JSON)
@@ -88,9 +84,7 @@ class SessionImport(Base):
     )
 
     # États possibles : 'en_cours', 'validee', 'abandonnee'.
-    statut: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="en_cours"
-    )
+    statut: Mapped[str] = mapped_column(String(20), nullable=False, default="en_cours")
 
     cree_le: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -103,9 +97,7 @@ class SessionImport(Base):
             name="ck_session_import_statut",
         ),
         CheckConstraint(
-            "etape IN ("
-            + ", ".join(f"'{e}'" for e in ETAPES_IMPORT)
-            + ")",
+            "etape IN (" + ", ".join(f"'{e}'" for e in ETAPES_IMPORT) + ")",
             name="ck_session_import_etape",
         ),
         CheckConstraint(

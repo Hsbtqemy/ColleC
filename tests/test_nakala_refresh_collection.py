@@ -28,8 +28,14 @@ def _donnee(suffixe: str, titre: str) -> dict:
             {"propertyUri": f"{_NKL}title", "value": titre},
             {"propertyUri": f"{_NKL}created", "value": "1984"},
         ],
-        "files": [{"name": f"{suffixe}.jpg", "sha1": f"{suffixe}sha", "size": 1,
-                   "mime_type": "image/jpeg"}],
+        "files": [
+            {
+                "name": f"{suffixe}.jpg",
+                "sha1": f"{suffixe}sha",
+                "size": 1,
+                "mime_type": "image/jpeg",
+            }
+        ],
     }
 
 
@@ -40,10 +46,19 @@ class _FakeClient:
         self._donnees = donnees
 
     def lire_collection(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": [{"propertyUri": f"{_NKL}title", "value": "C"}]}
+        return {
+            "identifier": doi,
+            "metas": [{"propertyUri": f"{_NKL}title", "value": "C"}],
+        }
 
-    def lister_depots_collection(self, doi: str, *, page: int = 1, taille: int = 50) -> dict:
-        return {"data": self._donnees if page == 1 else [], "currentPage": page, "lastPage": 1}
+    def lister_depots_collection(
+        self, doi: str, *, page: int = 1, taille: int = 50
+    ) -> dict:
+        return {
+            "data": self._donnees if page == 1 else [],
+            "currentPage": page,
+            "lastPage": 1,
+        }
 
 
 @pytest.fixture
@@ -93,7 +108,9 @@ def test_no_dry_run_applique_overwrite(db_path: Path) -> None:
     _amorcer_deux_items(db_path)
     modifie = [_donnee("aaa1", "Titre A MODIFIÉ"), _donnee("bbb2", "Titre B")]
     with _session(db_path) as s:
-        rapport = rafraichir_collection(s, _FakeClient(modifie), _DOI_COL, dry_run=False)
+        rapport = rafraichir_collection(
+            s, _FakeClient(modifie), _DOI_COL, dry_run=False
+        )
     assert len(rapport.modifies) == 1
     assert rapport.modifies[0].applique is True
     with _session(db_path) as s:

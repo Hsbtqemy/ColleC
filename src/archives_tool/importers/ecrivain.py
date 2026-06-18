@@ -203,6 +203,7 @@ def _construire_formulaire_item(
     # éditer via inline ou en mode avancé.
     type_coar_brut = champs.get("type_coar") or ""
     from archives_tool.api.services.vocabulaires import normaliser_type_coar
+
     type_coar = normaliser_type_coar(type_coar_brut) or type_coar_brut
 
     return FormulaireItem(
@@ -294,9 +295,7 @@ def _reindexer_fichiers(
     d'apparition courant.
     """
     if profil.ordre_depuis_nom:
-        extraits = _ordres_depuis_nom(
-            fichiers, profil.ordre_depuis_nom, cote, rapport
-        )
+        extraits = _ordres_depuis_nom(fichiers, profil.ordre_depuis_nom, cote, rapport)
         if extraits is not None:
             for f, o in zip(fichiers, extraits):
                 f.ordre = o
@@ -379,9 +378,7 @@ def _grouper_par_cote(
                 exemples_valeurs=data["exemples"],
             )
         )
-    rapport.divergences_aggregees.sort(
-        key=lambda d: d.nb_divergences, reverse=True
-    )
+    rapport.divergences_aggregees.sort(key=lambda d: d.nb_divergences, reverse=True)
     return resultats
 
 
@@ -467,7 +464,9 @@ def _ecrire_fichiers(
             )
             continue
         cle = _cle_identite_fichier(
-            prep.racine, prep.chemin_relatif, prep.iiif_url_nakala,
+            prep.racine,
+            prep.chemin_relatif,
+            prep.iiif_url_nakala,
             prep.hash_sha256,
         )
         if cle in existants:
@@ -563,9 +562,7 @@ def _promouvoir_url_source(meta: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def _fichier_depuis_colonnes(
-    prep: ItemPrepare, ordre: int
-) -> FichierPrepare:
+def _fichier_depuis_colonnes(prep: ItemPrepare, ordre: int) -> FichierPrepare:
     """Construit un `FichierPrepare` depuis les colonnes `fichier.*`
     d'une ligne (granularité fichier, import d'un tableur où l'info
     fichier vit dans les colonnes — typiquement un export Nakala).
@@ -795,9 +792,7 @@ def _executer_reel(
         if item.doi_collection_nakala:
             dois_collection_vus.add(item.doi_collection_nakala)
 
-    _propager_doi_collection_sur_miroir(
-        session, miroir, dois_collection_vus, rapport
-    )
+    _propager_doi_collection_sur_miroir(session, miroir, dois_collection_vus, rapport)
 
 
 def _propager_doi_collection_sur_miroir(

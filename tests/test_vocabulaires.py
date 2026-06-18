@@ -74,6 +74,4 @@ def test_normaliser_type_coar_alias_variantes() -> None:
     for libelle, code in cases.items():
         uri = normaliser_type_coar(libelle)
         assert uri is not None, f"Pas d'URI pour {libelle!r}"
-        assert uri.endswith("/" + code), (
-            f"{libelle!r} → {uri!r}, attendu code {code!r}"
-        )
+        assert uri.endswith("/" + code), f"{libelle!r} → {uri!r}, attendu code {code!r}"

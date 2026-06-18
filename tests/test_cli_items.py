@@ -38,12 +38,20 @@ def test_creer_serie_succes(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "ZX",
-            "--pattern", "ZX-{n:03d}",
-            "--de", "1", "--a", "5",
-            "--titre", "Numéro {n}",
-            "--db-path", str(db),
+            "items",
+            "creer-serie",
+            "--fonds",
+            "ZX",
+            "--pattern",
+            "ZX-{n:03d}",
+            "--de",
+            "1",
+            "--a",
+            "5",
+            "--titre",
+            "Numéro {n}",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -70,11 +78,18 @@ def test_creer_serie_pattern_invalide_exit_1(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "ZX",
-            "--pattern", "ZX-fixe",  # pas de {n}
-            "--de", "1", "--a", "3",
-            "--db-path", str(db),
+            "items",
+            "creer-serie",
+            "--fonds",
+            "ZX",
+            "--pattern",
+            "ZX-fixe",  # pas de {n}
+            "--de",
+            "1",
+            "--a",
+            "3",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
@@ -94,11 +109,18 @@ def test_creer_serie_fonds_inexistant_exit_1(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "INCONNU",
-            "--pattern", "X-{n}",
-            "--de", "1", "--a", "3",
-            "--db-path", str(db),
+            "items",
+            "creer-serie",
+            "--fonds",
+            "INCONNU",
+            "--pattern",
+            "X-{n}",
+            "--de",
+            "1",
+            "--a",
+            "3",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 1
@@ -112,11 +134,18 @@ def test_creer_serie_ignorer_existants_relancable(tmp_path: Path) -> None:
     r1 = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "ZX",
-            "--pattern", "ZX-{n:02d}",
-            "--de", "1", "--a", "3",
-            "--db-path", str(db),
+            "items",
+            "creer-serie",
+            "--fonds",
+            "ZX",
+            "--pattern",
+            "ZX-{n:02d}",
+            "--de",
+            "1",
+            "--a",
+            "3",
+            "--db-path",
+            str(db),
         ],
     )
     assert r1.exit_code == 0
@@ -124,12 +153,19 @@ def test_creer_serie_ignorer_existants_relancable(tmp_path: Path) -> None:
     r2 = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "ZX",
-            "--pattern", "ZX-{n:02d}",
-            "--de", "1", "--a", "3",
+            "items",
+            "creer-serie",
+            "--fonds",
+            "ZX",
+            "--pattern",
+            "ZX-{n:02d}",
+            "--de",
+            "1",
+            "--a",
+            "3",
             "--ignorer-existants",
-            "--db-path", str(db),
+            "--db-path",
+            str(db),
         ],
     )
     assert r2.exit_code == 0
@@ -149,18 +185,23 @@ def test_creer_serie_avec_collection_libre(tmp_path: Path) -> None:
     """--collection pointe sur une libre rattachée. Items rattachés à
     la libre ET à la miroir (invariant 6)."""
     from archives_tool.api.services.collections import (
-        FormulaireCollection, creer_collection_libre,
+        FormulaireCollection,
+        creer_collection_libre,
     )
+
     db = _base_avec_fonds(tmp_path)
     engine = creer_engine(db)
     factory = creer_session_factory(engine)
     with factory() as s:
         from archives_tool.api.services.fonds import lire_fonds_par_cote
+
         fonds = lire_fonds_par_cote(s, "ZX")
         creer_collection_libre(
             s,
             FormulaireCollection(
-                cote="ZX-FAV", titre="Favoris", fonds_id=fonds.id,
+                cote="ZX-FAV",
+                titre="Favoris",
+                fonds_id=fonds.id,
             ),
         )
     engine.dispose()
@@ -168,12 +209,20 @@ def test_creer_serie_avec_collection_libre(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
-            "items", "creer-serie",
-            "--fonds", "ZX",
-            "--collection", "ZX-FAV",
-            "--pattern", "ZX-{n}",
-            "--de", "1", "--a", "2",
-            "--db-path", str(db),
+            "items",
+            "creer-serie",
+            "--fonds",
+            "ZX",
+            "--collection",
+            "ZX-FAV",
+            "--pattern",
+            "ZX-{n}",
+            "--de",
+            "1",
+            "--a",
+            "2",
+            "--db-path",
+            str(db),
         ],
     )
     assert result.exit_code == 0, result.output

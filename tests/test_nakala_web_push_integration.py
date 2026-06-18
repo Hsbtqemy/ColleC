@@ -70,13 +70,31 @@ def _seed_item(db: Path, tmp_path: Path, *, titre: str) -> None:
     (scans / "as001.jpg").write_bytes(b"\xff\xd8\xff smoke")
     with _session(db) as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre=titre, fonds_id=f.id, date="1984", langue="spa",
-            description="Roman", type_coar=_TYPE_LIVRE,
-            metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Literatura"]},
-        ))
-        s.add(Fichier(item_id=item.id, nom_fichier="as001.jpg", racine="scans",
-                      chemin_relatif="as001.jpg", ordre=1))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre=titre,
+                fonds_id=f.id,
+                date="1984",
+                langue="spa",
+                description="Roman",
+                type_coar=_TYPE_LIVRE,
+                metadonnees={
+                    "createurs": ["Somers, Armonía"],
+                    "sujets": ["Literatura"],
+                },
+            ),
+        )
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="as001.jpg",
+                racine="scans",
+                chemin_relatif="as001.jpg",
+                ordre=1,
+            )
+        )
         s.commit()
 
 
@@ -86,8 +104,14 @@ def _deposer_pending(db: Path, tmp_path: Path) -> str:
     try:
         with _session(db) as s:
             item = s.scalar(select(Item).where(Item.cote == "AS-001"))
-            rapport = deposer_item(s, cli, item, racines={"scans": tmp_path / "scans"},
-                                   dry_run=False, cree_par="smoke")
+            rapport = deposer_item(
+                s,
+                cli,
+                item,
+                racines={"scans": tmp_path / "scans"},
+                dry_run=False,
+                cree_par="smoke",
+            )
         assert rapport.doi
         return rapport.doi
     finally:
@@ -134,9 +158,11 @@ def test_web_pousser_item_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
         # Modif locale puis push via la VRAIE route web (clients réels).
         _modifier_titre(db, "Titre RÉVISÉ via UI")
-        r = TestClient(app).post("/nakala/pousser",
-                                 data={"cote": "AS-001", "fonds": "AS"},
-                                 follow_redirects=False)
+        r = TestClient(app).post(
+            "/nakala/pousser",
+            data={"cote": "AS-001", "fonds": "AS"},
+            follow_redirects=False,
+        )
         assert r.status_code == 303, r.text
         assert "nakala_pousse=" in r.headers["location"]
 
@@ -157,11 +183,15 @@ def test_web_publier_item_live(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
     monkeypatch.setenv("ARCHIVES_DB", str(db))
     _seed_item(db, tmp_path, titre="ColleC — publication smoke UI")
-    doi = _deposer_pending(db, tmp_path)  # NB : publié = NON supprimable (laissé sur le bac).
+    doi = _deposer_pending(
+        db, tmp_path
+    )  # NB : publié = NON supprimable (laissé sur le bac).
 
-    r = TestClient(app).post("/nakala/publier",
-                             data={"cote": "AS-001", "fonds": "AS"},
-                             follow_redirects=False)
+    r = TestClient(app).post(
+        "/nakala/publier",
+        data={"cote": "AS-001", "fonds": "AS"},
+        follow_redirects=False,
+    )
     assert r.status_code == 303, r.text
     assert "nakala_publie=1" in r.headers["location"]
 

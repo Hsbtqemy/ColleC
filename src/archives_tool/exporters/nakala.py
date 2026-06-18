@@ -125,9 +125,7 @@ def _ligne_nakala(
         f"{DC}date": date,
         f"{DC}description": item.description or "",
         f"{DC}subject": _joindre(
-            meta.get("sujets")
-            or meta.get("sujet")
-            or meta.get("rubrique")
+            meta.get("sujets") or meta.get("sujet") or meta.get("rubrique")
         ),
         f"{DC}language": langue_nakala,
         f"{DC}publisher": _joindre(meta.get("editeur") or meta.get("publisher")),

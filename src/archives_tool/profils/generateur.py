@@ -36,9 +36,7 @@ _DC_INVERSE: dict[str, str] = {
 # (le fallback de classif par-item/fichier de V0.9.2-import #1 doit
 # utiliser le MÊME pattern que la détection structurante, sinon un
 # drift entre les deux casse silencieusement la classif).
-PATTERN_COTE = re.compile(
-    r"^cote$|^cote_collection$|^cote_item$|^côte$", re.IGNORECASE
-)
+PATTERN_COTE = re.compile(r"^cote$|^cote_collection$|^cote_item$|^côte$", re.IGNORECASE)
 
 # Détection nom de colonne → champ structurant (heuristique conservatrice).
 # En cas de doute on range plutôt dans metadonnees, qu'on impose au
@@ -159,7 +157,9 @@ _HEURISTIQUES: list[tuple[re.Pattern[str], str]] = [
 # vignettes — varient page-par-page, doivent donc vivre côté Fichier
 # pour éviter les warnings de divergence à la fusion par cote.
 _HEURISTIQUES_FICHIER_META: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^thumb$|^thumbnail$|^thumb_url$|^vignette$|^miniature$", re.IGNORECASE),
+    re.compile(
+        r"^thumb$|^thumbnail$|^thumb_url$|^vignette$|^miniature$", re.IGNORECASE
+    ),
     re.compile(
         r"^data_url$|^embed_url$|^preview_url$"
         r"|^url_data$|^url_embed$|^url_preview$",

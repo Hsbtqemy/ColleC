@@ -43,7 +43,11 @@ from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.external.nakala.client import ClientLectureNakala
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.models import (
-    Base, Collection, Fichier, Item, TypeCollection,
+    Base,
+    Collection,
+    Fichier,
+    Item,
+    TypeCollection,
 )
 
 pytestmark = pytest.mark.integration
@@ -91,20 +95,34 @@ def _seed(db: Path, scans: Path, n_items: int = 3) -> None:
     """Fonds AS + miroir + N items, chacun avec 1 fichier local minimal."""
     scans.mkdir(exist_ok=True)
     with _session(db) as s:
-        f = creer_fonds(s, FormulaireFonds(cote="AS", titre="Armonía Somers (smoke UI dépôt)"))
+        f = creer_fonds(
+            s, FormulaireFonds(cote="AS", titre="Armonía Somers (smoke UI dépôt)")
+        )
         for i in range(1, n_items + 1):
             nom = f"as{i:03d}.jpg"
             (scans / nom).write_bytes(b"\xff\xd8\xff smoke" + bytes([i]))
-            item = creer_item(s, FormulaireItem(
-                cote=f"AS-{i:03d}", titre=f"Smoke {i}", fonds_id=f.id,
-                date="1984", langue="spa", description="Roman smoke UI",
-                type_coar=_TYPE_LIVRE,
-                metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Smoke"]},
-            ))
-            s.add(Fichier(
-                item_id=item.id, nom_fichier=nom, racine="scans",
-                chemin_relatif=nom, ordre=1,
-            ))
+            item = creer_item(
+                s,
+                FormulaireItem(
+                    cote=f"AS-{i:03d}",
+                    titre=f"Smoke {i}",
+                    fonds_id=f.id,
+                    date="1984",
+                    langue="spa",
+                    description="Roman smoke UI",
+                    type_coar=_TYPE_LIVRE,
+                    metadonnees={"createurs": ["Somers, Armonía"], "sujets": ["Smoke"]},
+                ),
+            )
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    nom_fichier=nom,
+                    racine="scans",
+                    chemin_relatif=nom,
+                    ordre=1,
+                )
+            )
         s.commit()
 
 
@@ -146,7 +164,9 @@ def _miroir_doi(db: Path) -> str | None:
 def _items_doi(db: Path) -> list[str]:
     with _session(db) as s:
         rows = s.scalars(
-            select(Item.doi_nakala).where(Item.doi_nakala.is_not(None)).order_by(Item.cote)
+            select(Item.doi_nakala)
+            .where(Item.doi_nakala.is_not(None))
+            .order_by(Item.cote)
         )
         return list(rows)
 
@@ -174,7 +194,8 @@ def _supprimer_distants(doi_collection: str | None, doi_items: list[str]) -> Non
 
 
 def test_web_deposer_collection_live(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Smoke bout-en-bout : 3 items déposés via la route web, vérification
     sur apitest, cleanup."""
@@ -244,14 +265,14 @@ def test_web_deposer_collection_live(
         #   `datas`. Avec 3 items la page 1 suffit (taille défaut = 25).
         cli = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
         try:
-            assert doi_collection is not None  # rassure mypy après les asserts ci-dessus
+            assert (
+                doi_collection is not None
+            )  # rassure mypy après les asserts ci-dessus
             collec = cli.lire_collection(doi_collection)
             assert collec.get("status") == "private"
             page = cli.lister_depots_collection(doi_collection, page=1)
             datas = page.get("data") or []
-            ids_distants = {
-                d.get("identifier") for d in datas if d.get("identifier")
-            }
+            ids_distants = {d.get("identifier") for d in datas if d.get("identifier")}
             # Chaque DOI item posé en base doit être listé dans la collection.
             for doi_item in doi_items:
                 assert doi_item in ids_distants, (

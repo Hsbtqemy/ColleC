@@ -259,8 +259,7 @@ def test_whitelist_inline_aligne_sur_cartouche(base_demo: Path) -> None:
     engine.dispose()
 
     editables_rendues = {
-        champ.cle for champs in sections.values() for champ in champs
-        if champ.editable
+        champ.cle for champs in sections.values() for champ in champs if champ.editable
     }
     # Tout champ rendu éditable est dans la whitelist (le contraire
     # — un champ dans la whitelist non rendu — est OK : champs perso
@@ -335,6 +334,7 @@ def test_meta_item_context_dans_page(base_demo: Path) -> None:
 def _version_collection(db_path: Path, cote: str) -> int:
     """Version courante de la miroir HK pour l'optimistic locking."""
     from archives_tool.models import Collection, TypeCollection
+
     engine = creer_engine(db_path)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -353,6 +353,7 @@ def test_inline_edit_collection_titre_succes(base_demo: Path) -> None:
     """POST sur titre de la miroir : 200 + fragment, et la nouvelle
     valeur est persistée en base."""
     from archives_tool.models import Collection, TypeCollection
+
     client = TestClient(app)
     v = _version_collection(base_demo, "HK")
     resp = client.post(
@@ -460,6 +461,7 @@ def test_collection_bandeau_hooks_inline_present(base_demo: Path) -> None:
 def _version_fonds(db_path: Path, cote: str) -> int:
     """Version courante d'un fonds pour l'optimistic locking."""
     from archives_tool.models import Fonds
+
     engine = creer_engine(db_path)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -472,6 +474,7 @@ def _version_fonds(db_path: Path, cote: str) -> int:
 def test_inline_edit_fonds_titre_succes(base_demo: Path) -> None:
     """POST sur titre du fonds : 200 + fragment, valeur persistée."""
     from archives_tool.models import Fonds
+
     client = TestClient(app)
     v = _version_fonds(base_demo, "HK")
     resp = client.post(
@@ -492,6 +495,7 @@ def test_inline_edit_fonds_titre_succes(base_demo: Path) -> None:
 def test_inline_edit_fonds_issn_succes(base_demo: Path) -> None:
     """POST sur ISSN : champ revue inline depuis la synthèse."""
     from archives_tool.models import Fonds
+
     client = TestClient(app)
     v = _version_fonds(base_demo, "HK")
     resp = client.post(
@@ -566,7 +570,8 @@ def test_fonds_bandeau_n_a_plus_de_dl_dt_metadata(base_demo: Path) -> None:
 
 
 def test_fonds_identifiants_vides_masques_en_lecture_seule(
-    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+    base_demo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """En lecture seule, le bloc Identifiants ne montre QUE les champs
     renseignés (pas de placeholder « + ajouter » qui n'a aucun sens si
@@ -574,8 +579,10 @@ def test_fonds_identifiants_vides_masques_en_lecture_seule(
     # Crée un fonds vierge (sans aucun identifiant) pour pouvoir tester
     # proprement le rendu en lecture seule sans bruit du seeder.
     from archives_tool.api.services.fonds import (
-        FormulaireFonds, creer_fonds,
+        FormulaireFonds,
+        creer_fonds,
     )
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -585,6 +592,7 @@ def test_fonds_identifiants_vides_masques_en_lecture_seule(
     # Active le mode lecture seule via le filtre Jinja (le check est
     # dans les globals de l'env templates).
     from archives_tool.api import templating
+
     monkeypatch.setitem(
         templating.templates.env.globals, "est_lecture_seule", lambda: True
     )
@@ -603,12 +611,14 @@ def test_fonds_identifiants_vides_masques_en_lecture_seule(
 
 
 def test_fonds_identifiants_champs_remplis_visibles_en_lecture_seule(
-    base_demo: Path, monkeypatch: pytest.MonkeyPatch,
+    base_demo: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Contre-test : en lecture seule, les champs **remplis** sont bien
     visibles (juste sans hook d'édition). Garantit qu'on ne masque pas
     par excès."""
     from archives_tool.api import templating
+
     monkeypatch.setitem(
         templating.templates.env.globals, "est_lecture_seule", lambda: True
     )
@@ -626,6 +636,7 @@ def test_fonds_identifiants_champs_remplis_visibles_en_lecture_seule(
 def test_inline_edit_collection_doi_nakala_succes(base_demo: Path) -> None:
     """POST sur doi_nakala : 200 + fragment, valeur persistée."""
     from archives_tool.models import Collection, TypeCollection
+
     client = TestClient(app)
     v = _version_collection(base_demo, "HK")
     nouveau_doi = "10.34847/nkl.test123"

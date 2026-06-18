@@ -78,13 +78,15 @@ def nettoyage(client_ecriture):
 
 
 def _metas_minimal(titre: str) -> list[dict]:
-    metas = slugs_vers_metas({
-        "nkl_title": [{"value": titre, "lang": "fr"}],
-        "nkl_creator": ["Test, ColleC"],
-        "nkl_created": "2024",
-        "nkl_type": _TYPE_LIVRE,
-        "nkl_license": "CC-BY-4.0",
-    })
+    metas = slugs_vers_metas(
+        {
+            "nkl_title": [{"value": titre, "lang": "fr"}],
+            "nkl_creator": ["Test, ColleC"],
+            "nkl_created": "2024",
+            "nkl_type": _TYPE_LIVRE,
+            "nkl_license": "CC-BY-4.0",
+        }
+    )
     metas, _ = preflight_appliquer(metas)
     return metas
 
@@ -109,7 +111,8 @@ def test_round_trip_depot(client_ecriture, client_lecture, nettoyage, tmp_path) 
     # Vérifie via l'API de lecture que le dépôt existe et porte le titre.
     depot = client_lecture.lire_depot(doi)
     titres = [
-        m["value"] for m in depot.get("metas", [])
+        m["value"]
+        for m in depot.get("metas", [])
         if m.get("propertyUri") == "http://nakala.fr/terms#title"
     ]
     assert any("test d'intégration" in t for t in titres)
@@ -118,8 +121,9 @@ def test_round_trip_depot(client_ecriture, client_lecture, nettoyage, tmp_path) 
 def test_creer_collection(client_ecriture, nettoyage) -> None:
     _, collections = nettoyage
     reponse = client_ecriture.creer_collection(
-        metas=slugs_vers_metas({"nkl_title": [{"value": "ColleC — collection test",
-                                              "lang": "fr"}]}),
+        metas=slugs_vers_metas(
+            {"nkl_title": [{"value": "ColleC — collection test", "lang": "fr"}]}
+        ),
         status="private",
     )
     doi = extraire_doi(reponse)

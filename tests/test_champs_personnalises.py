@@ -45,6 +45,7 @@ def _miroir_id(db_path: Path, fonds_cote: str = "HK") -> int:
     factory = creer_session_factory(engine)
     with factory() as s:
         from archives_tool.models import Fonds, TypeCollection
+
         fonds = s.scalar(select(Fonds).where(Fonds.cote == fonds_cote))
         col = s.scalar(
             select(Collection).where(
@@ -67,9 +68,7 @@ def test_creer_champ_persiste_avec_defauts(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        champ = creer_champ(
-            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur")
-        )
+        champ = creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur"))
         assert champ.id is not None
         assert champ.cle == "auteur"
         assert champ.libelle == "Auteur"
@@ -159,7 +158,8 @@ def test_modifier_champ_change_libelle_pas_cle(base_demo: Path) -> None:
     with factory() as s:
         c = creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur"))
         modifier_champ(
-            s, c.id,
+            s,
+            c.id,
             FormulaireChamp(cle="essai_rename", libelle="Auteur principal"),
         )
         s.refresh(c)
@@ -336,9 +336,7 @@ def test_composer_metadonnees_ignore_champs_deprecies(base_demo: Path) -> None:
         item.metadonnees = meta
         flag_modified(item, "metadonnees")
         s.commit()
-        c = creer_champ(
-            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur formel")
-        )
+        c = creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur formel"))
         cote = item.cote
         fonds_obj = lire_fonds_par_cote(s, "HK")
         fonds = fonds_obj
@@ -351,7 +349,8 @@ def test_composer_metadonnees_ignore_champs_deprecies(base_demo: Path) -> None:
         assert "auteur" in cles_perso_actif
         # Le libellé formel est utilisé.
         champ_objet = next(
-            ch for ch in detail.metadonnees_par_section["Champs personnalisés"]
+            ch
+            for ch in detail.metadonnees_par_section["Champs personnalisés"]
             if ch.cle == "auteur"
         )
         assert champ_objet.libelle == "Auteur formel"
@@ -470,9 +469,7 @@ def test_promouvoir_cle_libre_cree_champ_sur_miroir(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        item = s.scalar(
-            select(Item).where(Item.cote == "HK-001")
-        )
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
         # Pose une clé libre.
         meta = dict(item.metadonnees or {})
         meta["ancienne_cote"] = "HK/1960/01"
@@ -515,6 +512,7 @@ def test_promouvoir_idempotent_meme_si_deprecie(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         from archives_tool.models import Collection, Fonds, TypeCollection
+
         fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
         miroir = s.scalar(
             select(Collection).where(
@@ -657,6 +655,7 @@ def test_route_promouvoir_cle_redirige_vers_item(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         from archives_tool.models import Collection, Fonds, TypeCollection
+
         fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
         miroir = s.scalar(
             select(Collection).where(
@@ -712,11 +711,10 @@ def test_creer_champ_avec_vocabulaire(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="Tags"))
         c = creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
                 cle="tag",
                 libelle="Tag",
@@ -731,9 +729,9 @@ def test_creer_champ_avec_vocabulaire(base_demo: Path) -> None:
 def test_formulaire_normalise_vocab_id_chaine_vide(base_demo: Path) -> None:
     """Le form HTML envoie '' quand l'utilisateur choisit « aucun ».
     Pydantic doit traiter '' comme None sans planter."""
-    formulaire = FormulaireChamp.model_validate({
-        "cle": "tag", "libelle": "Tag", "valeurs_controlees_id": ""
-    })
+    formulaire = FormulaireChamp.model_validate(
+        {"cle": "tag", "libelle": "Tag", "valeurs_controlees_id": ""}
+    )
     assert formulaire.valeurs_controlees_id is None
 
 
@@ -748,22 +746,20 @@ def test_modifier_champ_change_vocabulaire(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="Tags"))
         c = creer_champ(s, cid, FormulaireChamp(cle="tag", libelle="Tag"))
         # Attach
         modifier_champ(
-            s, c.id,
-            FormulaireChamp(
-                cle="tag", libelle="Tag", valeurs_controlees_id=v.id
-            ),
+            s,
+            c.id,
+            FormulaireChamp(cle="tag", libelle="Tag", valeurs_controlees_id=v.id),
         )
         s.refresh(c)
         assert c.valeurs_controlees_id == v.id
         # Détacher
         modifier_champ(
-            s, c.id,
+            s,
+            c.id,
             FormulaireChamp(cle="tag", libelle="Tag", valeurs_controlees_id=None),
         )
         s.refresh(c)
@@ -784,7 +780,8 @@ def test_route_item_modifier_affiche_champs_personnalises(base_demo: Path) -> No
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(cle="ancienne_cote", libelle="Ancienne cote"),
         )
     engine.dispose()
@@ -806,7 +803,8 @@ def test_route_item_modifier_persiste_meta(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(cle="ancienne_cote", libelle="Ancienne cote"),
         )
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
@@ -853,17 +851,18 @@ def test_route_item_modifier_liste_multiple_persiste_list(base_demo: Path) -> No
     factory = creer_session_factory(engine)
     with factory() as s:
         # Vocab avec 3 valeurs.
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tags", libelle="Tags")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tags", libelle="Tags"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="a", libelle="A"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="b", libelle="B"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="c", libelle="C"))
         # Champ multi-select sur ce vocab.
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
-                cle="tags", libelle="Tags", type="liste_multiple",
+                cle="tags",
+                libelle="Tags",
+                type="liste_multiple",
                 valeurs_controlees_id=v.id,
             ),
         )
@@ -909,8 +908,10 @@ def test_route_item_modifier_liste_multiple_tolere_csv_legacy(
     la valeur passe en list propre — la tolerance n'agit qu'au
     premier rendu."""
     from archives_tool.api.services.vocabulaires_db import (
-        FormulaireValeur, FormulaireVocabulaire,
-        ajouter_valeur, creer_vocabulaire,
+        FormulaireValeur,
+        FormulaireVocabulaire,
+        ajouter_valeur,
+        creer_vocabulaire,
     )
 
     cid = _miroir_id(base_demo)
@@ -921,10 +922,13 @@ def test_route_item_modifier_liste_multiple_tolere_csv_legacy(
         for code in ("image", "pdf", "other", "autre"):
             ajouter_valeur(s, v.id, FormulaireValeur(code=code, libelle=code.title()))
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
-                cle="categories", libelle="Categories",
-                type="liste_multiple", valeurs_controlees_id=v.id,
+                cle="categories",
+                libelle="Categories",
+                type="liste_multiple",
+                valeurs_controlees_id=v.id,
             ),
         )
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
@@ -944,14 +948,17 @@ def test_route_item_modifier_liste_multiple_tolere_csv_legacy(
     html = resp.text
     # Pattern: <input ... value="image" ... checked>
     import re
+
     def coche(code: str) -> bool:
         # le checked vient apres value sur la meme ligne <input>
         pat = re.compile(
-            r'name="meta_categories"\s+value="' + re.escape(code)
+            r'name="meta_categories"\s+value="'
+            + re.escape(code)
             + r'"\s*\n?\s*checked',
             re.MULTILINE,
         )
         return bool(pat.search(html))
+
     assert coche("image")
     assert coche("pdf")
     assert coche("other")
@@ -964,7 +971,8 @@ def test_route_item_modifier_liste_multiple_zero_coche_efface(
     """Zéro checkbox coché → clé supprimée de metadonnees (cohérent
     avec la sémantique « vide = absent » des single-value)."""
     from archives_tool.api.services.vocabulaires_db import (
-        FormulaireVocabulaire, creer_vocabulaire,
+        FormulaireVocabulaire,
+        creer_vocabulaire,
     )
 
     cid = _miroir_id(base_demo)
@@ -973,9 +981,12 @@ def test_route_item_modifier_liste_multiple_zero_coche_efface(
     with factory() as s:
         v = creer_vocabulaire(s, FormulaireVocabulaire(code="tags", libelle="T"))
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
-                cle="tags", libelle="Tags", type="liste_multiple",
+                cle="tags",
+                libelle="Tags",
+                type="liste_multiple",
                 valeurs_controlees_id=v.id,
             ),
         )
@@ -993,8 +1004,11 @@ def test_route_item_modifier_liste_multiple_zero_coche_efface(
     resp = client.post(
         "/item/HK-001/modifier?fonds=HK",
         data={
-            "cote": "HK-001", "titre": "T", "fonds_id": 1,
-            "version": version, "etat_catalogage": "brouillon",
+            "cote": "HK-001",
+            "titre": "T",
+            "fonds_id": 1,
+            "version": version,
+            "etat_catalogage": "brouillon",
         },
         follow_redirects=False,
     )
@@ -1042,8 +1056,10 @@ def test_inline_edit_champ_perso_avec_vocab_libelle_humain(base_demo: Path) -> N
     fragment renvoie le libelle humain + valeur brute en
     data-edit-raw pour la prochaine edition."""
     from archives_tool.api.services.vocabulaires_db import (
-        FormulaireValeur, FormulaireVocabulaire,
-        ajouter_valeur, creer_vocabulaire,
+        FormulaireValeur,
+        FormulaireVocabulaire,
+        ajouter_valeur,
+        creer_vocabulaire,
     )
 
     cid = _miroir_id(base_demo)
@@ -1053,10 +1069,13 @@ def test_inline_edit_champ_perso_avec_vocab_libelle_humain(base_demo: Path) -> N
         v = creer_vocabulaire(s, FormulaireVocabulaire(code="genres", libelle="Genres"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
-                cle="genre", libelle="Genre",
-                type="liste", valeurs_controlees_id=v.id,
+                cle="genre",
+                libelle="Genre",
+                type="liste",
+                valeurs_controlees_id=v.id,
             ),
         )
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
@@ -1086,7 +1105,8 @@ def test_inline_edit_champ_perso_texte_long_mappe_multiligne(base_demo: Path) ->
     factory = creer_session_factory(engine)
     with factory() as s:
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(cle="bio", libelle="Biographie", type="texte_long"),
         )
         fonds = lire_fonds_par_cote(s, "HK")
@@ -1104,7 +1124,8 @@ def test_inline_edit_champ_perso_liste_multiple_refuse(base_demo: Path) -> None:
     """liste_multiple n'a pas d'UI inline (pas de multi-select via
     input/select dans inline_edit.js). Route refuse en 403."""
     from archives_tool.api.services.vocabulaires_db import (
-        FormulaireVocabulaire, creer_vocabulaire,
+        FormulaireVocabulaire,
+        creer_vocabulaire,
     )
 
     cid = _miroir_id(base_demo)
@@ -1113,10 +1134,13 @@ def test_inline_edit_champ_perso_liste_multiple_refuse(base_demo: Path) -> None:
     with factory() as s:
         v = creer_vocabulaire(s, FormulaireVocabulaire(code="tags", libelle="Tags"))
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
-                cle="tags", libelle="Tags",
-                type="liste_multiple", valeurs_controlees_id=v.id,
+                cle="tags",
+                libelle="Tags",
+                type="liste_multiple",
+                valeurs_controlees_id=v.id,
             ),
         )
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
@@ -1160,9 +1184,7 @@ def test_route_item_modifier_preserve_cles_libres(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         # Champ formel pour l'edition.
-        creer_champ(
-            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur")
-        )
+        creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur"))
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
         # Item avec cles libres + 1 cle formelle.
         meta = dict(item.metadonnees or {})
@@ -1181,8 +1203,11 @@ def test_route_item_modifier_preserve_cles_libres(base_demo: Path) -> None:
     resp = client.post(
         "/item/HK-001/modifier?fonds=HK",
         data={
-            "cote": "HK-001", "titre": "T", "fonds_id": 1,
-            "version": version, "etat_catalogage": "brouillon",
+            "cote": "HK-001",
+            "titre": "T",
+            "fonds_id": 1,
+            "version": version,
+            "etat_catalogage": "brouillon",
             "meta_auteur": "Topor (corrige)",
         },
         follow_redirects=False,
@@ -1208,9 +1233,7 @@ def test_route_item_modifier_meta_vide_supprime_cle(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        creer_champ(
-            s, cid, FormulaireChamp(cle="auteur", libelle="Auteur")
-        )
+        creer_champ(s, cid, FormulaireChamp(cle="auteur", libelle="Auteur"))
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))
         # Pose une valeur initiale.
         meta = dict(item.metadonnees or {})
@@ -1225,8 +1248,11 @@ def test_route_item_modifier_meta_vide_supprime_cle(base_demo: Path) -> None:
     resp = client.post(
         "/item/HK-001/modifier?fonds=HK",
         data={
-            "cote": "HK-001", "titre": "Titre", "fonds_id": 1,
-            "version": version, "etat_catalogage": "brouillon",
+            "cote": "HK-001",
+            "titre": "Titre",
+            "fonds_id": 1,
+            "version": version,
+            "etat_catalogage": "brouillon",
             "meta_auteur": "",  # vide → efface
         },
         follow_redirects=False,
@@ -1264,13 +1290,12 @@ def test_composer_resout_libelle_humain_depuis_vocabulaire_db(base_demo: Path) -
     factory = creer_session_factory(engine)
     with factory() as s:
         # Vocabulaire avec 1 valeur.
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="genre", libelle="Genres")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="genre", libelle="Genres"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
         # Champ associé.
         creer_champ(
-            s, cid,
+            s,
+            cid,
             FormulaireChamp(
                 cle="genre",
                 libelle="Genre littéraire",
@@ -1313,15 +1338,12 @@ def test_composer_valeur_hors_vocab_garde_brut(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="genre", libelle="Genres")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="genre", libelle="Genres"))
         ajouter_valeur(s, v.id, FormulaireValeur(code="bd", libelle="Bande dessinée"))
         creer_champ(
-            s, cid,
-            FormulaireChamp(
-                cle="genre", libelle="Genre", valeurs_controlees_id=v.id
-            ),
+            s,
+            cid,
+            FormulaireChamp(cle="genre", libelle="Genre", valeurs_controlees_id=v.id),
         )
         # Valeur HORS vocab.
         item = s.scalar(select(Item).where(Item.cote == "HK-001"))

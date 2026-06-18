@@ -56,20 +56,20 @@ TYPES_COAR_OPTIONS: tuple[tuple[str, str], ...] = (
     (f"{_C}/c_2fe3", "Périodique"),
     (f"{_C}/c_6501", "Article"),
     (f"{_C}/c_2f33", "Ouvrage"),
-    (f"{_C}/c_3248", "Chapitre de livre"),          # extra (hors set Nakala)
+    (f"{_C}/c_3248", "Chapitre de livre"),  # extra (hors set Nakala)
     (f"{_C}/c_0040", "Manuscrit"),
     (f"{_C}/c_0857", "Lettre / Correspondance"),
     (f"{_C}/YC9F-HGCF", "Fonds d'archives"),
     (f"{_C}/c_93fc", "Rapport"),
     (f"{_C}/c_46ec", "Thèse"),
     (f"{_C}/c_816b", "Prépublication"),
-    (f"{_C}/c_8042", "Document de travail"),         # extra (hors set Nakala)
+    (f"{_C}/c_8042", "Document de travail"),  # extra (hors set Nakala)
     (f"{_C}/c_efa0", "Synthèse"),
     (f"{_C}/c_86bc", "Bibliographie"),
     (f"{_C}/c_ba08", "Note de lecture"),
     # — Image & multimédia —
     (f"{_C}/c_c513", "Image"),
-    (f"{_C}/c_ecc8", "Photographie"),                # extra (hors set Nakala)
+    (f"{_C}/c_ecc8", "Photographie"),  # extra (hors set Nakala)
     (f"{_C}/c_12cd", "Carte"),
     (f"{_C}/c_18cw", "Partition"),
     (f"{_C}/c_12ce", "Vidéo"),
@@ -95,9 +95,9 @@ TYPES_COAR_OPTIONS: tuple[tuple[str, str], ...] = (
 #: `type_coar_pour_nakala`). Cibles conservatrices, ajustables selon la
 #: modération Nakala.
 COAR_INTERNE_VERS_NAKALA: dict[str, str] = {
-    f"{_C}/c_3248": f"{_C}/c_18cf",   # Chapitre de livre → texte
-    f"{_C}/c_8042": f"{_C}/c_816b",   # Document de travail → prépublication
-    f"{_C}/c_ecc8": f"{_C}/c_c513",   # Photographie (image fixe) → image
+    f"{_C}/c_3248": f"{_C}/c_18cf",  # Chapitre de livre → texte
+    f"{_C}/c_8042": f"{_C}/c_816b",  # Document de travail → prépublication
+    f"{_C}/c_ecc8": f"{_C}/c_c513",  # Photographie (image fixe) → image
 }
 
 

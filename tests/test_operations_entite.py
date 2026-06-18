@@ -195,9 +195,7 @@ def test_supprimer_fonds_journalise_cascade(session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lister_suppressions_filtre_et_ordre(
-    session: Session, fonds_hk: Fonds
-) -> None:
+def test_lister_suppressions_filtre_et_ordre(session: Session, fonds_hk: Fonds) -> None:
     i1 = creer_item(
         session, FormulaireItem(cote="HK-001", titre="A", fonds_id=fonds_hk.id)
     )
@@ -265,8 +263,16 @@ def test_cli_supprimer_puis_montrer_suppressions(base_demo: Path) -> None:
     r1 = runner.invoke(
         cli_app,
         [
-            "items", "supprimer", "HK-001", "--fonds", "HK",
-            "--yes", "--utilisateur", "CLI-User", "--db-path", str(base_demo),
+            "items",
+            "supprimer",
+            "HK-001",
+            "--fonds",
+            "HK",
+            "--yes",
+            "--utilisateur",
+            "CLI-User",
+            "--db-path",
+            str(base_demo),
         ],
     )
     assert r1.exit_code == 0, r1.output
@@ -276,6 +282,4 @@ def test_cli_supprimer_puis_montrer_suppressions(base_demo: Path) -> None:
     )
     assert r2.exit_code == 0, r2.output
     charge = json.loads(r2.output)
-    assert any(
-        o["cote"] == "HK-001" and o["execute_par"] == "CLI-User" for o in charge
-    )
+    assert any(o["cote"] == "HK-001" and o["execute_par"] == "CLI-User" for o in charge)

@@ -35,19 +35,22 @@ def _charger_migration():
 
 
 def _seed_fichier(s: Session, item: Item, ordre: int, *, metadonnees, sha1_nakala=None):
-    s.add(Fichier(
-        item_id=item.id,
-        nom_fichier=f"f{ordre}.jpg",
-        racine="scans",
-        chemin_relatif=f"f{ordre}.jpg",
-        ordre=ordre,
-        metadonnees=metadonnees,
-        sha1_nakala=sha1_nakala,
-    ))
+    s.add(
+        Fichier(
+            item_id=item.id,
+            nom_fichier=f"f{ordre}.jpg",
+            racine="scans",
+            chemin_relatif=f"f{ordre}.jpg",
+            ordre=ordre,
+            metadonnees=metadonnees,
+            sha1_nakala=sha1_nakala,
+        )
+    )
 
 
 def test_backfill_promeut_sha1_metadonnees_vers_colonne(
-    session: Session, fonds_hk: Fonds,
+    session: Session,
+    fonds_hk: Fonds,
 ) -> None:
     """Cas typique : fichier matérialisé via `rapatrier` avant la migration
     P3+a — sha1 stocké en `metadonnees["sha1"]`, colonne `sha1_nakala`
@@ -58,7 +61,9 @@ def test_backfill_promeut_sha1_metadonnees_vers_colonne(
         FormulaireItem(cote="HK-001", titre="X", fonds_id=fonds_hk.id),
     )
     _seed_fichier(
-        session, item, ordre=1,
+        session,
+        item,
+        ordre=1,
         metadonnees={"sha1": "deadbeef", "mime_type": "image/jpeg"},
     )
     session.commit()
@@ -67,9 +72,7 @@ def test_backfill_promeut_sha1_metadonnees_vers_colonne(
     session.commit()
     session.expire_all()
 
-    fichier = session.scalar(
-        select(Fichier).join(Item).where(Item.cote == "HK-001")
-    )
+    fichier = session.scalar(select(Fichier).join(Item).where(Item.cote == "HK-001"))
     assert fichier.sha1_nakala == "deadbeef"
     # metadonnees préservés (compat retro pour les consommateurs qui les
     # lisaient là — exports, scripts ad-hoc).
@@ -77,7 +80,8 @@ def test_backfill_promeut_sha1_metadonnees_vers_colonne(
 
 
 def test_backfill_ne_touche_pas_si_sha1_nakala_deja_pose(
-    session: Session, fonds_hk: Fonds,
+    session: Session,
+    fonds_hk: Fonds,
 ) -> None:
     """Si `sha1_nakala` est déjà rempli (cas d'un Fichier déposé après
     la migration, ou d'un rejouage), le backfill ne le modifie pas."""
@@ -87,7 +91,9 @@ def test_backfill_ne_touche_pas_si_sha1_nakala_deja_pose(
         FormulaireItem(cote="HK-002", titre="X", fonds_id=fonds_hk.id),
     )
     _seed_fichier(
-        session, item, ordre=1,
+        session,
+        item,
+        ordre=1,
         metadonnees={"sha1": "ancien_metadonnees"},
         sha1_nakala="deja_correct",
     )
@@ -97,9 +103,7 @@ def test_backfill_ne_touche_pas_si_sha1_nakala_deja_pose(
     session.commit()
     session.expire_all()
 
-    fichier = session.scalar(
-        select(Fichier).join(Item).where(Item.cote == "HK-002")
-    )
+    fichier = session.scalar(select(Fichier).join(Item).where(Item.cote == "HK-002"))
     # `sha1_nakala` préservé (priorité à la colonne dédiée).
     assert fichier.sha1_nakala == "deja_correct"
 
@@ -121,14 +125,13 @@ def test_backfill_idempotent(session: Session, fonds_hk: Fonds) -> None:
     session.commit()
     session.expire_all()
 
-    fichier = session.scalar(
-        select(Fichier).join(Item).where(Item.cote == "HK-003")
-    )
+    fichier = session.scalar(select(Fichier).join(Item).where(Item.cote == "HK-003"))
     assert fichier.sha1_nakala == "abc"
 
 
 def test_backfill_skip_fichiers_sans_sha1_en_metadonnees(
-    session: Session, fonds_hk: Fonds,
+    session: Session,
+    fonds_hk: Fonds,
 ) -> None:
     """Fichiers locaux purs (jamais déposés ni pullés) : metadonnees ne
     contient pas de sha1 — le backfill ne touche pas, `sha1_nakala`

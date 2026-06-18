@@ -50,8 +50,12 @@ class _FakeReadClient:
         return False
 
     def lire_depot(self, doi: str) -> dict:
-        return {"identifier": doi, "files": list(_FakeReadClient.files),
-                "status": "pending", "metas": []}
+        return {
+            "identifier": doi,
+            "files": list(_FakeReadClient.files),
+            "status": "pending",
+            "metas": [],
+        }
 
 
 @pytest.fixture(autouse=True)
@@ -64,11 +68,16 @@ def _mock_read_client(monkeypatch: pytest.MonkeyPatch) -> None:
 def config_nakala(tmp_path: Path) -> Path:
     (tmp_path / "scans").mkdir(exist_ok=True)
     cfg = tmp_path / "config.yaml"
-    cfg.write_text(yaml.safe_dump({
-        "utilisateur": "T",
-        "racines": {"scans": str(tmp_path / "scans")},
-        "nakala": {"base_url": "https://apitest.nakala.fr", "api_key": "cle"},
-    }), encoding="utf-8")
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "utilisateur": "T",
+                "racines": {"scans": str(tmp_path / "scans")},
+                "nakala": {"base_url": "https://apitest.nakala.fr", "api_key": "cle"},
+            }
+        ),
+        encoding="utf-8",
+    )
     return cfg
 
 
@@ -85,7 +94,8 @@ def _ecrire_binaire(tmp_path: Path, nom: str, contenu: bytes) -> str:
 
 
 def _db_avec_item_depose(
-    tmp_path: Path, *,
+    tmp_path: Path,
+    *,
     contenu: bytes = b"\xff\xd8\xff init",
     doi_nakala: str = "10.34847/nkl.x1",
     sha1_nakala: str | None = None,
@@ -99,27 +109,47 @@ def _db_avec_item_depose(
     Base.metadata.create_all(engine)
     with creer_session_factory(engine)() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         item.doi_nakala = doi_nakala
-        s.add(Fichier(
-            item_id=item.id, nom_fichier="x.jpg", racine="scans",
-            chemin_relatif="x.jpg", ordre=1,
-            sha1_nakala=sha1_nakala,
-            description_externe=description_externe,
-        ))
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="x.jpg",
+                racine="scans",
+                chemin_relatif="x.jpg",
+                ordre=1,
+                sha1_nakala=sha1_nakala,
+                description_externe=description_externe,
+            )
+        )
         s.commit()
     engine.dispose()
     return db, sha1
 
 
 def _invoke(config: Path, db: Path, *args: str):
-    return runner.invoke(app, [
-        "nakala", "comparer-fichiers", "AS-001", "--fonds", "AS",
-        *args,
-        "--config", str(config), "--db-path", str(db),
-    ])
+    return runner.invoke(
+        app,
+        [
+            "nakala",
+            "comparer-fichiers",
+            "AS-001",
+            "--fonds",
+            "AS",
+            *args,
+            "--config",
+            str(config),
+            "--db-path",
+            str(db),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +158,8 @@ def _invoke(config: Path, db: Path, *args: str):
 
 
 def test_text_inchange_aucun_changement(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
@@ -142,13 +173,16 @@ def test_text_inchange_aucun_changement(
 
 
 def test_text_modifie_affiche_diff_sha1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Fichier local change, sha1 distant connu (sha1_nakala) → modifié."""
     nouveau = b"\xff\xd8\xff NOUVEAU"
     sha1_ancien = "a" * 40
     db, sha1_local = _db_avec_item_depose(
-        tmp_path, contenu=nouveau, sha1_nakala=sha1_ancien,
+        tmp_path,
+        contenu=nouveau,
+        sha1_nakala=sha1_ancien,
     )
     _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
 
@@ -161,7 +195,8 @@ def test_text_modifie_affiche_diff_sha1(
 
 
 def test_text_nouveau_quand_sha1_distant_inconnu(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     db, _ = _db_avec_item_depose(tmp_path, sha1_nakala=None)
     # Distant vide → notre fichier est nouveau.
@@ -174,7 +209,8 @@ def test_text_nouveau_quand_sha1_distant_inconnu(
 
 
 def test_text_orphelin_distant_signale(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     db, sha1 = _db_avec_item_depose(tmp_path, sha1_nakala=None)
     sha1_orphan = "c" * 40
@@ -191,7 +227,8 @@ def test_text_orphelin_distant_signale(
 
 
 def test_text_nakala_only_signale_meme_si_aucun_changement(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Item à 1 fichier Nakala-only (pas de binaire local) : aucun
     changement à pousser, mais le CLI doit signaler le Nakala-only."""
@@ -201,15 +238,24 @@ def test_text_nakala_only_signale_meme_si_aucun_changement(
     Base.metadata.create_all(engine)
     with creer_session_factory(engine)() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         item.doi_nakala = "10.34847/nkl.x1"
-        s.add(Fichier(
-            item_id=item.id, nom_fichier="x.jpg", ordre=1,
-            iiif_url_nakala="https://x/y",  # Nakala-only, pas de chemin local
-            sha1_nakala=sha1_distant,
-        ))
+        s.add(
+            Fichier(
+                item_id=item.id,
+                nom_fichier="x.jpg",
+                ordre=1,
+                iiif_url_nakala="https://x/y",  # Nakala-only, pas de chemin local
+                sha1_nakala=sha1_distant,
+            )
+        )
         s.commit()
     engine.dispose()
     _FakeReadClient.files = [{"sha1": sha1_distant, "name": "x.jpg"}]
@@ -227,7 +273,8 @@ def test_text_nakala_only_signale_meme_si_aucun_changement(
 
 
 def test_json_serialise_toutes_les_categories(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Le format json produit une structure parsable + complète.
 
@@ -266,7 +313,8 @@ def test_json_serialise_toutes_les_categories(
 
 
 def test_json_comparer_expose_8_categories_meme_si_vides(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou AB (passe 17) — gardien anti-regression : le format JSON de
     `comparer-fichiers` doit exposer les 8 categories de Fichier ColleC
@@ -285,8 +333,12 @@ def test_json_comparer_expose_8_categories_meme_si_vides(
 
     # 8 categories de Fichier ColleC + 1 categorie cote distant
     for cat in [
-        "inchanges", "modifies", "nouveaux", "nakala_only_sans_local",
-        "non_actifs_a_retirer", "fichiers_fantomes",
+        "inchanges",
+        "modifies",
+        "nouveaux",
+        "nakala_only_sans_local",
+        "non_actifs_a_retirer",
+        "fichiers_fantomes",
         "descriptions_divergentes",  # S7
         "orphelins_distants",
     ]:
@@ -298,7 +350,8 @@ def test_json_comparer_expose_8_categories_meme_si_vides(
 
 
 def test_text_comparer_expose_fantome_et_non_actifs(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou AB — gardien text : la ligne `Compare:` mentionne bien les
     7 categories. Sans cet expose, un user avec un fantome verrait
@@ -320,14 +373,17 @@ def test_text_comparer_expose_fantome_et_non_actifs(
 
 
 def test_comparer_divergence_transcription_text_et_json(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """S7 (revue) : la catégorie `descriptions_divergentes` est surfacée par
     la CLI `comparer-fichiers` en texte ET en JSON. Binaire identique
     (sha1 match) + transcription locale ≠ distante."""
     contenu = b"\xff\xd8\xff page"
     db, sha1 = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=None,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=None,
         description_externe="Nouvelle transcription",
     )
     _FakeReadClient.files = [
@@ -354,7 +410,8 @@ def test_comparer_divergence_transcription_text_et_json(
 
 
 def test_item_sans_doi_nakala_exit1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Item sans doi_nakala → ComparaisonImpossible → exit 1 + message."""
     db = tmp_path / "test.db"
@@ -362,9 +419,14 @@ def test_item_sans_doi_nakala_exit1(
     Base.metadata.create_all(engine)
     with creer_session_factory(engine)() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         # doi_nakala reste None
         s.commit()
     engine.dispose()
@@ -375,29 +437,51 @@ def test_item_sans_doi_nakala_exit1(
 
 
 def test_item_introuvable_exit1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Cote item inconnue → exit 1 standard."""
     db, _ = _db_avec_item_depose(tmp_path)
 
-    r = runner.invoke(app, [
-        "nakala", "comparer-fichiers", "INEXISTANT", "--fonds", "AS",
-        "--config", str(config_nakala), "--db-path", str(db),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "comparer-fichiers",
+            "INEXISTANT",
+            "--fonds",
+            "AS",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db),
+        ],
+    )
     assert r.exit_code == 1
     assert "introuvable" in r.output.lower()
 
 
 def test_fonds_inconnu_exit1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Cote fonds inconnue → exit 1 standard (resoudre_fonds_ou_sortie)."""
     db, _ = _db_avec_item_depose(tmp_path)
 
-    r = runner.invoke(app, [
-        "nakala", "comparer-fichiers", "AS-001", "--fonds", "INEXISTANT",
-        "--config", str(config_nakala), "--db-path", str(db),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "comparer-fichiers",
+            "AS-001",
+            "--fonds",
+            "INEXISTANT",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db),
+        ],
+    )
     assert r.exit_code == 1
 
 
@@ -410,16 +494,31 @@ def test_config_sans_section_nakala_exit2(tmp_path: Path) -> None:
     pipeline."""
     db, _ = _db_avec_item_depose(tmp_path)
     cfg = tmp_path / "sans_nakala.yaml"
-    cfg.write_text(yaml.safe_dump({
-        "utilisateur": "T",
-        "racines": {"scans": str(tmp_path / "scans")},
-        # PAS de section `nakala:`
-    }), encoding="utf-8")
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "utilisateur": "T",
+                "racines": {"scans": str(tmp_path / "scans")},
+                # PAS de section `nakala:`
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    r = runner.invoke(app, [
-        "nakala", "comparer-fichiers", "AS-001", "--fonds", "AS",
-        "--config", str(cfg), "--db-path", str(db),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "comparer-fichiers",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(cfg),
+            "--db-path",
+            str(db),
+        ],
+    )
     assert r.exit_code == 2, r.output
     assert "nakala" in r.output.lower()
 
@@ -438,16 +537,31 @@ def test_config_sans_api_key_n_exit_pas_au_demarrage(tmp_path: Path) -> None:
     spécifique à P3+b. Cf. dette signalee en commit message."""
     db, _ = _db_avec_item_depose(tmp_path)
     cfg = tmp_path / "sans_api_key.yaml"
-    cfg.write_text(yaml.safe_dump({
-        "utilisateur": "T",
-        "racines": {"scans": str(tmp_path / "scans")},
-        "nakala": {"base_url": "https://apitest.nakala.fr"},  # api_key manquant
-    }), encoding="utf-8")
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "utilisateur": "T",
+                "racines": {"scans": str(tmp_path / "scans")},
+                "nakala": {"base_url": "https://apitest.nakala.fr"},  # api_key manquant
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    r = runner.invoke(app, [
-        "nakala", "comparer-fichiers", "AS-001", "--fonds", "AS",
-        "--config", str(cfg), "--db-path", str(db),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "comparer-fichiers",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--config",
+            str(cfg),
+            "--db-path",
+            str(db),
+        ],
+    )
     # PAS d'exit 2 (= validation api_key au démarrage), contrairement à
     # `_client_ecriture_nakala_ou_sortie`. La commande continue avec le
     # client lecture sans auth — en prod, lèverait 401 à `lire_depot`.
@@ -489,6 +603,7 @@ class _FakeWriteClient:
 
     def uploader_fichier(self, chemin, nom=None):
         from pathlib import Path as _P
+
         n = nom or _P(chemin).name
         self.uploads.append(n)
         # Format hex 40 chars (cf. _valider_sha1_uploade passe 7).
@@ -502,18 +617,22 @@ class _FakeWriteClient:
     # voie la vérité post-mutations.
     def ajouter_fichier(self, identifiant, sha1, *, description=None, embargoed=None):
         self.ajouts.append(sha1)
-        _FakeReadClient.files = [*_FakeReadClient.files,
-                                 {"sha1": sha1, "name": self._noms_par_sha1.get(sha1, sha1)}]
+        _FakeReadClient.files = [
+            *_FakeReadClient.files,
+            {"sha1": sha1, "name": self._noms_par_sha1.get(sha1, sha1)},
+        ]
         return {}
 
     def supprimer_fichier_donnee(self, identifiant, sha1):
         self.suppressions.append(sha1)
-        _FakeReadClient.files = [f for f in _FakeReadClient.files
-                                 if f.get("sha1") != sha1]
+        _FakeReadClient.files = [
+            f for f in _FakeReadClient.files if f.get("sha1") != sha1
+        ]
 
     def modifier_depot(self, identifiant, *, metas=None, files=None, status=None):
-        self.puts.append({"id": identifiant, "files": files, "metas": metas,
-                          "status": status})
+        self.puts.append(
+            {"id": identifiant, "files": files, "metas": metas, "status": status}
+        )
         if files is not None:
             _FakeReadClient.files = [dict(f) for f in files]
         return {}
@@ -529,15 +648,26 @@ def _mock_write_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _invoke_pousser(config: Path, db: Path, *args: str):
-    return runner.invoke(app, [
-        "nakala", "pousser-fichiers", "AS-001", "--fonds", "AS",
-        *args,
-        "--config", str(config), "--db-path", str(db),
-    ])
+    return runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser-fichiers",
+            "AS-001",
+            "--fonds",
+            "AS",
+            *args,
+            "--config",
+            str(config),
+            "--db-path",
+            str(db),
+        ],
+    )
 
 
 def test_pousser_dry_run_par_defaut(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Dry-run par défaut : pas d'écriture distante, plan affiché.
 
@@ -548,7 +678,9 @@ def test_pousser_dry_run_par_defaut(
     # Binaire local actuel != sha1_ancien stocké → modifié
     contenu = b"newer content"
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1_ancien,
     )
     _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
 
@@ -559,17 +691,22 @@ def test_pousser_dry_run_par_defaut(
     assert "Relancer avec --no-dry-run" in r.output
     # Aucun upload, aucun PUT
     assert _FakeWriteClient.instances == [] or _FakeWriteClient.instances[0].puts == []
-    assert _FakeWriteClient.instances == [] or _FakeWriteClient.instances[0].uploads == []
+    assert (
+        _FakeWriteClient.instances == [] or _FakeWriteClient.instances[0].uploads == []
+    )
 
 
 def test_pousser_aucun_changement_no_op_exit_0(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Aucun changement → no-op clair, exit 0."""
     contenu = b"unchanged"
     sha1 = _sha1(contenu)
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1,
     )
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
 
@@ -579,14 +716,17 @@ def test_pousser_aucun_changement_no_op_exit_0(
 
 
 def test_pousser_orphelins_sans_flag_exit_1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Orphelins distants sans --retirer-orphelins → exit 1 + message."""
     contenu = b"local"
     sha1 = _sha1(contenu)
     sha1_orphan = "f" * 40
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1,
     )
     _FakeReadClient.files = [
         {"sha1": sha1, "name": "x.jpg"},
@@ -600,21 +740,27 @@ def test_pousser_orphelins_sans_flag_exit_1(
 
 
 def test_pousser_avec_flag_orphelins_no_dry_run_effectue_put(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """--retirer-orphelins + --no-dry-run → upload nouveaux + PUT envoye."""
     # Item local avec 1 nouveau fichier, distant a 1 orphelin
     contenu_nouveau = b"new local"
     sha1_orphan = "e" * 40
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu_nouveau, sha1_nakala=None,
+        tmp_path,
+        contenu=contenu_nouveau,
+        sha1_nakala=None,
     )
     _FakeReadClient.files = [
         {"sha1": sha1_orphan, "name": "perdu.jpg"},
     ]
 
     r = _invoke_pousser(
-        config_nakala, db, "--no-dry-run", "--retirer-orphelins",
+        config_nakala,
+        db,
+        "--no-dry-run",
+        "--retirer-orphelins",
     )
     assert r.exit_code == 0, r.output
     assert "APPLIQUÉ" in r.output
@@ -629,14 +775,18 @@ def test_pousser_avec_flag_orphelins_no_dry_run_effectue_put(
 
 
 def test_pousser_format_json(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """--format json → sortie JSON parsable."""
     import json as _json
+
     contenu = b"unchanged"
     sha1 = _sha1(contenu)
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1,
     )
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
 
@@ -650,7 +800,8 @@ def test_pousser_format_json(
 
 
 def test_pousser_avec_utilisateur_surcharge_config(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """--utilisateur surcharge `config.utilisateur` et est propagé à
     `pousser_fichiers_item` (visible via `mettre_en_cache_depot`).
@@ -661,16 +812,30 @@ def test_pousser_avec_utilisateur_surcharge_config(
     contenu_nouveau = b"new local"
     sha1_orphan = "e" * 40
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu_nouveau, sha1_nakala=None,
+        tmp_path,
+        contenu=contenu_nouveau,
+        sha1_nakala=None,
     )
     _FakeReadClient.files = [{"sha1": sha1_orphan, "name": "perdu.jpg"}]
 
-    r = runner.invoke(app, [
-        "nakala", "pousser-fichiers", "AS-001", "--fonds", "AS",
-        "--no-dry-run", "--retirer-orphelins",
-        "--utilisateur", "explorateur-test",
-        "--config", str(config_nakala), "--db-path", str(db),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "pousser-fichiers",
+            "AS-001",
+            "--fonds",
+            "AS",
+            "--no-dry-run",
+            "--retirer-orphelins",
+            "--utilisateur",
+            "explorateur-test",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db),
+        ],
+    )
     assert r.exit_code == 0, r.output
     # Le PUT a bien ete envoye (utilisateur surcharge n'a pas casse
     # le flux normal).
@@ -679,7 +844,8 @@ def test_pousser_avec_utilisateur_surcharge_config(
 
 
 def test_pousser_item_sans_doi_exit_1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Item sans doi_nakala → DepotImpossible → exit 1."""
     db = tmp_path / "test.db"
@@ -698,7 +864,8 @@ def test_pousser_item_sans_doi_exit_1(
 
 
 def test_pousser_push_impossible_files_cible_vide_exit_1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Cas extreme : pas de fichiers locaux, tous distants en orphelins
     + --retirer-orphelins → files_cible == [] → PushImpossible
@@ -713,9 +880,14 @@ def test_pousser_push_impossible_files_cible_vide_exit_1(
     Base.metadata.create_all(engine)
     with creer_session_factory(engine)() as s:
         f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
-        item = creer_item(s, FormulaireItem(
-            cote="AS-001", titre="X", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="AS-001",
+                titre="X",
+                fonds_id=f.id,
+            ),
+        )
         item.doi_nakala = "10.34847/nkl.x1"
         # Aucun Fichier local : tout va devenir orphelin distant
         s.commit()
@@ -732,7 +904,8 @@ def test_pousser_push_impossible_files_cible_vide_exit_1(
 
 
 def test_pousser_erreur_nakala_propagee_exit_1(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Si le PUT lève ErreurNakala (404, 500, etc.) → CLI exit 1 avec
@@ -742,7 +915,9 @@ def test_pousser_erreur_nakala_propagee_exit_1(
     contenu = b"local"
     sha1 = _sha1(contenu)
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=b"new content", sha1_nakala=sha1,
+        tmp_path,
+        contenu=b"new content",
+        sha1_nakala=sha1,
     )
     _FakeReadClient.files = [{"sha1": sha1, "name": "x.jpg"}]
 
@@ -759,7 +934,8 @@ def test_pousser_erreur_nakala_propagee_exit_1(
 
 
 def test_pousser_format_json_mode_applique(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """--no-dry-run --format json : sortie JSON complete avec
     `applique=True`, `sha1s_uploades` peuple, et le `plan` reflete
@@ -771,16 +947,23 @@ def test_pousser_format_json_mode_applique(
     (Nakala calcule le sha1 du binaire envoye), mais le rapport
     documente la distinction."""
     import json as _json
+
     contenu = b"new content"
     sha1 = _sha1(contenu)
     sha1_ancien = "a" * 40
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1_ancien,
     )
     _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
 
     r = _invoke_pousser(
-        config_nakala, db, "--no-dry-run", "--format", "json",
+        config_nakala,
+        db,
+        "--no-dry-run",
+        "--format",
+        "json",
     )
     assert r.exit_code == 0, r.output
     data = _json.loads(r.output)
@@ -804,7 +987,8 @@ def test_pousser_format_json_mode_applique(
 
 
 def test_pousser_format_json_expose_toutes_categories_compare(
-    config_nakala: Path, tmp_path: Path,
+    config_nakala: Path,
+    tmp_path: Path,
 ) -> None:
     """Trou AA — le JSON CLI doit exposer le rapport de comparaison
     complet (6 categories de Fichier + statut + mod_date) sinon les
@@ -815,10 +999,13 @@ def test_pousser_format_json_expose_toutes_categories_compare(
     au rapport sans etre ajoutee au JSON CLI, ce test echoue.
     """
     import json as _json
+
     contenu = b"a uploader"
     sha1_ancien = "a" * 40
     db, _ = _db_avec_item_depose(
-        tmp_path, contenu=contenu, sha1_nakala=sha1_ancien,
+        tmp_path,
+        contenu=contenu,
+        sha1_nakala=sha1_ancien,
     )
     _FakeReadClient.files = [{"sha1": sha1_ancien, "name": "x.jpg"}]
 
@@ -855,5 +1042,3 @@ def test_pousser_format_json_expose_toutes_categories_compare(
     assert "sha1_distant" in fc
     assert fc["nom_fichier"] == "x.jpg"
     assert fc["sha1_distant"] == sha1_ancien
-
-

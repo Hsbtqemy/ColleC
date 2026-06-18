@@ -65,7 +65,9 @@ def test_creer_vocabulaire_refuse_code_invalide(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         with pytest.raises(VocabulaireInvalide) as exc:
-            creer_vocabulaire(s, FormulaireVocabulaire(code="tag personnage", libelle="X"))
+            creer_vocabulaire(
+                s, FormulaireVocabulaire(code="tag personnage", libelle="X")
+            )
         assert "code" in exc.value.erreurs
     engine.dispose()
 
@@ -97,7 +99,8 @@ def test_modifier_vocabulaire(base_demo: Path) -> None:
     with factory() as s:
         v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="A"))
         modifier_vocabulaire(
-            s, v.id,
+            s,
+            v.id,
             FormulaireVocabulaire(code="tag", libelle="B", description="desc"),
         )
         s.refresh(v)
@@ -127,9 +130,7 @@ def test_supprimer_vocabulaire_refuse_si_reference(base_demo: Path) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
-        v = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="A")
-        )
+        v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="A"))
         # Crée un ChampPersonnalise référant le vocab.
         fonds = s.scalar(select(Fonds).where(Fonds.cote == "HK"))
         miroir = s.scalar(
@@ -205,7 +206,8 @@ def test_modifier_valeur_change_libelle(base_demo: Path) -> None:
         v = creer_vocabulaire(s, FormulaireVocabulaire(code="tag", libelle="A"))
         val = ajouter_valeur(s, v.id, FormulaireValeur(code="fra", libelle="Français"))
         modifier_valeur(
-            s, val.id,
+            s,
+            val.id,
             FormulaireValeur(code="fra", libelle="French", uri="http://lex"),
         )
         s.refresh(val)
@@ -234,6 +236,7 @@ def test_deprecier_reactiver_valeur_idempotent(base_demo: Path) -> None:
 def test_supprimer_valeur_hard_delete(base_demo: Path) -> None:
     from archives_tool.models import ValeurControlee
     from sqlalchemy import select
+
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -241,7 +244,10 @@ def test_supprimer_valeur_hard_delete(base_demo: Path) -> None:
         val = ajouter_valeur(s, v.id, FormulaireValeur(code="a", libelle="A"))
         val_id = val.id
         supprimer_valeur(s, val_id)
-        assert s.scalar(select(ValeurControlee).where(ValeurControlee.id == val_id)) is None
+        assert (
+            s.scalar(select(ValeurControlee).where(ValeurControlee.id == val_id))
+            is None
+        )
     engine.dispose()
 
 
@@ -264,7 +270,9 @@ def test_options_depuis_vocabulaire_trie_par_ordre(base_demo: Path) -> None:
     engine.dispose()
 
 
-def test_options_depuis_vocabulaire_exclut_deprecies_par_defaut(base_demo: Path) -> None:
+def test_options_depuis_vocabulaire_exclut_deprecies_par_defaut(
+    base_demo: Path,
+) -> None:
     engine = creer_engine(base_demo)
     factory = creer_session_factory(engine)
     with factory() as s:
@@ -419,12 +427,15 @@ def test_page_vocab_modifier_query_param_active_edit_mode(
     factory = creer_session_factory(engine)
     with factory() as s:
         vocab = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+            s,
+            FormulaireVocabulaire(code="tag", libelle="Tags"),
         )
         val = ajouter_valeur(
-            s, vocab.id,
+            s,
+            vocab.id,
             FormulaireValeur(
-                code="copi", libelle="Copi",
+                code="copi",
+                libelle="Copi",
                 uri="https://www.wikidata.org/entity/Q733678",
                 ordre=5,
             ),
@@ -453,10 +464,13 @@ def test_page_vocab_sans_modifier_pas_de_form_inline(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         vocab = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+            s,
+            FormulaireVocabulaire(code="tag", libelle="Tags"),
         )
         val = ajouter_valeur(
-            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+            s,
+            vocab.id,
+            FormulaireValeur(code="copi", libelle="Copi"),
         )
         vid, valeur_id = vocab.id, val.id
     engine.dispose()
@@ -465,7 +479,7 @@ def test_page_vocab_sans_modifier_pas_de_form_inline(base_demo: Path) -> None:
     r = client.get(f"/vocabulaires/{vid}")
     assert r.status_code == 200
     # Lien Modifier vers ?modifier=<vid> présent
-    assert f'/vocabulaires/{vid}?modifier={valeur_id}' in r.text
+    assert f"/vocabulaires/{vid}?modifier={valeur_id}" in r.text
     # Pas de form action vers /modifier sur le POST de modification
     # de cette valeur — la ligne reste en lecture
     assert f'action="/vocabulaires/{vid}/valeurs/{valeur_id}/modifier"' not in r.text
@@ -480,10 +494,13 @@ def test_route_modifier_valeur_persiste_changements(base_demo: Path) -> None:
     factory = creer_session_factory(engine)
     with factory() as s:
         vocab = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+            s,
+            FormulaireVocabulaire(code="tag", libelle="Tags"),
         )
         val = ajouter_valeur(
-            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+            s,
+            vocab.id,
+            FormulaireValeur(code="copi", libelle="Copi"),
         )
         vid, valeur_id = vocab.id, val.id
     engine.dispose()
@@ -524,10 +541,13 @@ def test_route_modifier_valeur_libelle_vide_reaffiche_form_avec_erreurs(
     factory = creer_session_factory(engine)
     with factory() as s:
         vocab = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+            s,
+            FormulaireVocabulaire(code="tag", libelle="Tags"),
         )
         val = ajouter_valeur(
-            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+            s,
+            vocab.id,
+            FormulaireValeur(code="copi", libelle="Copi"),
         )
         vid, valeur_id = vocab.id, val.id
     engine.dispose()
@@ -587,7 +607,9 @@ def test_modifier_query_param_pour_valeur_d_un_autre_vocab_ignore(
         v1 = creer_vocabulaire(s, FormulaireVocabulaire(code="v1", libelle="V1"))
         v2 = creer_vocabulaire(s, FormulaireVocabulaire(code="v2", libelle="V2"))
         val_v2 = ajouter_valeur(
-            s, v2.id, FormulaireValeur(code="x", libelle="X"),
+            s,
+            v2.id,
+            FormulaireValeur(code="x", libelle="X"),
         )
         v1_id, val_v2_id = v1.id, val_v2.id
     engine.dispose()
@@ -609,10 +631,13 @@ def test_bouton_modifier_absent_en_lecture_seule(
     factory = creer_session_factory(engine)
     with factory() as s:
         vocab = creer_vocabulaire(
-            s, FormulaireVocabulaire(code="tag", libelle="Tags"),
+            s,
+            FormulaireVocabulaire(code="tag", libelle="Tags"),
         )
         val = ajouter_valeur(
-            s, vocab.id, FormulaireValeur(code="copi", libelle="Copi"),
+            s,
+            vocab.id,
+            FormulaireValeur(code="copi", libelle="Copi"),
         )
         vid, valeur_id = vocab.id, val.id
     engine.dispose()
@@ -631,6 +656,6 @@ def test_bouton_modifier_absent_en_lecture_seule(
     r = client.get(f"/vocabulaires/{vid}?modifier={valeur_id}")
     assert r.status_code == 200
     # Pas de lien Modifier dans la colonne actions
-    assert f'/vocabulaires/{vid}?modifier=' not in r.text
+    assert f"/vocabulaires/{vid}?modifier=" not in r.text
     # Pas de form action vers /modifier non plus
-    assert f'/vocabulaires/{vid}/valeurs/{valeur_id}/modifier' not in r.text
+    assert f"/vocabulaires/{vid}/valeurs/{valeur_id}/modifier" not in r.text

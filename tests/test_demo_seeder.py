@@ -72,9 +72,7 @@ def test_compteurs_globaux(db_demo: Session) -> None:
     """Vérifie les chiffres approximatifs de la composition cible."""
     nb_items = db_demo.scalar(select(func.count()).select_from(Item)) or 0
     nb_fichiers = db_demo.scalar(select(func.count()).select_from(Fichier)) or 0
-    nb_collections = (
-        db_demo.scalar(select(func.count()).select_from(Collection)) or 0
-    )
+    nb_collections = db_demo.scalar(select(func.count()).select_from(Collection)) or 0
 
     assert 300 <= nb_items <= 350, f"Attendu ~333 items, obtenu {nb_items}"
     assert 800 <= nb_fichiers <= 1500, f"Attendu ~1000 fichiers, obtenu {nb_fichiers}"
@@ -221,8 +219,7 @@ def test_invariants_complets(db_demo: Session) -> None:
         )
         nb_dans_miroir = len(miroir.items)
         assert nb_dans_miroir == nb_items_fonds, (
-            f"{fonds.cote} : {nb_items_fonds} items, "
-            f"{nb_dans_miroir} dans la miroir"
+            f"{fonds.cote} : {nb_items_fonds} items, {nb_dans_miroir} dans la miroir"
         )
 
 

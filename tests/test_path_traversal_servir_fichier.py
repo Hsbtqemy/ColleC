@@ -55,9 +55,7 @@ def _patch_fichier_chemin(db: Path, cote_item: str, chemin: str) -> int:
     factory = creer_session_factory(engine)
     with factory() as s:
         item = s.scalar(select(Item).where(Item.cote == cote_item))
-        f = s.scalar(
-            select(Fichier).where(Fichier.item_id == item.id).limit(1)
-        )
+        f = s.scalar(select(Fichier).where(Fichier.item_id == item.id).limit(1))
         assert f is not None
         f.racine = "scans"
         f.chemin_relatif = chemin

@@ -43,9 +43,14 @@ class _FakeClient:
         return False
 
     def lire_collection(self, doi: str) -> dict:
-        return {"identifier": doi, "metas": [{"propertyUri": f"{_NKL}title", "value": "Col"}]}
+        return {
+            "identifier": doi,
+            "metas": [{"propertyUri": f"{_NKL}title", "value": "Col"}],
+        }
 
-    def lister_depots_collection(self, doi: str, *, page: int = 1, taille: int = 50) -> dict:
+    def lister_depots_collection(
+        self, doi: str, *, page: int = 1, taille: int = 50
+    ) -> dict:
         data = [_donnee("aaa1"), _donnee("bbb2")] if page == 1 else []
         return {"data": data, "currentPage": page, "lastPage": 1}
 
@@ -79,10 +84,18 @@ def _session(db: Path):
 
 
 def test_dry_run_par_defaut_n_ecrit_rien(config_nakala: Path, db_vide: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL,
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output and "2 créé(s)" in r.output
     with _session(db_vide) as s:
@@ -91,10 +104,19 @@ def test_dry_run_par_defaut_n_ecrit_rien(config_nakala: Path, db_vide: Path) -> 
 
 
 def test_reel_cree_fonds_et_items(config_nakala: Path, db_vide: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL, "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "RÉEL" in r.output and "2 créé(s)" in r.output
     with _session(db_vide) as s:
@@ -103,10 +125,21 @@ def test_reel_cree_fonds_et_items(config_nakala: Path, db_vide: Path) -> None:
 
 
 def test_fonds_inexistant_exit1(config_nakala: Path, db_vide: Path) -> None:
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL, "--fonds", "ABSENT", "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--fonds",
+            "ABSENT",
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 1
     assert "introuvable" in r.output.lower()
 
@@ -114,10 +147,18 @@ def test_fonds_inexistant_exit1(config_nakala: Path, db_vide: Path) -> None:
 def test_sans_config_nakala_exit2(tmp_path: Path, db_vide: Path) -> None:
     cfg = tmp_path / "c.yaml"
     cfg.write_text("utilisateur: x\n", encoding="utf-8")
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL,
-        "--config", str(cfg), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--config",
+            str(cfg),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 2
 
 
@@ -130,10 +171,18 @@ def test_rafraichir_collection_donnees_non_liees(
     config_nakala: Path, db_vide: Path
 ) -> None:
     """Base sans items liés → tout est « non lié », pas d'erreur."""
-    r = runner.invoke(app, [
-        "nakala", "rafraichir-collection", _DOI_COL,
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir-collection",
+            _DOI_COL,
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "DRY-RUN" in r.output and "2 non lié(s)" in r.output
 
@@ -142,10 +191,19 @@ def test_rafraichir_collection_applique_overwrite(
     config_nakala: Path, db_vide: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # 1) rapatrier → 2 items liés (titres "Donnée aaa1"/"Donnée bbb2").
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL, "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
 
     # 2) la collection renvoie désormais un titre modifié pour aaa1.
@@ -157,10 +215,19 @@ def test_rafraichir_collection_applique_overwrite(
             return {"data": data, "currentPage": page, "lastPage": 1}
 
     monkeypatch.setattr(cli_mod, "ClientLectureNakala", _FakeClientModifie)
-    r = runner.invoke(app, [
-        "nakala", "rafraichir-collection", _DOI_COL, "--no-dry-run",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir-collection",
+            _DOI_COL,
+            "--no-dry-run",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     assert "1 modifié(s)" in r.output
     with _session(db_vide) as s:
@@ -174,14 +241,26 @@ def test_rafraichir_collection_applique_overwrite(
 
 
 def test_rapatrier_collection_format_json(
-    config_nakala: Path, db_vide: Path,
+    config_nakala: Path,
+    db_vide: Path,
 ) -> None:
     """`rapatrier-collection --format json` : structure complete."""
     import json
-    r = runner.invoke(app, [
-        "nakala", "rapatrier-collection", _DOI_COL, "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rapatrier-collection",
+            _DOI_COL,
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert data["doi_collection"] == _DOI_COL
@@ -195,30 +274,50 @@ def test_rapatrier_collection_format_json(
 
 
 def test_rafraichir_collection_format_json(
-    config_nakala: Path, db_vide: Path,
+    config_nakala: Path,
+    db_vide: Path,
 ) -> None:
     """`rafraichir-collection --format json` : structure complete avec
     diffs imbriques."""
     import json
+
     # Setup : créer un item lié au DOI pour qu'il y ait un rapport
     with _session(db_vide) as s:
         from archives_tool.api.services.fonds import (
-            FormulaireFonds, creer_fonds,
+            FormulaireFonds,
+            creer_fonds,
         )
         from archives_tool.api.services.items import (
-            FormulaireItem, creer_item,
+            FormulaireItem,
+            creer_item,
         )
+
         f = creer_fonds(s, FormulaireFonds(cote="X", titre="X"))
-        item = creer_item(s, FormulaireItem(
-            cote="X-aaa1", titre="Ancien", fonds_id=f.id,
-        ))
+        item = creer_item(
+            s,
+            FormulaireItem(
+                cote="X-aaa1",
+                titre="Ancien",
+                fonds_id=f.id,
+            ),
+        )
         item.doi_nakala = "10.34847/nkl.aaa1"
         s.commit()
 
-    r = runner.invoke(app, [
-        "nakala", "rafraichir-collection", _DOI_COL, "--format", "json",
-        "--config", str(config_nakala), "--db-path", str(db_vide),
-    ])
+    r = runner.invoke(
+        app,
+        [
+            "nakala",
+            "rafraichir-collection",
+            _DOI_COL,
+            "--format",
+            "json",
+            "--config",
+            str(config_nakala),
+            "--db-path",
+            str(db_vide),
+        ],
+    )
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert data["doi_collection"] == _DOI_COL

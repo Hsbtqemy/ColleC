@@ -1,0 +1,158 @@
+# Backlog — revue générale (2026-06-18)
+
+!!! warning "Document de travail interne"
+    Page non publiée sur le site MkDocs (exclue via `exclude_docs`).
+    Tickets issus de la **revue générale** (4 axes large + 3 relecteurs
+    frais en profondeur) menée après le palier ShareDocs/S6/S7. Les
+    findings actionnables non encore traités y sont consignés ; le statut
+    est tenu à jour au fil des sessions.
+
+Contexte : la revue large (dette / sécurité / tests / doc) a été suivie
+d'une **seconde passe en profondeur** (relecture adversariale du code du
+jour + logique métier des zones à risque + invariants/intégrité). La
+sécurité (SSRF, validateur, redirections), les invariants (INV1/2/4/6,
+atomicité du journal, synchro FTS5 y compris `metadonnees` JSON, verrou
+optimiste, `annee` dérivée) sont **vérifiés sains** — aucun ticket ouvert
+là-dessus. Les 5 tickets ci-dessous sont les findings résiduels.
+
+Renvois : roadmap `docs/developpeurs/roadmap.md` § *Transverse / continu*
+(dette technique) ; principe directeur n°7 du `CLAUDE.md` (tests d'abord
+sur les zones à risque).
+
+---
+
+## R1 — Renamer : cycles + compensation phase 2 non testés `HIGH`
+
+**Origine** : préexistant. **Statut** : ouvert.
+**Fichiers** : `renamer/execution.py` (`_compenser_apres_phase2`, ~131-144 ;
+`mkdir`/phase 2 ~205) ; `renamer/plan.py` (`_detecter_cycles`) ;
+`tests/test_renamer.py` (trou de couverture — **aucun** test de cycle ni
+de compensation).
+
+**Quoi** : le renommage transactionnel 2-phases (src→tmp→dst) avec
+rollback compensateur est la zone la plus destructive du projet (principe
+n°7), mais `test_renamer.py` ne couvre **ni les cycles** (A↔B), **ni le
+chemin `EN_CYCLE`**, **ni la compensation de phase 2**. Le chemin nominal
+de cycle est correct *à la lecture* (tmp uniques via uuid, flush phase 1
+sans violation `UNIQUE`, phase 2 dst libérée).
+
+**Risque** : sur une **double panne disque** pendant la compensation (la
+1ʳᵉ compensation `dst→tmp` lève une `OSError` avalée dans `erreurs`, puis
+la 2ᵉ boucle `tmp→src` opère sur un `tmp` déjà déplacé), un fichier peut
+rester sous son nom `dst` final alors que la DB a été rollback-ée vers
+l'ancien chemin → **désynchronisation DB↔disque silencieuse** (perte de
+données potentielle). Non couvert ⇒ on ne peut pas garantir que le
+comportement réel = comportement documenté.
+
+**Esquisse de fix** : tests de panne — `monkeypatch` `Path.rename` pour
+lever à la N-ième invocation (phase 1, phase 2, et pendant la
+compensation), sur un plan de cycle + un plan à nouvelle arborescence.
+Vérifier l'état DB↔disque après échec. Corriger le comportement si la
+compensation s'avère lacunaire. **Candidat « prochain lot de durcissement
+tests ».**
+
+---
+
+## R2 — Config : un `nakala.base_url` invalide fait tomber TOUTE la config `MEDIUM`
+
+**Origine** : comportement préexistant **élargi par le Lot 3** (49c5e0d :
+le validateur SSRF de `NakalaConfig` rejette désormais `http://` et les
+hôtes hors allowlist). **Statut** : ouvert.
+**Fichiers** : `api/deps.py` (`_charger_config_cache`, ~63 : `except
+(YAMLError, ValidationError, ValueError) → return None`) ; `config.py`
+(`NakalaConfig._valider_base_url`).
+
+**Quoi** : une `ValidationError` sur n'importe quelle sous-section (ici un
+`nakala.base_url` invalide) dégrade **toute** la `ConfigLocale` à `None` →
+défauts : `utilisateur="anonyme"`, **`racines` vidées** (images/dérivés ne
+résolvent plus), **`lecture_seule` silencieusement repassé à `False`**.
+Seul un `logger.warning` le signale.
+
+**Risque** : un utilisateur qui met à jour avec un `nakala.base_url`
+non-standard (ex. `http://apitest…` d'un vieux setup dev) perd sa config
+entière sans s'en rendre compte — dont le **mode lecture seule** (sûreté).
+Probabilité faible (le défaut `https://api.nakala.fr` est valide), mais
+l'angle « perte silencieuse de `lecture_seule` » est réel.
+
+**Esquisse de fix** : isoler l'échec de la section Nakala — soit dégrader
+**uniquement** le bloc `nakala` à `None` (au lieu de toute la config) en
+cas de sous-validation Nakala invalide, soit préserver les champs de
+sûreté (`lecture_seule`, `racines`, `utilisateur`) même quand une
+sous-section échoue. Émettre un warning plus visible.
+
+---
+
+## R3 — plan.py : collision externe détectée par disque seul, pas en base `MEDIUM`
+
+**Origine** : préexistant. **Statut** : ouvert.
+**Fichiers** : `renamer/plan.py` (`construire_plan`, ~279-302) ;
+contrainte `uq_fichier_chemin` (`models/fichier.py:137`).
+
+**Quoi** : la détection de collision externe ne teste que l'**existence
+disque** (`chemin_existe_nfc_ou_nfd`), jamais la base. Renommer X vers
+`dir/Y.tif` où `dir/Y.tif` est déjà le `chemin_relatif` en base d'un
+Fichier Y hors-périmètre **dont le binaire est absent du disque** (cas
+fréquent : base importée d'un export Nakala, scans pas encore copiés) →
+le plan rapporte `PRET` (pas de conflit), puis phase 2 viole
+`UNIQUE(racine, chemin_relatif)` au commit → `IntegrityError` → rollback
+compensateur (donc déclenche aussi le chemin R1).
+
+**Risque** : non destructif (la compensation récupère), mais **échec
+opaque et tardif** au lieu d'un conflit propre détecté en amont.
+
+**Esquisse de fix** : dans `construire_plan`, ajouter une vérification des
+cibles contre les `Fichier.chemin_relatif` existants hors-batch (un
+`SELECT` sur `(racine, chemin_apres)`), symétrique à la détection de
+collision intra-batch.
+
+---
+
+## R4 — Renamer : `mkdir(parents)` non nettoyé au rollback `LOW`
+
+**Origine** : préexistant. **Statut** : ouvert.
+**Fichiers** : `renamer/execution.py` (~205, phase 2).
+
+**Quoi** : quand le template crée une nouvelle arborescence
+(`mkdir(parents=True, exist_ok=True)`) et que phase 2 échoue ensuite, la
+compensation ne défait que les fichiers (rename inverse) — les
+**répertoires créés restent** (dossiers vides parasites).
+
+**Risque** : bénin (pas de perte de données), juste des dossiers orphelins
+après un échec. Non testé.
+
+**Esquisse de fix** : tracer les répertoires créés pendant la phase 2,
+`rmdir` ceux restés vides lors de la compensation.
+
+---
+
+## R5 — `Fichier.item_id` sans `ON DELETE CASCADE` (asymétrie FK) `LOW`
+
+**Origine** : préexistant. **Statut** : ouvert.
+**Fichiers** : `models/fichier.py:53` ; migration initiale
+`alembic/versions/380e05cd7254_initial_schema.py` (~273-276).
+
+**Quoi** : la FK `Fichier.item_id` n'a **pas** d'`ON DELETE CASCADE` au
+niveau modèle ni SQL, contrairement à ses sœurs (`Item.fonds_id`,
+`item_collection`, `annotation_region.fichier_id`, toutes en cascade). La
+suppression des fichiers d'un item repose **uniquement** sur l'ORM
+`cascade="all, delete-orphan"`.
+
+**Risque** : aucun aujourd'hui (tous les chemins de suppression passent
+par `db.delete(item)` ORM). Latent : un futur `delete()` Core/bulk sur
+`item` orphelinerait les `fichier` (et transitivement leurs
+`annotation_region`, dont la cascade SQL s'appuie sur un `fichier.id` qui
+ne serait jamais supprimé).
+
+**Esquisse de fix** : migration ajoutant `ondelete="CASCADE"` à
+`fichier.item_id` (parité défense-en-profondeur avec les FK sœurs).
+`batch_alter_table` (SQLite).
+
+---
+
+## Décision de séquençage (à trancher)
+
+- **R2** : candidat correctif court — régression de sûreté élargie au Lot 3.
+- **R1** : candidat « prochain lot de durcissement tests » — le plus
+  important sur le fond (zone destructive, principe n°7), mais préexistant.
+- **R3 / R4 / R5** : à interleaver avec un futur passage sur le renamer
+  (R3+R4) et une migration de cohérence FK (R5).

@@ -54,6 +54,7 @@ extra:
 # contributeurs sans encombrer l'utilisateur).
 exclude_docs: |
   developpeurs/roadmap.md
+  developpeurs/backlog-revue-generale.md
   developpeurs/deploiement-future.md
   developpeurs/v092-import-refonte.md
   developpeurs/portail-public-future.md

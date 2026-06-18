@@ -524,8 +524,51 @@ opposé**, sur le **même substrat IIIF** :
 | Idéal pour | corpus éditorialisé, exposition narrative | périodique numérisé à feuilleter/facetter (Por Favor) |
 | Éditorial | natif (Markdown) | surcouche MDX |
 
-Choix **par occasion**, non exclusif : Quarto = réponse éditoriale,
-Canopy = réponse image-first. Tous deux nourris par ColleC.
+### Un seul site possible — 3 voies de fusion (ColleC reste agnostique)
+
+Le « choix par occasion » binaire (Quarto **ou** Canopy) est trop tranché.
+On **peut** avoir un seul site offrant les deux modes. « Canopy *dans*
+Quarto » au sens littéral, non (chacun est un générateur complet avec son
+build/routage — on n'imbrique pas un SSG dans l'autre). Mais trois fusions
+réelles :
+
+- **A — Canopy seul, éditorial en MDX.** Canopy gère déjà des pages
+  narratives MDX (`content/*.mdx`). Un générateur, un build : image-first
+  natif + dossiers MDX. *Limite* : MDX moins puissant que la chaîne Pandoc
+  de Quarto (citations, renvois, export PDF) ; theming opiniâtre.
+- **B — Quarto seul, viewer IIIF embarqué + listings natifs.** La voie
+  Quarto de ce doc **embarque déjà** un viewer IIIF par item (section
+  *Visionneuse embarquée*, partials `_viewer_{osd,uv,mirador}.qmd.j2`). À
+  combiner avec les **listings Quarto** (vérifié 2026-06-18 :
+  `type: grid` + vignettes, `categories: true` → facette cliquable en
+  sidebar — styles `cloud`/`numbered` —, `filter-ui` typeahead, `fields:`,
+  `sort`/`sort-ui`, `include`/`exclude` globs) + la **recherche de site**
+  Quarto. *Limite* : facettage **basique** (une dimension de catégories +
+  filtre texte ; **pas** de multi-facette à compteurs comme Canopy).
+- **C — deux générateurs, un déploiement.** Canopy sous `/catalogue/`,
+  Quarto sous `/dossiers/`, cross-liés, un domaine. *Limite* : deux
+  toolchains.
+
+**Le vrai arbitrage n'est donc pas une fourche d'architecture** mais une
+question évaluable par un petit spike : *les listings/recherche natifs de
+Quarto suffisent-ils, ou veut-on le facettage IIIF clé-en-main de Canopy ?*
+Et surtout : **le rôle de ColleC est identique dans A, B et C** — produire
+le **substrat** (manifestes IIIF Presentation = keystone, + pivot Markdown,
++ annotations W3C). La fusion se décide **en aval, dans le projet de site**,
+jamais dans ColleC (principe « ColleC produit la donnée, pas le thème/
+build »). **Aucune décision ColleC à prendre maintenant au-delà du
+keystone.**
+
+> **Note de vérification (2026-06-18)** : les listings Quarto sont
+> confirmés en live (doc Quarto). **Clover IIIF** (`@samvera/clover-iiif`)
+> — composant React autonome, distinct de Canopy (Canopy *consomme* Clover),
+> rendu d'un Manifest 2/3 avec deep-zoom OpenSeadragon + métadonnées +
+> annotations — **n'a pas pu être re-vérifié en live** (repo/npm/docs en
+> 404/403 ce jour). Connaissance fiable mais **un spike d'intégration**
+> (monter Clover/React, ou iframe, dans une page Quarto) reste à faire pour
+> B. À noter : la voie Quarto ne **dépend pas** de Clover — **OpenSeadragon**
+> (plain-JS, trivialement embarquable) est déjà une des trois recettes
+> viewer prévues.
 
 ### Keystone : un exporter `iiif_presentation.py` (prérequis partagé)
 

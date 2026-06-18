@@ -11,17 +11,19 @@
 ## État de départ (2026-06-18)
 
 ColleC est un **outil de catalogage local mature** : modèle
-Fonds/Collection/Item/Fichier, CLU + UI complètes, recherche FTS5,
+Fonds/Collection/Item/Fichier, CLI + UI complètes, recherche FTS5,
 intégration **Nakala quasi-bouclée** (lecture + écriture + round-trip
-métadonnées **et** fichiers + S7 transcription par fichier). Base livrée
-**V0.10.0** ; la branche `dev` est +8 (palier Nakala S7 + recadrage OCR),
-**1811 tests verts**. Mode actuel : **local mono-utilisateur**.
+métadonnées **et** fichiers + S7 transcription par fichier) et désormais
+un **2ᵉ adaptateur distant : ShareDocs** (Chantier 1 livré — cf. plus
+bas). Base livrée **V0.10.0** ; la branche `dev` porte le palier Nakala S7,
+le recadrage OCR **et tout le Chantier 1 ShareDocs**, ~1900 tests verts.
+Mode actuel : **local mono-utilisateur**.
 
 ## Principe de séquencement (décidé 2026-06-18)
 
 1. **ShareDocs en 1er chantier** — dé-risqué par l'outil sœur `BD_ditor`,
    autonome (utile au catalogage sans OCR), concrétise le modèle
-   « remote-first ».
+   « remote-first ». ✅ **Livré** (cf. Chantier 1).
 2. **OCR / recherche plein-texte avant V1.0** — corpus et recherche
    d'abord ; **toute la diffusion en dépend** (un site/portail sans
    recherche est tiède).
@@ -34,7 +36,7 @@ métadonnées **et** fichiers + S7 transcription par fichier). Base livrée
 
 ## Horizon 0 — Consolidation (en cours / continu)
 
-- **FF `main`** pour promouvoir le palier S7 (`dev` +8).
+- **FF `main`** pour promouvoir le palier S7 **+ le Chantier 1 ShareDocs**.
 - **Quick wins** : S6 (validation licence SPDX au preflight/export) ;
   `notebooks-sdk` (page-guide — l'API publique existe déjà, ne dépend de
   rien, tirable n'importe quand).
@@ -45,7 +47,7 @@ métadonnées **et** fichiers + S7 transcription par fichier). Base livrée
 
 ---
 
-## Chantier 1 — Ingestion remote-first ShareDocs ⭐ (premier build)
+## Chantier 1 — Ingestion remote-first ShareDocs ⭐ ✅ LIVRÉ
 
 **Pourquoi en premier** : indépendant de l'OCR (importer des fichiers de
 travail depuis le partage institutionnel **sans montage** sert le
@@ -53,30 +55,42 @@ catalogage de base), **dé-risqué** (code éprouvé + audité + testable
 hors-ligne dans BD_ditor), et il donne à ColleC un **2ᵉ adaptateur
 distant** (avec Nakala) — un jalon de capacité autonome.
 
-**Ce qui est dé-risqué (port quasi-direct depuis BD_ditor)** : le **client
-WebDAV** lui-même (`pipeline/sharedocs.py` : PROPFIND/GET/PUT, anti-SSRF,
-creds RAM-only, testé via httpx `MockTransport`). L'audit de BD_ditor
-fournit les **2 correctifs à appliquer** : garde **HTTPS** explicite +
-**normalisation anti-traversal** (`..`).
+**Livré en 5 tranches** (chacune avec passe de revue à 2 relecteurs) :
 
-**Ce qui est du travail ColleC (spécifique)** :
+- **T1 — client WebDAV** `external/sharedocs/client.py` : PROPFIND/GET,
+  `EntreeShareDocs`, hiérarchie d'exceptions. Anti-SSRF (HTTPS exigé,
+  liste blanche d'hôtes, rejet IP interne + `userinfo`, redirections non
+  suivies), anti-traversal (`..`), creds en paramètres explicites
+  (*resolver-ready* pour la V1.0). Testé via httpx `MockTransport`.
+- **T2 — service ingestion** `api/services/sharedocs.py` :
+  `importer_depuis_sharedocs` télécharge vers `<racine>/<cote>/<nom>` →
+  `Fichier`. **Décision actée** : matérialiser dans une racine locale
+  (intrant régénérable) plutôt que référencer à distance (cohérent « DB =
+  source de vérité »). Écriture atomique, **idempotence**, **adoption**
+  auto-réparante d'un binaire orphelin, **succès partiel** par fichier.
+- **T4 — CLI** `archives-tool sharedocs {lister, importer}` : dry-run par
+  défaut, `--format json`, codes 0/1/2.
+- **T3a — page web** `/sharedocs` : connexion (creds **RAM only**,
+  validés par PROPFIND avant mémorisation), parcours + fil d'Ariane.
+- **T3b — UI import** : sélection (cases) + cible (fonds/item/racine) +
+  aperçu dry-run → confirmation (bloqué 423 en lecture seule).
 
-- service `external/` ColleC (re-implémenté au style ColleC ; **aucune
-  dépendance ni couplage runtime à BD_ditor** — copie → possession →
-  divergence) ;
-- **branchement ingestion** : un fichier téléchargé de ShareDocs
-  atterrit dans une **racine locale** (miroir/cache, intrant régénérable)
-  puis devient un `Fichier` normal — **décision actée** : télécharger
-  dans une racine plutôt que référencer à distance (ColleC reste capable
-  de travailler/indexer hors-source ; cohérent avec « DB = source de
-  vérité ») ;
-- **UI** : panneau « parcourir ShareDocs → sélection → importer vers un
-  fonds/collection » ;
-- tests via `MockTransport` (pas de réseau réel).
+**Sécurité des identifiants** : jamais sur disque, jamais en config,
+jamais loggés, jamais renvoyés au client. CLI = variables d'env
+(`COLLEC_SHAREDOCS_USER/_PASS`) ; web = RAM (perdu au redémarrage). Le
+coffre chiffré multi-comptes scopés par espace reste **V1.0** (Chantier 3).
 
-**Renvois** : `deploiement-future.md` (modèle ShareDocs monté, à compléter
-par ce client) ; emprunts tracés cf. `ocr-module-future.md` (révision
-text-first, § Emprunts BD_ditor) et mémoire `bd-ditor-sibling`.
+**Aucune dépendance ni couplage runtime à BD_ditor** (copie → possession
+→ divergence). Tests entièrement hors-ligne (`MockTransport`).
+
+**Doc** : [`guide/cli/sharedocs.md`](../guide/cli/sharedocs.md).
+**Renvois** : `deploiement-future.md` (modèle ShareDocs monté) ; emprunts
+tracés cf. `ocr-module-future.md` (§ Emprunts BD_ditor) et mémoire
+`bd-ditor-sibling`.
+
+**Reste possible (non bloquant)** : smoke test contre un vrai partage
+ShareDocs (jamais exercé en live — tout est validé via `MockTransport`),
+le jour où un accès Huma-Num est disponible.
 
 ---
 

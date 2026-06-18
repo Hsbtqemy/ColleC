@@ -1365,6 +1365,35 @@ archives-tool/
 > statiques, portail) → (5) Confort/interop V2/V3.** La section ci-dessous
 > reste la **trace de l'historique livré** + le plan V1/V2/V3 d'origine.
 
+> **Chantier 1 ShareDocs ✅ LIVRÉ** (2026-06-18, branche `dev`). ColleC
+> a un **2ᵉ adaptateur distant** (avec Nakala) : parcourir un partage
+> WebDAV Huma-Num et **importer des fichiers vers un item, sans montage**.
+> 5 tranches, chacune revue à 2 relecteurs :
+> - `external/sharedocs/client.py` — client WebDAV (PROPFIND/GET,
+>   `EntreeShareDocs`, exceptions). Anti-SSRF (HTTPS exigé, liste blanche
+>   d'hôtes, rejet IP interne + `userinfo`, redirections non suivies),
+>   anti-traversal (`..`), creds en paramètres explicites (*resolver-ready*
+>   V1.0). Testé via httpx `MockTransport` (jamais de réseau réel).
+> - `api/services/sharedocs.py` — `importer_depuis_sharedocs` télécharge
+>   vers `<racine>/<cote>/<nom>` → `Fichier`. **Décision** : matérialiser
+>   dans une racine locale (intrant régénérable) plutôt que référencer à
+>   distance (cohérent « DB = source de vérité »). Écriture atomique,
+>   idempotence, adoption auto-réparante d'orphelin disque, succès partiel.
+> - `config.py` — section `sharedocs:` (base_url HTTPS-validée +
+>   `hotes_autorises`). **Les identifiants n'y sont JAMAIS** (cf. décision
+>   credentials, `deploiement-future.md`).
+> - CLI `archives-tool sharedocs {lister, importer}` (dry-run défaut,
+>   `--format json`) ; identifiants via env `COLLEC_SHAREDOCS_USER/_PASS`.
+> - Web `/sharedocs` (`api/routes/sharedocs_web.py` + `services/
+>   sharedocs_session.py`) — connexion (creds **RAM only**, validés par
+>   PROPFIND avant mémorisation, jamais réaffichés/loggés), parcours +
+>   fil d'Ariane, sélection + cible + aperçu dry-run → confirmation
+>   (bloqué 423 en lecture seule). Lien header `ShareDocs`.
+>
+> **Aucune dépendance ni couplage runtime à BD_ditor** (copie → possession
+> → divergence). Reste possible, non bloquant : smoke contre un vrai
+> partage le jour d'un accès Huma-Num. Doc : `docs/guide/cli/sharedocs.md`.
+
 ### V1 — Socle utilisable pour un premier chantier
 
 **Modèle de données, migrations, CLI minimale** :

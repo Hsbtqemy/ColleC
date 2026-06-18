@@ -71,7 +71,10 @@ class NakalaEcritureClient:
             headers={"Accept": "application/json", "X-API-KEY": self.api_key},
             timeout=self.timeout,
             verify=self.verify_ssl,
-            follow_redirects=True,
+            # Anti-SSRF : ne pas suivre les 3xx (la clé API ne doit jamais
+            # partir vers un hôte de redirection). Un 3xx → erreur via
+            # `_verifier_statut`. Parité avec le client ShareDocs.
+            follow_redirects=False,
             transport=transport,
         )
 

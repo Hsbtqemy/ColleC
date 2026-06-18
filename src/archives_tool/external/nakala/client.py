@@ -139,7 +139,11 @@ class ClientLectureNakala:
             headers=headers,
             timeout=self.timeout,
             verify=self.verify_ssl,
-            follow_redirects=True,
+            # Anti-SSRF : ne pas suivre les 3xx — une redirection enverrait
+            # la clé API (header X-API-KEY) vers un hôte arbitraire. Les
+            # appels API Nakala ne 3xx jamais légitimement ; un 3xx est
+            # traité comme une erreur par `_verifier_statut`.
+            follow_redirects=False,
             transport=transport,
         )
 

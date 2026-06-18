@@ -38,6 +38,22 @@ def test_lire_depot_succes_et_entetes() -> None:
     assert vus["apikey"] == "cle-test"  # clé envoyée en en-tête
 
 
+def test_redirection_non_suivie() -> None:
+    """Anti-SSRF : un 3xx n'est PAS suivi (sinon la clé API partirait vers
+    l'hôte de redirection) et est traité comme une erreur."""
+    appels = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        appels["n"] += 1
+        return httpx.Response(302, headers={"location": "https://evil.example.com/"})
+
+    c = _client(handler)
+    assert c._client.follow_redirects is False
+    with c, pytest.raises(ErreurNakala):
+        c.lire_depot("10.34847/nkl.abc")
+    assert appels["n"] == 1  # handler appelé une seule fois (redirection non suivie)
+
+
 def test_anonyme_sans_entete_cle() -> None:
     vus: dict[str, str] = {}
 

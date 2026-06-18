@@ -33,6 +33,23 @@ def test_cle_api_obligatoire() -> None:
         NakalaEcritureClient("https://apitest.nakala.fr", api_key="")
 
 
+def test_redirection_non_suivie_ecriture() -> None:
+    """Anti-SSRF (symétrie avec le client lecture) : le client écriture
+    porte la clé API sur des POST/PUT → un 3xx ne doit PAS être suivi
+    (sinon la clé partirait vers l'hôte de redirection). Traité en erreur."""
+    appels = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        appels["n"] += 1
+        return httpx.Response(302, headers={"location": "https://evil.example.com/"})
+
+    c = _client(handler)
+    assert c._client.follow_redirects is False
+    with c, pytest.raises(ErreurNakala):  # 302 ∉ [400,500) → ErreurNakala générique
+        c.creer_depot(metas=[], files=[])
+    assert appels["n"] == 1  # un seul aller : redirection non suivie
+
+
 def test_uploader_fichier_renvoie_sha1(tmp_path: Path) -> None:
     f = tmp_path / "scan.jpg"
     f.write_bytes(b"\xff\xd8\xff data")

@@ -16,8 +16,9 @@ from archives_tool.api.services.fonds import (
     lire_fonds_par_cote,
 )
 from archives_tool.api.services.items import FormulaireItem, creer_item
-from archives_tool.cli import app
+from archives_tool.cli import _afficher_rapport_export, app
 from archives_tool.db import creer_engine, creer_session_factory
+from archives_tool.exporters.rapport import RapportExport
 from archives_tool.models import Base
 
 runner = CliRunner()
@@ -137,6 +138,59 @@ def test_cli_exporter_nakala_signale_licence_non_canonique(tmp_path: Path) -> No
     assert "Valeurs non canoniques" in result.output
     assert "licence" in result.output
     assert "CC-BY-BIDON" in result.output
+
+
+def test_afficher_rapport_export_deduplique_valeurs(capsys) -> None:
+    """La même valeur fautive répétée sur N items → une seule ligne (le
+    compte affiché est celui des valeurs uniques)."""
+    r = RapportExport(format="nakala_csv")
+    r.valeurs_non_mappees = [
+        ("licence", "BIDON"),
+        ("licence", "BIDON"),  # même item-licence sur 2 items
+        ("type_coar", "article"),
+    ]
+    _afficher_rapport_export(r, verbose=True)
+    texte = "".join(capsys.readouterr())  # stdout + stderr
+    assert "Valeurs non canoniques : 2" in texte  # dédupliqué (3 → 2)
+    assert texte.count("- licence : 'BIDON'") == 1
+
+
+def test_cli_exporter_dublin_core_signale_type_coar_non_canonique(
+    tmp_path: Path,
+) -> None:
+    """Le surfaçage de « Valeurs non canoniques » vaut aussi hors Nakala :
+    un type_coar non-URI est signalé à l'export Dublin Core (--verbose)."""
+    db = tmp_path / "test.db"
+    engine = creer_engine(db)
+    Base.metadata.create_all(engine)
+    with creer_session_factory(engine)() as s:
+        creer_fonds(s, FormulaireFonds(cote="HK", titre="Hara-Kiri"))
+        fonds = lire_fonds_par_cote(s, "HK")
+        creer_item(
+            s,
+            FormulaireItem(
+                cote="HK-001", titre="N°1", fonds_id=fonds.id, type_coar="article"
+            ),
+        )
+    engine.dispose()
+    result = runner.invoke(
+        app,
+        [
+            "exporter",
+            "dublin-core",
+            "HK",
+            "--fonds",
+            "HK",
+            "--sortie",
+            str(tmp_path / "o.xml"),
+            "--db-path",
+            str(db),
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Valeurs non canoniques" in result.output
+    assert "type_coar" in result.output
 
 
 def test_cli_exporter_xlsx(tmp_path: Path) -> None:

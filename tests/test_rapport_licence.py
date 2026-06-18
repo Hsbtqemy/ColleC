@@ -75,3 +75,29 @@ def test_licence_non_validee_sans_le_flag_dublin_core() -> None:
     licence à SPDX → une licence libre n'est pas signalée."""
     r = verifier_pre_export([_item("licence maison")], [], format="dc_xml")
     assert _licences_signalees(r) == []
+
+
+def test_licence_non_str_signalee() -> None:
+    """Une licence en liste (cas import Nakala valeurs multiples) est émise
+    verbatim par l'exporter → 422 ; on la signale (sa repr str)."""
+    item = Item(cote="L", titre="T", metadonnees={"licence": ["CC-BY-4.0"]})
+    r = verifier_pre_export([item], [], format="nakala_csv", valider_licence=True)
+    assert _licences_signalees(r) == ["['CC-BY-4.0']"]
+
+
+def test_licence_espaces_seuls_signalee() -> None:
+    """Espaces seuls : truthy → l'exporter l'émet tel quel (pas de défaut) →
+    422 ; signalé (pas de strip, on valide la valeur exacte)."""
+    r = verifier_pre_export(
+        [_item("   ")], [], format="nakala_csv", valider_licence=True
+    )
+    assert _licences_signalees(r) == ["   "]
+
+
+def test_licence_avec_espaces_parasites_signalee() -> None:
+    """Un code valide entouré d'espaces n'est PAS le code exact attendu par
+    Nakala → signalé (le strip masquerait ce vrai problème)."""
+    r = verifier_pre_export(
+        [_item(" CC-BY-4.0 ")], [], format="nakala_csv", valider_licence=True
+    )
+    assert _licences_signalees(r) == [" CC-BY-4.0 "]

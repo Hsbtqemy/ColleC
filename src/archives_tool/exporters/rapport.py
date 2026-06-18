@@ -72,10 +72,15 @@ def verifier_pre_export(
             rapport.valeurs_non_mappees.append(("langue", item.langue))
 
         if valider_licence:
+            # Miroir exact de l'exporter (`nakala.py` : `licence or rights or
+            # défaut`). Une valeur **truthy** est émise VERBATIM dans le CSV —
+            # y compris une liste/dict (`str()`-ifiés) ou des espaces seuls,
+            # qui provoquent un 422 Nakala. On signale donc tout ce qui n'est
+            # pas un code string reconnu (sans strip : Nakala valide la valeur
+            # exacte). Une valeur falsy laisse le défaut valide s'appliquer.
             meta = item.metadonnees or {}
             licence = meta.get("licence") or meta.get("rights")
-            if isinstance(licence, str) and licence.strip():
-                if not licence_reconnue(licence):
-                    rapport.valeurs_non_mappees.append(("licence", licence))
+            if licence and not (isinstance(licence, str) and licence_reconnue(licence)):
+                rapport.valeurs_non_mappees.append(("licence", str(licence)))
 
     return rapport

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import os
 from pathlib import Path
 
 import typer
@@ -92,6 +93,17 @@ from archives_tool.api.services.nakala_fichiers import (
 from archives_tool.external.nakala.depot_mapper import MetaInvalide
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.config import ConfigLocale, charger_config
+from archives_tool.api.services.sharedocs import (
+    RacineCibleInconnue,
+    importer_depuis_sharedocs,
+)
+from archives_tool.external.sharedocs import (
+    ClientShareDocs,
+    ErreurShareDocs,
+    ShareDocsAuthRefusee,
+    ShareDocsHoteInterdit,
+    ShareDocsInjoignable,
+)
 from archives_tool.external.nakala.client import (
     ClientLectureNakala,
     ErreurNakala,
@@ -276,10 +288,7 @@ def _afficher_rapport(rapport: RapportImport, verbose: bool) -> None:
             MARQUEUR_WARNING_DIVERGENCE,
         )
 
-        autres = [
-            w for w in rapport.warnings
-            if MARQUEUR_WARNING_DIVERGENCE not in w
-        ]
+        autres = [w for w in rapport.warnings if MARQUEUR_WARNING_DIVERGENCE not in w]
         if autres:
             typer.echo("\nWarnings :")
             for w in autres:
@@ -601,9 +610,7 @@ def cmd_exporter_annotations(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    typer.echo(
-        f"✓ {len(annotations)} annotation(s) exportée(s) vers {chemin}"
-    )
+    typer.echo(f"✓ {len(annotations)} annotation(s) exportée(s) vers {chemin}")
 
 
 # ---------------------------------------------------------------------------
@@ -761,8 +768,7 @@ def _resume_cascade_court(type_entite: str, cascade: dict) -> str:
         return f"{cascade.get('junctions', 0)} lien(s)"
     if type_entite == "item":
         return (
-            f"{cascade.get('fichiers', 0)} fic., "
-            f"{cascade.get('annotations', 0)} annot."
+            f"{cascade.get('fichiers', 0)} fic., {cascade.get('annotations', 0)} annot."
         )
     return ""
 
@@ -775,9 +781,7 @@ def cmd_montrer_suppressions(
         "-t",
         help="Filtrer : fonds | collection | item (sinon : tout).",
     ),
-    limite: int = typer.Option(
-        100, "--limite", "-n", help="Nombre maximum de lignes."
-    ),
+    limite: int = typer.Option(100, "--limite", "-n", help="Nombre maximum de lignes."),
     format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -847,9 +851,7 @@ def cmd_montrer_push_nakala(
     cote_item: str | None = typer.Option(
         None, "--cote", help="Filtrer par cote d'item ColleC."
     ),
-    limite: int = typer.Option(
-        50, "--limite", "-n", help="Nombre maximum de lignes."
-    ),
+    limite: int = typer.Option(50, "--limite", "-n", help="Nombre maximum de lignes."),
     format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
     db_path: Path = _DB_PATH_OPTION,
 ) -> None:
@@ -865,7 +867,10 @@ def cmd_montrer_push_nakala(
 
     with _ouvrir_session_existante(db_path) as session:
         ops = lister_push_nakala(
-            session, doi=doi, cote_item=cote_item, limite=limite,
+            session,
+            doi=doi,
+            cote_item=cote_item,
+            limite=limite,
         )
 
         if format_sortie is _FormatRapport.JSON:
@@ -879,10 +884,18 @@ def cmd_montrer_push_nakala(
                     "doi": o.doi,
                     "execute_le": o.execute_le.isoformat() if o.execute_le else None,
                     "execute_par": o.execute_par,
-                    "snapshot_avant": json.loads(o.snapshot_avant) if o.snapshot_avant else None,
-                    "snapshot_apres": json.loads(o.snapshot_apres) if o.snapshot_apres else None,
-                    "sha1s_uploades": json.loads(o.sha1s_uploades) if o.sha1s_uploades else [],
-                    "sha1s_retires": json.loads(o.sha1s_retires) if o.sha1s_retires else [],
+                    "snapshot_avant": json.loads(o.snapshot_avant)
+                    if o.snapshot_avant
+                    else None,
+                    "snapshot_apres": json.loads(o.snapshot_apres)
+                    if o.snapshot_apres
+                    else None,
+                    "sha1s_uploades": json.loads(o.sha1s_uploades)
+                    if o.sha1s_uploades
+                    else [],
+                    "sha1s_retires": json.loads(o.sha1s_retires)
+                    if o.sha1s_retires
+                    else [],
                 }
                 for o in ops
             ]
@@ -1775,10 +1788,14 @@ def cmd_items_creer_serie(
         ),
     ),
     de_n: int = typer.Option(
-        1, "--de", help="Numéro de départ (inclus). Défaut 1.",
+        1,
+        "--de",
+        help="Numéro de départ (inclus). Défaut 1.",
     ),
     a_n: int = typer.Option(
-        ..., "--a", help="Numéro de fin (inclus).",
+        ...,
+        "--a",
+        help="Numéro de fin (inclus).",
     ),
     titre: str = typer.Option(
         "",
@@ -1789,10 +1806,7 @@ def cmd_items_creer_serie(
         None,
         "--collection",
         "-c",
-        help=(
-            "Cote de la collection cible. Omettre pour utiliser la "
-            "miroir du fonds."
-        ),
+        help=("Cote de la collection cible. Omettre pour utiliser la miroir du fonds."),
     ),
     etat: str = typer.Option(
         "brouillon",
@@ -1891,8 +1905,7 @@ def cmd_items_creer_serie(
             raise typer.Exit(1) from None
 
         typer.echo(
-            f"✓ {rapport.nb_crees} item(s) créé(s) dans le fonds "
-            f"{fonds_obj.cote!r}."
+            f"✓ {rapport.nb_crees} item(s) créé(s) dans le fonds {fonds_obj.cote!r}."
         )
         if rapport.nb_crees > 0:
             premiere = rapport.crees[0].cote
@@ -2031,22 +2044,29 @@ app.add_typer(annotations_app, name="annotations")
 @annotations_app.command("enrichir")
 def cmd_annotations_enrichir(
     vocabulaire_code: str = typer.Option(
-        ..., "--vocabulaire", "-v",
+        ...,
+        "--vocabulaire",
+        "-v",
         help="Code du vocabulaire dont on propage les URIs.",
     ),
     fonds_cote: str = typer.Option(
-        ..., "--fonds", "-f",
+        ...,
+        "--fonds",
+        "-f",
         help="Cote du fonds dont les annotations seront enrichies.",
     ),
     appliquer: bool = typer.Option(
-        False, "--appliquer",
+        False,
+        "--appliquer",
         help=(
             "Appliquer les modifications. Par défaut, dry-run (preview "
             "des matches sans toucher à la base)."
         ),
     ),
     utilisateur: str | None = typer.Option(
-        None, "--utilisateur", "-u",
+        None,
+        "--utilisateur",
+        "-u",
         help="Nom à poser dans `modifie_par` (défaut : config locale).",
     ),
     db_path: Path = _DB_PATH_OPTION,
@@ -2102,7 +2122,9 @@ def cmd_annotations_enrichir(
 
         try:
             rapport = enrichir_annotations_par_vocab(
-                session, vocab.id, fonds_obj.id,
+                session,
+                vocab.id,
+                fonds_obj.id,
                 dry_run=not appliquer,
                 modifie_par=modifie_par if appliquer else None,
             )
@@ -2112,8 +2134,7 @@ def cmd_annotations_enrichir(
 
         mode = "APPLIQUÉ" if appliquer else "DRY-RUN (aucune écriture)"
         typer.echo(
-            f"Enrichissement {mode} — vocab {vocab.code!r} sur fonds "
-            f"{fonds_obj.cote!r}"
+            f"Enrichissement {mode} — vocab {vocab.code!r} sur fonds {fonds_obj.cote!r}"
         )
         typer.echo(
             f"  {rapport.nb_matches} match(es) "
@@ -2121,8 +2142,7 @@ def cmd_annotations_enrichir(
         )
         if rapport.deja_enrichies:
             typer.echo(
-                f"  {rapport.deja_enrichies} body(s) déjà enrichi(s) "
-                "(idempotence)"
+                f"  {rapport.deja_enrichies} body(s) déjà enrichi(s) (idempotence)"
             )
         if rapport.matches:
             typer.echo("\nMatches :")
@@ -2213,38 +2233,40 @@ def cmd_nakala_montrer(
     if format_sortie is _FormatRapport.JSON:
         import json
 
-        typer.echo(json.dumps(
-            {
-                "identifiant": depot.identifiant,
-                "statut": depot.statut,
-                "citation": citation,
-                "titre": depot.titre,
-                "createurs": depot.createurs,
-                "date": depot.date,
-                "type_coar": depot.type_coar,
-                "langues": depot.langues,
-                "description": depot.description,
-                "sujets": depot.sujets,
-                "licence": depot.licence,
-                "nb_fichiers": len(depot.fichiers),
-                # Trou AC (passe 18) : liste fichiers exposee en JSON
-                # pour audits downstream sans 2e appel. Le compteur
-                # `nb_fichiers` reste pour compat retro.
-                "fichiers": [
-                    {
-                        "nom": f.nom,
-                        "sha1": f.sha1,
-                        "taille": f.taille,
-                        "mime": f.mime,
-                        "embargo_actif": f.embargo_actif,
-                    }
-                    for f in depot.fichiers
-                ],
-                "metadonnees": depot.metadonnees,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ))
+        typer.echo(
+            json.dumps(
+                {
+                    "identifiant": depot.identifiant,
+                    "statut": depot.statut,
+                    "citation": citation,
+                    "titre": depot.titre,
+                    "createurs": depot.createurs,
+                    "date": depot.date,
+                    "type_coar": depot.type_coar,
+                    "langues": depot.langues,
+                    "description": depot.description,
+                    "sujets": depot.sujets,
+                    "licence": depot.licence,
+                    "nb_fichiers": len(depot.fichiers),
+                    # Trou AC (passe 18) : liste fichiers exposee en JSON
+                    # pour audits downstream sans 2e appel. Le compteur
+                    # `nb_fichiers` reste pour compat retro.
+                    "fichiers": [
+                        {
+                            "nom": f.nom,
+                            "sha1": f.sha1,
+                            "taille": f.taille,
+                            "mime": f.mime,
+                            "embargo_actif": f.embargo_actif,
+                        }
+                        for f in depot.fichiers
+                    ],
+                    "metadonnees": depot.metadonnees,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     typer.echo(f"Dépôt {depot.identifiant} [{depot.statut or '?'}]")
@@ -2302,9 +2324,9 @@ def cmd_nakala_citer(
     if format_sortie is _FormatRapport.JSON:
         import json
 
-        typer.echo(json.dumps(
-            {"doi": doi, "citation": citation}, ensure_ascii=False, indent=2
-        ))
+        typer.echo(
+            json.dumps({"doi": doi, "citation": citation}, ensure_ascii=False, indent=2)
+        )
         return
     typer.echo(citation or "(aucune citation — le dépôt est-il publié ?)")
 
@@ -2320,7 +2342,8 @@ def cmd_nakala_rapatrier(
         False, "--no-dry-run", help="Créer réellement (sinon : aperçu)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2339,8 +2362,13 @@ def cmd_nakala_rapatrier(
         assert fonds_obj is not None
         try:
             rapport = rapatrier(
-                session, depot, brut, fonds_id=fonds_obj.id, cote=cote,
-                cree_par=config.utilisateur, dry_run=not no_dry_run,
+                session,
+                depot,
+                brut,
+                fonds_id=fonds_obj.id,
+                cote=cote,
+                cree_par=config.utilisateur,
+                dry_run=not no_dry_run,
                 base_url=base_url,
             )
         except RapatriementInvalide as e:
@@ -2357,18 +2385,25 @@ def cmd_nakala_rapatrier(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "doi": doi,
-            "cote": rapport.cote,
-            "fonds_id": rapport.fonds_id,
-            "fonds_cote": fonds,
-            "dry_run": rapport.dry_run,
-            "deja_existant": rapport.deja_existant,
-            "item_id": rapport.item_id,
-            "nb_fichiers": rapport.nb_fichiers,
-            "collections_liees": rapport.collections_liees,
-            "collections_inconnues": rapport.collections_inconnues,
-        }, ensure_ascii=False, indent=2))
+
+        typer.echo(
+            json.dumps(
+                {
+                    "doi": doi,
+                    "cote": rapport.cote,
+                    "fonds_id": rapport.fonds_id,
+                    "fonds_cote": fonds,
+                    "dry_run": rapport.dry_run,
+                    "deja_existant": rapport.deja_existant,
+                    "item_id": rapport.item_id,
+                    "nb_fichiers": rapport.nb_fichiers,
+                    "collections_liees": rapport.collections_liees,
+                    "collections_inconnues": rapport.collections_inconnues,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
@@ -2408,7 +2443,8 @@ def cmd_nakala_rafraichir(
         False, "--no-dry-run", help="Appliquer l'overwrite (sinon : diff seul)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2425,8 +2461,11 @@ def cmd_nakala_rafraichir(
     with _ouvrir_session_existante(db_path) as session:
         try:
             rapport = rafraichir(
-                session, depot, brut,
-                modifie_par=config.utilisateur, dry_run=not no_dry_run,
+                session,
+                depot,
+                brut,
+                modifie_par=config.utilisateur,
+                dry_run=not no_dry_run,
             )
         except RafraichissementImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
@@ -2438,19 +2477,26 @@ def cmd_nakala_rafraichir(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "doi": doi,
-            "item_cote": rapport.item_cote,
-            "item_id": rapport.item_id,
-            "dry_run": not no_dry_run,
-            "applique": rapport.applique,
-            "a_des_changements": rapport.a_des_changements,
-            "metadonnees_modifiees": rapport.metadonnees_modifiees,
-            "diffs": [
-                {"champ": d.champ, "avant": d.avant, "apres": d.apres}
-                for d in rapport.diffs
-            ],
-        }, ensure_ascii=False, indent=2))
+
+        typer.echo(
+            json.dumps(
+                {
+                    "doi": doi,
+                    "item_cote": rapport.item_cote,
+                    "item_id": rapport.item_id,
+                    "dry_run": not no_dry_run,
+                    "applique": rapport.applique,
+                    "a_des_changements": rapport.a_des_changements,
+                    "metadonnees_modifiees": rapport.metadonnees_modifiees,
+                    "diffs": [
+                        {"champ": d.champ, "avant": d.avant, "apres": d.apres}
+                        for d in rapport.diffs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     if not rapport.a_des_changements:
@@ -2511,7 +2557,9 @@ def cmd_nakala_exporter_tableur(
     ),
     sep: str = typer.Option(";", "--sep", help="Séparateur CSV (ignoré en xlsx)."),
     sortie: Path | None = typer.Option(
-        None, "--sortie", help="Chemin de sortie (défaut : <doi>_<granularite>.<ext> dans le cwd)."
+        None,
+        "--sortie",
+        help="Chemin de sortie (défaut : <doi>_<granularite>.<ext> dans le cwd).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
 ) -> None:
@@ -2553,14 +2601,17 @@ def cmd_nakala_exporter_tableur(
 def cmd_nakala_rapatrier_collection(
     doi: str = typer.Argument(..., help="DOI/identifiant de la collection Nakala."),
     fonds: str | None = typer.Option(
-        None, "--fonds", "-f",
+        None,
+        "--fonds",
+        "-f",
         help="Cote du fonds cible (sinon un fonds est créé depuis la collection).",
     ),
     no_dry_run: bool = typer.Option(
         False, "--no-dry-run", help="Rapatrier réellement (sinon : aperçu)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2577,14 +2628,20 @@ def cmd_nakala_rapatrier_collection(
         with _ouvrir_session_existante(db_path) as session:
             try:
                 rapport = rapatrier_collection(
-                    session, client, doi, fonds_cote=fonds,
-                    cree_par=config.utilisateur, dry_run=not no_dry_run,
+                    session,
+                    client,
+                    doi,
+                    fonds_cote=fonds,
+                    cree_par=config.utilisateur,
+                    dry_run=not no_dry_run,
                 )
             except FondsIntrouvable:
                 typer.echo(f"Erreur : fonds {fonds!r} introuvable.", err=True)
                 raise typer.Exit(1) from None
             except NakalaIntrouvable:
-                typer.echo(f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True)
+                typer.echo(
+                    f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True
+                )
                 raise typer.Exit(1) from None
             except NakalaAuthRefusee:
                 typer.echo(
@@ -2601,26 +2658,30 @@ def cmd_nakala_rapatrier_collection(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "doi_collection": rapport.doi_collection,
-            "fonds_cote": rapport.fonds_cote,
-            "fonds_cree": rapport.fonds_cree,
-            "dry_run": rapport.dry_run,
-            "crees": list(rapport.crees),
-            "deja_existants": list(rapport.deja_existants),
-            "fichiers_crees": rapport.fichiers_crees,
-            "erreurs": [
-                {"doi": doi_err, "detail": detail}
-                for doi_err, detail in rapport.erreurs
-            ],
-        }, ensure_ascii=False, indent=2))
+
+        typer.echo(
+            json.dumps(
+                {
+                    "doi_collection": rapport.doi_collection,
+                    "fonds_cote": rapport.fonds_cote,
+                    "fonds_cree": rapport.fonds_cree,
+                    "dry_run": rapport.dry_run,
+                    "crees": list(rapport.crees),
+                    "deja_existants": list(rapport.deja_existants),
+                    "fichiers_crees": rapport.fichiers_crees,
+                    "erreurs": [
+                        {"doi": doi_err, "detail": detail}
+                        for doi_err, detail in rapport.erreurs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
-    cible = (
-        f"fonds {rapport.fonds_cote!r}"
-        + (" (créé)" if rapport.fonds_cree else "")
-    )
+    cible = f"fonds {rapport.fonds_cote!r}" + (" (créé)" if rapport.fonds_cree else "")
     suffixe_fichiers = (
         f", {rapport.fichiers_crees} fichier(s)" if rapport.fichiers_crees else ""
     )
@@ -2646,7 +2707,8 @@ def cmd_nakala_rafraichir_collection(
         False, "--no-dry-run", help="Appliquer les overwrites (sinon : diff seul)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2664,11 +2726,16 @@ def cmd_nakala_rafraichir_collection(
         with _ouvrir_session_existante(db_path) as session:
             try:
                 rapport = rafraichir_collection(
-                    session, client, doi,
-                    modifie_par=config.utilisateur, dry_run=not no_dry_run,
+                    session,
+                    client,
+                    doi,
+                    modifie_par=config.utilisateur,
+                    dry_run=not no_dry_run,
                 )
             except NakalaIntrouvable:
-                typer.echo(f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True)
+                typer.echo(
+                    f"Erreur : collection {doi!r} introuvable sur Nakala.", err=True
+                )
                 raise typer.Exit(1) from None
             except NakalaAuthRefusee:
                 typer.echo(
@@ -2685,30 +2752,37 @@ def cmd_nakala_rafraichir_collection(
 
     if format_sortie is _FormatRapport.JSON:
         import json
+
         modifies = rapport.modifies
-        typer.echo(json.dumps({
-            "doi_collection": rapport.doi_collection,
-            "dry_run": rapport.dry_run,
-            "modifies": [
+        typer.echo(
+            json.dumps(
                 {
-                    "item_cote": r.item_cote,
-                    "item_id": r.item_id,
-                    "applique": r.applique,
-                    "metadonnees_modifiees": r.metadonnees_modifiees,
-                    "diffs": [
-                        {"champ": d.champ, "avant": d.avant, "apres": d.apres}
-                        for d in r.diffs
+                    "doi_collection": rapport.doi_collection,
+                    "dry_run": rapport.dry_run,
+                    "modifies": [
+                        {
+                            "item_cote": r.item_cote,
+                            "item_id": r.item_id,
+                            "applique": r.applique,
+                            "metadonnees_modifiees": r.metadonnees_modifiees,
+                            "diffs": [
+                                {"champ": d.champ, "avant": d.avant, "apres": d.apres}
+                                for d in r.diffs
+                            ],
+                        }
+                        for r in modifies
                     ],
-                }
-                for r in modifies
-            ],
-            "inchanges": [r.item_cote for r in rapport.inchanges],
-            "non_lies": list(rapport.non_lies),
-            "erreurs": [
-                {"doi": doi_err, "detail": detail}
-                for doi_err, detail in rapport.erreurs
-            ],
-        }, ensure_ascii=False, indent=2))
+                    "inchanges": [r.item_cote for r in rapport.inchanges],
+                    "non_lies": list(rapport.non_lies),
+                    "erreurs": [
+                        {"doi": doi_err, "detail": detail}
+                        for doi_err, detail in rapport.erreurs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
@@ -2785,7 +2859,8 @@ def cmd_nakala_deposer(
         False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2809,8 +2884,13 @@ def cmd_nakala_deposer(
                 raise typer.Exit(1) from None
             try:
                 rapport = deposer_item(
-                    session, client, item, racines=racines, statut=statut,
-                    collection_doi=collection, cree_par=config.utilisateur,
+                    session,
+                    client,
+                    item,
+                    racines=racines,
+                    statut=statut,
+                    collection_doi=collection,
+                    cree_par=config.utilisateur,
                     dry_run=not no_dry_run,
                 )
             except DepotImpossible as e:
@@ -2824,16 +2904,23 @@ def cmd_nakala_deposer(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "cote": rapport.cote,
-            "dry_run": rapport.dry_run,
-            "deja_depose": rapport.deja_depose,
-            "doi": rapport.doi,
-            "statut": statut,
-            "nb_fichiers": rapport.nb_fichiers,
-            "fichiers": list(rapport.fichiers),
-            "avertissements": list(rapport.avertissements),
-        }, ensure_ascii=False, indent=2))
+
+        typer.echo(
+            json.dumps(
+                {
+                    "cote": rapport.cote,
+                    "dry_run": rapport.dry_run,
+                    "deja_depose": rapport.deja_depose,
+                    "doi": rapport.doi,
+                    "statut": statut,
+                    "nb_fichiers": rapport.nb_fichiers,
+                    "fichiers": list(rapport.fichiers),
+                    "avertissements": list(rapport.avertissements),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     if rapport.deja_depose:
@@ -2867,7 +2954,8 @@ def cmd_nakala_deposer_collection(
         False, "--no-dry-run", help="Déposer réellement (sinon : aperçu)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -2881,37 +2969,50 @@ def cmd_nakala_deposer_collection(
             collection = _resoudre_collection_pour_export(session, cote, fonds)
             try:
                 rapport = deposer_collection(
-                    session, client, collection, racines=racines,
-                    statut_donnee=statut_donnee, statut_collection=statut_collection,
-                    cree_par=config.utilisateur, dry_run=not no_dry_run,
+                    session,
+                    client,
+                    collection,
+                    racines=racines,
+                    statut_donnee=statut_donnee,
+                    statut_collection=statut_collection,
+                    cree_par=config.utilisateur,
+                    dry_run=not no_dry_run,
                 )
             except ErreurNakala as e:
                 _sortie_erreur_nakala_ecriture(e)
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "collection_cote": rapport.collection_cote,
-            "dry_run": rapport.dry_run,
-            "collection_doi": rapport.collection_doi,
-            "collection_creee": rapport.collection_creee,
-            "statut_donnee": statut_donnee,
-            "statut_collection": statut_collection,
-            "deposes": [
+
+        typer.echo(
+            json.dumps(
                 {
-                    "cote": r.cote, "doi": r.doi, "nb_fichiers": r.nb_fichiers,
-                    "deja_depose": r.deja_depose,
-                    "avertissements": list(r.avertissements),
-                }
-                for r in rapport.deposes
-            ],
-            "sautes": list(rapport.sautes),
-            "non_deposables": list(rapport.non_deposables),
-            "erreurs": [
-                {"cote": c, "detail": detail}
-                for c, detail in rapport.erreurs
-            ],
-        }, ensure_ascii=False, indent=2))
+                    "collection_cote": rapport.collection_cote,
+                    "dry_run": rapport.dry_run,
+                    "collection_doi": rapport.collection_doi,
+                    "collection_creee": rapport.collection_creee,
+                    "statut_donnee": statut_donnee,
+                    "statut_collection": statut_collection,
+                    "deposes": [
+                        {
+                            "cote": r.cote,
+                            "doi": r.doi,
+                            "nb_fichiers": r.nb_fichiers,
+                            "deja_depose": r.deja_depose,
+                            "avertissements": list(r.avertissements),
+                        }
+                        for r in rapport.deposes
+                    ],
+                    "sautes": list(rapport.sautes),
+                    "non_deposables": list(rapport.non_deposables),
+                    "erreurs": [
+                        {"cote": c, "detail": detail} for c, detail in rapport.erreurs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
@@ -2976,10 +3077,14 @@ def _afficher_diff_push(rapport, mode: str, no_dry_run: bool) -> None:
             err=True,
         )
     if not rapport.a_des_changements:
-        typer.echo(f"Item {rapport.cote!r} ({rapport.doi}) : aucun changement à pousser.")
+        typer.echo(
+            f"Item {rapport.cote!r} ({rapport.doi}) : aucun changement à pousser."
+        )
         return
-    typer.echo(f"[{mode}] Item {rapport.cote!r} ({rapport.doi}) — "
-               f"{len(rapport.diffs)} champ(s) à modifier :")
+    typer.echo(
+        f"[{mode}] Item {rapport.cote!r} ({rapport.doi}) — "
+        f"{len(rapport.diffs)} champ(s) à modifier :"
+    )
     for d in rapport.diffs:
         avant = " | ".join(d.avant) or "∅"
         apres = " | ".join(d.apres) or "∅"
@@ -2998,14 +3103,16 @@ def cmd_nakala_pousser(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
     ),
     forcer_publie: bool = typer.Option(
-        False, "--force-published",
+        False,
+        "--force-published",
         help="Forcer le push sur un item déjà publié (status=published). "
-             "DANGEREUX : modifier les métadonnées d'un item publié change "
-             "ce qu'une citation externe reflète (titre, créateurs…). "
-             "Sans ce flag, l'item publié est refusé.",
+        "DANGEREUX : modifier les métadonnées d'un item publié change "
+        "ce qu'une citation externe reflète (titre, créateurs…). "
+        "Sans ce flag, l'item publié est refusé.",
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3037,8 +3144,12 @@ def cmd_nakala_pousser(
             raise typer.Exit(1) from None
         try:
             rapport = pousser_item(
-                session, lecture, ecriture, item,
-                dry_run=not no_dry_run, forcer_publie=forcer_publie,
+                session,
+                lecture,
+                ecriture,
+                item,
+                dry_run=not no_dry_run,
+                forcer_publie=forcer_publie,
                 modifie_par=config.utilisateur,
             )
         except DepotImpossible as e:
@@ -3060,10 +3171,14 @@ def cmd_nakala_pousser(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps(
-            _payload_push_json(rapport, no_dry_run),
-            ensure_ascii=False, indent=2,
-        ))
+
+        typer.echo(
+            json.dumps(
+                _payload_push_json(rapport, no_dry_run),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     _afficher_diff_push(rapport, "RÉEL" if no_dry_run else "DRY-RUN", no_dry_run)
@@ -3077,7 +3192,8 @@ def cmd_nakala_publier(
         False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3102,8 +3218,12 @@ def cmd_nakala_publier(
             raise typer.Exit(1) from None
         try:
             rapport = publier_item(
-                session, lecture, ecriture, item,
-                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+                session,
+                lecture,
+                ecriture,
+                item,
+                dry_run=not no_dry_run,
+                modifie_par=config.utilisateur,
             )
         except DepotImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
@@ -3116,13 +3236,20 @@ def cmd_nakala_publier(
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "cote": rapport.cote,
-            "doi": rapport.doi,
-            "dry_run": not no_dry_run,
-            "applique": rapport.applique,
-            "irreversible": True,
-        }, ensure_ascii=False, indent=2))
+
+        typer.echo(
+            json.dumps(
+                {
+                    "cote": rapport.cote,
+                    "doi": rapport.doi,
+                    "dry_run": not no_dry_run,
+                    "applique": rapport.applique,
+                    "irreversible": True,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     if rapport.applique:
@@ -3144,14 +3271,16 @@ def cmd_nakala_pousser_collection(
         False, "--no-dry-run", help="Pousser réellement (sinon : diff)."
     ),
     forcer_publie: bool = typer.Option(
-        False, "--force-published",
+        False,
+        "--force-published",
         help="Forcer le push même sur les items déjà publiés. "
-             "DANGEREUX : modifier les métadonnées d'un item publié change "
-             "ce qu'une citation externe reflète. Les items publiés sont "
-             "refusés (collectés dans `erreurs`) sans ce flag.",
+        "DANGEREUX : modifier les métadonnées d'un item publié change "
+        "ce qu'une citation externe reflète. Les items publiés sont "
+        "refusés (collectés dans `erreurs`) sans ce flag.",
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3167,8 +3296,12 @@ def cmd_nakala_pousser_collection(
         collection = _resoudre_collection_pour_export(session, cote, fonds)
         try:
             rapport = pousser_collection(
-                session, lecture, ecriture, collection,
-                dry_run=not no_dry_run, forcer_publie=forcer_publie,
+                session,
+                lecture,
+                ecriture,
+                collection,
+                dry_run=not no_dry_run,
+                forcer_publie=forcer_publie,
                 modifie_par=config.utilisateur,
             )
         except ErreurNakala as e:
@@ -3176,23 +3309,29 @@ def cmd_nakala_pousser_collection(
 
     if format_sortie is _FormatRapport.JSON:
         import json
+
         mc = rapport.meta_collection
-        typer.echo(json.dumps({
-            "collection_cote": collection.cote,
-            "dry_run": not no_dry_run,
-            "meta_collection": (
-                _payload_push_json(mc, no_dry_run) if mc is not None else None
-            ),
-            "pousses": [
-                _payload_push_json(r, no_dry_run) for r in rapport.pousses
-            ],
-            "inchanges": [r.cote for r in rapport.inchanges],
-            "non_lies": list(rapport.non_lies),
-            "erreurs": [
-                {"cote": c, "detail": detail}
-                for c, detail in rapport.erreurs
-            ],
-        }, ensure_ascii=False, indent=2))
+        typer.echo(
+            json.dumps(
+                {
+                    "collection_cote": collection.cote,
+                    "dry_run": not no_dry_run,
+                    "meta_collection": (
+                        _payload_push_json(mc, no_dry_run) if mc is not None else None
+                    ),
+                    "pousses": [
+                        _payload_push_json(r, no_dry_run) for r in rapport.pousses
+                    ],
+                    "inchanges": [r.cote for r in rapport.inchanges],
+                    "non_lies": list(rapport.non_lies),
+                    "erreurs": [
+                        {"cote": c, "detail": detail} for c, detail in rapport.erreurs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
@@ -3213,7 +3352,9 @@ def cmd_nakala_pousser_collection(
         for d in mc.diffs:
             avant = " | ".join(d.avant) or "∅"
             apres = " | ".join(d.apres) or "∅"
-            typer.echo(f"  • {_nom_court_propriete(d.property_uri)} : {avant}  →  {apres}")
+            typer.echo(
+                f"  • {_nom_court_propriete(d.property_uri)} : {avant}  →  {apres}"
+            )
 
     # Puis les items.
     verbe = "poussé(s)" if no_dry_run else "à pousser"
@@ -3240,7 +3381,8 @@ def cmd_nakala_publier_collection(
         False, "--no-dry-run", help="Publier réellement (IRRÉVERSIBLE)."
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3259,31 +3401,42 @@ def cmd_nakala_publier_collection(
         collection = _resoudre_collection_pour_export(session, cote, fonds)
         try:
             rapport = publier_collection(
-                session, lecture, ecriture, collection,
-                dry_run=not no_dry_run, modifie_par=config.utilisateur,
+                session,
+                lecture,
+                ecriture,
+                collection,
+                dry_run=not no_dry_run,
+                modifie_par=config.utilisateur,
             )
         except ErreurNakala as e:
             _sortie_erreur_nakala_ecriture(e)
 
     if format_sortie is _FormatRapport.JSON:
         import json
-        typer.echo(json.dumps({
-            "collection_cote": collection.cote,
-            "dry_run": not no_dry_run,
-            "irreversible": True,
-            "publies": [
+
+        typer.echo(
+            json.dumps(
                 {
-                    "cote": r.cote, "doi": r.doi,
-                    "applique": r.applique,
-                }
-                for r in rapport.publies
-            ],
-            "non_lies": list(rapport.non_lies),
-            "erreurs": [
-                {"cote": c, "detail": detail}
-                for c, detail in rapport.erreurs
-            ],
-        }, ensure_ascii=False, indent=2))
+                    "collection_cote": collection.cote,
+                    "dry_run": not no_dry_run,
+                    "irreversible": True,
+                    "publies": [
+                        {
+                            "cote": r.cote,
+                            "doi": r.doi,
+                            "applique": r.applique,
+                        }
+                        for r in rapport.publies
+                    ],
+                    "non_lies": list(rapport.non_lies),
+                    "erreurs": [
+                        {"cote": c, "detail": detail} for c, detail in rapport.erreurs
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     mode = "RÉEL" if no_dry_run else "DRY-RUN"
@@ -3303,7 +3456,8 @@ def cmd_nakala_comparer_fichiers(
     cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
     fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3341,7 +3495,10 @@ def cmd_nakala_comparer_fichiers(
             raise typer.Exit(1) from None
         try:
             rapport = comparer_fichiers_item(
-                session, lecture, item, racines=racines,
+                session,
+                lecture,
+                item,
+                racines=racines,
             )
         except ComparaisonImpossible as e:
             typer.echo(f"Erreur : {e}", err=True)
@@ -3362,30 +3519,36 @@ def cmd_nakala_comparer_fichiers(
                 "sha1_distant": fc.sha1_distant,
             }
 
-        typer.echo(json.dumps({
-            "cote_item": rapport.cote_item,
-            "doi": rapport.doi,
-            "aucun_changement": rapport.aucun_changement,
-            "nouveaux": [_fc(fc) for fc in rapport.nouveaux],
-            "modifies": [_fc(fc) for fc in rapport.modifies],
-            "inchanges": [_fc(fc) for fc in rapport.inchanges],
-            "nakala_only_sans_local": [
-                _fc(fc) for fc in rapport.nakala_only_sans_local
-            ],
-            "non_actifs_a_retirer": [
-                _fc(fc) for fc in rapport.non_actifs_a_retirer
-            ],
-            "fichiers_fantomes": [_fc(fc) for fc in rapport.fichiers_fantomes],
-            "descriptions_divergentes": [
-                _fc(fc) for fc in rapport.descriptions_divergentes
-            ],
-            "orphelins_distants": [
-                {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
-                for fo in rapport.orphelins_distants
-            ],
-            "mod_date_distant": rapport.mod_date_distant,
-            "statut_distant": rapport.statut_distant,
-        }, ensure_ascii=False, indent=2))
+        typer.echo(
+            json.dumps(
+                {
+                    "cote_item": rapport.cote_item,
+                    "doi": rapport.doi,
+                    "aucun_changement": rapport.aucun_changement,
+                    "nouveaux": [_fc(fc) for fc in rapport.nouveaux],
+                    "modifies": [_fc(fc) for fc in rapport.modifies],
+                    "inchanges": [_fc(fc) for fc in rapport.inchanges],
+                    "nakala_only_sans_local": [
+                        _fc(fc) for fc in rapport.nakala_only_sans_local
+                    ],
+                    "non_actifs_a_retirer": [
+                        _fc(fc) for fc in rapport.non_actifs_a_retirer
+                    ],
+                    "fichiers_fantomes": [_fc(fc) for fc in rapport.fichiers_fantomes],
+                    "descriptions_divergentes": [
+                        _fc(fc) for fc in rapport.descriptions_divergentes
+                    ],
+                    "orphelins_distants": [
+                        {"sha1": fo.sha1, "nom_fichier": fo.nom_fichier}
+                        for fo in rapport.orphelins_distants
+                    ],
+                    "mod_date_distant": rapport.mod_date_distant,
+                    "statut_distant": rapport.statut_distant,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi}")
@@ -3432,7 +3595,9 @@ def cmd_nakala_comparer_fichiers(
     _detail_liste(
         "Nouveaux (à uploader)",
         rapport.nouveaux,
-        lambda fc: f"[{fc.ordre:02d}] {fc.nom_fichier} (sha1 local: {fc.sha1_local[:12]}…)",
+        lambda fc: (
+            f"[{fc.ordre:02d}] {fc.nom_fichier} (sha1 local: {fc.sha1_local[:12]}…)"
+        ),
     )
     _detail_liste(
         "Modifiés (sha1 a changé)",
@@ -3483,30 +3648,35 @@ def cmd_nakala_pousser_fichiers(
     cote: str = typer.Argument(..., help="Cote de l'item lié à Nakala."),
     fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
     no_dry_run: bool = typer.Option(
-        False, "--no-dry-run",
+        False,
+        "--no-dry-run",
         help="Appliquer effectivement le push (sinon : aperçu sans écriture).",
     ),
     retirer_orphelins: bool = typer.Option(
-        False, "--retirer-orphelins",
+        False,
+        "--retirer-orphelins",
         help="Autoriser le retrait des orphelins distants. Sur dépôt "
-             "`pending` : retrait effectif (le dépôt entier reste "
-             "supprimable via `supprimer_depot`). Sur `published` : "
-             "versioning automatique côté Nakala — l'ancienne version "
-             "(avec les fichiers retirés) reste accessible.",
+        "`pending` : retrait effectif (le dépôt entier reste "
+        "supprimable via `supprimer_depot`). Sur `published` : "
+        "versioning automatique côté Nakala — l'ancienne version "
+        "(avec les fichiers retirés) reste accessible.",
     ),
     forcer_publie: bool = typer.Option(
-        False, "--force-published",
+        False,
+        "--force-published",
         help="Forcer la modification des fichiers d'un item déjà publié "
-             "(status=published). DANGEREUX : casse l'intégrité des "
-             "citations externes (DOIs DataCite des fichiers déjà mintés). "
-             "Sans ce flag, l'item publié est refusé.",
+        "(status=published). DANGEREUX : casse l'intégrité des "
+        "citations externes (DOIs DataCite des fichiers déjà mintés). "
+        "Sans ce flag, l'item publié est refusé.",
     ),
     utilisateur: str | None = typer.Option(
-        None, "--utilisateur",
+        None,
+        "--utilisateur",
         help="Surcharge `config.utilisateur` pour tracer la modification.",
     ),
     format_sortie: _FormatRapport = typer.Option(
-        _FormatRapport.TEXT, "--format",
+        _FormatRapport.TEXT,
+        "--format",
         help="Format de sortie (text Rich par défaut, json pour scripts).",
     ),
     config_path: Path = _CONFIG_OPTION_NAKALA,
@@ -3547,7 +3717,11 @@ def cmd_nakala_pousser_fichiers(
             raise typer.Exit(1) from None
         try:
             rapport = pousser_fichiers_item(
-                session, lecture, ecriture, item, racines=racines,
+                session,
+                lecture,
+                ecriture,
+                item,
+                racines=racines,
                 dry_run=not no_dry_run,
                 retirer_orphelins=retirer_orphelins,
                 forcer_publie=forcer_publie,
@@ -3626,8 +3800,10 @@ def cmd_nakala_pousser_fichiers(
 
         def _entree(p):
             return {
-                "ordre": p.ordre, "nom_fichier": p.nom_fichier,
-                "categorie": p.categorie, "sha1": p.sha1,
+                "ordre": p.ordre,
+                "nom_fichier": p.nom_fichier,
+                "categorie": p.categorie,
+                "sha1": p.sha1,
             }
 
         def _fc(fc):
@@ -3651,7 +3827,9 @@ def cmd_nakala_pousser_fichiers(
                 "inchanges": [_fc(fc) for fc in cmp.inchanges],
                 "modifies": [_fc(fc) for fc in cmp.modifies],
                 "nouveaux": [_fc(fc) for fc in cmp.nouveaux],
-                "nakala_only_sans_local": [_fc(fc) for fc in cmp.nakala_only_sans_local],
+                "nakala_only_sans_local": [
+                    _fc(fc) for fc in cmp.nakala_only_sans_local
+                ],
                 "non_actifs_a_retirer": [_fc(fc) for fc in cmp.non_actifs_a_retirer],
                 "fichiers_fantomes": [_fc(fc) for fc in cmp.fichiers_fantomes],
                 "descriptions_divergentes": [
@@ -3662,25 +3840,33 @@ def cmd_nakala_pousser_fichiers(
                 "statut_distant": cmp.statut_distant,
             }
 
-        typer.echo(json.dumps({
-            "cote_item": rapport.cote_item,
-            "doi": rapport.doi,
-            "dry_run": rapport.dry_run,
-            "applique": rapport.applique,
-            "raison": rapport.raison,
-            "derive": rapport.derive,
-            "plan": [_entree(p) for p in rapport.plan],
-            "sha1s_uploades": rapport.sha1s_uploades,
-            "sha1s_retires": rapport.sha1s_retires,
-            "compare": compare_json,
-        }, ensure_ascii=False, indent=2))
+        typer.echo(
+            json.dumps(
+                {
+                    "cote_item": rapport.cote_item,
+                    "doi": rapport.doi,
+                    "dry_run": rapport.dry_run,
+                    "applique": rapport.applique,
+                    "raison": rapport.raison,
+                    "derive": rapport.derive,
+                    "plan": [_entree(p) for p in rapport.plan],
+                    "sha1s_uploades": rapport.sha1s_uploades,
+                    "sha1s_retires": rapport.sha1s_retires,
+                    "compare": compare_json,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return
 
     # Format text
-    mode = "DRY-RUN" if rapport.dry_run else (
-        "APPLIQUÉ" if rapport.applique else "NO-OP"
+    mode = (
+        "DRY-RUN" if rapport.dry_run else ("APPLIQUÉ" if rapport.applique else "NO-OP")
     )
-    typer.echo(f"Item {rapport.cote_item} ↔ dépôt {rapport.doi} : push fichiers [{mode}]")
+    typer.echo(
+        f"Item {rapport.cote_item} ↔ dépôt {rapport.doi} : push fichiers [{mode}]"
+    )
 
     if rapport.derive:
         typer.echo(
@@ -3728,14 +3914,10 @@ def cmd_nakala_pousser_fichiers(
                     f"(sha1: {(nac.sha1_distant or '')[:12]}…)"
                 )
             if len(cmp.non_actifs_a_retirer) > 5:
-                typer.echo(
-                    f"      (+ {len(cmp.non_actifs_a_retirer) - 5} autres)"
-                )
+                typer.echo(f"      (+ {len(cmp.non_actifs_a_retirer) - 5} autres)")
 
     if rapport.sha1s_retires:
-        typer.echo(
-            f"  Total retraits Nakala : {len(rapport.sha1s_retires)} fichier(s)"
-        )
+        typer.echo(f"  Total retraits Nakala : {len(rapport.sha1s_retires)} fichier(s)")
 
     # Detail plan
     if rapport.plan:
@@ -3754,6 +3936,210 @@ def cmd_nakala_pousser_fichiers(
             f"{len(rapport.plan)} entrée(s) dans files[]."
         )
     elif rapport.dry_run:
+        typer.echo("  Relancer avec --no-dry-run pour appliquer.")
+
+
+# ---------------------------------------------------------------------------
+# ShareDocs (WebDAV Huma-Num) — ingestion remote-first (Chantier 1)
+# ---------------------------------------------------------------------------
+
+sharedocs_app = typer.Typer(
+    help="ShareDocs (WebDAV) : parcourir un partage, importer des fichiers.",
+    no_args_is_help=True,
+)
+app.add_typer(sharedocs_app, name="sharedocs")
+
+_CONFIG_OPTION_SHAREDOCS = typer.Option(
+    Path("config_local.yaml"),
+    "--config",
+    help="Config locale (section `sharedocs:` : base_url + hôtes autorisés).",
+)
+
+#: Identifiants ShareDocs en variables d'environnement — jamais sur disque,
+#: jamais en config (cf. décision credentials, deploiement-future.md).
+_ENV_SHAREDOCS_USER = "COLLEC_SHAREDOCS_USER"
+_ENV_SHAREDOCS_PASS = "COLLEC_SHAREDOCS_PASS"
+
+
+def _client_sharedocs_ou_sortie(
+    config: ConfigLocale, base_url_override: str | None = None
+) -> ClientShareDocs:
+    """ClientShareDocs depuis la config (base_url + hôtes) + identifiants en
+    variables d'env. Sort proprement (exit 2) si mal configuré."""
+    base_url = base_url_override or (
+        config.sharedocs.base_url if config.sharedocs else None
+    )
+    if not base_url:
+        typer.echo(
+            "Erreur : aucune base_url ShareDocs. Renseigner `sharedocs.base_url` "
+            "dans le config_local.yaml ou passer --base-url.",
+            err=True,
+        )
+        raise typer.Exit(2)
+    user = os.environ.get(_ENV_SHAREDOCS_USER)
+    password = os.environ.get(_ENV_SHAREDOCS_PASS)
+    if not (user and password):
+        typer.echo(
+            f"Erreur : identifiants ShareDocs absents — définir {_ENV_SHAREDOCS_USER} "
+            f"et {_ENV_SHAREDOCS_PASS} dans l'environnement (jamais sur disque).",
+            err=True,
+        )
+        raise typer.Exit(2)
+    hotes = (
+        frozenset(config.sharedocs.hotes_autorises)
+        if config.sharedocs and config.sharedocs.hotes_autorises
+        else None
+    )
+    try:
+        return ClientShareDocs(base_url, user, password, hotes_autorises=hotes)
+    except ShareDocsHoteInterdit as e:
+        typer.echo(f"Erreur : {e}", err=True)
+        raise typer.Exit(2) from None
+
+
+@sharedocs_app.command("lister")
+def cmd_sharedocs_lister(
+    chemin: str = typer.Argument("", help="Chemin du dossier distant (vide = racine)."),
+    base_url: str = typer.Option(
+        None, "--base-url", help="Surcharge la base_url de la config."
+    ),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    config_path: Path = _CONFIG_OPTION_SHAREDOCS,
+) -> None:
+    """Liste un dossier ShareDocs (lecture seule, aucune écriture)."""
+    config = _charger_config_ou_sortie(config_path)
+    with _client_sharedocs_ou_sortie(config, base_url) as client:
+        try:
+            entrees = client.lister(chemin)
+        except ShareDocsAuthRefusee:
+            typer.echo("Erreur : identifiants ShareDocs refusés (401/403).", err=True)
+            raise typer.Exit(1) from None
+        except ShareDocsInjoignable as e:
+            typer.echo(f"Erreur : ShareDocs injoignable ({e}).", err=True)
+            raise typer.Exit(1) from None
+        except ErreurShareDocs as e:
+            typer.echo(f"Erreur ShareDocs : {e}", err=True)
+            raise typer.Exit(1) from None
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "nom": e.nom,
+                        "chemin": e.chemin,
+                        "est_dossier": e.est_dossier,
+                        "taille": e.taille,
+                        "modifie_le": e.modifie_le,
+                    }
+                    for e in entrees
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if not entrees:
+        typer.echo("(dossier vide)")
+        return
+    for e in entrees:
+        marque = "[D]" if e.est_dossier else "   "
+        taille = "" if e.taille is None else f"{e.taille:>12} o"
+        typer.echo(f"{marque} {e.chemin:<50} {taille}")
+
+
+@sharedocs_app.command("importer")
+def cmd_sharedocs_importer(
+    cote: str = typer.Argument(..., help="Cote de l'item cible."),
+    chemins: list[str] = typer.Argument(..., help="Chemins distants à importer."),
+    fonds: str = typer.Option(..., "--fonds", "-f", help="Cote du fonds de l'item."),
+    racine: str = typer.Option(
+        ..., "--racine", help="Racine logique cible (config_local.yaml)."
+    ),
+    no_dry_run: bool = typer.Option(
+        False, "--no-dry-run", help="Appliquer (sinon : aperçu sans écriture)."
+    ),
+    base_url: str = typer.Option(None, "--base-url"),
+    utilisateur: str = typer.Option(None, "--utilisateur"),
+    format_sortie: _FormatRapport = typer.Option(_FormatRapport.TEXT, "--format"),
+    config_path: Path = _CONFIG_OPTION_SHAREDOCS,
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Importe des fichiers ShareDocs en `Fichier` rattachés à un item.
+
+    Dry-run par défaut (aperçu fidèle). `--no-dry-run` télécharge et crée
+    les `Fichier` sous `<racine>/<cote>/<nom>`.
+    """
+    config = _charger_config_ou_sortie(config_path)
+    racines = dict(config.racines)
+    with (
+        _client_sharedocs_ou_sortie(config, base_url) as client,
+        _ouvrir_session_existante(db_path) as session,
+    ):
+        fonds_obj = _resoudre_fonds_ou_sortie(session, fonds)
+        assert fonds_obj is not None
+        try:
+            item = lire_item_par_cote(session, cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            typer.echo(f"Erreur : item {cote!r} introuvable.", err=True)
+            raise typer.Exit(1) from None
+        try:
+            rapport = importer_depuis_sharedocs(
+                session,
+                client,
+                chemins,
+                item,
+                racine_cible=racine,
+                racines=racines,
+                dry_run=not no_dry_run,
+                importe_par=utilisateur,
+            )
+        except RacineCibleInconnue as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(2) from None
+
+    if format_sortie is _FormatRapport.JSON:
+        import json
+
+        typer.echo(
+            json.dumps(
+                {
+                    "cote_item": rapport.cote_item,
+                    "racine_cible": rapport.racine_cible,
+                    "dry_run": rapport.dry_run,
+                    "nb_retenus": rapport.nb_retenus,
+                    "nb_sautes": rapport.nb_sautes,
+                    "fichiers": [
+                        {
+                            "chemin_distant": f.chemin_distant,
+                            "nom_fichier": f.nom_fichier,
+                            "chemin_relatif": f.chemin_relatif,
+                            "retenu": f.retenu,
+                            "raison": f.raison,
+                            "taille": f.taille,
+                        }
+                        for f in rapport.fichiers
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    mode = "DRY-RUN" if rapport.dry_run else "APPLIQUÉ"
+    typer.echo(
+        f"Item {rapport.cote_item} ← ShareDocs [{mode}] : "
+        f"{rapport.nb_retenus} retenu(s), {rapport.nb_sautes} sauté(s)"
+    )
+    for f in rapport.fichiers:
+        etiq = (
+            ("✓" + (f" ({f.raison})" if f.raison else ""))
+            if f.retenu
+            else f"— {f.raison}"
+        )
+        typer.echo(f"  {etiq:<26} {f.chemin_relatif}")
+    if rapport.dry_run and rapport.nb_retenus:
         typer.echo("  Relancer avec --no-dry-run pour appliquer.")
 
 

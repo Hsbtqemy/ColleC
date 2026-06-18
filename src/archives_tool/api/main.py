@@ -40,6 +40,7 @@ from archives_tool.api.routes import (
     inline_edit,
     nakala_web,
     preferences,
+    sharedocs_web,
     vocabulaires,
 )
 from archives_tool.db import assurer_tables_fts, creer_engine
@@ -102,3 +103,4 @@ app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)
 app.include_router(annotations.router)
 app.include_router(nakala_web.router)
+app.include_router(sharedocs_web.router)

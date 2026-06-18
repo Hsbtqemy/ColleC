@@ -2858,15 +2858,18 @@ dédiée avec URI + label, pas en dur dans le code.
       cascade fonds — reste un chantier dédié). `ModificationItem`
       et `OperationFichier` restent séparés (pas d'unification :
       hors scope, migration risquée pour zéro gain immédiat).
-- [ ] Intégration FTS5 sur `item` (titre, description, métadonnées).
-      **À concevoir après le premier import réel**, pour indexer ce
-      qui s'avère utile en pratique — ne pas anticiper. SQL et
-      triggers de référence rédigés dans l'historique du projet.
-      **Piège à retenir** : `render_as_batch=True` reconstruit la
-      table pour certains `ALTER` SQLite et peut perdre les triggers.
-      Prévoir `alembic/helpers.py` avec `drop_fts_triggers()` /
-      `create_fts_triggers()` à appeler en début et fin de toute
-      migration qui touche à `item`.
+- [x] **Intégration FTS5 sur `item`** (titre, description, métadonnées) —
+      **livré en V0.9.3** : `item_fts` (cote, titre, description,
+      notes_internes, `metadonnees_text` flatten JSON), tokeniseur
+      `unicode61 remove_diacritics 2`, mode standard (`snippet()`),
+      triggers de synchro + `fonds_fts` / `collection_fts`. Le piège
+      anticipé s'est confirmé et est traité : `alembic/helpers.py`
+      expose `drop_fts_triggers()` / `create_fts_triggers()` (source SQL
+      unique `db._SQL_TRIGGERS_FTS`) à encadrer toute migration
+      `batch_alter_table` sur `item`/`fonds`/`collection`. **Reste
+      futur** : étendre l'index au contenu OCR (`ocr_text`) et à
+      `description_externe` — cf. `ocr-module-future.md` (révision
+      text-first).
 
 ---
 

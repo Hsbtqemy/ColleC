@@ -45,18 +45,27 @@ def _handler(req: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=b"BYTES")
 
 
-@pytest.fixture(autouse=True)
-def _patch_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remplace ClientShareDocs par une fabrique injectant le MockTransport
-    (la vraie validation base_url/hôte/HTTPS reste exercée)."""
+def _make_fabrique(handler):
+    """Fabrique de ClientShareDocs injectant un MockTransport (la vraie
+    validation base_url/hôte/HTTPS reste exercée par le constructeur)."""
 
     def fabrique(base_url, user, password, **kw):
         kw.pop("transport", None)
         return ClientShareDocs(
-            base_url, user, password, transport=httpx.MockTransport(_handler), **kw
+            base_url, user, password, transport=httpx.MockTransport(handler), **kw
         )
 
-    monkeypatch.setattr(cli_mod, "ClientShareDocs", fabrique)
+    return fabrique
+
+
+def _patch_handler(monkeypatch: pytest.MonkeyPatch, handler) -> None:
+    """Réinstalle la fabrique avec un handler custom (override de l'autouse)."""
+    monkeypatch.setattr(cli_mod, "ClientShareDocs", _make_fabrique(handler))
+
+
+@pytest.fixture(autouse=True)
+def _patch_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli_mod, "ClientShareDocs", _make_fabrique(_handler))
 
 
 @pytest.fixture(autouse=True)
@@ -235,6 +244,175 @@ def test_importer_racine_inconnue_exit2(config: Path, db: Path) -> None:
     )
     assert r.exit_code == 2
     assert "absente" in r.output.lower()
+
+
+def _importer(config, db, *extra):
+    return runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "importer",
+            "AS-001",
+            *extra,
+            "--fonds",
+            "AS",
+            "--racine",
+            "import",
+            "--config",
+            str(config),
+            "--db-path",
+            str(db),
+        ],
+    )
+
+
+# --- correctifs de la passe de revue ---------------------------------------
+
+
+def test_lister_chemin_invalide_exit2(config: Path) -> None:
+    """`lister ../x` (traversal) = erreur de SAISIE → exit 2 (pas 1)."""
+    r = runner.invoke(
+        app, ["sharedocs", "lister", "../secret", "--config", str(config)]
+    )
+    assert r.exit_code == 2
+
+
+def test_importer_echec_total_reel_exit1(
+    config: Path, db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Échec TOTAL en --no-dry-run (tous les GET échouent) → exit 1 (scripting),
+    aucun Fichier créé."""
+    _patch_handler(monkeypatch, lambda req: httpx.Response(500))
+    r = runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "importer",
+            "AS-001",
+            "d/a.jpg",
+            "--fonds",
+            "AS",
+            "--racine",
+            "import",
+            "--no-dry-run",
+            "--config",
+            str(config),
+            "--db-path",
+            str(db),
+        ],
+    )
+    assert r.exit_code == 1
+    assert "echec_telechargement" in r.output
+    with creer_session_factory(creer_engine(db))() as s:
+        assert s.scalars(select(Fichier)).all() == []
+
+
+def test_lister_hote_interdit_via_base_url_exit2(config: Path) -> None:
+    """--base-url hors allowlist → ShareDocsHoteInterdit câblé en exit 2 (anti-SSRF)."""
+    r = runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "lister",
+            "--base-url",
+            "https://evil.example.com/dav",
+            "--config",
+            str(config),
+        ],
+    )
+    assert r.exit_code == 2
+
+
+def test_lister_base_url_http_exit2(config: Path) -> None:
+    """--base-url en http → refusé (Basic Auth jamais en clair) → exit 2."""
+    r = runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "lister",
+            "--base-url",
+            "http://sharedocs.huma-num.fr/dav",
+            "--config",
+            str(config),
+        ],
+    )
+    assert r.exit_code == 2
+
+
+def test_lister_auth_refusee_exit1(
+    config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_handler(monkeypatch, lambda req: httpx.Response(403))
+    r = runner.invoke(app, ["sharedocs", "lister", "--config", str(config)])
+    assert r.exit_code == 1
+    assert "refus" in r.output.lower()
+
+
+def test_lister_base_url_override_sans_section_sharedocs(tmp_path: Path) -> None:
+    """--base-url sauve une config sans section `sharedocs`."""
+    cfg = tmp_path / "c.yaml"
+    cfg.write_text(yaml.safe_dump({"utilisateur": "T"}), encoding="utf-8")
+    r = runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "lister",
+            "--base-url",
+            "https://sharedocs.huma-num.fr/dav/x",
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert r.exit_code == 0, r.output
+    assert "a.jpg" in r.output
+
+
+def test_importer_idempotent_et_multi_chemins(config: Path, db: Path) -> None:
+    """Multi-chemins en un appel (ordres 1,2), puis re-run → deja_en_base."""
+    r1 = _importer(config, db, "d/a.jpg", "d/b.jpg", "--no-dry-run")
+    assert r1.exit_code == 0, r1.output
+    with creer_session_factory(creer_engine(db))() as s:
+        fichiers = s.scalars(select(Fichier).order_by(Fichier.ordre)).all()
+        assert [f.ordre for f in fichiers] == [1, 2]
+    r2 = _importer(config, db, "d/a.jpg", "--no-dry-run")
+    assert r2.exit_code == 0
+    assert "deja_en_base" in r2.output
+    with creer_session_factory(creer_engine(db))() as s:
+        assert len(s.scalars(select(Fichier)).all()) == 2  # pas de doublon
+
+
+def test_importer_propage_utilisateur(config: Path, db: Path) -> None:
+    r = runner.invoke(
+        app,
+        [
+            "sharedocs",
+            "importer",
+            "AS-001",
+            "d/a.jpg",
+            "--fonds",
+            "AS",
+            "--racine",
+            "import",
+            "--no-dry-run",
+            "--utilisateur",
+            "Marie",
+            "--config",
+            str(config),
+            "--db-path",
+            str(db),
+        ],
+    )
+    assert r.exit_code == 0, r.output
+    with creer_session_factory(creer_engine(db))() as s:
+        f = s.scalars(select(Fichier)).one()
+        assert f.ajoute_par == "Marie"
+        assert f.taille_octets == len(b"BYTES")
+
+
+def test_importer_sans_chemin_exit2(config: Path, db: Path) -> None:
+    """Argument variadique requis vide → Typer exit 2 (saisie)."""
+    r = _importer(config, db)  # aucun chemin
+    assert r.exit_code == 2
 
 
 def test_importer_item_introuvable_exit1(config: Path, db: Path) -> None:

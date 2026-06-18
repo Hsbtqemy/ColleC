@@ -101,6 +101,7 @@ from archives_tool.external.sharedocs import (
     ClientShareDocs,
     ErreurShareDocs,
     ShareDocsAuthRefusee,
+    ShareDocsCheminInvalide,
     ShareDocsHoteInterdit,
     ShareDocsInjoignable,
 )
@@ -4011,6 +4012,9 @@ def cmd_sharedocs_lister(
     with _client_sharedocs_ou_sortie(config, base_url) as client:
         try:
             entrees = client.lister(chemin)
+        except ShareDocsCheminInvalide as e:  # saisie → 2 (avant ErreurShareDocs)
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(2) from None
         except ShareDocsAuthRefusee:
             typer.echo("Erreur : identifiants ShareDocs refusés (401/403).", err=True)
             raise typer.Exit(1) from None
@@ -4126,21 +4130,34 @@ def cmd_sharedocs_importer(
                 indent=2,
             )
         )
-        return
-    mode = "DRY-RUN" if rapport.dry_run else "APPLIQUÉ"
-    typer.echo(
-        f"Item {rapport.cote_item} ← ShareDocs [{mode}] : "
-        f"{rapport.nb_retenus} retenu(s), {rapport.nb_sautes} sauté(s)"
-    )
-    for f in rapport.fichiers:
-        etiq = (
-            ("✓" + (f" ({f.raison})" if f.raison else ""))
-            if f.retenu
-            else f"— {f.raison}"
+    else:
+        mode = "DRY-RUN" if rapport.dry_run else "APPLIQUÉ"
+        typer.echo(
+            f"Item {rapport.cote_item} ← ShareDocs [{mode}] : "
+            f"{rapport.nb_retenus} retenu(s), {rapport.nb_sautes} sauté(s)"
         )
-        typer.echo(f"  {etiq:<26} {f.chemin_relatif}")
-    if rapport.dry_run and rapport.nb_retenus:
-        typer.echo("  Relancer avec --no-dry-run pour appliquer.")
+        for f in rapport.fichiers:
+            etiq = (
+                ("✓" + (f" ({f.raison})" if f.raison else ""))
+                if f.retenu
+                else f"— {f.raison}"
+            )
+            typer.echo(f"  {etiq:<26} {f.chemin_relatif}")
+        if rapport.dry_run and rapport.nb_retenus:
+            typer.echo("  Relancer avec --no-dry-run pour appliquer.")
+
+    # Échec TOTAL en réel (rien retenu + au moins un échec réseau/disque) →
+    # exit 1 pour le scripting. Un succès partiel reste 0 ; un no-op
+    # idempotent (sautés = deja_en_base) reste 0.
+    if (
+        not rapport.dry_run
+        and rapport.nb_retenus == 0
+        and any(
+            f.raison in ("echec_telechargement", "echec_ecriture")
+            for f in rapport.fichiers
+        )
+    ):
+        raise typer.Exit(1)
 
 
 def main() -> None:

@@ -1356,6 +1356,15 @@ archives-tool/
 
 ## Plan de développement (phasage)
 
+> **Séquencement courant (décidé 2026-06-18) → voir
+> [`docs/developpeurs/roadmap.md`](docs/developpeurs/roadmap.md).**
+> Le forward-looking est désormais organisé **par dépendances**, pas par
+> numéro de version : **(1) Ingestion ShareDocs (client WebDAV, dé-risqué
+> par BD_ditor) → (2) OCR / recherche plein-texte (text-first) →
+> (3) Déploiement + multi-utilisateurs V1.0 → (4) Diffusion (sites
+> statiques, portail) → (5) Confort/interop V2/V3.** La section ci-dessous
+> reste la **trace de l'historique livré** + le plan V1/V2/V3 d'origine.
+
 ### V1 — Socle utilisable pour un premier chantier
 
 **Modèle de données, migrations, CLI minimale** :

@@ -1,10 +1,14 @@
-"""Tests de l'UI web ShareDocs (Chantier 1, tranche 3a) — page /sharedocs.
+"""Tests de l'UI web ShareDocs (Chantier 1, tranches 3a + 3b) — /sharedocs.
 
 `ClientShareDocs` patché sur un httpx `MockTransport` (la vraie validation
 base_url/HTTPS/hôte reste exercée), config + DB amorcées, session RAM
-réinitialisée entre tests. Couvre : formulaire de connexion, connexion
-validée → parcours, creds refusés, hôte interdit, déconnexion, fil d'Ariane,
-parcours injoignable, lecture seule (formulaire masqué + POST bloqué 423).
+réinitialisée entre tests. Couvre 3a : connexion, parcours, creds refusés,
+hôte interdit, déconnexion, fil d'Ariane (+ encodage), injoignable, lecture
+seule, auto-déconnexion creds invalides, XSS échappé, contrat session.
+Couvre 3b : formulaire d'import, aperçu dry-run, messages d'erreur
+distinctifs (aucun fichier / item introuvable / racine inconnue / non
+connecté), import réel (Fichier + binaires + ajoute_par), flash succès
+rendu, ré-import idempotent (nb_retenus==0), import partiel, blocage 423.
 """
 
 from __future__ import annotations
@@ -372,7 +376,7 @@ def test_page_connectee_montre_formulaire_import(client_import: TestClient) -> N
     assert r.status_code == 200
     assert "Importer la sélection" in r.text
     assert 'name="fichiers"' in r.text  # cases à cocher
-    assert "import" in r.text  # racine dans le select
+    assert '<option value="import"' in r.text  # racine configurée dans le select
 
 
 def test_apercu_importer_dry_run(client_import: TestClient) -> None:
@@ -398,7 +402,7 @@ def test_apercu_sans_fichier_redirige_erreur(client_import: TestClient) -> None:
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "erreur=" in r.headers["location"]
+    assert "Aucun" in r.headers["location"]  # « Aucun fichier sélectionné »
 
 
 def test_apercu_item_introuvable_redirige(client_import: TestClient) -> None:
@@ -413,7 +417,7 @@ def test_apercu_item_introuvable_redirige(client_import: TestClient) -> None:
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "erreur=" in r.headers["location"]
+    assert "introuvable" in r.headers["location"]
 
 
 def test_executer_importer_cree_fichiers(
@@ -431,11 +435,14 @@ def test_executer_importer_cree_fichiers(
     )
     assert r.status_code == 303
     assert "message=" in r.headers["location"]
-    # Fichiers créés + binaires écrits sous la racine.
+    # Fichiers créés (chemins + identité) + binaires écrits sous la racine.
     with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
-        chemins = {f.chemin_relatif for f in s.scalars(select(Fichier)).all()}
+        fichiers = s.scalars(select(Fichier)).all()
+        chemins = {f.chemin_relatif for f in fichiers}
+        assert {f.ajoute_par for f in fichiers} == {"testweb"}  # utilisateur courant
     assert chemins == {"AS-001/a.jpg", "AS-001/b.jpg"}
     assert (tmp_path / "import" / "AS-001" / "a.jpg").read_bytes() == b"BYTES"
+    assert (tmp_path / "import" / "AS-001" / "b.jpg").read_bytes() == b"BYTES"
 
 
 def test_executer_importer_racine_inconnue_exit_erreur(
@@ -452,7 +459,7 @@ def test_executer_importer_racine_inconnue_exit_erreur(
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "erreur=" in r.headers["location"]
+    assert "inconnue" in r.headers["location"]  # « Racine cible … inconnue »
 
 
 def test_apercu_non_connecte_redirige(
@@ -470,7 +477,7 @@ def test_apercu_non_connecte_redirige(
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "erreur=" in r.headers["location"]
+    assert "connect" in r.headers["location"]  # « Non connecté à ShareDocs »
 
 
 def test_executer_importer_bloque_en_lecture_seule(
@@ -507,3 +514,68 @@ def test_executer_importer_bloque_en_lecture_seule(
     assert r.status_code == 423
     with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
         assert s.scalars(select(Fichier)).all() == []  # rien écrit
+
+
+def test_executer_importer_flash_succes_rendu(client_import: TestClient) -> None:
+    """Le PRG affiche bien la bannière succès sur /sharedocs."""
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "AS-001",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    assert "fichier(s) importé(s) vers AS-001" in r.text
+
+
+def test_reimport_idempotent_aucun_retenu(client_import: TestClient) -> None:
+    """Ré-importer les mêmes fichiers : aperçu → deja_en_base, rien à
+    importer, bouton de confirmation absent."""
+    data = {
+        "fonds": "AS",
+        "item": "AS-001",
+        "racine": "import",
+        "fichiers": ["d/a.jpg"],
+    }
+    client_import.post("/sharedocs/importer", data=data, follow_redirects=False)
+    apercu = client_import.get("/sharedocs/importer", params=data)
+    assert apercu.status_code == 200
+    assert "deja_en_base" in apercu.text
+    assert "Rien à importer" in apercu.text
+    assert "Confirmer l'import" not in apercu.text
+
+
+def test_executer_importer_partiel(
+    client_import: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un fichier en échec de téléchargement → succès partiel : message
+    reflète retenus + sautés, seul le fichier OK est en base."""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "PROPFIND":
+            return httpx.Response(207, text=_MS)
+        if req.url.path.endswith("b.jpg"):
+            return httpx.Response(500)  # échec download → echec_telechargement
+        return httpx.Response(200, content=b"BYTES")
+
+    _patch(monkeypatch, handler)
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "AS-001",
+            "racine": "import",
+            "fichiers": ["d/a.jpg", "d/b.jpg"],
+        },
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    assert "1 fichier(s) importé(s)" in r.text
+    assert "1 sauté(s)" in r.text  # exerce la branche `, N sauté(s)` du message
+    with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
+        chemins = {f.chemin_relatif for f in s.scalars(select(Fichier)).all()}
+    assert chemins == {"AS-001/a.jpg"}  # b.jpg sauté

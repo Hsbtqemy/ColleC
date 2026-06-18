@@ -119,6 +119,12 @@ l'ingestion bulk + poids `bm25`.
 - **Tranche d'un coup plusieurs questions ouvertes** : auth, droits par
   collection, stratégie de sauvegarde, verrou optimiste sur suppression,
   empaquetage final.
+- **Credentials Huma-Num multi-comptes, scopés par espace** (ShareDocs +
+  Nakala) : coffre chiffré + résolveur *collection → espace → creds*,
+  rattaché aux comptes ColleC. Prérequis : auth durcie (≠ simple
+  attribution). Cf. `deploiement-future.md` § *Credentials Huma-Num
+  multi-comptes*. **D'ici là** (Chantier 1) : creds en RAM (web) / env
+  (CLI), clients *resolver-ready* (creds en paramètres explicites).
 
 **Renvois** : `deploiement-future.md`.
 

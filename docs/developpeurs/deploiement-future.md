@@ -231,6 +231,41 @@ restent visibles. Cette filtration se fait au niveau du service
 de composition (`composer_page_item` etc.), pas au niveau ORM —
 pour ne pas dupliquer la logique de chargement.
 
+### Credentials Huma-Num multi-comptes, scopés par espace (V1.0+)
+
+**Constat (2026-06-18, lors du Chantier 1 ShareDocs).** Le modèle de
+credentials Huma-Num est **par compte/espace, rattaché aux collections** —
+pas global. Plusieurs collections peuvent vivre sur des **espaces Huma-Num
+différents** (comptes ShareDocs et/ou Nakala distincts). ColleC porte
+**déjà** cette limite côté Nakala : `config_local.yaml` ne contient qu'**un
+seul** compte (`nakala: {base_url, api_key}`).
+
+**Nuance sécurité décisive — token ≠ mot de passe.**
+
+- **Nakala** = clé API (token révocable, scopable) → persistée sur disque
+  (config) aujourd'hui, acceptable.
+- **ShareDocs** = Basic Auth = **mot de passe du compte** Huma-Num. Le
+  persister exige **chiffrement au repos + une auth ColleC solide**. Or
+  l'auth V1.0 est *« attribution, pas sécurité forte »* → **inadéquate**
+  pour garder des mots de passe. Mitigation si disponible : *app-password*
+  WebDAV révocable (plus sûr à stocker que le mot de passe principal).
+
+**Décision (principe directeur n°6).** **Ne pas** bâtir le coffre
+multi-comptes maintenant. Tant qu'on est en local mono-utilisateur :
+**creds en RAM (web) + variables d'env (CLI)** ; le client
+(`ClientShareDocs` / clients Nakala) prend les creds **en paramètres
+explicites** → c'est **resolver-ready** : un futur « résolveur de
+credentials » (collection/fonds → espace → creds) se branche **devant**
+les clients, sans les retoucher.
+
+**Forme future à viser (V1.0+).** Une entité `EspaceHumaNum` (nom,
+`sharedocs_base_url`/`user`/`password` chiffré ou app-password,
+`nakala_api_key`) ; `Fonds`/`Collection` référence son espace ; un
+résolveur *collection → espace → creds*, rattaché aux comptes ColleC
+(matrice d'identités ci-dessus). Unifie ShareDocs **et** Nakala sous un
+même modèle scopé. **Prérequis** : coffre chiffré + l'auth V1.0 durcie
+pour protéger les secrets (≠ simple attribution).
+
 ## Verrou optimiste
 
 Le champ `version: int` existe déjà sur `TracabiliteMixin` (toutes

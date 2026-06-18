@@ -41,6 +41,32 @@ class NakalaConfig(BaseModel):
         return v
 
 
+class ShareDocsConfig(BaseModel):
+    """Accès ShareDocs (WebDAV Huma-Num) en lecture (Chantier 1).
+
+    Optionnelle : présente si l'utilisateur veut ingérer des fichiers
+    depuis ShareDocs sans monter le partage. **Les identifiants n'y
+    figurent JAMAIS** — ils sont fournis en RAM (web) ou par variables
+    d'environnement (CLI). On ne stocke que l'URL racine et, en option,
+    l'allowlist d'hôtes (anti-SSRF ; vide → défaut du client).
+
+    Exemple :
+        sharedocs:
+          base_url: https://sharedocs.huma-num.fr/dav/projets/colleC
+    """
+
+    base_url: str
+    hotes_autorises: list[str] = Field(default_factory=list)
+
+    @field_validator("base_url")
+    @classmethod
+    def _base_url_https(cls, v: str) -> str:
+        v = v.rstrip("/")
+        if not v.startswith("https://"):
+            raise ValueError("sharedocs.base_url doit commencer par https://")
+        return v
+
+
 class ConfigLocale(BaseModel):
     """Contenu attendu du `config_local.yaml`.
 
@@ -60,6 +86,8 @@ class ConfigLocale(BaseModel):
     lecture_seule: bool = False
     # Accès Nakala en lecture (P1) — None si non configuré.
     nakala: NakalaConfig | None = None
+    # Accès ShareDocs WebDAV (Chantier 1) — None si non configuré.
+    sharedocs: ShareDocsConfig | None = None
 
     @field_validator("racines")
     @classmethod

@@ -161,16 +161,27 @@ cibles contre les `Fichier.chemin_relatif` existants hors-batch (un
 collision intra-batch.
 
 **Résolution (2026-06-19)** — `construire_plan` (`plan.py`) reçoit, après la
-garde disque, une **garde base** : `SELECT Fichier WHERE chemin_relatif IN
-{cibles} AND id NOT IN {batch_ids}` ; toute cible qui correspond à un
-`(racine, chemin_relatif)` d'un Fichier hors-lot → op `BLOQUE` +
+garde disque, une **garde base** : pour chaque cible, on cherche un Fichier
+hors-lot qui occupe déjà ce `(racine, chemin_relatif)` → op `BLOQUE` +
 `Conflit(COLLISION_EXTERNE, "occupée en base par un autre fichier")`. Les
-fichiers du lot sont exclus (ils libèrent leur chemin actuel → un swap/cycle
-reste valide). Complémentaire de la garde disque (les ops déjà bloquées
-disque sont hors `ops_actives`). 1 test : cible = chemin d'un Fichier
-hors-lot **sans binaire sur disque** → bloquée au plan (avant, `PRET` →
-IntegrityError tardive en phase 2). Aucune régression (les renommages
-vers de nouveaux chemins, ex. `HK/...`, ne matchent aucun chemin existant).
+fichiers du lot sont exclus (ils libèrent leur chemin → un swap/cycle reste
+valide ; un NO_OP qui reste en place est un occupant légitime). Tous états
+confondus (`uq_fichier_chemin` est une UNIQUE globale). Complémentaire de la
+garde disque (les ops déjà bloquées disque sont hors `ops_actives`).
+
+**Passe de revue (corrections)** : (1) **portabilité SQLite (HIGH)** — le
+premier jet faisait un `IN`/`NOT IN` unique (~2× le nombre de fichiers
+renommés en paramètres liés) ; sur un renommage de fonds entier (PF ~7500
+scans) cela dépasse l'ancien plafond `SQLITE_MAX_VARIABLE_NUMBER = 999`
+(libsqlite3 < 3.32) → `OperationalError`. Corrigé : requête **chunkée**
+(`_TAILLE_LOT_SQL = 900`) + exclusion du lot **en Python** + `select` des
+3 colonnes utiles (pas d'hydratation ORM). (2) **test NO_OP-occupant
+(MEDIUM)** ajouté — un NO_OP binaire-absent ciblé par une autre op est bien
+bloqué par la garde base (ni intra-batch, ni disque), affirmation jusque-là
+non testée. 2 tests R3 (collision hors-lot binaire absent + NO_OP occupant) ;
+assertion durcie (`== "collision externe en base"`). Aucune régression
+(renommages vers de nouveaux chemins ne matchent aucun chemin existant ;
+swap couvert par `test_plan_mixte_cycle_et_normal_bout_en_bout`).
 
 ---
 

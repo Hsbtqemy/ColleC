@@ -306,7 +306,58 @@ def test_plan_collision_externe_en_base_binaire_absent(
     assert CodeConflit.COLLISION_EXTERNE in {c.code for c in plan.conflits}
     op = next(o for o in plan.operations if o.chemin_avant == "src.tif")
     assert op.statut == StatutPlan.BLOQUE
-    assert "base" in (op.raison or "")
+    assert op.raison == "collision externe en base"
+
+
+def test_plan_collision_en_base_avec_no_op_occupant(
+    session: Session, racine_scans: Path
+) -> None:
+    """R3 : un fichier du périmètre qui RESTE en place (NO_OP, binaire absent)
+    est un occupant légitime. Une autre op qui vise son chemin est bloquée par
+    la garde BASE — pas par l'intra-batch (qui ignore les NO_OP) ni par le
+    disque (binaire absent). Verrouille l'affirmation fragile du fix R3."""
+    creer_fonds(session, FormulaireFonds(cote="W", titre="W"))
+    fonds = lire_fonds_par_cote(session, "W")
+    item = creer_item(session, FormulaireItem(cote="W-1", titre="N", fonds_id=fonds.id))
+    # f_keep : reste en place (template = son chemin → NO_OP), binaire ABSENT.
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="keep.tif",
+            nom_fichier="keep.tif",
+            ordre=1,
+            format="tif",
+            type_page="page",
+        )
+    )
+    # f_move : binaire présent, vise "keep.tif".
+    (racine_scans / "move.tif").write_bytes(b"X")
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="move.tif",
+            nom_fichier="move.tif",
+            ordre=2,
+            format="tif",
+            type_page="page",
+        )
+    )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="keep.{ext}",  # f_keep → NO_OP ; f_move → "keep.tif"
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(item_cote="W-1", item_fonds_cote="W"),
+    )
+    assert not plan.applicable
+    op_keep = next(o for o in plan.operations if o.chemin_avant == "keep.tif")
+    op_move = next(o for o in plan.operations if o.chemin_avant == "move.tif")
+    assert op_keep.statut == StatutPlan.NO_OP  # l'occupant reste en place
+    assert op_move.statut == StatutPlan.BLOQUE
+    assert op_move.raison == "collision externe en base"
 
 
 # ---------------------------------------------------------------------------

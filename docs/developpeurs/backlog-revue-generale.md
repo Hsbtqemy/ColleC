@@ -118,11 +118,21 @@ une section **optionnelle d'accès distant** invalide est **désactivée**
 `ConfigLocale`. `lecture_seule`, `racines` et l'identité **survivent** donc
 à un `nakala.base_url` invalide. `NakalaConfig`/`ShareDocsConfig` restent
 **stricts** en construction directe (erreurs précises quand la section est
-réellement utilisée). 3 tests (`test_config.py`) : nakala invalide →
-section None mais `lecture_seule` préservé ; idem sharedocs ; section valide
-inchangée. **Scope** : volontairement limité aux 2 sections distantes
-optionnelles — un `racines` cassé (dossier absent) reste une erreur de
-config à part entière (le `model_validator` la signale), hors R2.
+réellement utilisée). **Scope** : volontairement limité aux 2 sections
+distantes optionnelles — un `racines` cassé (dossier absent) reste une
+erreur de config à part entière (le `model_validator` la signale), hors R2.
+
+**Passe de revue (corrections)** : (1) **fuite de credential évitée** — le
+premier jet loggait la `ValidationError` brute, dont le repr Pydantic inclut
+`input_value` (donc l'`api_key`) ; corrigé en ne loggant que `loc`+`msg`
+(`e.errors(include_input=False)`) + `repr=False` sur `NakalaConfig.api_key`.
+(2) **tolérance étendue aux sections non-dict** (`nakala: "x"` scalaire/liste
+→ désactivée aussi, au lieu de ré-effondrer la config). 6 tests
+(`test_config.py`) dont un **anti-fuite** (caplog : le secret n'apparaît ni
+dans les logs ni dans le repr) + nakala/sharedocs tous deux invalides +
+non-dict toléré. **Reste noté (NIT, non engagé)** : message CLI
+« section nakala absente » trompeur quand la section existe mais est
+invalide — à différencier en V1.0 si besoin.
 
 ---
 

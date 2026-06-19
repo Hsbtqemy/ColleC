@@ -78,7 +78,9 @@ class NakalaConfig(BaseModel):
 
     # Prod par défaut ; mettre `https://apitest.nakala.fr` pour les tests.
     base_url: str = "https://api.nakala.fr"
-    api_key: str | None = None
+    # `repr=False` : la clé API ne doit jamais apparaître dans un repr/log
+    # d'un NakalaConfig (doctrine « secrets jamais loggés »).
+    api_key: str | None = Field(default=None, repr=False)
     verify_ssl: bool = True
     timeout: float = 30.0
     hotes_autorises: list[str] = Field(
@@ -154,16 +156,26 @@ class ConfigLocale(BaseModel):
         des `racines` (images/dérivés) et de l'identité. Une feature
         distante mal configurée ne doit casser qu'elle-même.
         """
-        if v is None or not isinstance(v, dict):
-            return v  # None, ou déjà un modèle construit → laisser Pydantic
+        if v is None:
+            return None
         modele = NakalaConfig if info.field_name == "nakala" else ShareDocsConfig
         try:
+            # Tolère tout type invalide (dict mal formé, scalaire, liste) :
+            # n'importe quelle entrée invalide → section désactivée, jamais un
+            # effondrement de toute la config.
             return modele.model_validate(v)
         except ValidationError as e:
+            # NE PAS logger `e` brut : son repr Pydantic inclut `input_value`
+            # (donc l'api_key Nakala ou un mot de passe d'URL) — doctrine
+            # « secrets jamais loggés ». On ne garde que loc + msg, sans input.
+            details = "; ".join(
+                f"{'.'.join(str(p) for p in err['loc']) or '<racine>'}: {err['msg']}"
+                for err in e.errors(include_input=False, include_url=False)
+            )
             _logger.warning(
                 "Section '%s' du config_local ignorée (invalide) : %s",
                 info.field_name,
-                e,
+                details,
             )
             return None
 

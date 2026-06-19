@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -208,3 +209,77 @@ nakala:
     assert cfg.nakala is not None
     assert cfg.nakala.base_url == "https://apitest.nakala.fr"
     assert cfg.nakala.api_key == "k"
+
+
+def test_section_invalide_warning_sans_fuite_de_cle(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Une section nakala invalide émet un warning ciblé MAIS ne fait
+    jamais fuiter l'api_key dans les logs (doctrine secrets, R2 revue)."""
+    secret = "SECRET-LEAK-0123456789abcdef-cafe"
+    cfg_path = _ecrire_yaml(
+        tmp_path / "c.yaml",
+        f"""
+utilisateur: "M"
+nakala:
+  base_url: http://api.nakala.fr
+  api_key: {secret}
+""",
+    )
+    with caplog.at_level(logging.WARNING, logger="archives_tool.config"):
+        cfg = charger_config(cfg_path)
+    assert cfg.nakala is None
+    assert any(
+        "nakala" in r.message and "invalide" in r.message for r in caplog.records
+    )
+    assert secret not in caplog.text  # ★ pas de fuite de la clé
+    # repr=False : une clé valide n'apparaît jamais dans le repr du modèle.
+    assert secret not in repr(NakalaConfig(api_key=secret))
+
+
+def test_nakala_et_sharedocs_tous_deux_invalides(tmp_path: Path) -> None:
+    """Deux sections distantes invalides → les deux désactivées, le reste
+    de la config (sûreté + racines) intact."""
+    racine = tmp_path / "scans"
+    racine.mkdir()
+    cfg = charger_config(
+        _ecrire_yaml(
+            tmp_path / "c.yaml",
+            f"""
+utilisateur: "M"
+lecture_seule: true
+racines:
+  scans: {racine}
+nakala:
+  base_url: http://api.nakala.fr
+sharedocs:
+  base_url: http://sharedocs.huma-num.fr/dav
+""",
+        )
+    )
+    assert cfg.nakala is None
+    assert cfg.sharedocs is None
+    assert cfg.lecture_seule is True
+    assert "scans" in cfg.racines
+
+
+def test_section_non_dict_toleree(tmp_path: Path) -> None:
+    """Une section scalaire/liste mal tapée (pas un mapping) est aussi
+    tolérée (désactivée), sans ré-effondrer la config (blast-radius fermé)."""
+    racine = tmp_path / "scans"
+    racine.mkdir()
+    cfg = charger_config(
+        _ecrire_yaml(
+            tmp_path / "c.yaml",
+            f"""
+utilisateur: "M"
+lecture_seule: true
+racines:
+  scans: {racine}
+nakala: "pas un mapping"
+""",
+        )
+    )
+    assert cfg.nakala is None
+    assert cfg.lecture_seule is True
+    assert "scans" in cfg.racines

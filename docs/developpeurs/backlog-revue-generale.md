@@ -23,7 +23,8 @@ sur les zones à risque).
 
 ## R1 — Renamer : cycles + compensation phase 2 non testés `HIGH`
 
-**Origine** : préexistant. **Statut** : ouvert.
+**Origine** : préexistant. **Statut** : ✅ **COUVERT (2026-06-18)** — voir
+*Résolution* en fin de ticket. Aucun bug code trouvé ; zone désormais testée.
 **Fichiers** : `renamer/execution.py` (`_compenser_apres_phase2`, ~131-144 ;
 `mkdir`/phase 2 ~205) ; `renamer/plan.py` (`_detecter_cycles`) ;
 `tests/test_renamer.py` (trou de couverture — **aucun** test de cycle ni
@@ -48,8 +49,26 @@ comportement réel = comportement documenté.
 lever à la N-ième invocation (phase 1, phase 2, et pendant la
 compensation), sur un plan de cycle + un plan à nouvelle arborescence.
 Vérifier l'état DB↔disque après échec. Corriger le comportement si la
-compensation s'avère lacunaire. **Candidat « prochain lot de durcissement
-tests ».**
+compensation s'avère lacunaire.
+
+**Résolution (2026-06-18)** — 7 tests ajoutés à `test_renamer.py`
+(famille 5), **tous verts**, et **aucun bug code** : le moteur fait ce que
+la doc dit.
+- Détection : `_detecter_cycles` sur swap (A↔B), triple (A→B→C→A) et
+  chaîne ouverte (pas de faux cycle).
+- Exécution d'un **swap réel** : contenus échangés sur disque (le binaire
+  suit), chemins échangés en base, 2 `OperationFichier` journalées.
+- **Panne phase 1** (`monkeypatch Path.rename` au 2ᵉ rename) → restauration
+  complète disque + base, échec signalé.
+- **Panne phase 2** → compensation complète (`operations_compensees == 3`),
+  retour intégral à l'origine, **aucun fichier perdu**.
+- **Double panne** (rename phase 2 **+** une compensation) → l'opération
+  **signale bruyamment** (≥2 erreurs, dont « Compensation impossible ») ;
+  une désync disque résiduelle reste possible mais **détectable/flaggée**.
+  C'est le contrat **best-effort** assumé d'un FS non-transactionnel —
+  documenté, pas un bug. *Reste possible (non engagé)* : réduire encore la
+  désync double-panne (ex. relire l'état disque réel avant le rollback DB)
+  — gain marginal, à peser plus tard.
 
 ---
 

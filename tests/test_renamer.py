@@ -47,7 +47,13 @@ from archives_tool.renamer import (
     evaluer_template,
     executer_plan,
 )
-from archives_tool.renamer.rapport import CodeConflit, StatutPlan
+from archives_tool.renamer.plan import _detecter_cycles
+from archives_tool.renamer.rapport import (
+    CodeConflit,
+    OperationRenommage,
+    RapportPlan,
+    StatutPlan,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -351,3 +357,198 @@ def test_annulation_remet_chemins_initiaux(
         select(Fichier).where(Fichier.nom_fichier == "HK-001-001.tif")
     )
     assert f.chemin_relatif == "HK-001-001.tif"
+
+
+# ---------------------------------------------------------------------------
+# Famille 5 — cycles + compensation (R1, durcissement zone destructive)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def deux_fichiers(session: Session, racine_scans: Path) -> Session:
+    """Fonds X + item X-1 + 2 fichiers physiques distincts : a.tif (AAA),
+    b.tif (BBB). Contenus distincts pour vérifier un échange par leur
+    contenu, et petit lot pour piloter finement les pannes de rename."""
+    creer_fonds(session, FormulaireFonds(cote="X", titre="X"))
+    fonds = lire_fonds_par_cote(session, "X")
+    item = creer_item(session, FormulaireItem(cote="X-1", titre="N", fonds_id=fonds.id))
+    for nom, contenu, ordre in (("a.tif", b"AAA", 1), ("b.tif", b"BBB", 2)):
+        (racine_scans / nom).write_bytes(contenu)
+        session.add(
+            Fichier(
+                item_id=item.id,
+                racine="scans",
+                chemin_relatif=nom,
+                nom_fichier=nom,
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+    session.commit()
+    return session
+
+
+def _patch_rename(monkeypatch: pytest.MonkeyPatch, fail_on: set[int]) -> dict:
+    """Patche `Path.rename` pour lever une OSError aux N-ièmes appels listés
+    dans `fail_on` (1-indexé). Renvoie l'état du compteur (clé `n`)."""
+    import pathlib
+
+    orig = pathlib.Path.rename
+    etat = {"n": 0}
+
+    def fake(self: Path, target):  # noqa: ANN001
+        etat["n"] += 1
+        if etat["n"] in fail_on:
+            raise OSError(f"panne injectée au rename #{etat['n']}")
+        return orig(self, target)
+
+    monkeypatch.setattr(pathlib.Path, "rename", fake)
+    return etat
+
+
+# --- détection de cycles (fonction pure) ---
+
+
+def _op(avant: str, apres: str) -> OperationRenommage:
+    return OperationRenommage(
+        fichier_id=0,
+        racine="scans",
+        chemin_avant=avant,
+        chemin_apres=apres,
+        statut=StatutPlan.PRET,
+    )
+
+
+def test_detecter_cycle_swap() -> None:
+    ops = [_op("a.tif", "b.tif"), _op("b.tif", "a.tif")]
+    assert _detecter_cycles(ops) == {0, 1}
+
+
+def test_detecter_cycle_triple() -> None:
+    ops = [_op("a", "b"), _op("b", "c"), _op("c", "a")]
+    assert _detecter_cycles(ops) == {0, 1, 2}
+
+
+def test_detecter_pas_de_cycle_chaine_ouverte() -> None:
+    # a→b, b→c : chaîne ouverte (c n'est source de personne) → pas de cycle.
+    ops = [_op("a", "b"), _op("b", "c")]
+    assert _detecter_cycles(ops) == set()
+
+
+# --- exécution d'un cycle (swap réel sur disque + base) ---
+
+
+def test_execution_cycle_swap_echange_fichiers(
+    deux_fichiers: Session, racine_scans: Path
+) -> None:
+    """Un cycle A↔B est résolu par le pivot temporaire : les fichiers sont
+    réellement échangés (contenu + base), via 2 OperationFichier journalées."""
+    fa = deux_fichiers.scalar(select(Fichier).where(Fichier.nom_fichier == "a.tif"))
+    fb = deux_fichiers.scalar(select(Fichier).where(Fichier.nom_fichier == "b.tif"))
+    plan = RapportPlan(
+        operations=[
+            OperationRenommage(fa.id, "scans", "a.tif", "b.tif", StatutPlan.EN_CYCLE),
+            OperationRenommage(fb.id, "scans", "b.tif", "a.tif", StatutPlan.EN_CYCLE),
+        ]
+    )
+    assert plan.applicable
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert not rap.erreurs
+    assert rap.operations_reussies == 2
+    # Disque : contenus échangés (le fichier suit son binaire).
+    assert (racine_scans / "a.tif").read_bytes() == b"BBB"
+    assert (racine_scans / "b.tif").read_bytes() == b"AAA"
+    # Base : chemins échangés.
+    deux_fichiers.refresh(fa)
+    deux_fichiers.refresh(fb)
+    assert fa.chemin_relatif == "b.tif"
+    assert fb.chemin_relatif == "a.tif"
+    # Journal : 2 ops sur le batch.
+    ops = list(
+        deux_fichiers.scalars(
+            select(OperationFichier).where(OperationFichier.batch_id == rap.batch_id)
+        )
+    )
+    assert len(ops) == 2
+
+
+# --- compensation : pannes de rename ---
+
+
+def _plan_deux(session: Session, racine_scans: Path) -> RapportPlan:
+    return construire_plan(
+        session,
+        template="renomme/p{ordre:03d}.{ext}",
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(fonds_cote="X"),
+    )
+
+
+def _etat_disque(racine: Path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in racine.rglob("*.tif")}
+
+
+def test_compensation_echec_phase1_restaure_tout(
+    deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Panne au 2e rename de phase 1 → compensation : tout revient à l'état
+    initial (disque + base), l'échec est signalé."""
+    plan = _plan_deux(deux_fichiers, racine_scans)
+    _patch_rename(monkeypatch, fail_on={2})  # 2e src→tmp
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert rap.erreurs and "phase 1" in rap.erreurs[0]
+    assert rap.batch_id is None
+    # Disque : a.tif/b.tif intacts à leur place + contenu d'origine.
+    assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
+    # Base : chemins d'origine (rollback).
+    chemins = {
+        f.nom_fichier: f.chemin_relatif for f in deux_fichiers.scalars(select(Fichier))
+    }
+    assert chemins == {"a.tif": "a.tif", "b.tif": "b.tif"}
+
+
+def test_compensation_echec_phase2_restaure_tout(
+    deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Panne au 2e rename de phase 2 → compensation complète : retour à
+    l'état initial (disque + base), aucun fichier perdu."""
+    plan = _plan_deux(deux_fichiers, racine_scans)
+    _patch_rename(monkeypatch, fail_on={4})  # 2e tmp→dst
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert rap.erreurs and "phase 2" in rap.erreurs[0]
+    assert rap.operations_compensees == 3  # 1 (undo phase2) + 2 (undo phase1)
+    # Disque : retour intégral à l'origine (les tmp sont résorbés).
+    assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
+    chemins = {
+        f.nom_fichier: f.chemin_relatif for f in deux_fichiers.scalars(select(Fichier))
+    }
+    assert chemins == {"a.tif": "a.tif", "b.tif": "b.tif"}
+
+
+def test_compensation_double_panne_signale_l_echec(
+    deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Double panne (rename phase 2 ET une compensation) : le FS n'étant pas
+    transactionnel, une désync résiduelle est possible — le contrat est que
+    l'opération la SIGNALE bruyamment (plusieurs erreurs, dont une
+    « Compensation impossible »), pour que l'utilisateur intervienne."""
+    plan = _plan_deux(deux_fichiers, racine_scans)
+    _patch_rename(monkeypatch, fail_on={4, 5})  # phase2 #2 + 1re compensation
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert rap.batch_id is None  # pas de succès
+    assert len(rap.erreurs) >= 2
+    assert any("Compensation impossible" in e for e in rap.erreurs)
+    # Base rollback-ée à l'origine ; mais la désync disque est réelle et
+    # signalée — on vérifie qu'au moins un binaire d'origine manque de sa
+    # place (preuve que l'échec n'est pas silencieux).
+    sur_disque = _etat_disque(racine_scans)
+    assert sur_disque.get("a.tif") != b"AAA" or sur_disque.get("b.tif") != b"BBB"

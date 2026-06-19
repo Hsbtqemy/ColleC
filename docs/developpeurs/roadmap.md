@@ -40,9 +40,12 @@ Mode actuel : **local mono-utilisateur**.
 - **Quick wins** : S6 (validation licence SPDX au preflight/export) ;
   `notebooks-sdk` (page-guide — l'API publique existe déjà, ne dépend de
   rien, tirable n'importe quand).
-- **Passif / bloqué externe** : smoke S7 live + sonde S8 (vocabulaire des
-  `type` de relation) dès qu'**apitest** revient (LB up, backend down au
-  2026-06-18) ; **audit de parité apitest ↔ prod** quand on dispose d'une
+- **Passif / bloqué externe** : **apitest revenu le 2026-06-18** → suite
+  d'intégration relancée (12 passed), **smoke S7 live FAIT** + sonde
+  omit-vs-wipe résolue (→ WIPE, cf. `backlog-nakala-api.md` S7 /
+  `nakala-savoir-api.md` H12). **Reste** : **sonde S8** (strictesse du
+  vocabulaire des `type` de relation — réalisable sur apitest tant qu'il
+  répond) ; **audit de parité apitest ↔ prod** quand on dispose d'une
   **clé d'un vrai compte Huma-Num** + accord pour un dépôt sacrificiel.
 
 ---

@@ -412,3 +412,139 @@ def test_pousser_fichiers_live(tmp_path: Path) -> None:
                 pass
         ecriture.fermer()
         lecture.fermer()
+
+
+# Transcription unicode pour vérifier le round-trip exact (S7).
+_TRANSCR_S7 = "Transcription S7 — accents éàü & « citations »"
+
+
+def test_description_par_fichier_round_trip_live(tmp_path: Path) -> None:
+    """S7 smoke live : une transcription par fichier
+    (`Fichier.description_externe`) déposée est restituée à l'identique par
+    Nakala dans `files[].description` (unicode compris). Clôt le « (c) smoke
+    round-trip live » de S7."""
+    db = _amorcer_db(tmp_path)
+    scans = tmp_path / "scans"
+    scans.mkdir(exist_ok=True)
+    (scans / "s7.jpg").write_bytes(b"\xff\xd8\xff s7 round-trip")
+    racines = {"scans": scans}
+    ecriture = NakalaEcritureClient(HOTE, api_key=CLE, timeout=60)
+    lecture = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
+    doi: str | None = None
+    try:
+        with _session(db) as s:
+            f = creer_fonds(s, FormulaireFonds(cote="S7", titre="S7 smoke"))
+            item = creer_item(
+                s,
+                FormulaireItem(
+                    cote="S7-001",
+                    titre="X",
+                    fonds_id=f.id,
+                    date="1984",
+                    langue="spa",
+                    type_coar=_TYPE_LIVRE,
+                    metadonnees={"createurs": ["T, H."]},
+                ),
+            )
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    nom_fichier="s7.jpg",
+                    racine="scans",
+                    chemin_relatif="s7.jpg",
+                    ordre=1,
+                    description_externe=_TRANSCR_S7,
+                )
+            )
+            s.commit()
+            doi = deposer_item(
+                s, ecriture, item, racines=racines, dry_run=False, cree_par="s7"
+            ).doi
+        assert doi
+
+        files = lecture.lire_depot(doi).get("files") or []
+        assert len(files) == 1
+        assert files[0].get("description") == _TRANSCR_S7  # round-trip exact
+    finally:
+        if doi:
+            try:
+                ecriture.supprimer_depot(doi)
+            except Exception:  # noqa: BLE001
+                pass
+        ecriture.fermer()
+        lecture.fermer()
+
+
+def test_anti_wipe_description_au_push_fichiers_live(tmp_path: Path) -> None:
+    """S7 anti-wipe live. Sondé 2026-06-18 : Nakala **efface** (→ null) la
+    description d'un fichier si un `PUT files[]` omet sa clé. ColleC ré-émet
+    la transcription LOCALE au push → un push de fichier (binaire modifié)
+    NE doit PAS effacer la description distante."""
+    db = _amorcer_db(tmp_path)
+    scans = tmp_path / "scans"
+    scans.mkdir(exist_ok=True)
+    (scans / "aw.jpg").write_bytes(b"\xff\xd8\xff anti-wipe v1")
+    racines = {"scans": scans}
+    ecriture = NakalaEcritureClient(HOTE, api_key=CLE, timeout=60)
+    lecture = ClientLectureNakala(HOTE, api_key=CLE, timeout=60)
+    doi: str | None = None
+    try:
+        with _session(db) as s:
+            f = creer_fonds(s, FormulaireFonds(cote="AW", titre="AW smoke"))
+            item = creer_item(
+                s,
+                FormulaireItem(
+                    cote="AW-001",
+                    titre="X",
+                    fonds_id=f.id,
+                    date="1984",
+                    langue="spa",
+                    type_coar=_TYPE_LIVRE,
+                    metadonnees={"createurs": ["T, H."]},
+                ),
+            )
+            s.add(
+                Fichier(
+                    item_id=item.id,
+                    nom_fichier="aw.jpg",
+                    racine="scans",
+                    chemin_relatif="aw.jpg",
+                    ordre=1,
+                    description_externe=_TRANSCR_S7,
+                )
+            )
+            s.commit()
+            doi = deposer_item(
+                s, ecriture, item, racines=racines, dry_run=False, cree_par="aw"
+            ).doi
+        assert doi
+        assert (lecture.lire_depot(doi)["files"][0].get("description")) == _TRANSCR_S7
+
+        # Modifier le binaire → le push fera un upload + PUT files[].
+        (scans / "aw.jpg").write_bytes(b"\xff\xd8\xff anti-wipe v2 MODIFIE")
+        with _session(db) as s:
+            item = s.scalar(select(Item).where(Item.cote == "AW-001"))
+            rapport = pousser_fichiers_item(
+                s,
+                lecture,
+                ecriture,
+                item,
+                racines=racines,
+                dry_run=False,
+                modifie_par="aw",
+            )
+        assert rapport.applique is True
+        assert len(rapport.sha1s_uploades) == 1
+
+        # Le PUT a ré-émis la description locale → elle survit (un PUT naïf
+        # omettant la clé l'aurait mise à null, cf. sonde omit-vs-wipe).
+        apres = lecture.lire_depot(doi)
+        assert apres["files"][0].get("description") == _TRANSCR_S7
+    finally:
+        if doi:
+            try:
+                ecriture.supprimer_depot(doi)
+            except Exception:  # noqa: BLE001
+                pass
+        ecriture.fermer()
+        lecture.fermer()

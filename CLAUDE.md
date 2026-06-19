@@ -2824,9 +2824,14 @@ dédiée avec URI + label, pas en dur dans le code.
       LOCALE si présente, sinon préserve la distante re-lue. **Reste** :
       (a) indexation FTS5 (à réconcilier avec le plan `ocr_text` du module
       OCR — cf. [`ocr-module-future.md`](docs/developpeurs/ocr-module-future.md)
-      § *Articulation*), (b) consultation portail public (futur),
-      (c) **smoke round-trip live** (bloqué apitest down).
-      Cf. `nakala-depot-future.md` H11 + `backlog-nakala-api.md` S7.
+      § *Articulation*), (b) consultation portail public (futur).
+      **(c) smoke round-trip live : ✅ FAIT (2026-06-18, apitest revenu)** —
+      `test_description_par_fichier_round_trip_live` (round-trip identique) +
+      `test_anti_wipe_description_au_push_fichiers_live` (push préserve la
+      description). **Sonde omit-vs-wipe → WIPE** : un `PUT files[]` omettant
+      la clé `description` la met à `null` (Nakala) → anti-wipe confirmé
+      nécessaire, effacement distant désormais faisable par omission (futur
+      chemin explicite). Cf. `nakala-savoir-api.md` H12 + `backlog-nakala-api.md` S7.
 - [ ] **Activer le verrou optimiste sur `Fichier`** (`__mapper_args__
       = {"version_id_col": TracabiliteMixin.version}`). La colonne
       `Fichier.version` existe mais n'est **pas câblée** comme verrou

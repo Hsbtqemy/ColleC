@@ -616,8 +616,9 @@ Conclusions **confirmées** :
 | **H7** | Même sha1, `name` différent | **Renommage gratuit** : Nakala propage le nouveau nom sans re-upload du binaire |
 | **H10** | Lecture immédiate après `PUT` | **Consistant** (read-after-write) → on peut chaîner `PUT` → lecture sans sleep |
 | **H11** | Champ `description` par fichier | **Accepté, préservé, restitué** au `POST` et au `PUT` → ouvre la voie aux transcriptions par fichier |
+| **H12** | `PUT files[]` **omettant** (ou `description:""`) la clé `description` d'un fichier | **EFFACE** la description (→ `null`). Sondé 2026-06-18 (omit ET `""` → `null`). **Conséquences** : (a) l'**anti-wipe ColleC** — ré-émettre la transcription distante quand il n'y a pas de locale — est **nécessaire** (sinon tout push de fichier viderait les transcriptions) ; (b) l'**effacement distant est faisable** par simple omission (→ chemin d'effacement explicite possible, non encore implémenté). Validé en test : `test_anti_wipe_description_au_push_fichiers_live` (le push ColleC préserve) + `test_description_par_fichier_round_trip_live` (round-trip dépôt). |
 
-> Note : la numérotation H1-H11 a des trous (pas de H2B, H8, H9 publiés) —
+> Note : la numérotation H1-H12 a des trous (pas de H2B, H8, H9 publiés) —
 > hypothèses non posées ou non concluantes, non consignées.
 
 **Autres comportements d'écriture confirmés :**

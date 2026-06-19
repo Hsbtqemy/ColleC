@@ -342,10 +342,16 @@ Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas
   (sinon faux signal « à pousser » + non-convergence). L'effacement distant
   sera débloqué par la sonde omit-vs-wipe (savoir si Nakala traite `""` /
   l'omission comme un effacement).
-  **Reste (bloqué apitest)** : **smoke round-trip live**
-  (déposer → +description → push → re-lire → vérifier) + la sonde omit-vs-wipe
-  (confirmation anti-wipe + déblocage de l'effacement). Viabilité déjà
-  confirmée en lecture (sonde 2026-06-15) :
+  **Smoke live + sonde omit-vs-wipe : ✅ FAIT (2026-06-18, apitest revenu)** —
+  2 tests d'intégration : `test_description_par_fichier_round_trip_live`
+  (dépôt `description_externe` → re-lecture identique, unicode compris) +
+  `test_anti_wipe_description_au_push_fichiers_live` (un push de fichier
+  préserve la description). **Sonde omit-vs-wipe → WIPE** : un `PUT files[]`
+  qui omet (ou vide `""`) la clé `description` la met à `null` côté Nakala
+  (cf. `nakala-savoir-api.md` H12). Donc l'anti-wipe est confirmé
+  **nécessaire**, ET l'**effacement distant devient faisable** par omission
+  → futur chemin d'effacement explicite (lever la « Limite assumée »
+  ci-dessus). Viabilité déjà confirmée en lecture (sonde 2026-06-15) :
   round-trip à l'identique (unicode compris), ajout **APRÈS dépôt sans
   re-upload** (`PUT {files:[{même sha1, +description}]}`). ⚠️ Limite Nakala :
   **aucune métadonnée structurée par fichier** (champs extra / `metas[]` par

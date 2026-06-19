@@ -142,3 +142,69 @@ def test_nakala_hotes_autorises_surchargeable() -> None:
         hotes_autorises=["nakala.mon-instance.fr"],
     )
     assert cfg.base_url == "https://nakala.mon-instance.fr"
+
+
+# --- R2 : une section distante invalide ne fait pas tomber TOUTE la config ---
+
+
+def test_nakala_invalide_ne_fait_pas_tomber_la_config(tmp_path: Path) -> None:
+    """Un `nakala.base_url` invalide désactive la SECTION nakala (→ None)
+    sans perdre `lecture_seule` / `racines` / l'identité (backlog R2)."""
+    racine = tmp_path / "scans"
+    racine.mkdir()
+    cfg = charger_config(
+        _ecrire_yaml(
+            tmp_path / "c.yaml",
+            f"""
+utilisateur: "Marie"
+lecture_seule: true
+racines:
+  scans: {racine}
+nakala:
+  base_url: http://api.nakala.fr
+""",
+        )
+    )
+    assert cfg.nakala is None  # section désactivée
+    assert cfg.lecture_seule is True  # ★ mode sûreté préservé
+    assert cfg.utilisateur == "Marie"
+    assert "scans" in cfg.racines
+
+
+def test_sharedocs_invalide_ne_fait_pas_tomber_la_config(tmp_path: Path) -> None:
+    racine = tmp_path / "scans"
+    racine.mkdir()
+    cfg = charger_config(
+        _ecrire_yaml(
+            tmp_path / "c.yaml",
+            f"""
+utilisateur: "Marie"
+lecture_seule: true
+racines:
+  scans: {racine}
+sharedocs:
+  base_url: http://sharedocs.huma-num.fr/dav
+""",
+        )
+    )
+    assert cfg.sharedocs is None
+    assert cfg.lecture_seule is True
+    assert "scans" in cfg.racines
+
+
+def test_nakala_valide_reste_construit(tmp_path: Path) -> None:
+    """La tolérance ne casse pas une section valide."""
+    cfg = charger_config(
+        _ecrire_yaml(
+            tmp_path / "c.yaml",
+            """
+utilisateur: "Marie"
+nakala:
+  base_url: https://apitest.nakala.fr
+  api_key: k
+""",
+        )
+    )
+    assert cfg.nakala is not None
+    assert cfg.nakala.base_url == "https://apitest.nakala.fr"
+    assert cfg.nakala.api_key == "k"

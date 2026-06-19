@@ -87,7 +87,8 @@ l'état disque avant rollback DB) — gain marginal, à peser plus tard.
 
 **Origine** : comportement préexistant **élargi par le Lot 3** (49c5e0d :
 le validateur SSRF de `NakalaConfig` rejette désormais `http://` et les
-hôtes hors allowlist). **Statut** : ouvert.
+hôtes hors allowlist). **Statut** : ✅ **RÉSOLU (2026-06-18)** — voir
+*Résolution* en fin de ticket.
 **Fichiers** : `api/deps.py` (`_charger_config_cache`, ~63 : `except
 (YAMLError, ValidationError, ValueError) → return None`) ; `config.py`
 (`NakalaConfig._valider_base_url`).
@@ -109,6 +110,19 @@ l'angle « perte silencieuse de `lecture_seule` » est réel.
 cas de sous-validation Nakala invalide, soit préserver les champs de
 sûreté (`lecture_seule`, `racines`, `utilisateur`) même quand une
 sous-section échoue. Émettre un warning plus visible.
+
+**Résolution (2026-06-18)** — `ConfigLocale` reçoit un `field_validator(
+"nakala", "sharedocs", mode="before")` `_tolerer_section_distante_invalide` :
+une section **optionnelle d'accès distant** invalide est **désactivée**
+(→ None) avec un `logger.warning` ciblé, au lieu de faire échouer toute la
+`ConfigLocale`. `lecture_seule`, `racines` et l'identité **survivent** donc
+à un `nakala.base_url` invalide. `NakalaConfig`/`ShareDocsConfig` restent
+**stricts** en construction directe (erreurs précises quand la section est
+réellement utilisée). 3 tests (`test_config.py`) : nakala invalide →
+section None mais `lecture_seule` préservé ; idem sharedocs ; section valide
+inchangée. **Scope** : volontairement limité aux 2 sections distantes
+optionnelles — un `racines` cassé (dossier absent) reste une erreur de
+config à part entière (le `model_validator` la signale), hors R2.
 
 ---
 

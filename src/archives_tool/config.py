@@ -7,11 +7,20 @@ physiques des racines logiques. Jamais versionné, jamais partagé.
 from __future__ import annotations
 
 import ipaddress
+import logging
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+_logger = logging.getLogger(__name__)
 
 #: Hôtes Nakala légitimes par défaut (prod + apitest, variante à tiret
 #: incluse). Surchargeable via `nakala.hotes_autorises` pour un proxy ou
@@ -131,6 +140,32 @@ class ConfigLocale(BaseModel):
     nakala: NakalaConfig | None = None
     # Accès ShareDocs WebDAV (Chantier 1) — None si non configuré.
     sharedocs: ShareDocsConfig | None = None
+
+    @field_validator("nakala", "sharedocs", mode="before")
+    @classmethod
+    def _tolerer_section_distante_invalide(cls, v, info):  # noqa: ANN001
+        """Une section optionnelle d'accès distant (`nakala`/`sharedocs`)
+        invalide est **désactivée** (→ None) avec un avertissement, plutôt
+        que de faire échouer TOUTE la `ConfigLocale`.
+
+        Sans ça (backlog revue R2), un `nakala.base_url` invalide — cas
+        élargi par le durcissement SSRF — ferait tomber la config entière
+        aux défauts : perte silencieuse de `lecture_seule` (mode sûreté),
+        des `racines` (images/dérivés) et de l'identité. Une feature
+        distante mal configurée ne doit casser qu'elle-même.
+        """
+        if v is None or not isinstance(v, dict):
+            return v  # None, ou déjà un modèle construit → laisser Pydantic
+        modele = NakalaConfig if info.field_name == "nakala" else ShareDocsConfig
+        try:
+            return modele.model_validate(v)
+        except ValidationError as e:
+            _logger.warning(
+                "Section '%s' du config_local ignorée (invalide) : %s",
+                info.field_name,
+                e,
+            )
+            return None
 
     @field_validator("racines")
     @classmethod

@@ -223,12 +223,13 @@ interne, consommation **aval** ».
 - **Backlog revue générale (2026-06-18)** — 5 tickets résiduels d'une revue
   en profondeur, dans
   [`backlog-revue-generale.md`](backlog-revue-generale.md) : **R1** renamer
-  cycles/compensation **✅ couvert** (7 tests cycles + compensation ajoutés,
-  aucun bug code), **R2** config blast-radius (un `nakala.base_url`
-  invalide perd `lecture_seule`/`racines` — élargi au Lot 3 SSRF, candidat
-  correctif court), **R3** collision plan.py disque-seul vs base, **R4**
-  mkdir orphelins au rollback, **R5** `Fichier.item_id` sans `ON DELETE
-  CASCADE`. Sécurité + invariants vérifiés sains (aucun ticket).
+  cycles/compensation **✅ couvert** (8 tests, aucun bug code), **R2** config
+  blast-radius **✅ corrigé** (section `nakala`/`sharedocs` invalide
+  désactivée seule, `lecture_seule`/`racines` préservés), **R3** collision
+  plan.py disque-seul vs base, **R4** mkdir orphelins au rollback (verrouillé
+  par test), **R5** `Fichier.item_id` sans `ON DELETE CASCADE`. Restent
+  ouverts : **R3** et **R5** (R4 documenté/testé). Sécurité + invariants
+  vérifiés sains (aucun ticket).
 - **Audit de parité Nakala apitest ↔ prod** (quand clé Huma-Num).
 - Tests verts, doc + mémoire à jour, git propre.
 

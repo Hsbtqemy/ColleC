@@ -51,24 +51,35 @@ compensation), sur un plan de cycle + un plan à nouvelle arborescence.
 Vérifier l'état DB↔disque après échec. Corriger le comportement si la
 compensation s'avère lacunaire.
 
-**Résolution (2026-06-18)** — 7 tests ajoutés à `test_renamer.py`
-(famille 5), **tous verts**, et **aucun bug code** : le moteur fait ce que
-la doc dit.
+**Résolution (2026-06-18)** — 8 tests ajoutés à `test_renamer.py`
+(famille 5), **tous verts**. **Aucun bug** trouvé **dans les chemins
+exercés ni dans les topologies cyclique/mixte qui partagent ce code**
+(vérifié par 2 relecteurs : la robustesse vient structurellement du pivot
+temporaire universel — phase 1 déplace toutes les sources vers des `.tmp`
+uniques avant toute écriture de cible, donc swap/cycle/normal empruntent
+les mêmes lignes en exécution comme en compensation).
 - Détection : `_detecter_cycles` sur swap (A↔B), triple (A→B→C→A) et
   chaîne ouverte (pas de faux cycle).
 - Exécution d'un **swap réel** : contenus échangés sur disque (le binaire
   suit), chemins échangés en base, 2 `OperationFichier` journalées.
-- **Panne phase 1** (`monkeypatch Path.rename` au 2ᵉ rename) → restauration
-  complète disque + base, échec signalé.
-- **Panne phase 2** → compensation complète (`operations_compensees == 3`),
-  retour intégral à l'origine, **aucun fichier perdu**.
+- **Bout-en-bout `construire_plan` (cycle + renommage normal mélangés) →
+  exécution** : exerce le pont détection→tag→exécution complet + le
+  remapping d'indices `pret_indices → globaux` (plan.py), non couvert par
+  le swap construit à la main.
+- **Panne phase 1 / phase 2** (`monkeypatch Path.rename`) → restauration
+  complète disque + base, échec signalé, **compte de renames verrouillé**
+  (assertion sur le nombre total, pour que l'ajout futur d'un rename casse
+  le test au lieu de glisser en silence).
 - **Double panne** (rename phase 2 **+** une compensation) → l'opération
   **signale bruyamment** (≥2 erreurs, dont « Compensation impossible ») ;
   une désync disque résiduelle reste possible mais **détectable/flaggée**.
-  C'est le contrat **best-effort** assumé d'un FS non-transactionnel —
-  documenté, pas un bug. *Reste possible (non engagé)* : réduire encore la
-  désync double-panne (ex. relire l'état disque réel avant le rollback DB)
-  — gain marginal, à peser plus tard.
+  Contrat **best-effort** d'un FS non-transactionnel — documenté, pas un bug.
+- **R4 verrouillé en passant** : le test phase-2 asserte que le dossier
+  `renomme/` vide **subsiste** (le moteur ne nettoie pas les répertoires
+  créés) — transforme R4 d'angle mort en comportement explicitement testé.
+
+*Reste possible (non engagé)* : réduire la désync double-panne (relire
+l'état disque avant rollback DB) — gain marginal, à peser plus tard.
 
 ---
 

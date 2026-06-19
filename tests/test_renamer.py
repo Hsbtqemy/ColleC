@@ -497,12 +497,17 @@ def test_compensation_echec_phase1_restaure_tout(
     """Panne au 2e rename de phase 1 → compensation : tout revient à l'état
     initial (disque + base), l'échec est signalé."""
     plan = _plan_deux(deux_fichiers, racine_scans)
-    _patch_rename(monkeypatch, fail_on={2})  # 2e src→tmp
+    etat = _patch_rename(monkeypatch, fail_on={2})  # 2e src→tmp
     rap = executer_plan(
         deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
     )
     assert rap.erreurs and "phase 1" in rap.erreurs[0]
     assert rap.batch_id is None
+    # Compte de renames verrouillé : 2 phase 1 (dont 1 échoue) + 1 compensation
+    # du seul appliqué. Fige le couplage des indices `fail_on` (un rename
+    # ajouté ailleurs ferait échouer cette assertion plutôt que glisser en
+    # silence).
+    assert etat["n"] == 3
     # Disque : a.tif/b.tif intacts à leur place + contenu d'origine.
     assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
     # Base : chemins d'origine (rollback).
@@ -515,17 +520,23 @@ def test_compensation_echec_phase1_restaure_tout(
 def test_compensation_echec_phase2_restaure_tout(
     deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Panne au 2e rename de phase 2 → compensation complète : retour à
-    l'état initial (disque + base), aucun fichier perdu."""
+    """Panne au 2e rename de phase 2 → compensation complète : les FICHIERS
+    reviennent à l'origine (disque + base), aucun binaire perdu."""
     plan = _plan_deux(deux_fichiers, racine_scans)
-    _patch_rename(monkeypatch, fail_on={4})  # 2e tmp→dst
+    etat = _patch_rename(monkeypatch, fail_on={4})  # 2e tmp→dst
     rap = executer_plan(
         deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
     )
     assert rap.erreurs and "phase 2" in rap.erreurs[0]
     assert rap.operations_compensees == 3  # 1 (undo phase2) + 2 (undo phase1)
-    # Disque : retour intégral à l'origine (les tmp sont résorbés).
+    # Compte verrouillé : 2 (phase1) + 2 (phase2, 1 échoue) + 3 (compensation).
+    assert etat["n"] == 7
+    # Disque : les .tif reviennent intégralement à l'origine (tmp résorbés).
     assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
+    # R4 (dette connue) : le dossier `renomme/` créé en phase 2 subsiste
+    # vide — le moteur ne nettoie pas les répertoires créés. Verrouillé ici
+    # pour documenter le comportement (cf. backlog-revue-generale R4).
+    assert (racine_scans / "renomme").is_dir()
     chemins = {
         f.nom_fichier: f.chemin_relatif for f in deux_fichiers.scalars(select(Fichier))
     }
@@ -552,3 +563,64 @@ def test_compensation_double_panne_signale_l_echec(
     # place (preuve que l'échec n'est pas silencieux).
     sur_disque = _etat_disque(racine_scans)
     assert sur_disque.get("a.tif") != b"AAA" or sur_disque.get("b.tif") != b"BBB"
+
+
+# --- bout-en-bout : construire_plan (cycle + normal mélangés) → exécution ---
+
+
+def test_plan_mixte_cycle_et_normal_bout_en_bout(
+    session: Session, racine_scans: Path
+) -> None:
+    """Un même `construire_plan` produit un cycle (swap) ET un renommage
+    normal, puis l'exécute. Exerce le pont détection→tag→exécution complet
+    + le remapping d'indices `pret_indices → globaux` (plan.py), non couvert
+    par le test de swap qui fabrique le plan à la main.
+
+    Setup : fichiers nommés à l'envers de leur ordre pour forcer un swap via
+    template `{cote}-{ordre:03d}.{ext}` (cote item = `Y`) :
+    - f1 ordre 1, chemin `Y-002.tif` → cible `Y-001.tif`  ┐ swap (EN_CYCLE)
+    - f2 ordre 2, chemin `Y-001.tif` → cible `Y-002.tif`  ┘
+    - f3 ordre 3, chemin `autre.tif` → cible `Y-003.tif`    (PRET normal)
+    """
+    creer_fonds(session, FormulaireFonds(cote="Y", titre="Y"))
+    fonds = lire_fonds_par_cote(session, "Y")
+    item = creer_item(session, FormulaireItem(cote="Y", titre="N", fonds_id=fonds.id))
+    for nom, contenu, ordre in (
+        ("Y-002.tif", b"UN", 1),
+        ("Y-001.tif", b"DEUX", 2),
+        ("autre.tif", b"TROIS", 3),
+    ):
+        (racine_scans / nom).write_bytes(contenu)
+        session.add(
+            Fichier(
+                item_id=item.id,
+                racine="scans",
+                chemin_relatif=nom,
+                nom_fichier=nom,
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="{cote}-{ordre:03d}.{ext}",
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(fonds_cote="Y"),
+    )
+    assert plan.applicable
+    statuts = {op.chemin_avant: op.statut for op in plan.operations}
+    assert statuts["Y-002.tif"] == StatutPlan.EN_CYCLE  # swap
+    assert statuts["Y-001.tif"] == StatutPlan.EN_CYCLE  # swap
+    assert statuts["autre.tif"] == StatutPlan.PRET  # normal
+
+    rap = executer_plan(session, plan, racines=_racines(racine_scans), dry_run=False)
+    assert not rap.erreurs
+    assert rap.operations_reussies == 3
+    # Le swap a échangé les binaires ; le normal a renommé autre→Y-003.
+    assert (racine_scans / "Y-001.tif").read_bytes() == b"UN"  # f1 (était Y-002)
+    assert (racine_scans / "Y-002.tif").read_bytes() == b"DEUX"  # f2 (était Y-001)
+    assert (racine_scans / "Y-003.tif").read_bytes() == b"TROIS"  # f3
+    assert not (racine_scans / "autre.tif").exists()

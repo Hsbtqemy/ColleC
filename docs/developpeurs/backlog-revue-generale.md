@@ -138,7 +138,8 @@ invalide — à différencier en V1.0 si besoin.
 
 ## R3 — plan.py : collision externe détectée par disque seul, pas en base `MEDIUM`
 
-**Origine** : préexistant. **Statut** : ouvert.
+**Origine** : préexistant. **Statut** : ✅ **RÉSOLU (2026-06-19)** — voir
+*Résolution* en fin de ticket.
 **Fichiers** : `renamer/plan.py` (`construire_plan`, ~279-302) ;
 contrainte `uq_fichier_chemin` (`models/fichier.py:137`).
 
@@ -158,6 +159,18 @@ opaque et tardif** au lieu d'un conflit propre détecté en amont.
 cibles contre les `Fichier.chemin_relatif` existants hors-batch (un
 `SELECT` sur `(racine, chemin_apres)`), symétrique à la détection de
 collision intra-batch.
+
+**Résolution (2026-06-19)** — `construire_plan` (`plan.py`) reçoit, après la
+garde disque, une **garde base** : `SELECT Fichier WHERE chemin_relatif IN
+{cibles} AND id NOT IN {batch_ids}` ; toute cible qui correspond à un
+`(racine, chemin_relatif)` d'un Fichier hors-lot → op `BLOQUE` +
+`Conflit(COLLISION_EXTERNE, "occupée en base par un autre fichier")`. Les
+fichiers du lot sont exclus (ils libèrent leur chemin actuel → un swap/cycle
+reste valide). Complémentaire de la garde disque (les ops déjà bloquées
+disque sont hors `ops_actives`). 1 test : cible = chemin d'un Fichier
+hors-lot **sans binaire sur disque** → bloquée au plan (avant, `PRET` →
+IntegrityError tardive en phase 2). Aucune régression (les renommages
+vers de nouveaux chemins, ex. `HK/...`, ne matchent aucun chemin existant).
 
 ---
 

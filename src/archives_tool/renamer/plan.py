@@ -301,6 +301,42 @@ def construire_plan(
             op.statut = StatutPlan.BLOQUE
             op.raison = "collision externe sur disque"
 
+    # Collision externe EN BASE : la cible correspond au `chemin_relatif`
+    # d'un Fichier HORS-lot. La garde disque ci-dessus ne la voit pas si le
+    # binaire est absent (cas fréquent : items rapatriés de Nakala, scans
+    # pas encore copiés). Sans ça, la phase 2 violerait `uq_fichier_chemin`
+    # tardivement (IntegrityError → rollback compensateur) au lieu d'un
+    # conflit propre signalé ici. Les fichiers du lot sont exclus (ils
+    # libèrent leur chemin actuel — un swap/cycle reste valide).
+    ops_actives = [
+        op for op in operations if op.statut in (StatutPlan.PRET, StatutPlan.EN_CYCLE)
+    ]
+    cibles_apres = {op.chemin_apres for op in ops_actives}
+    batch_ids = {op.fichier_id for op in ops_actives}
+    if cibles_apres:
+        rows = session.scalars(
+            select(Fichier).where(
+                Fichier.chemin_relatif.in_(list(cibles_apres)),
+                Fichier.id.notin_(list(batch_ids)),
+            )
+        ).all()
+        occupes_en_base = {(f.racine, f.chemin_relatif) for f in rows}
+        for op in ops_actives:
+            if (op.racine, op.chemin_apres) in occupes_en_base:
+                rap.conflits.append(
+                    Conflit(
+                        code=CodeConflit.COLLISION_EXTERNE,
+                        message=(
+                            f"Fichier {op.fichier_id} : la cible "
+                            f"{op.racine}:{op.chemin_apres} est déjà occupée en "
+                            "base par un autre fichier (hors lot)."
+                        ),
+                        fichier_ids=[op.fichier_id],
+                    )
+                )
+                op.statut = StatutPlan.BLOQUE
+                op.raison = "collision externe en base"
+
     rap.operations = operations
     rap.duree_secondes = time.perf_counter() - debut
     return rap

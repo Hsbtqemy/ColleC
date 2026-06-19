@@ -255,6 +255,60 @@ def test_plan_no_op_si_template_identique(
     assert plan.nb_renommages == 0
 
 
+def test_plan_collision_externe_en_base_binaire_absent(
+    session: Session, racine_scans: Path
+) -> None:
+    """R3 : une cible correspondant au `chemin_relatif` d'un Fichier HORS-lot
+    dont le binaire est ABSENT du disque (cas import Nakala) est bloquée au
+    PLAN — sinon `uq_fichier_chemin` lèverait tardivement en phase 2."""
+    creer_fonds(session, FormulaireFonds(cote="Z", titre="Z"))
+    fonds = lire_fonds_par_cote(session, "Z")
+    item1 = creer_item(
+        session, FormulaireItem(cote="Z-1", titre="N", fonds_id=fonds.id)
+    )
+    item2 = creer_item(
+        session, FormulaireItem(cote="Z-2", titre="M", fonds_id=fonds.id)
+    )
+    # f1 : dans le lot (item Z-1), binaire présent.
+    (racine_scans / "src.tif").write_bytes(b"X")
+    session.add(
+        Fichier(
+            item_id=item1.id,
+            racine="scans",
+            chemin_relatif="src.tif",
+            nom_fichier="src.tif",
+            ordre=1,
+            format="tif",
+            type_page="page",
+        )
+    )
+    # f2 : HORS lot (item Z-2), occupe "occupe.tif" en base mais SANS binaire.
+    session.add(
+        Fichier(
+            item_id=item2.id,
+            racine="scans",
+            chemin_relatif="occupe.tif",
+            nom_fichier="occupe.tif",
+            ordre=1,
+            format="tif",
+            type_page="page",
+        )
+    )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="occupe.{ext}",  # f1 → "occupe.tif" = chemin de f2 (hors lot)
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(item_cote="Z-1", item_fonds_cote="Z"),
+    )
+    assert not plan.applicable
+    assert CodeConflit.COLLISION_EXTERNE in {c.code for c in plan.conflits}
+    op = next(o for o in plan.operations if o.chemin_avant == "src.tif")
+    assert op.statut == StatutPlan.BLOQUE
+    assert "base" in (op.raison or "")
+
+
 # ---------------------------------------------------------------------------
 # Famille 3 — exécution transactionnelle
 # ---------------------------------------------------------------------------

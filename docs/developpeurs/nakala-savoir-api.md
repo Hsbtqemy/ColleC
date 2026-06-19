@@ -152,6 +152,47 @@ découverts en live et qui structurent tout le reste :
 > C'est ce qu'emploie `pousser_fichiers_item` (ticket T2). Cf. Partie II
 > §13 et §15.
 
+### Métadonnées granulaires (`POST`/`DELETE …/metadatas`) — validé live
+
+Symétrique des endpoints granulaires de fichiers, sondé contre apitest
+(`scripts/explorer_metadatas_granulaire_nakala.py`, dépôts `pending`
+jetables, 2026-06-19) :
+
+- **`POST /datas/{id}/metadatas` est ADDITIF** : corps = **une** meta
+  `{propertyUri, value, lang?, typeUri?}` → **201** `{code:201,
+  message:"<n>"}` (`<n>` = nombre de metas ajoutées). Ajoute la valeur sans
+  toucher les autres metas.
+- **Sur une propriété scalaire (`nkl:title`), POST ne remplace PAS — il crée
+  un DOUBLON** (le dépôt se retrouve avec deux `nkl:title`). Modifier un
+  scalaire impose donc **DELETE puis POST** (ou POST-puis-DELETE pour un
+  champ obligatoire, cf. ci-dessous).
+- **`GET /datas/{id}/metadatas`** → 200 ; chaque meta = `{lang, propertyUri,
+  typeUri, value}`, **sans id propre** : une meta s'identifie par son
+  **tuple**. ⚠️ le `typeUri` relu est **`null`** (Nakala le nullifie au
+  stockage, comme pour les metas de collection) — un diff doit matcher sur
+  `(propertyUri, value, lang)`, **pas** sur `typeUri`.
+- **`DELETE /datas/{id}/metadatas` est granulaire À LA VALEUR** : corps = la
+  meta exacte `{propertyUri, value, lang, typeUri}` → **200** `{code:200,
+  message:"1 metadata deleted"}` ; retire **la valeur ciblée** en gardant
+  les autres valeurs du même `propertyUri`. La variante par chemin
+  (`DELETE …/metadatas/{propertyUri}`) **n'existe pas** (→ 404).
+- **DELETE d'un champ obligatoire** (`nkl:title`, valeur unique) → **422**
+  `validationErrors:["The metadata …#title is required."]` (refusé — analogue
+  du retrait du dernier fichier, 403).
+- **`POST` d'un `propertyUri` inconnu** → **500** « Invalid metadata
+  property : … » (validation, mais code 500 — non fiable, comme les 500 des
+  endpoints fichiers).
+
+> **→ côté ColleC** : combinaison **additif + DELETE-à-la-valeur** → le push
+> de métadonnées pourrait devenir **granulaire** comme l'a été le push de
+> fichiers (T2) : POST les metas ajoutées, DELETE les retirées, ne pas
+> toucher les inchangées. Bénéfice clé : le **faux-diff « créateur enrichi au
+> stockage »** disparaît (créateurs inchangés jamais renvoyés) → la
+> canonicalisation de `diff_push` deviendrait inutile sur ce chemin. Caveats :
+> update d'un scalaire requis = POST-new-puis-DELETE-old ; diff par tuple
+> `(propertyUri, value, lang)`. **Ticket T4** de `backlog-nakala-api.md`
+> (non encore décidé). Cf. Partie II §13.
+
 ### Pièges de structure de réponse
 
 - **DOI à la création** : `POST /datas` peut renvoyer le DOI sous plusieurs

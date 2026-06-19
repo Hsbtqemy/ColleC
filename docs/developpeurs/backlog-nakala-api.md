@@ -219,6 +219,64 @@ logguer de PII (les libellés sont des URIs de propriété, sans donnée).
 
 ---
 
+## T4 — Push de métadonnées granulaire (`POST/DELETE …/metadatas`) `☐` · P2 · risque élevé
+
+> **Sonde préalable ✓ faite** (`scripts/explorer_metadatas_granulaire_nakala.py`,
+> live apitest 2026-06-19). **Décision d'implémentation non prise** : la voie
+> est techniquement viable, mais c'est une réécriture du cœur du push de
+> métadonnées (`pousser_item`/`diff_push`) — à arbitrer vs le `PUT metas[]`
+> actuel qui fonctionne.
+
+**Constat (live 2026-06-19).** Le push de métadonnées passe aujourd'hui par
+`PUT /datas/{id}` `metas[]` qui **remplace intégralement** la liste — d'où la
+machinerie `diff_push` + **canonicalisation des créateurs** (Nakala enrichit
+les créateurs au stockage → faux diff sinon). Les endpoints granulaires
+existent et ont été sondés :
+
+- **`POST /datas/{id}/metadatas` = ADDITIF** (corps = une meta `{propertyUri,
+  value, lang?, typeUri?}` → 201) : ajoute sans toucher le reste.
+- **`DELETE /datas/{id}/metadatas` granulaire À LA VALEUR** (corps = la meta
+  exacte → 200 « 1 metadata deleted ») : retire la valeur ciblée, garde les
+  autres valeurs du `propertyUri`. Pas d'id propre — identification par tuple ;
+  `typeUri` distant relu = **null** (nullifié au stockage).
+- Sur un scalaire (`nkl:title`), POST **crée un doublon** (n'écrase pas) →
+  update d'un scalaire = DELETE+POST. DELETE d'un champ obligatoire (titre
+  unique) → 422 « is required ». propertyUri inconnu → 500.
+- Détail exhaustif : `nakala-savoir-api.md` Partie I §2 (*Métadonnées
+  granulaires*).
+
+**Changement proposé.** Réécrire `pousser_item` en opérations granulaires
+(comme T2 pour les fichiers) :
+- `write_client` : `ajouter_meta(doi, meta)` (`POST …/metadatas`),
+  `supprimer_meta(doi, meta)` (`DELETE …/metadatas`, corps = la meta) ;
+- diff par **tuple `(propertyUri, value, lang)`** (ignorer `typeUri`,
+  nullifié) : metas ajoutées → POST ; retirées → DELETE ; inchangées →
+  **ne pas toucher** ;
+- update d'un **scalaire obligatoire** (titre/type) = **POST-new puis
+  DELETE-old** (le DELETE de l'unique valeur est refusé en 422) ;
+- conséquence : les **créateurs inchangés ne sont jamais renvoyés** → la
+  canonicalisation de `diff_push` devient inutile sur ce chemin.
+
+**Critères d'acceptation.**
+- Smoke live opt-in (apitest) : dépôt → modifier une valeur multi-valuée
+  (un sujet) + le titre → push granulaire → relecture conforme, **metas non
+  touchées intactes**, **pas de doublon** de titre.
+- Tests unitaires des 2 méthodes client (httpx mocké).
+- Diff robuste au `typeUri` null distant ; matching `lang` correct
+  (RFC5646, cf. bug #422).
+
+**Pièges.**
+- **Atomicité** : N appels (comme T2) — ordre sûr (POST-avant-DELETE pour un
+  scalaire requis), reprise idempotente.
+- **Codes non fiables** : propertyUri inconnu → 500 (pas 422) → valider en
+  amont (déjà couvert par `SLUG_TO_NAKALA`).
+- **Risque/effort élevé** : réécriture du cœur du push vs `PUT` qui marche →
+  ne pas se lancer sans bénéfice concret (un round-trip créateur récalcitrant,
+  un gros item où le PUT complet coûte). Garder le `PUT metas[]` en fallback.
+- Ne pas casser la dérive (`modDate`) ni le re-pull de `pousser_item`.
+
+---
+
 ## Opportunités secondaires (repérées au sondage, à arbitrer plus tard)
 
 Plus légères, pas de ticket détaillé tant qu'un besoin concret n'émerge pas :

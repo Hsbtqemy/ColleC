@@ -42,11 +42,11 @@ Mode actuel : **local mono-utilisateur**.
   rien, tirable n'importe quand).
 - **Passif / bloqué externe** : **apitest revenu le 2026-06-18** → suite
   d'intégration relancée (12 passed), **smoke S7 live FAIT** + sonde
-  omit-vs-wipe résolue (→ WIPE, cf. `backlog-nakala-api.md` S7 /
-  `nakala-savoir-api.md` H12). **Reste** : **sonde S8** (strictesse du
-  vocabulaire des `type` de relation — réalisable sur apitest tant qu'il
-  répond) ; **audit de parité apitest ↔ prod** quand on dispose d'une
-  **clé d'un vrai compte Huma-Num** + accord pour un dépôt sacrificiel.
+  omit-vs-wipe résolue (→ WIPE, cf. `nakala-savoir-api.md` H12) + **sonde
+  S8/V1 résolue** (strictesse `type` de relation → **LAX**, cf. V1 du
+  backlog). **Reste uniquement** : **audit de parité apitest ↔ prod** quand
+  on dispose d'une **clé d'un vrai compte Huma-Num** + accord pour un dépôt
+  sacrificiel.
 
 ---
 

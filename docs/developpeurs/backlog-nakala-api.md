@@ -421,15 +421,16 @@ Sondes apitest pas encore faites — à compléter quand l'occasion se présente
 (toutes faisables sur les dépôts publiés déjà sacrifiés, sans nouvelle
 pollution) :
 
-- **V1 — Vocabulaire des `type` de relation (S8)** : `IsPartOf` et `Cites`
-  sont acceptés, et il n'y a **pas** d'endpoint `/vocabularies/relationTypes`
-  (404). **À déterminer** : un `type` arbitraire/invalide (ex.
-  `"NOTAREALTYPE"`, ou une casse différente comme `ispartof`) est-il **rejeté
-  (422, vocabulaire strict DataCite)** ou **accepté tel quel** ? Sonde prête
-  (POST `/datas/{S}/relations` sur la source publiée `1eb87r1j` → cible
-  publiée `d5dduly8`) ; **tentée le 2026-06-16 mais apitest était injoignable**
-  (ConnectTimeout). Impact : savoir si ColleC devrait valider/normaliser le
-  `type` avant envoi.
+- **V1 — Vocabulaire des `type` de relation (S8)** — ✅ **RÉSOLU
+  (2026-06-18, apitest revenu)** : **LAX**. POST `/datas/1eb87r1j/relations`
+  → cible `d5dduly8` avec un `type` valide (`References`), bidon
+  (`NOTAREALTYPE`) ET mauvaise casse (`ispartof`) → **tous HTTP 200**.
+  Nakala **n'applique aucune validation** du `type` contre le vocabulaire
+  DataCite (et pas d'endpoint `/vocabularies/relationTypes`). Sonde nettoyée
+  (DELETE des 3 relations ajoutées → source revenue à ses 2 relations).
+  **Impact** : si ColleC implémente les relations (V2+), il devra
+  **normaliser/valider le `type` lui-même** (CamelCase DataCite) — Nakala ne
+  rattrapera pas une faute. Pas un blocage (aucun rejet à craindre).
 
 ---
 

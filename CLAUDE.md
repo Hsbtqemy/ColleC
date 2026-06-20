@@ -99,12 +99,28 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   metas, aligné principe n°1). **Versioning fichiers (#4) caractérisé en
   live** : Nakala versionne automatiquement (mutation de fichiers sur dépôt
   publié = +1 `.vN` ; metas en place ; versions = snapshot des fichiers) →
-  pas de chantier ColleC. **Reste planifié** : l'**audit de parité
-  apitest ↔ production** (tous les constats sont validés sur apitest ; à
-  confronter à `nakala.fr` réel — surtout citation/DataCite, modération,
-  droits) + la sonde V1 (strictesse du `type` de relation). Prérequis : une
-  clé d'un vrai compte Huma-Num. Cf. `backlog-nakala-api.md` § *Audit de
-  parité*.
+  pas de chantier ColleC. **Sonde V1 résolue (live apitest 2026-06-20)** :
+  le `type` de relation est un vocabulaire **fermé, strict, sensible à la
+  casse** (type inconnu → 422 listant les 38 types DataCite ; `ispartof`
+  rejeté, `IsPartOf` accepté) ; dédup par cible qui court-circuite la
+  validation ; `DELETE …/relations` purge tout. Script
+  `scripts/explorer_relations_type_nakala.py` (auto-restaurant).
+  **Audit de parité apitest ↔ production — Volets A + B livrés (2026-06-20,
+  clé d'un vrai compte Huma-Num).** **Volet A** (lecture,
+  `scripts/audit_parite_prod_nakala.py`, GET only) : parité totale du contrat
+  d'API (forme `GET /datas` 21 clés + champs modération, vocabulaires licenses
+  620/datatypes 29/languages 10, erreurs 404, versions, IIIF, OAI `/oai2`).
+  **Volet B** (écriture, `scripts/audit_parite_prod_volet_b.py`, via les vrais
+  services ColleC sur UN dépôt `pending` jamais publié puis supprimé → 404,
+  zéro résidu) : dépôt + **enrichissement créateur** (#2) + **langue
+  spa→es** (#422) + **round-trip `PUT` idempotent** (0 diff — risque des faux
+  diffs sur prod levé) + **fichiers granulaires** + description par fichier
+  (H11) + embargo normalisé — tout à l'identique. Seules divergences,
+  **attendues** : citation réelle sur prod (200 + DOI DataCite, vs 403
+  apitest → S4 validé prod) et rôles du compte. **Hors scope** (irréversible,
+  présumé par identité logicielle) : publication réelle, relations
+  donnée↔donnée, versioning `.vN` sur prod. Cf. `backlog-nakala-api.md`
+  § *Audit de parité*.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

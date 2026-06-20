@@ -20,6 +20,10 @@ data/_export_test_pf/
 config_local.yaml
 .env
 
+# Clés API / secrets locaux (jamais versionnés)
+secrets/
+*.key
+
 .claude/
 .vscode/
 .idea/

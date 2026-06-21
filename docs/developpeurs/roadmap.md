@@ -43,10 +43,14 @@ Mode actuel : **local mono-utilisateur**.
 - **Passif / bloqué externe** : **apitest revenu le 2026-06-18** → suite
   d'intégration relancée (12 passed), **smoke S7 live FAIT** + sonde
   omit-vs-wipe résolue (→ WIPE, cf. `nakala-savoir-api.md` H12) + **sonde
-  S8/V1 résolue** (strictesse `type` de relation → **LAX**, cf. V1 du
-  backlog). **Reste uniquement** : **audit de parité apitest ↔ prod** quand
-  on dispose d'une **clé d'un vrai compte Huma-Num** + accord pour un dépôt
-  sacrificiel.
+  S8/V1 résolue** (strictesse `type` de relation → **STRICT** : vocabulaire
+  fermé de 38 types, sensible à la casse ; une sonde antérieure avait conclu
+  « LAX » **à tort** — cible déjà reliée → faux négatif de dédup, corrigé via
+  `explorer_relations_type_nakala.py`, cf. V1 du backlog). **Audit de parité
+  apitest ↔ prod FAIT (2026-06-20, clé d'un vrai compte Huma-Num)** : Volets A
+  (lecture) + B (écriture item + collection) + parité vocab — parité totale du
+  contrat d'API, seules divergences attendues (citation réelle prod, rôles).
+  Cf. `backlog-nakala-api.md` § *Audit de parité*.
 
 ---
 
@@ -230,7 +234,10 @@ interne, consommation **aval** ».
   mkdir orphelins au rollback (verrouillé par test), **R5** `Fichier.item_id`
   sans `ON DELETE CASCADE`. **Reste ouvert : R5 seul** (LOW, nécessite une
   migration). Sécurité + invariants vérifiés sains (aucun ticket).
-- **Audit de parité Nakala apitest ↔ prod** (quand clé Huma-Num).
+- **Audit de parité Nakala apitest ↔ prod** ✅ **FAIT (2026-06-20)** — clé
+  d'un vrai compte Huma-Num ; Volets A (lecture) + B (écriture item +
+  collection) + parité vocab ; parité totale du contrat d'API. Cf.
+  `backlog-nakala-api.md` § *Audit de parité*.
 - Tests verts, doc + mémoire à jour, git propre.
 
 ---

@@ -21,6 +21,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 import archives_tool.api.routes.sharedocs_web as sharedocs_web
+import archives_tool.api.services.sharedocs_jobs as sharedocs_jobs
 from archives_tool.api.main import app
 from archives_tool.api.services import sharedocs_session
 from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
@@ -29,6 +30,21 @@ from archives_tool.db import assurer_tables_fts, creer_engine, creer_session_fac
 from archives_tool.external.sharedocs import ClientShareDocs
 from archives_tool.models import Base, Fichier
 from sqlalchemy import select
+
+
+class _ThreadSync:
+    """Faux threading.Thread : exécute la cible **synchroniquement** au
+    `.start()`. Rend les tests d'import (tâche de fond) déterministes —
+    le download mocké se termine dans la requête POST."""
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self) -> None:
+        self._target(*self._args, **self._kwargs)
+
 
 _BASE = "https://sharedocs.huma-num.fr/dav/colleC"
 
@@ -93,11 +109,13 @@ def _config(tmp_path: Path, *, lecture_seule: bool = False) -> Path:
 
 @pytest.fixture(autouse=True)
 def _reset_session():
-    """La session ShareDocs est un module-global RAM → réinitialiser entre
-    tests pour l'isolation."""
+    """La session ShareDocs et le registre de jobs sont des module-globaux
+    RAM → réinitialiser entre tests pour l'isolation."""
     sharedocs_session.deconnecter()
+    sharedocs_jobs._reset_pour_tests()
     yield
     sharedocs_session.deconnecter()
+    sharedocs_jobs._reset_pour_tests()
 
 
 @pytest.fixture
@@ -367,6 +385,11 @@ def client_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient
     monkeypatch.setenv("ARCHIVES_CONFIG", str(cfg))
     monkeypatch.setenv("ARCHIVES_DB", str(_amorcer_db_item(tmp_path)))
     _patch(monkeypatch, _dl_handler)
+    # Import en tâche de fond : le runner construit son propre client →
+    # patcher aussi `sharedocs_jobs.ClientShareDocs`. Et exécuter le thread
+    # de façon synchrone pour que le POST soit déterministe en test.
+    monkeypatch.setattr(sharedocs_jobs, "ClientShareDocs", _make_fabrique(_dl_handler))
+    monkeypatch.setattr(sharedocs_web.threading, "Thread", _ThreadSync)
     sharedocs_session.connecter(_BASE, "marie", "secret")
     return TestClient(app)
 
@@ -434,7 +457,9 @@ def test_executer_importer_cree_fichiers(
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert "message=" in r.headers["location"]
+    # Désormais asynchrone : redirige vers la page de suivi (le thread, rendu
+    # synchrone en test, a déjà fait l'import).
+    assert "/sharedocs/importer/suivi/" in r.headers["location"]
     # Fichiers créés (chemins + identité) + binaires écrits sous la racine.
     with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
         fichiers = s.scalars(select(Fichier)).all()
@@ -517,7 +542,7 @@ def test_executer_importer_bloque_en_lecture_seule(
 
 
 def test_executer_importer_flash_succes_rendu(client_import: TestClient) -> None:
-    """Le PRG affiche bien la bannière succès sur /sharedocs."""
+    """Le PRG mène à la page de suivi qui montre l'import terminé."""
     r = client_import.post(
         "/sharedocs/importer",
         data={
@@ -529,7 +554,9 @@ def test_executer_importer_flash_succes_rendu(client_import: TestClient) -> None
         follow_redirects=True,
     )
     assert r.status_code == 200
-    assert "fichier(s) importé(s) vers AS-001" in r.text
+    assert "Import ShareDocs en cours" in r.text  # titre page suivi
+    assert "Import terminé" in r.text  # thread synchrone → déjà fini
+    assert "AS-001" in r.text  # item cible affiché
 
 
 def test_reimport_idempotent_aucun_retenu(client_import: TestClient) -> None:
@@ -563,6 +590,9 @@ def test_executer_importer_partiel(
         return httpx.Response(200, content=b"BYTES")
 
     _patch(monkeypatch, handler)
+    # Le runner (tâche de fond) construit son propre client → re-patcher la
+    # fabrique côté jobs avec le handler partiel pour ce test.
+    monkeypatch.setattr(sharedocs_jobs, "ClientShareDocs", _make_fabrique(handler))
     r = client_import.post(
         "/sharedocs/importer",
         data={
@@ -574,8 +604,338 @@ def test_executer_importer_partiel(
         follow_redirects=True,
     )
     assert r.status_code == 200
-    assert "1 fichier(s) importé(s)" in r.text
-    assert "1 sauté(s)" in r.text  # exerce la branche `, N sauté(s)` du message
+    # Page de suivi : 1 importé, 1 sauté, détail du sauté.
+    assert "importé(s)" in r.text and "sauté(s)" in r.text
+    assert "b.jpg" in r.text  # fichier sauté listé dans le récap
     with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
         chemins = {f.chemin_relatif for f in s.scalars(select(Fichier)).all()}
     assert chemins == {"AS-001/a.jpg"}  # b.jpg sauté
+
+
+# ---------------------------------------------------------------------------
+# Polish UX : tout-sélectionner (A), cibles assistées (B), création inline (C)
+# ---------------------------------------------------------------------------
+
+
+def test_case_maitre_et_script_presents(client_import: TestClient) -> None:
+    """(A) La liste propose « Tout sélectionner » et la page charge sharedocs.js."""
+    r = client_import.get("/sharedocs")
+    assert r.status_code == 200
+    assert "data-sd-tout" in r.text
+    assert "Tout sélectionner" in r.text
+    assert "js/sharedocs.js" in r.text
+
+
+def test_selects_fonds_item_avec_sentinelle(client_import: TestClient) -> None:
+    """(B) Fonds et item sont des <select> des entités existantes + une option
+    sentinelle « créer » ; le select fonds recharge l'item en HTMX."""
+    r = client_import.get("/sharedocs")
+    assert '<select id="imp-fonds" name="fonds"' in r.text
+    assert '<option value="AS"' in r.text  # fonds existant
+    assert '<option value="AS-001"' in r.text  # item du 1er fonds (zone initiale)
+    assert 'value="__nouveau__"' in r.text  # sentinelle de création
+    assert 'hx-get="/sharedocs/cible-items"' in r.text  # rechargement HTMX
+
+
+def test_cible_items_partial_fonds_existant(client_import: TestClient) -> None:
+    """(B) Le fragment HTMX liste les items du fonds choisi + l'option créer."""
+    r = client_import.get("/sharedocs/cible-items", params={"fonds": "AS"})
+    assert r.status_code == 200
+    assert '<option value="AS-001"' in r.text
+    assert 'value="__nouveau__"' in r.text
+
+
+def test_cible_items_partial_fonds_nouveau_que_creation(
+    client_import: TestClient,
+) -> None:
+    """(C) Pour un fonds neuf (sentinelle), aucun item existant : seule la
+    création est proposée, le champ cote du nouvel item est visible."""
+    r = client_import.get("/sharedocs/cible-items", params={"fonds": "__nouveau__"})
+    assert r.status_code == 200
+    assert '<option value="AS-001"' not in r.text  # pas d'items d'un autre fonds
+    assert 'name="nouveau_item_cote"' in r.text
+    assert "selected" in r.text  # option « créer » présélectionnée
+
+
+def test_apercu_nouvelle_cible_ne_cree_rien(
+    client_import: TestClient, tmp_path: Path
+) -> None:
+    """(C) L'aperçu d'une cible neuve signale « sera créé » et n'écrit RIEN."""
+    r = client_import.get(
+        "/sharedocs/importer",
+        params={
+            "fonds": "__nouveau__",
+            "nouveau_fonds_cote": "NF",
+            "nouveau_fonds_titre": "Nouveau fonds",
+            "item": "__nouveau__",
+            "nouveau_item_cote": "NF-001",
+            "nouveau_item_titre": "Premier",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+    )
+    assert r.status_code == 200
+    assert "sera créé" in r.text
+    assert "NF-001/a.jpg" in r.text  # plan calculé sur la cote neuve
+    # Aucune écriture : seul le fonds AS d'amorçage existe.
+    from archives_tool.models import Fonds, Item
+
+    with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
+        assert {f.cote for f in s.scalars(select(Fonds)).all()} == {"AS"}
+        assert {i.cote for i in s.scalars(select(Item)).all()} == {"AS-001"}
+
+
+def test_executer_cree_fonds_et_item_puis_importe(
+    client_import: TestClient, tmp_path: Path
+) -> None:
+    """(C) La confirmation crée le fonds (+ miroir) et l'item neufs, puis
+    importe les fichiers vers le nouvel item."""
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "__nouveau__",
+            "nouveau_fonds_cote": "NF",
+            "nouveau_fonds_titre": "Nouveau fonds",
+            "item": "__nouveau__",
+            "nouveau_item_cote": "NF-001",
+            "nouveau_item_titre": "Premier",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    # Page de suivi : bannière de création + import terminé.
+    assert "NF-001" in r.text and "créé" in r.text
+    assert "Import terminé" in r.text
+    from archives_tool.models import Fonds, Item
+
+    with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
+        assert "NF" in {f.cote for f in s.scalars(select(Fonds)).all()}
+        item = s.scalars(select(Item).where(Item.cote == "NF-001")).one()
+        assert item.titre == "Premier"
+    assert (tmp_path / "import" / "NF-001" / "a.jpg").read_bytes() == b"BYTES"
+
+
+def test_executer_fonds_existant_nouvel_item(
+    client_import: TestClient, tmp_path: Path
+) -> None:
+    """(C) Fonds existant + nouvel item : seul l'item est créé (dans le fonds)
+    et l'import s'y rattache (pas de nouveau fonds)."""
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "__nouveau__",
+            "nouveau_item_cote": "AS-002",
+            "nouveau_item_titre": "Deux",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=True,
+    )
+    assert r.status_code == 200
+    # Page de suivi : item AS-002 créé, import terminé (pas de nouveau fonds).
+    assert "AS-002" in r.text and "créé" in r.text
+    assert "Import terminé" in r.text
+    from archives_tool.models import Item
+
+    with creer_session_factory(creer_engine(tmp_path / "test.db"))() as s:
+        assert {i.cote for i in s.scalars(select(Item)).all()} == {"AS-001", "AS-002"}
+
+
+def test_executer_nouvel_item_sans_titre_redirige(client_import: TestClient) -> None:
+    """(C) La création d'item exige un titre : sans titre → erreur, pas d'import."""
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "__nouveau__",
+            "nouveau_item_cote": "AS-003",
+            "nouveau_item_titre": "",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "erreur=" in r.headers["location"]
+
+
+def test_apercu_nouvel_item_cote_manquante_redirige(client_import: TestClient) -> None:
+    """(C) Sentinelle « créer item » sans cote saisie → erreur explicite."""
+    r = client_import.get(
+        "/sharedocs/importer",
+        params={
+            "fonds": "AS",
+            "item": "__nouveau__",
+            "nouveau_item_cote": "",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "manquante" in r.headers["location"]
+
+
+# ---------------------------------------------------------------------------
+# Import en tâche de fond : suivi + statut + concurrence
+# ---------------------------------------------------------------------------
+
+
+def test_import_lance_redirige_vers_suivi(client_import: TestClient) -> None:
+    """Le POST réserve un job et redirige vers la page de suivi."""
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "AS-001",
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert loc.startswith("/sharedocs/importer/suivi/")
+    job_id = loc.rsplit("/", 1)[-1]
+    assert sharedocs_jobs.lire_etat_job(job_id) is not None
+
+
+def test_suivi_page_rend_pour_job(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="d",
+        chemins_distants=["d/a.jpg", "d/b.jpg"],
+    )
+    r = client_import.get(f"/sharedocs/importer/suivi/{job_id}")
+    assert r.status_code == 200
+    assert "Import ShareDocs en cours" in r.text
+    assert "AS-001" in r.text
+    assert "0 / 2" in r.text  # barre initiale
+
+
+def test_suivi_job_inconnu_redirige(client_import: TestClient) -> None:
+    r = client_import.get(
+        "/sharedocs/importer/suivi/inexistant", follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert "introuvable" in r.headers["location"]
+
+
+def test_statut_en_cours_a_le_polling(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/a.jpg"],
+    )
+    r = client_import.get(f"/sharedocs/importer/statut/{job_id}")
+    assert r.status_code == 200
+    assert 'hx-trigger="every 2s"' in r.text  # polling actif
+    assert "sd-barre-active" in r.text  # indicateur visuel « en cours »
+
+
+def test_statut_termine_arrete_le_polling(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/a.jpg"],
+    )
+    with sharedocs_jobs._lock:
+        sharedocs_jobs._JOBS[job_id].statut = "termine"
+    r = client_import.get(f"/sharedocs/importer/statut/{job_id}")
+    assert r.status_code == 200
+    assert "hx-trigger" not in r.text  # polling arrêté
+    assert "sd-barre-active" not in r.text  # plus d'animation quand terminé
+    assert "Import terminé" in r.text
+
+
+def test_statut_job_inconnu_404(client_import: TestClient) -> None:
+    r = client_import.get("/sharedocs/importer/statut/inexistant")
+    assert r.status_code == 404
+
+
+def test_statut_en_cours_montre_bouton_annuler(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/a.jpg"],
+    )
+    r = client_import.get(f"/sharedocs/importer/statut/{job_id}")
+    assert r.status_code == 200
+    assert f"/sharedocs/importer/annuler/{job_id}" in r.text
+    assert "Annuler l'import" in r.text
+
+
+def test_annuler_pose_drapeau_et_redirige(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="d",
+        chemins_distants=["d/a.jpg"],
+    )
+    r = client_import.post(
+        f"/sharedocs/importer/annuler/{job_id}", follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/sharedocs/importer/suivi/{job_id}"
+    assert sharedocs_jobs.lire_etat_job(job_id).annule is True
+
+
+def test_statut_annule_arrete_polling_et_affiche(client_import: TestClient) -> None:
+    job_id = sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/a.jpg"],
+    )
+    with sharedocs_jobs._lock:
+        sharedocs_jobs._JOBS[job_id].statut = "annule"
+    r = client_import.get(f"/sharedocs/importer/statut/{job_id}")
+    assert r.status_code == 200
+    assert "hx-trigger" not in r.text  # polling arrêté
+    assert "sd-barre-active" not in r.text  # plus d'animation
+    assert "Import annulé" in r.text
+    assert "Reprendre" in r.text  # reprise possible
+
+
+def test_annuler_job_inconnu_redirige_sans_erreur(client_import: TestClient) -> None:
+    r = client_import.post(
+        "/sharedocs/importer/annuler/inexistant", follow_redirects=False
+    )
+    assert r.status_code == 303  # idempotent : pas d'erreur si déjà fini/inconnu
+
+
+def test_import_concurrent_refuse(client_import: TestClient) -> None:
+    """Un 2ᵉ import alors qu'un job tourne déjà → refus (JobConcurrent)."""
+    # Simule un job en cours (sans le lancer → la garde reste posée).
+    sharedocs_jobs.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/z.jpg"],
+    )
+    r = client_import.post(
+        "/sharedocs/importer",
+        data={
+            "fonds": "AS",
+            "item": "AS-001",  # item existant → pas de création parasite
+            "racine": "import",
+            "fichiers": ["d/a.jpg"],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert "en+cours" in r.headers["location"] or "en%20cours" in r.headers["location"]

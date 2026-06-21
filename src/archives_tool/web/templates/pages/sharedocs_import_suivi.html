@@ -1,0 +1,67 @@
+{# Page de suivi d'un import ShareDocs en tâche de fond.
+
+   Variables :
+   - etat : EtatJobImport (snapshot deepcopy issu de lire_etat_job)
+   - job_id : str (UUID hex)
+
+   Le fragment HTMX `every 2s` met à jour le contenu via
+   `/sharedocs/importer/statut/{job_id}`.
+#}
+{% extends "base.html" %}
+{% block title %}Import ShareDocs en cours · ColleC{% endblock %}
+
+{% block content %}
+{# Animations « travail en cours ». Définies au niveau de la page (qui n'est
+   pas re-swappée) pour survivre aux rechargements HTMX du fragment statut :
+   rayures défilantes sur la barre (bouge même quand le % ne change pas, entre
+   deux gros fichiers) + spinner à côté du texte. Retirées quand le job est
+   terminé (la classe `sd-barre-active` n'est posée que tant qu'en cours). #}
+<style>
+  @keyframes sd-stripes { from { background-position: 0 0; } to { background-position: 40px 0; } }
+  .sd-barre-active {
+    background-image: linear-gradient(45deg,
+      rgba(255,255,255,0.30) 25%, transparent 25%,
+      transparent 50%, rgba(255,255,255,0.30) 50%,
+      rgba(255,255,255,0.30) 75%, transparent 75%, transparent);
+    background-size: 40px 40px;
+    animation: sd-stripes 1s linear infinite;
+  }
+  @keyframes sd-spin { to { transform: rotate(360deg); } }
+  .sd-spinner {
+    display: inline-block; width: 12px; height: 12px; vertical-align: -1px;
+    margin-right: 4px; border: 2px solid #bfdbfe; border-top-color: #1e40af;
+    border-radius: 50%; animation: sd-spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sd-barre-active { animation: none; }
+    .sd-spinner { animation: none; }
+  }
+</style>
+<div class="mb-4">
+  <a href="/sharedocs?chemin={{ etat.chemin_retour | urlencode }}"
+     class="text-sm" style="color:#2563eb;">← Parcours ShareDocs</a>
+</div>
+
+<h1 class="text-xl font-medium mb-1" style="color:#1f1f1f;">Import ShareDocs en cours</h1>
+<p class="text-sm text-gray-500 mb-4">
+  Vers l'item <strong>{{ etat.item_cote }}</strong> (fonds {{ etat.fonds_cote }}),
+  racine <code style="font-family:monospace;">{{ etat.racine }}</code> —
+  job <code style="font-family:monospace;">{{ job_id[:8] }}</code>.
+</p>
+
+{% if etat.fonds_cree or etat.item_cree %}
+<div role="status" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;
+     padding:8px 12px;margin-bottom:12px;font-size:13px;color:#1e40af;">
+  {% if etat.fonds_cree %}Fonds <strong>{{ etat.fonds_cote }}</strong> (et sa miroir){% endif %}
+  {%- if etat.fonds_cree and etat.item_cree %} et {% endif %}
+  {%- if etat.item_cree %} item <strong>{{ etat.item_cote }}</strong>{% endif %}
+  créé{{ 's' if (etat.fonds_cree and etat.item_cree) else '' }} avant l'import.
+</div>
+{% endif %}
+
+{# Le partial porte le wrapper #statut-import avec hx-get/hx-trigger ;
+   hx-swap=outerHTML le remplace à chaque tick. Pas de double wrapper. #}
+{% with etat=etat %}
+  {% include "partials/sharedocs_import_statut.html" %}
+{% endwith %}
+{% endblock %}

@@ -1419,8 +1419,40 @@ archives-tool/
 >   (bloqué 423 en lecture seule). Lien header `ShareDocs`.
 >
 > **Aucune dépendance ni couplage runtime à BD_ditor** (copie → possession
-> → divergence). Reste possible, non bloquant : smoke contre un vrai
-> partage le jour d'un accès Huma-Num. Doc : `docs/guide/cli/sharedocs.md`.
+> → divergence). Doc : `docs/guide/cli/sharedocs.md`.
+>
+> **Smoke live ✅ FAIT (2026-06-21)** — connexion + parcours + import validés
+> contre le vrai partage `sharedocs.huma-num.fr` (le seul angle jamais exercé
+> jusque-là ; tout le reste était couvert via `MockTransport`).
+>
+> **Durcissement UX de l'import web (2026-06-21, suite au test d'usage)** —
+> trois manques relevés en conditions réelles, tous comblés :
+> - **Cibles assistées + création inline** : le formulaire d'import propose
+>   des `<select>` des fonds/items existants (l'item se recharge en HTMX au
+>   changement de fonds via `GET /sharedocs/cible-items`) + une sentinelle
+>   « ➕ Créer… » qui révèle des champs cote/titre. La création réelle
+>   (`creer_fonds`/`creer_item`) n'a lieu qu'au POST de confirmation, jamais
+>   au dry-run (principe n°3) ; l'aperçu signale « sera créé » via un item
+>   transitoire non persisté. Plus de cote à deviner, plus de « introuvable »
+>   après soumission. Case maître « Tout sélectionner » (JS `sharedocs.js`,
+>   délégation d'événements pour survivre aux swaps HTMX).
+> - **Import en tâche de fond** (2ᵉ tâche de fond du projet après le dépôt
+>   Nakala) : `api/services/sharedocs_jobs.py` (registre mémoire + runner
+>   synchrone testable + thread daemon + **garde mono-job indépendante** de
+>   `nakala_depot_jobs`). Le POST crée la cible (rapide) puis lance le
+>   téléchargement (lent) en thread et redirige vers une page de suivi qui
+>   polle en HTMX (`every 2s`) une **barre de progression** (rayures animées
+>   « barber pole » + spinner tant qu'en cours, respecte
+>   `prefers-reduced-motion`). Hook `on_progress` ajouté à
+>   `importer_depuis_sharedocs` (rétro-compatible, commit final conservé).
+>   Identifiants passés explicitement au thread (jamais lus d'un global).
+> - **Annulation coopérative** : drapeau `annule` sur le job + sonde
+>   `should_cancel` vérifiée **entre deux fichiers** (on ne coupe pas un
+>   download en cours → arrêt après le fichier courant). Le partiel déjà
+>   téléchargé est **conservé** (pas de suppression destructive — l'adoption
+>   le récupère) ; statut `annule` + bouton « Reprendre » (re-cible l'item
+>   existant, adopte le partiel, continue le reste). Route
+>   `POST /sharedocs/importer/annuler/{job_id}`.
 
 ### V1 — Socle utilisable pour un premier chantier
 

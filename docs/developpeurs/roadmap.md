@@ -36,10 +36,11 @@ Mode actuel : **local mono-utilisateur**.
 
 ## Horizon 0 — Consolidation (en cours / continu)
 
-- **FF `main`** pour promouvoir le palier S7 **+ le Chantier 1 ShareDocs**.
-- **Quick wins** : S6 (validation licence SPDX au preflight/export) ;
-  `notebooks-sdk` (page-guide — l'API publique existe déjà, ne dépend de
-  rien, tirable n'importe quand).
+- **FF `main`** pour promouvoir le palier S7 **+ le Chantier 1 ShareDocs**
+  (y compris le durcissement UX de l'import web — cf. Chantier 1).
+- **Quick wins** : ✅ S6 (validation licence SPDX au preflight/export, livré) ;
+  ✅ `notebooks-sdk` (page-guide **déjà livrée** — [`guide/notebook.md`](../guide/notebook.md),
+  dans la nav MkDocs). Les deux quick wins d'Horizon 0 sont faits.
 - **Passif / bloqué externe** : **apitest revenu le 2026-06-18** → suite
   d'intégration relancée (12 passed), **smoke S7 live FAIT** + sonde
   omit-vs-wipe résolue (→ WIPE, cf. `nakala-savoir-api.md` H12) + **sonde
@@ -95,9 +96,21 @@ coffre chiffré multi-comptes scopés par espace reste **V1.0** (Chantier 3).
 tracés cf. `ocr-module-future.md` (§ Emprunts BD_ditor) et mémoire
 `bd-ditor-sibling`.
 
-**Reste possible (non bloquant)** : smoke test contre un vrai partage
-ShareDocs (jamais exercé en live — tout est validé via `MockTransport`),
-le jour où un accès Huma-Num est disponible.
+**Smoke live ✅ FAIT (2026-06-21)** : connexion + parcours + import validés
+contre le vrai partage `sharedocs.huma-num.fr` (le dernier angle jamais
+exercé ; tout le reste restait couvert via `MockTransport`). Plus aucun
+« reste » bloquant sur le Chantier 1.
+
+**Durcissement UX de l'import web (2026-06-21)** — relevé au test d'usage :
+cibles assistées (selects fonds/item, item rechargé en HTMX) + création
+inline (fonds/item depuis la page, création au POST seulement) + « Tout
+sélectionner » ; **import en tâche de fond** (2ᵉ tâche de fond : module
+`sharedocs_jobs`, garde mono-job indépendante, barre de progression HTMX) +
+**annulation coopérative** (arrêt entre fichiers, partiel conservé, reprise).
+Cf. `CLAUDE.md` § Chantier 1. **Dette confirmée** : la garde mono-job de
+`sharedocs_jobs` est, comme celle de Nakala, per-process et non isolée
+per-utilisateur → à factoriser au Chantier 3 (cf. § Transverse, isolation
+des états module-globaux).
 
 ---
 

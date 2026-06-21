@@ -7,10 +7,23 @@
 
 <h1 class="text-2xl font-medium mb-2" style="color:#1f1f1f;letter-spacing:-0.02em;">Aperçu de l'import</h1>
 <p class="text-sm text-gray-500 mb-6">
-  Vers l'item <strong>{{ item }}</strong> (fonds {{ fonds }}), racine
-  <code style="font-family:monospace;">{{ racine }}</code>. Rien n'est encore
+  Vers l'item <strong>{{ item_cote }}</strong>{% if item_sera_cree %} <em>(sera créé)</em>{% endif %}
+  (fonds <strong>{{ fonds_cote }}</strong>{% if fonds_sera_cree %} <em>, sera créé</em>{% endif %}),
+  racine <code style="font-family:monospace;">{{ racine }}</code>. Rien n'est encore
   écrit — confirmez ci-dessous.
 </p>
+
+{% if fonds_sera_cree or item_sera_cree %}
+<div role="status" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;
+     padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+  À la confirmation :
+  {% if fonds_sera_cree %}le fonds <strong>{{ fonds_cote }}</strong> (et sa collection miroir){% endif %}
+  {%- if fonds_sera_cree and item_sera_cree %} et {% endif %}
+  {%- if item_sera_cree %} l'item <strong>{{ item_cote }}</strong>{% endif %}
+  ser{{ 'ont' if (fonds_sera_cree and item_sera_cree) else 'a' }} créé{{ 's' if (fonds_sera_cree and item_sera_cree) else '' }}
+  avant l'import des fichiers.
+</div>
+{% endif %}
 
 <section style="{{ carte_style }}">
   <p class="text-sm mb-3" style="color:#1f1f1f;">
@@ -39,6 +52,10 @@
   <form method="post" action="/sharedocs/importer">
     <input type="hidden" name="fonds" value="{{ fonds }}">
     <input type="hidden" name="item" value="{{ item }}">
+    <input type="hidden" name="nouveau_fonds_cote" value="{{ nouveau_fonds_cote }}">
+    <input type="hidden" name="nouveau_fonds_titre" value="{{ nouveau_fonds_titre }}">
+    <input type="hidden" name="nouveau_item_cote" value="{{ nouveau_item_cote }}">
+    <input type="hidden" name="nouveau_item_titre" value="{{ nouveau_item_titre }}">
     <input type="hidden" name="racine" value="{{ racine }}">
     <input type="hidden" name="chemin" value="{{ chemin }}">
     {% for f in rapport.fichiers %}

@@ -32,6 +32,7 @@ from archives_tool.api.services import sharedocs_jobs, sharedocs_session
 from archives_tool.api.services.sharedocs_jobs import (
     JobConcurrent,
     demander_annulation,
+    est_job_actif,
     executer_import_sharedocs,
     lire_etat_job,
     reserver_job,
@@ -427,6 +428,13 @@ def executer_importer(
     ids = sharedocs_session.identifiants()
     if ids is None:
         return _redirect_erreur("Non connecté à ShareDocs.")
+    # Garde anti-concurrent AVANT toute création : si un import tourne déjà,
+    # on refuse tout de suite (sinon `_resoudre_cible` créerait un fonds/item
+    # qui resterait orphelin quand `reserver_job` lèverait `JobConcurrent`).
+    # `reserver_job` reste l'autorité atomique ci-dessous (fenêtre TOCTOU
+    # négligeable en mono-utilisateur).
+    if est_job_actif():
+        return _redirect_erreur("Un import ShareDocs est déjà en cours.")
     # Cible créée/résolue dans la requête (rapide) ; le thread ne fait que
     # le download (lent). On capture la cote/id avant de quitter la session.
     try:

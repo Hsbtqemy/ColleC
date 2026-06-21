@@ -3,8 +3,9 @@
    Variables :
    - etat : EtatJobImport (snapshot deepcopy)
 
-   Le wrapper `#statut-import` porte les hx-* ; quand le job est `termine`
-   ou `echec`, on retire `hx-trigger` pour arrêter le polling.
+   Le wrapper `#statut-import` porte les hx-* ; quand le job est arrêté
+   (`termine` / `echec` / `annule`), on retire `hx-trigger` pour stopper le
+   polling.
 #}
 {%- set arret = etat.statut in ("termine", "echec", "annule") -%}
 <div id="statut-import"

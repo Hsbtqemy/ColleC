@@ -9,6 +9,7 @@ libération de la garde.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import httpx
@@ -205,6 +206,49 @@ def test_demander_annulation_pose_le_drapeau() -> None:
     with sj._lock:
         sj._JOBS[job_id].statut = "termine"
     assert sj.demander_annulation(job_id) is False
+
+
+def test_runner_dans_un_vrai_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercice du chemin **réellement threadé** (≠ FakeThread synchrone des
+    tests web) : daemon thread + join → le job se termine, la garde
+    ``_id_actuel`` est libérée par le `finally` du thread, les Fichier sont
+    créés. Déterministe grâce au `join` (le runner sur MockTransport est
+    quasi-instantané)."""
+    db, item_id, racine = _amorcer(tmp_path)
+    monkeypatch.setattr(sj, "ClientShareDocs", _fabrique(_dl_handler))
+    job_id = sj.reserver_job(
+        item_cote="AS-001",
+        fonds_cote="AS",
+        racine="import",
+        chemin_retour="",
+        chemins_distants=["d/a.jpg", "d/b.jpg"],
+    )
+    t = threading.Thread(
+        target=sj.executer_import_sharedocs,
+        args=(job_id,),
+        kwargs={
+            "chemin_db": db,
+            "item_id": item_id,
+            "chemins_distants": ["d/a.jpg", "d/b.jpg"],
+            "racine_cible": "import",
+            "racines": {"import": racine},
+            "base_url": _BASE,
+            "user": "m",
+            "password": "s",
+        },
+        daemon=True,
+    )
+    t.start()
+    t.join(timeout=15)
+    assert not t.is_alive()  # le thread a bien fini
+    etat = sj.lire_etat_job(job_id)
+    assert etat.statut == "termine"
+    assert etat.retenus == 2
+    assert sj.est_job_actif() is False  # garde libérée depuis le thread
+    with creer_session_factory(creer_engine(db))() as s:
+        assert len(s.scalars(select(Fichier)).all()) == 2
 
 
 def test_runner_annulation_conserve_le_partiel(

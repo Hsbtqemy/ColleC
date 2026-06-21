@@ -535,6 +535,25 @@ Aucune sonde apitest restante en attente.
 >   sha1) ; **description par fichier** préservée (H11) ; **embargo** normalisé
 >   (`…T00:00:00+01:00` + `humanReadableEmbargoedDelay {y,m,d}`) ;
 > - **suppression** d'un pending → 404.
+>
+> **Volet B niveau collection livré** —
+> `scripts/audit_parite_prod_volet_b_collection.py` (collection `private` + item
+> `pending`, supprimés en fin) : `deposer_collection` OK, `GET /collections`
+> (17 clés), **`pousser_metadonnees_collection` round-trip IDEMPOTENT** (0 diff
+> après dépôt ; modif titre appliquée puis re-push 0 diff — la **fusion**
+> préservant les metas non modélisées tient sur prod), `DELETE /collections` OK.
+>
+> **Parité vocabulaire émis** — `verifier_parite_vocabulaires_nakala.py` contre
+> prod : 29 types COAR projetés + 57 `propertyUri` émis par ColleC **⊆** live
+> (depositTypes 29 / properties 60). Aucune dérive.
+>
+> **Constats opérationnels prod (≠ apitest, plus stable)** : TLS timeouts épars ;
+> un **500 transitoire** sur `PUT /collections` (non reproduit ; PUT validé 204
+> par ailleurs) ; **cohérence éventuelle au DELETE** (un `DELETE /datas` a
+> renvoyé 404 alors que la donnée persistait → re-GET + retry l'ont supprimée).
+> → ColleC : prévoir retry sur 5xx transitoires + vérifier les suppressions par
+> relecture pour les opérations massives sur prod.
+>
 > - **Non rejoué sur prod** (irréversibles) : publication, relations
 >   donnée↔donnée (gated publication), versioning `.vN` — présomption de parité
 >   par identité du logiciel + sondes apitest (V1 relations sur apitest, §

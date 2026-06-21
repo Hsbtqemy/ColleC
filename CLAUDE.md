@@ -110,17 +110,25 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `scripts/audit_parite_prod_nakala.py`, GET only) : parité totale du contrat
   d'API (forme `GET /datas` 21 clés + champs modération, vocabulaires licenses
   620/datatypes 29/languages 10, erreurs 404, versions, IIIF, OAI `/oai2`).
-  **Volet B** (écriture, `scripts/audit_parite_prod_volet_b.py`, via les vrais
-  services ColleC sur UN dépôt `pending` jamais publié puis supprimé → 404,
-  zéro résidu) : dépôt + **enrichissement créateur** (#2) + **langue
-  spa→es** (#422) + **round-trip `PUT` idempotent** (0 diff — risque des faux
-  diffs sur prod levé) + **fichiers granulaires** + description par fichier
-  (H11) + embargo normalisé — tout à l'identique. Seules divergences,
-  **attendues** : citation réelle sur prod (200 + DOI DataCite, vs 403
-  apitest → S4 validé prod) et rôles du compte. **Hors scope** (irréversible,
-  présumé par identité logicielle) : publication réelle, relations
-  donnée↔donnée, versioning `.vN` sur prod. Cf. `backlog-nakala-api.md`
-  § *Audit de parité*.
+  **Volet B** (écriture, via les vrais services ColleC sur ressources
+  `pending`/`private` jamais publiées puis supprimées → zéro résidu vérifié) :
+  `audit_parite_prod_volet_b.py` (donnée/item) — dépôt + **enrichissement
+  créateur** (#2) + **langue spa→es** (#422) + **round-trip `PUT` idempotent**
+  (0 diff — risque des faux diffs sur prod levé) + **fichiers granulaires** +
+  description par fichier (H11) + embargo ; et
+  `audit_parite_prod_volet_b_collection.py` (collection) —
+  `deposer_collection` + **`pousser_metadonnees_collection` round-trip
+  idempotent** (fusion préservant les metas non modélisées) + `DELETE`. Plus
+  `verifier_parite_vocabulaires_nakala.py` contre prod : 29 types + 57 props
+  émis ⊆ live (29/60). Tout à l'identique. Seules divergences, **attendues** :
+  citation réelle sur prod (200 + DOI DataCite, vs 403 apitest → S4 validé
+  prod) et rôles du compte. **Constat opérationnel** : prod transitoirement
+  instable (TLS timeouts, un 500 transitoire sur `PUT /collections` non
+  reproduit, cohérence éventuelle au DELETE) → prévoir retry 5xx + vérif des
+  suppressions par relecture pour les opérations massives. **Hors scope**
+  (irréversible, présumé par identité logicielle) : publication réelle,
+  relations donnée↔donnée, versioning `.vN` sur prod. Cf.
+  `backlog-nakala-api.md` § *Audit de parité*.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

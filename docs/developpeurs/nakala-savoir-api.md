@@ -25,11 +25,14 @@
 > Validé pour la dernière fois contre apitest le **2026-06-15**.
 >
 > ✅ **Parité prod confirmée — Volet A (lecture) + Volet B (écriture), 2026-06-20**
-> — audits `scripts/audit_parite_prod_nakala.py` (GET only, zéro pollution) et
-> `scripts/audit_parite_prod_volet_b.py` (UN dépôt `pending`, jamais publié,
-> supprimé en fin → zéro résidu), avec la clé d'un vrai compte Huma-Num. Les
-> constats ci-dessous (issus d'`apitest.nakala.fr`) valent **à l'identique** sur
-> la **production** `api.nakala.fr`.
+> — audits `scripts/audit_parite_prod_nakala.py` (GET only, zéro pollution),
+> `scripts/audit_parite_prod_volet_b.py` (donnée/item) et
+> `scripts/audit_parite_prod_volet_b_collection.py` (collection) — chacun sur
+> des ressources `pending`/`private` jamais publiées, supprimées en fin (zéro
+> résidu vérifié) — plus `verifier_parite_vocabulaires_nakala.py` contre prod.
+> Avec la clé d'un vrai compte Huma-Num. Les constats ci-dessous (issus
+> d'`apitest.nakala.fr`) valent **à l'identique** sur la **production**
+> `api.nakala.fr`.
 >
 > **Volet A (lecture)** — identique : forme `GET /datas/{id}` (21 clés, **champs
 > de modération présents des deux côtés**), vocabulaires (`licenses` 620,
@@ -37,20 +40,38 @@
 > `…/versions` (200), **IIIF `info.json`** (200), **OAI `/oai2` Identify**
 > (200 `text/xml`).
 >
-> **Volet B (écriture, via les vrais services ColleC)** — identique : dépôt
-> `POST /datas` (pending), **enrichissement créateur** `{authorId, fullName,
-> givenname, orcid, surname}` (#2), **langue `spa`→`es`** (#422), **round-trip
-> `PUT /datas` idempotent** (0 diff après dépôt et après modif — la
+> **Volet B donnée/item (écriture, via les vrais services ColleC)** — identique :
+> dépôt `POST /datas` (pending), **enrichissement créateur** `{authorId,
+> fullName, givenname, orcid, surname}` (#2), **langue `spa`→`es`** (#422),
+> **round-trip `PUT /datas` idempotent** (0 diff après dépôt et après modif — la
 > canonicalisation des créateurs tient sur prod ⇒ pas de faux diff), **fichiers
 > granulaires** `POST/DELETE …/files` (additif, retrait ciblé par sha1),
 > **description par fichier** préservée (H11), **embargo** normalisé
 > (`2099-12-31T00:00:00+01:00` + `humanReadableEmbargoedDelay {y,m,d}`),
 > **suppression** d'un pending → 404.
 >
+> **Volet B collection (écriture)** — identique : `deposer_collection` (collection
+> `private` + items `pending`), `GET /collections/{id}` (17 clés), **round-trip
+> `pousser_metadonnees_collection` idempotent** (0 diff après dépôt ; modif titre
+> appliquée puis re-push 0 diff — la **fusion** préservant les metas non
+> modélisées tient sur prod), `DELETE /collections/{id}`.
+>
+> **Vocabulaire émis ⊆ live prod** (`verifier_parite_vocabulaires_nakala.py`) :
+> les **29** types COAR projetés et les **57** `propertyUri` émis par ColleC sont
+> tous acceptés par la prod (depositTypes 29 / properties 60). Aucune dérive.
+>
 > **Diffère (attendu, hors contrat d'API)** : (1) 🎯 **citation** — prod
 > `…/citation` publié → **200 + citation réelle** (APA + `doi.org`, DOI DataCite
 > minté), apitest → **403** « not citable » ; (2) **rôles du compte** — compte
 > prod `ROLE_USER`, compte de test apitest `ROLE_USER + ROLE_MODERATOR`.
+>
+> ⚠️ **Prod transitoirement instable** (pas observé sur apitest) : TLS handshake
+> timeouts épars, un **500 transitoire** sur un `PUT /collections` (non reproduit
+> au re-run ; `PUT /collections` validé 204 par ailleurs), et une **cohérence
+> éventuelle au DELETE** (un `DELETE /datas` peut renvoyer 404 alors que la
+> donnée est encore là → re-vérifier par GET et réessayer). **→ côté ColleC** :
+> les opérations d'écriture massives sur prod gagneraient à tolérer les 5xx
+> transitoires (retry) et à vérifier les suppressions par relecture.
 >
 > **Non rejoué sur prod** (irréversibles) : publication, relations donnée↔donnée
 > (gated publication), versioning `.vN` — présomption de parité par identité du

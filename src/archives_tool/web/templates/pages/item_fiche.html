@@ -303,6 +303,28 @@
   </div>
 
 </div>
+
+{# Historique des modifications (Lot 2 UI⁺) : chargé à la demande via HTMX
+   (ModificationItem est alimenté par modifier_item — inline + page Modifier).
+   Toujours présent, même en lecture seule (consultation pure). Pattern
+   identique au lazy-load de la citation Nakala ci-dessus. #}
+<section class="mt-4 bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);"
+         aria-labelledby="titre-historique-item">
+  <div style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.08);background:#f9fafb;">
+    <h2 id="titre-historique-item" style="font-size:12px;font-weight:500;color:#374151;">
+      Historique des modifications
+    </h2>
+  </div>
+  <div id="historique-item" style="padding:12px 14px;">
+    <button type="button"
+            hx-get="/item/{{ item.cote | urlencode }}/historique?fonds={{ fonds.cote | urlencode }}"
+            hx-target="#historique-item" hx-swap="innerHTML"
+            style="font-size:12px;color:#374151;background:#f3f4f6;border:1px solid rgba(0,0,0,0.1);border-radius:6px;padding:5px 10px;cursor:pointer;">
+      Afficher l'historique
+    </button>
+    <span style="font-size:11px;color:#9ca3af;margin-left:8px;">qui a changé quoi, et quand</span>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}

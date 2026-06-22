@@ -49,6 +49,7 @@ from archives_tool.api.routes import (
     derives,
     import_assistant,
     inline_edit,
+    item_historique,
     journal_web,
     nakala_web,
     preferences,
@@ -111,6 +112,7 @@ app.include_router(champs.router)
 app.include_router(vocabulaires.router)
 app.include_router(preferences.router)
 app.include_router(inline_edit.router)
+app.include_router(item_historique.router)
 app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)
 app.include_router(annotations.router)

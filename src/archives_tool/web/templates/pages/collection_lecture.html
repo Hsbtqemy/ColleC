@@ -204,6 +204,17 @@
                          filtres.to_query_string(retire_type_coar=t),
                          base_url_avec_fonds, sep) }}
     {% endfor %}
+
+    {# Étiquettes (Lot 4c) : libellé résolu via les options (filtres ne
+       porte que les ids). Tout id filtré est garanti présent dans les
+       options (le parser valide contre elles). #}
+    {% for e in detail.options_filtres.etiquettes %}
+      {% if e.id in filtres.etiquettes %}
+        {{ pastille_filtre('Étiquette: ' ~ e.libelle,
+                           filtres.to_query_string(retire_etiquette=e.id),
+                           base_url_avec_fonds, sep) }}
+      {% endif %}
+    {% endfor %}
   </div>
 {% endif %}
 
@@ -314,6 +325,26 @@
       'options': detail.options_filtres.types_coar,
       'valeur': filtres.types_coar,
       'libelles': _libelles_coar,
+    },
+  ] %}
+{% endif %}
+{% if detail.options_filtres.etiquettes %}
+  {# Étiquettes présentes dans la collection (Lot 4c). Les options sont
+     les ids (str) ; le drawer multi-select coche celles déjà filtrées. #}
+  {% set _opts_etiq = [] %}
+  {% set _libelles_etiq = {} %}
+  {% for e in detail.options_filtres.etiquettes %}
+    {% set _ = _opts_etiq.append(e.id | string) %}
+    {% set _ = _libelles_etiq.update({(e.id | string): e.libelle}) %}
+  {% endfor %}
+  {% set sections = sections + [
+    {
+      'titre': 'Étiquettes',
+      'type': 'multi',
+      'champ': 'etiquette',
+      'options': _opts_etiq,
+      'valeur': filtres.etiquettes | map('string') | list,
+      'libelles': _libelles_etiq,
     },
   ] %}
 {% endif %}

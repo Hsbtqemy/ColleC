@@ -686,6 +686,9 @@ def page_collection(
     type_coar: list[str] | None = Query(
         None, description="Filtre par type COAR (mêmes formats que `etat`)."
     ),
+    etiquette: list[str] | None = Query(
+        None, description="Filtre par étiquette (id ; mêmes formats que `etat`)."
+    ),
     # `str | None` plutot que `int | None` : le drawer Filtrer soumet
     # `annee_de=&annee_a=` quand les champs sont vides, ce que la
     # validation int rejette en 422. On parse + filtre les valeurs
@@ -726,6 +729,7 @@ def page_collection(
         annee_de=_annee_int_ou_none(annee_de),
         annee_a=_annee_int_ou_none(annee_a),
         options=detail.options_filtres,
+        etiquette=etiquette,
     )
     listage = lister_items_collection(
         db,
@@ -739,6 +743,7 @@ def page_collection(
         types_coar=filtres.types_coar,
         annee_de=filtres.annee_de,
         annee_a=filtres.annee_a,
+        etiquettes=filtres.etiquettes,
     )
     resolu = charger_colonnes_actives(db, utilisateur, collection.id, "items")
     # HTMX swap (tri colonne, pagination) : on ne renvoie que le partial

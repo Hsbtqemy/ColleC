@@ -53,10 +53,12 @@ from archives_tool.models import (
     ChampPersonnalise,
     Collection,
     EtatCatalogage,
+    Etiquette,
     Fichier,
     Fonds,
     Item,
     ItemCollection,
+    ItemEtiquette,
     RoleCollaborateur,
     TypeCollection,
 )
@@ -1321,6 +1323,9 @@ class OptionsFiltresCollection:
     types_coar: tuple[str, ...] = ()
     annee_min: int | None = None
     annee_max: int | None = None
+    #: Étiquettes présentes sur au moins un item de la collection (objets
+    #: ORM : id/libelle/couleur pour le sélecteur). Vide → pas de filtre étiquette.
+    etiquettes: tuple[Etiquette, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1338,6 +1343,7 @@ class FiltresCollection:
     types_coar: tuple[str, ...] = ()
     annee_de: int | None = None
     annee_a: int | None = None
+    etiquettes: tuple[int, ...] = ()  # ids d'étiquettes
 
     @property
     def actifs(self) -> bool:
@@ -1347,6 +1353,7 @@ class FiltresCollection:
             or self.types_coar
             or self.annee_de is not None
             or self.annee_a is not None
+            or self.etiquettes
         )
 
     @property
@@ -1355,6 +1362,7 @@ class FiltresCollection:
             (1 if self.etats else 0)
             + (1 if self.langues else 0)
             + (1 if self.types_coar else 0)
+            + (1 if self.etiquettes else 0)
         )
         if self.annee_de is not None or self.annee_a is not None:
             n += 1
@@ -1374,6 +1382,7 @@ class FiltresCollection:
         retire_langue: str | None = None,
         retire_type_coar: str | None = None,
         retire_periode: bool = False,
+        retire_etiquette: int | None = None,
     ) -> str:
         """Sérialise les filtres actifs en query string.
 
@@ -1400,7 +1409,17 @@ class FiltresCollection:
                 params.append(f"annee_de={self.annee_de}")
             if self.annee_a is not None:
                 params.append(f"annee_a={self.annee_a}")
+        etiquettes = tuple(e for e in self.etiquettes if e != retire_etiquette)
+        if etiquettes:
+            params.append("etiquette=" + ",".join(str(e) for e in etiquettes))
         return "&".join(params)
+
+
+def _parse_int_ou_none(valeur: str) -> int | None:
+    try:
+        return int(valeur)
+    except (TypeError, ValueError):
+        return None
 
 
 def parser_filtres_collection(
@@ -1411,6 +1430,7 @@ def parser_filtres_collection(
     annee_de: int | None,
     annee_a: int | None,
     options: OptionsFiltresCollection,
+    etiquette: str | list[str] | None = None,
 ) -> FiltresCollection:
     """Parse les filtres reçus en query string + valide contre les
     options dynamiques de la collection. Les valeurs hors whitelist
@@ -1442,12 +1462,20 @@ def parser_filtres_collection(
         # exploitable (la pastille affichera la plage normalisée).
         de, a = a, de
 
+    ids_etiquettes_valides = {e.id for e in options.etiquettes}
+    etiquettes = tuple(
+        i
+        for x in csv_to_liste(etiquette)
+        if (i := _parse_int_ou_none(x)) is not None and i in ids_etiquettes_valides
+    )
+
     return FiltresCollection(
         etats=etats,
         langues=langues,
         types_coar=types_coar,
         annee_de=de,
         annee_a=a,
+        etiquettes=etiquettes,
     )
 
 
@@ -1532,11 +1560,24 @@ def composer_page_collection(db: Session, collection: Collection) -> CollectionD
         if annee is not None:
             annee_min = annee if annee_min is None else min(annee_min, annee)
             annee_max = annee if annee_max is None else max(annee_max, annee)
+    # Étiquettes présentes sur au moins un item de la collection (pour le
+    # sélecteur de filtre). +1 requête, bornée (peu d'étiquettes distinctes).
+    etiquettes_presentes = tuple(
+        db.scalars(
+            select(Etiquette)
+            .join(ItemEtiquette, ItemEtiquette.etiquette_id == Etiquette.id)
+            .join(ItemCollection, ItemCollection.item_id == ItemEtiquette.item_id)
+            .where(ItemCollection.collection_id == collection.id)
+            .distinct()
+            .order_by(Etiquette.libelle)
+        ).all()
+    )
     options_filtres = OptionsFiltresCollection(
         langues=tuple(sorted(langues_set)),
         types_coar=tuple(sorted(types_set)),
         annee_min=annee_min,
         annee_max=annee_max,
+        etiquettes=etiquettes_presentes,
     )
 
     # ---- Traçabilité fusionnée avec le dernier item de la collection

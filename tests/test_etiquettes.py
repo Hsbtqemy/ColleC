@@ -34,14 +34,20 @@ from archives_tool.api.services.fonds import (
     lire_fonds_par_cote,
     supprimer_fonds,
 )
+from archives_tool.api.services.dashboard import (
+    FiltresCollection,
+    OptionsFiltresCollection,
+    parser_filtres_collection,
+)
 from archives_tool.api.services.items import (
     FormulaireItem,
     creer_item,
+    lister_items_collection,
     supprimer_item,
 )
 from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.demo import peupler_base
-from archives_tool.models import Item, ItemEtiquette
+from archives_tool.models import Fonds, Item, ItemEtiquette
 
 
 def _item(session: Session):
@@ -175,6 +181,99 @@ def test_supprimer_fonds_avec_item_etiquete_cascade(session: Session) -> None:
     supprimer_fonds(session, fonds_id)  # ne doit pas lever
     assert session.scalar(select(func.count()).select_from(ItemEtiquette)) == 0
     assert etiquette_par_id(session, et.id) is not None  # l'étiquette survit
+
+
+# --- Filtrage par étiquette (Lot 4c) ----------------------------------------
+
+
+def test_lister_items_collection_filtre_par_etiquette(session: Session) -> None:
+    """Filtrer une collection par étiquette ne retourne que les items qui la
+    portent."""
+    creer_fonds(session, FormulaireFonds(cote="HK", titre="HK"))
+    fonds = lire_fonds_par_cote(session, "HK")
+    creer_item(session, FormulaireItem(cote="HK-1", titre="N1", fonds_id=fonds.id))
+    creer_item(session, FormulaireItem(cote="HK-2", titre="N2", fonds_id=fonds.id))
+    item1 = session.scalar(
+        select(Item).where(Item.cote == "HK-1", Item.fonds_id == fonds.id)
+    )
+    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    etiqueter_item(session, item1.id, et.id)
+
+    miroir = fonds.collection_miroir
+    listage = lister_items_collection(session, miroir.id, etiquettes=[et.id])
+    assert listage.total == 1
+    assert [i.cote for i in listage.items] == ["HK-1"]
+    # sans filtre : les 2 items
+    assert lister_items_collection(session, miroir.id).total == 2
+
+
+def test_parser_filtres_etiquette_valide_contre_options(session: Session) -> None:
+    """Le parser ne garde que les ids d'étiquette présents dans les options
+    (hors-options et non-entiers ignorés silencieusement)."""
+    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    options = OptionsFiltresCollection(etiquettes=(et,))
+    filtres = parser_filtres_collection(
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=options,
+        etiquette=[str(et.id), "9999", "abc"],
+    )
+    assert filtres.etiquettes == (et.id,)
+    assert filtres.actifs
+
+
+def test_etiquette_round_trip_query_string_parser(session: Session) -> None:
+    """Contrat de préservation pagination/tri : `to_query_string` sérialise
+    en CSV, et re-passer cette CSV par le parser (comme un lien paginé)
+    redonne les mêmes ids. Couvre la conversion int via CSV-dans-liste,
+    propre à l'étiquette."""
+    e1 = creer_etiquette(session, FormulaireEtiquette(libelle="A", couleur="#E24B4A"))
+    e2 = creer_etiquette(session, FormulaireEtiquette(libelle="B", couleur="#639922"))
+    options = OptionsFiltresCollection(etiquettes=(e1, e2))
+    filtres = FiltresCollection(etiquettes=(e1.id, e2.id))
+
+    qs = filtres.to_query_string()
+    assert qs == f"etiquette={e1.id},{e2.id}"  # CSV
+    # retrait d'une pastille → l'autre subsiste
+    assert filtres.to_query_string(retire_etiquette=e1.id) == f"etiquette={e2.id}"
+
+    # re-parse de la CSV comme le ferait la route via un lien paginé
+    reparse = parser_filtres_collection(
+        etat=None,
+        langue=None,
+        type_coar=None,
+        annee_de=None,
+        annee_a=None,
+        options=options,
+        etiquette=[f"{e1.id},{e2.id}"],
+    )
+    assert reparse.etiquettes == (e1.id, e2.id)
+
+
+def test_collection_filtre_etiquette_via_query_et_pastille(base_demo: Path) -> None:
+    """End-to-end : taguer un item, ouvrir la collection avec ?etiquette=<id>
+    → page 200 + pastille de filtre actif avec le libellé."""
+    cote, fonds_cote = _premier_item(base_demo)
+    with _session_demo(base_demo) as db:
+        item = db.scalars(select(Item).where(Item.cote == cote)).first()
+        fonds_obj = db.scalars(select(Fonds).where(Fonds.cote == fonds_cote)).first()
+        miroir_cote = fonds_obj.collection_miroir.cote
+        et = creer_etiquette(
+            db, FormulaireEtiquette(libelle="Relu4cUnique", couleur="#639922")
+        )
+        etiqueter_item(db, item.id, et.id)
+        et_id = et.id
+
+    client = TestClient(app)
+    r = client.get(
+        f"/collection/{miroir_cote}",
+        params={"fonds": fonds_cote, "etiquette": str(et_id)},
+    )
+    assert r.status_code == 200
+    assert "Étiquette: Relu4cUnique" in r.text  # pastille de filtre actif
 
 
 # --- Routes web (gestion + étiquetage) --------------------------------------

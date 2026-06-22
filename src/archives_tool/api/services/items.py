@@ -52,6 +52,7 @@ from archives_tool.models import (
     Fonds,
     Item,
     ItemCollection,
+    ItemEtiquette,
     ModificationItem,
     TypeCollection,
 )
@@ -433,6 +434,7 @@ def lister_items_collection(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
     tri: str | None = None,
     ordre: Ordre = "asc",
     page: int = 1,
@@ -453,6 +455,7 @@ def lister_items_collection(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
         tri=tri,
         ordre=ordre,
         page=page,
@@ -469,6 +472,7 @@ def _appliquer_filtres_items(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
 ) -> tuple[object, dict[str, object]]:
     """Applique les filtres optionnels à une requête (`base_stmt` ou
     `count_stmt`). Retourne `(stmt_filtré, filtres_appliqués)` où le
@@ -500,6 +504,18 @@ def _appliquer_filtres_items(
     if annee_a is not None:
         stmt = stmt.where(Item.annee <= annee_a)
         filtres["annee_a"] = annee_a
+    if etiquettes:
+        ids = [int(e) for e in etiquettes]
+        # OR au sein de la dimension : items portant AU MOINS une des
+        # étiquettes sélectionnées (cohérent avec etats/langues en `.in_()`).
+        stmt = stmt.where(
+            Item.id.in_(
+                select(ItemEtiquette.item_id).where(
+                    ItemEtiquette.etiquette_id.in_(ids)
+                )
+            )
+        )
+        filtres["etiquettes"] = ids
     return stmt, filtres
 
 
@@ -513,6 +529,7 @@ def _lister_items(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
     tri: str | None,
     ordre: Ordre,
     page: int,
@@ -531,6 +548,7 @@ def _lister_items(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
     )
 
     mapping_tri = {
@@ -554,6 +572,7 @@ def _lister_items(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
     )
     total = db.scalar(count_stmt) or 0
 

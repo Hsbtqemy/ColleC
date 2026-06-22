@@ -50,7 +50,13 @@ class Fichier(Base):
     __tablename__ = "fichier"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
+    # ON DELETE CASCADE en parité avec les FK sœurs (Item.fonds_id,
+    # item_collection, annotation_region.fichier_id) : défense en profondeur
+    # SQL si un futur delete() Core/bulk contourne la cascade ORM
+    # `Item.fichiers` (cascade="all, delete-orphan").
+    item_id: Mapped[int] = mapped_column(
+        ForeignKey("item.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Le fichier original peut être local (racine + chemin_relatif),
     # exclusivement sur Nakala (iiif_url_nakala) ou les deux. Au moins

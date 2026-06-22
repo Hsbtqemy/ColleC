@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, inspect, text
 
 from archives_tool.db import creer_engine
 
@@ -65,6 +65,83 @@ def test_migration_cree_les_memes_contraintes_uniques(
             tuple(sorted(u["column_names"])) for u in insp_m.get_unique_constraints(nom)
         }
         assert uq_a == uq_m, f"divergence UNIQUE sur {nom}: {uq_a ^ uq_m}"
+
+
+def test_migration_fichier_item_id_a_on_delete_cascade(
+    engine_alembic: Engine, engine
+) -> None:
+    """R5 (revue generale) : la FK `fichier.item_id` doit porter
+    `ON DELETE CASCADE`, en parite avec ses soeurs (item.fonds_id,
+    item_collection, annotation_region.fichier_id) — defense en profondeur
+    SQL contre un futur delete() Core/bulk qui orphelinerait les fichiers.
+
+    Verifie a la fois sur la base montee par Alembic (migration
+    `v0z1a2b3c4d5`) et celle montee par `Base.metadata.create_all` (modele),
+    donc parite migration <-> modele.
+    """
+    for libelle, eng in (("alembic", engine_alembic), ("metadata", engine)):
+        fks = inspect(eng).get_foreign_keys("fichier")
+        item_fk = next(
+            (fk for fk in fks if fk["constrained_columns"] == ["item_id"]), None
+        )
+        assert item_fk is not None, f"{libelle}: FK fichier.item_id absente"
+        ondelete = (item_fk.get("options") or {}).get("ondelete")
+        assert (ondelete or "").upper() == "CASCADE", (
+            f"{libelle}: fichier.item_id sans ON DELETE CASCADE (got {ondelete!r})"
+        )
+
+
+def test_fichier_cascade_sql_au_delete_item_bulk(engine) -> None:
+    """R5 — but reel de l'ON DELETE CASCADE : un `DELETE` bulk SQL sur `item`
+    (qui CONTOURNE la cascade ORM `Item.fichiers`) doit cascader jusqu'aux
+    `fichier` ET transitivement leurs `annotation_region` (elles-memes en
+    CASCADE sur fichier). C'est le scenario que R5 protege : sans la cascade
+    SQL, un bulk delete orphelinerait les fichiers.
+
+    `engine` (fixture) applique `foreign_keys=ON` via `creer_engine`.
+    """
+    from sqlalchemy.orm import Session
+
+    from archives_tool.api.services.fonds import (
+        FormulaireFonds,
+        creer_fonds,
+        lire_fonds_par_cote,
+    )
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.models import AnnotationRegion, Fichier
+
+    with Session(engine) as s:
+        creer_fonds(s, FormulaireFonds(cote="RC", titre="RC"))
+        fonds = lire_fonds_par_cote(s, "RC")
+        item = creer_item(s, FormulaireItem(cote="RC-1", titre="N", fonds_id=fonds.id))
+        fichier = Fichier(
+            item_id=item.id,
+            racine="r",
+            chemin_relatif="a.tif",
+            nom_fichier="a.tif",
+            ordre=1,
+            type_page="page",
+        )
+        s.add(fichier)
+        s.flush()
+        s.add(AnnotationRegion(fichier_id=fichier.id, selecteur="xywh=0,0,1,1", corps=[]))
+        s.commit()
+        item_id, fichier_id = item.id, fichier.id
+
+    # DELETE bulk SQL : ne passe PAS par l'ORM (donc pas de delete-orphan).
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM item WHERE id = :i"), {"i": item_id})
+
+    with engine.connect() as conn:
+        nf = conn.execute(
+            text("SELECT count(*) FROM fichier WHERE id = :i"), {"i": fichier_id}
+        ).scalar()
+        na = conn.execute(
+            text("SELECT count(*) FROM annotation_region WHERE fichier_id = :i"),
+            {"i": fichier_id},
+        ).scalar()
+    assert nf == 0, "fichier non cascade-supprime au DELETE bulk de l'item (R5)"
+    assert na == 0, "annotation_region non cascade-supprimee transitivement (R5)"
 
 
 # ---------------------------------------------------------------------------

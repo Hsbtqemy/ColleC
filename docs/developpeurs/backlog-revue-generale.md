@@ -205,7 +205,8 @@ après un échec. Non testé.
 
 ## R5 — `Fichier.item_id` sans `ON DELETE CASCADE` (asymétrie FK) `LOW`
 
-**Origine** : préexistant. **Statut** : ouvert.
+**Origine** : préexistant. **Statut** : ✅ **RÉSOLU (2026-06-22)** — voir
+*Résolution* en fin de ticket.
 **Fichiers** : `models/fichier.py:53` ; migration initiale
 `alembic/versions/380e05cd7254_initial_schema.py` (~273-276).
 
@@ -224,6 +225,30 @@ ne serait jamais supprimé).
 **Esquisse de fix** : migration ajoutant `ondelete="CASCADE"` à
 `fichier.item_id` (parité défense-en-profondeur avec les FK sœurs).
 `batch_alter_table` (SQLite).
+
+**Résolution (2026-06-22)** — `models/fichier.py` : `item_id` passe à
+`ForeignKey("item.id", ondelete="CASCADE")`. Migration `v0z1a2b3c4d5`
+(`batch_alter_table` sur `fichier`) : la FK initiale étant **anonyme**
+(`380e05cd7254` la crée sans `name=`), on fournit une `naming_convention`
+SQLAlchemy par défaut pour que la FK reflétée reçoive le nom canonique
+`fk_fichier_item_id_item` et puisse être droppée, puis recréée avec
+`ondelete="CASCADE"`. **Idempotente** (skip si la FK porte déjà `CASCADE` —
+cas d'une base `Base.metadata.create_all` en parallèle) ; **downgrade
+fonctionnelle** (recrée la FK sans cascade). Validé empiriquement : cycle
+upgrade → downgrade → upgrade, **une seule** FK `item_id` `ON DELETE
+CASCADE` dans la DDL finale, **5 index** (`ix_fichier_item`…) + contraintes
+UNIQUE/CHECK préservés au recreate. **Pas de `passive_deletes`** : la
+cascade ORM `Item.fichiers` (`all, delete-orphan`) reste le chemin nominal,
+la cascade SQL est de la défense en profondeur. 1 test de parité ajouté
+(`test_migration_fichier_item_id_a_on_delete_cascade` : `CASCADE` côté
+Alembic **et** côté modèle) ; suite complète **1997 verts**.
+
+**Note hors scope (observée, non traitée)** : `operation_fichier.fichier_id`
+(journal) reste sans action `ON DELETE` (NO ACTION). Un `delete()` bulk sur
+`item` cascade donc jusqu'à `fichier` mais **bloquerait** (RESTRICT) si des
+`OperationFichier` référencent ces fichiers — comportement *fail-safe* (pas
+d'orphelin), pas une régression. La durabilité du journal vs `SET NULL` est
+une décision distincte de R5 (principe n°6 : ne pas élargir le scope).
 
 ---
 

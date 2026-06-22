@@ -222,6 +222,10 @@ interne, consommation **aval** ».
     extraction texte sera une 2ᵉ tâche de fond mutant des `Fichier`/`OcrPage`
     → la garde mono-job actuelle ne suffira plus (condition de remise en
     cause déjà documentée dans CLAUDE.md § *Tâches de fond*).
+  - **Parité FK `Fichier.item_id`** (R5) **✅ résolu (2026-06-22)** —
+    `ondelete="CASCADE"` posé au niveau SQL (migration `v0z1a2b3c4d5`), en
+    parité avec les FK sœurs ; défense en profondeur contre un futur
+    `delete()` bulk. Cf. `backlog-revue-generale.md` R5.
   - **Verrou optimiste `Fichier`** (colonne `version` non câblée, ≠ Item/
     Collection/Fonds). Risque réel limité aujourd'hui (ShareDocs ne fait que
     *créer* des Fichier, le push fichiers est CLI-only, `IncoherenceFichierORM`
@@ -245,8 +249,11 @@ interne, consommation **aval** ».
   désactivée seule, `lecture_seule`/`racines` préservés), **R3** collision
   plan.py disque-seul vs base **✅ corrigé** (garde base au plan), **R4**
   mkdir orphelins au rollback (verrouillé par test), **R5** `Fichier.item_id`
-  sans `ON DELETE CASCADE`. **Reste ouvert : R5 seul** (LOW, nécessite une
-  migration). Sécurité + invariants vérifiés sains (aucun ticket).
+  sans `ON DELETE CASCADE` **✅ corrigé (2026-06-22, migration `v0z1a2b3c4d5`
+  + parité FK testée)**. **Reste ouvert : R4 seul** (LOW — dossiers
+  orphelins au rollback ; comportement déjà *verrouillé par test* via la
+  résolution R1, mais le cleanup `rmdir` reste non implémenté). Sécurité +
+  invariants vérifiés sains (aucun ticket).
 - **Audit de parité Nakala apitest ↔ prod** ✅ **FAIT (2026-06-20)** — clé
   d'un vrai compte Huma-Num ; Volets A (lecture) + B (écriture item +
   collection) + parité vocab ; parité totale du contrat d'API. Cf.

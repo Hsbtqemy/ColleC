@@ -33,9 +33,10 @@ Mode actuel : **local mono-utilisateur**.
 5. **Confort / interop** (V2/V3) en opportuniste.
 
 > **Chantier UI⁺** (surfaçage de l'existant + polissage du front) — ajouté au
-> point d'approfondissement du 2026-06-22 : **sans dépendance dure**, donc
-> **interleavable** avant ou pendant le Chantier 2. Détail et évaluation
-> valeur/coût dans sa section dédiée plus bas.
+> point d'approfondissement du 2026-06-22, **mini-chantier resserré livré le
+> jour même** (traçabilité + autocomplete + étiquettes). Sans dépendance dure
+> (interleavable). Détail, reste et évaluation valeur/coût dans sa section
+> dédiée plus bas.
 
 ---
 
@@ -122,8 +123,21 @@ des états module-globaux).
 ## Chantier UI⁺ — Surfaçage de l'existant & polissage du front (interleavable)
 
 **Origine** : point d'approfondissement du 2026-06-22 (revue de l'UI/front +
-cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : évaluation à
-arbitrer — **aucune dépendance dure**, interleavable avec/avant le Chantier 2.
+cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **mini-chantier
+resserré LIVRÉ (2026-06-22, sur `dev`)** — Panier A (traçabilité) + Panier B
+(inline déjà fait, autocomplete, étiquettes + filtrage). **Reste optionnel** :
+QA / comparer-fichiers (A), quick-actions / hygiène transversale (B), Panier C.
+Sans dépendance dure (interleavable avec/avant le Chantier 2).
+
+!!! success "Livré (chantier UI⁺, 2026-06-22)"
+    **Lot 1** page `/journal` (suppressions + push Nakala + renommages) ·
+    **Lot 2** historique des modifications sur la fiche item (`ModificationItem`,
+    modèle qui était **dormant** → producteur livré) · **Lot 3** autocomplete
+    des valeurs existantes sur les champs libres (l'inline étendu était déjà
+    en place) · **Lot 4 + 4c** étiquettes colorées de chantier (modèle +
+    page de gestion + étiquetage HTMX sur la fiche + filtrage drawer/pastilles).
+    ~+90 tests ; suite à 2045 verts. Chaque lot revu (a trouvé du réel à
+    chaque fois : branches non testées, cascades, injection JS, round-trip).
 
 **Constat** : le back/CLI/Nakala a pris une avance nette sur le front. Logique
 métier ~90 % couverte, CLI ~100 %, **UI web ~50 %** des capacités et **~7/10
@@ -148,12 +162,12 @@ front**.
 Données déjà journalisées, services de lecture déjà écrits → essentiellement
 des **pages read-only** à brancher.
 
-| Piste | Back disponible | Valeur | Coût |
-| --- | --- | --- | --- |
-| Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible |
-| Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible |
-| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen |
-| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen |
+| Piste | Back disponible | Valeur | Coût | État |
+| --- | --- | --- | --- | --- |
+| Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible | ✅ Lot 1 |
+| Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible | ✅ Lot 2 |
+| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ⏳ reste |
+| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ⏳ reste |
 
 **Resté CLI volontairement** (principe n°6) : renommage batch, dérivés en
 masse, import profil YAML complet, push de fichiers binaires Nakala — un bouton
@@ -161,12 +175,12 @@ masse, import profil YAML complet, push de fichiers binaires Nakala — un bouto
 
 ### Panier B — Polir le front (augmentation > prolifération)
 
-| Piste | Pourquoi | Valeur | Coût |
-| --- | --- | --- | --- |
-| **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete vocabulaires** | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible |
-| **Étiquettes colorées** libres (≠ `etat_catalogage`) | marquage workflow ; table simple + filtre natif ; favori #1 | Quotidien | Faible-moyen |
-| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible |
-| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots |
+| Piste | Pourquoi | Valeur | Coût | État |
+| --- | --- | --- | --- | --- |
+| **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete** des valeurs existantes | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible | ✅ Lot 3 (inline déjà fait + autocomplete livré) |
+| **Étiquettes colorées** libres (≠ `etat_catalogage`) + **filtrage** | marquage workflow ; table dédiée (jamais exportée) + filtre drawer ; favori #1 | Quotidien | Faible-moyen | ✅ Lot 4 + 4c |
+| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ⏳ reste |
+| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ⏳ reste (a11y de base posée sur les pages neuves) |
 
 ### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
 
@@ -175,15 +189,16 @@ Command palette (Ctrl+K étendu), preview pane, **vue Avancement consolidée**
 incertain ; la recherche plein-texte (Chantier 2) les rend plus puissants. →
 relèvent du **Chantier 5** / `idees-ui-vrac.md`.
 
-### Recommandation & arbitrage
+### Suite (mini-chantier resserré FAIT)
 
-- **Si test à plusieurs / démo proche** → **mini-chantier resserré = Panier A
-  + (inline étendu, étiquettes) du Panier B**, *avant* l'OCR : peu de code,
-  comble le trou le plus visible (la traçabilité existe en base mais est
-  invisible dans le navigateur), prépare la confiance V1.0.
-- **Sinon** → enchaîner le **Chantier 2 (OCR)** et **interleaver** le Panier A
-  au fil de l'eau.
-- **Hors scope ici** : l'isolation per-user des états module-globaux est un
+- **Fait (2026-06-22)** : le mini-chantier resserré — Panier A (traçabilité)
+  + Panier B (inline déjà fait, autocomplete, étiquettes + filtrage) — est
+  livré. Il comblait le trou le plus visible (la traçabilité existait en base
+  mais était invisible dans le navigateur) et prépare la confiance V1.0.
+- **Reste, opportuniste** : QA `controler` + diagnostic `comparer-fichiers`
+  (Panier A) ; quick-actions + hygiène transversale / a11y / tokens CSS
+  (Panier B) ; Panier C après l'OCR. Aucun n'est bloquant.
+- **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
 
 **Renvois** : `idees-ui-vrac.md` (paniers B/C), `plan-de-chantier.md` (vue

@@ -187,7 +187,8 @@ swap couvert par `test_plan_mixte_cycle_et_normal_bout_en_bout`).
 
 ## R4 — Renamer : `mkdir(parents)` non nettoyé au rollback `LOW`
 
-**Origine** : préexistant. **Statut** : ouvert.
+**Origine** : préexistant. **Statut** : ✅ **RÉSOLU (2026-06-22)** — voir
+*Résolution* en fin de ticket.
 **Fichiers** : `renamer/execution.py` (~205, phase 2).
 
 **Quoi** : quand le template crée une nouvelle arborescence
@@ -200,6 +201,23 @@ après un échec. Non testé.
 
 **Esquisse de fix** : tracer les répertoires créés pendant la phase 2,
 `rmdir` ceux restés vides lors de la compensation.
+
+**Résolution (2026-06-22)** — `renamer/execution.py` : avant chaque
+`mkdir(parents=True)` de phase 2, `_repertoires_a_creer(dst.parent)` calcule
+les ancêtres **inexistants** (du plus haut au plus profond) et les accumule
+(dédupliqués) dans `repertoires_crees`. À la compensation d'un échec phase 2
+(après le rejeu des fichiers vers leur source), `_nettoyer_repertoires_crees`
+les `rmdir` **du plus profond au plus haut**. `rmdir` ne touche que les
+répertoires **vides** : un dossier qu'occupe un fichier coincé (double panne)
+ou un fichier hors-lot lève `OSError`, ignorée → **best-effort, jamais
+destructif**. Calculé *avant* le mkdir → un répertoire **préexistant** n'est
+jamais tracé ni supprimé (même s'il devient vide). **Hors scope** :
+`annuler_batch` (undo volontaire d'un batch réussi) ne nettoie pas — on
+préserve l'arborescence d'une opération aboutie. 2 tests : le test de panne
+phase 2 (R1) asserte désormais que `renomme/` est **résorbé** ;
+`test_compensation_phase2_nettoie_arbo_creee_mais_preserve_preexistant`
+verrouille le nettoyage multi-niveaux **et** la préservation d'un répertoire
+préexistant vide.
 
 ---
 
@@ -239,9 +257,14 @@ upgrade → downgrade → upgrade, **une seule** FK `item_id` `ON DELETE
 CASCADE` dans la DDL finale, **5 index** (`ix_fichier_item`…) + contraintes
 UNIQUE/CHECK préservés au recreate. **Pas de `passive_deletes`** : la
 cascade ORM `Item.fichiers` (`all, delete-orphan`) reste le chemin nominal,
-la cascade SQL est de la défense en profondeur. 1 test de parité ajouté
+la cascade SQL est de la défense en profondeur. 2 tests ajoutés : parité
 (`test_migration_fichier_item_id_a_on_delete_cascade` : `CASCADE` côté
-Alembic **et** côté modèle) ; suite complète **1997 verts**.
+Alembic **et** côté modèle) + cascade réelle
+(`test_fichier_cascade_sql_au_delete_item_bulk` : un `DELETE` bulk SQL sur
+`item` cascade jusqu'aux `fichier` et `annotation_region`). Migration aussi
+validée **data-safe sur base peuplée** (fichier référencé par
+`operation_fichier` + `annotation_region` : données préservées). Suite
+complète **1997 verts**.
 
 **Note hors scope (observée, non traitée)** : `operation_fichier.fichier_id`
 (journal) reste sans action `ON DELETE` (NO ACTION). Un `delete()` bulk sur
@@ -252,10 +275,13 @@ une décision distincte de R5 (principe n°6 : ne pas élargir le scope).
 
 ---
 
-## Décision de séquençage (à trancher)
+## Décision de séquençage — soldée (2026-06-22)
 
-- **R2** : candidat correctif court — régression de sûreté élargie au Lot 3.
-- **R1** : candidat « prochain lot de durcissement tests » — le plus
-  important sur le fond (zone destructive, principe n°7), mais préexistant.
-- **R3 / R4 / R5** : à interleaver avec un futur passage sur le renamer
-  (R3+R4) et une migration de cohérence FK (R5).
+Les 5 tickets de la revue générale sont **tous résolus** : R1 (couvert),
+R2, R3, R4, R5. Trace de la séquence suivie :
+
+- **R2** (sûreté config, MEDIUM) puis **R1** (durcissement tests zone
+  destructive, HIGH) traités les 2026-06-18/19.
+- **R3** (collision base au plan, MEDIUM) le 2026-06-19.
+- **R4** (nettoyage `mkdir` au rollback, LOW) + **R5** (parité FK
+  `fichier.item_id`, LOW) le 2026-06-22 — clôture du backlog.

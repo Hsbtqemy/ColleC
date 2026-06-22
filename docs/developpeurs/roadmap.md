@@ -248,11 +248,11 @@ interne, consommation **aval** ».
   blast-radius **✅ corrigé** (section `nakala`/`sharedocs` invalide
   désactivée seule, `lecture_seule`/`racines` préservés), **R3** collision
   plan.py disque-seul vs base **✅ corrigé** (garde base au plan), **R4**
-  mkdir orphelins au rollback (verrouillé par test), **R5** `Fichier.item_id`
-  sans `ON DELETE CASCADE` **✅ corrigé (2026-06-22, migration `v0z1a2b3c4d5`
-  + parité FK testée)**. **Reste ouvert : R4 seul** (LOW — dossiers
-  orphelins au rollback ; comportement déjà *verrouillé par test* via la
-  résolution R1, mais le cleanup `rmdir` reste non implémenté). Sécurité +
+  **R4** mkdir orphelins au rollback **✅ corrigé (2026-06-22 : cleanup
+  `rmdir` des répertoires créés en phase 2, best-effort, préserve les
+  préexistants)**, **R5** `Fichier.item_id` sans `ON DELETE CASCADE` **✅
+  corrigé (2026-06-22, migration `v0z1a2b3c4d5` + parité FK testée)**.
+  **Backlog revue générale entièrement soldé** (R1–R5). Sécurité +
   invariants vérifiés sains (aucun ticket).
 - **Audit de parité Nakala apitest ↔ prod** ✅ **FAIT (2026-06-20)** — clé
   d'un vrai compte Huma-Num ; Volets A (lecture) + B (écriture item +

@@ -144,6 +144,40 @@ def _compenser_apres_phase2(
     return compensees
 
 
+def _repertoires_a_creer(cible: Path) -> list[Path]:
+    """Ancêtres de `cible` (incluse) qui n'existent pas encore, ordonnés du
+    plus haut au plus profond — l'ordre dans lequel `mkdir(parents=True)` les
+    créera. Calculé AVANT le mkdir pour ne tracer (et donc ne nettoyer au
+    rollback) QUE les répertoires réellement créés par la phase 2, jamais un
+    répertoire préexistant (R4)."""
+    manquants: list[Path] = []
+    cur = cible
+    while not cur.exists():
+        manquants.append(cur)
+        parent = cur.parent
+        if parent == cur:  # racine du système de fichiers atteinte
+            break
+        cur = parent
+    manquants.reverse()
+    return manquants
+
+
+def _nettoyer_repertoires_crees(repertoires: list[Path]) -> None:
+    """Supprime, du plus profond au plus haut, les répertoires créés en
+    phase 2 restés vides après la compensation (R4 — sinon une arborescence
+    `mkdir(parents=True)` orpheline subsiste après un échec).
+
+    `rmdir` ne touche QUE les répertoires vides : un répertoire qu'occupe un
+    fichier hors-lot (ou déjà disparu) lève `OSError`, ignorée — best-effort,
+    jamais destructif. L'ordre profond→haut garantit qu'un parent devenu vide
+    après suppression de ses enfants est nettoyé à son tour."""
+    for repertoire in reversed(repertoires):
+        try:
+            repertoire.rmdir()
+        except OSError:
+            pass  # non vide (occupé légitimement) ou déjà absent : on laisse
+
+
 def executer_plan(
     session: Session,
     plan: RapportPlan,
@@ -200,8 +234,14 @@ def executer_plan(
         return rap
 
     phase2_appliquees = 0
+    repertoires_crees: list[Path] = []
+    vus_repertoires: set[Path] = set()
     try:
         for m in mouvements:
+            for repertoire in _repertoires_a_creer(m.dst.parent):
+                if repertoire not in vus_repertoires:
+                    vus_repertoires.add(repertoire)
+                    repertoires_crees.append(repertoire)
             m.dst.parent.mkdir(parents=True, exist_ok=True)
             m.tmp.rename(m.dst)
             phase2_appliquees += 1
@@ -224,6 +264,9 @@ def executer_plan(
         session.commit()
     except Exception as e:
         compensees = _compenser_apres_phase2(mouvements, phase2_appliquees, rap.erreurs)
+        # R4 : les fichiers étant rejoués vers leur source, les répertoires
+        # créés par la phase 2 sont désormais vides → on les résorbe.
+        _nettoyer_repertoires_crees(repertoires_crees)
         session.rollback()
         rap.erreurs.insert(0, f"Échec phase 2 : {e}")
         rap.operations_compensees = compensees

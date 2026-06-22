@@ -518,9 +518,11 @@ def test_annulation_remet_chemins_initiaux(
     )
     assert not rap_annul.erreurs
 
-    # Disque : ancien chemin restauré. Le répertoire `renomme/` peut
-    # subsister vide (le moteur ne supprime pas les répertoires créés
-    # — c'est conservateur, à l'utilisateur de faire le ménage).
+    # Disque : ancien chemin restauré. L'annulation d'un batch RÉUSSI ne
+    # nettoie pas les répertoires créés (contrairement à la compensation
+    # d'un échec de phase 2 — R4) : annuler est un undo volontaire d'une
+    # opération aboutie, on préserve l'arborescence. Le dossier `renomme/`
+    # peut donc subsister vide.
     assert (racine_scans / "HK-001-001.tif").exists()
     assert not any((racine_scans / "renomme").glob("*"))
 
@@ -705,14 +707,46 @@ def test_compensation_echec_phase2_restaure_tout(
     assert etat["n"] == 7
     # Disque : les .tif reviennent intégralement à l'origine (tmp résorbés).
     assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
-    # R4 (dette connue) : le dossier `renomme/` créé en phase 2 subsiste
-    # vide — le moteur ne nettoie pas les répertoires créés. Verrouillé ici
-    # pour documenter le comportement (cf. backlog-revue-generale R4).
-    assert (racine_scans / "renomme").is_dir()
+    # R4 (résolu) : le dossier `renomme/` créé en phase 2 est résorbé par la
+    # compensation (il est vide une fois les fichiers rejoués vers la source).
+    assert not (racine_scans / "renomme").exists()
     chemins = {
         f.nom_fichier: f.chemin_relatif for f in deux_fichiers.scalars(select(Fichier))
     }
     assert chemins == {"a.tif": "a.tif", "b.tif": "b.tif"}
+
+
+def test_compensation_phase2_nettoie_arbo_creee_mais_preserve_preexistant(
+    deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R4 : à la compensation d'un échec phase 2, l'arborescence créée par le
+    `mkdir(parents=True)` est résorbée niveau par niveau (du plus profond au
+    plus haut), MAIS un répertoire préexistant sur le chemin est préservé —
+    le helper ne nettoie que ce que la phase 2 a réellement créé.
+
+    Cas : `garde/` préexiste (vide), le template route vers
+    `garde/sous/profond/` → la phase 2 crée `sous/` et `profond/`. Échec au
+    2e rename phase 2 → après compensation, `sous/` et `profond/` disparus,
+    `garde/` intact (jamais tracé car il existait déjà)."""
+    (racine_scans / "garde").mkdir()  # préexistant, vide
+    plan = construire_plan(
+        deux_fichiers,
+        template="garde/sous/profond/p{ordre:03d}.{ext}",
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(fonds_cote="X"),
+    )
+    _patch_rename(monkeypatch, fail_on={4})  # 2e tmp→dst
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert rap.erreurs and "phase 2" in rap.erreurs[0]
+    # Niveaux créés par la phase 2 : résorbés.
+    assert not (racine_scans / "garde" / "sous" / "profond").exists()
+    assert not (racine_scans / "garde" / "sous").exists()
+    # Répertoire préexistant : préservé (même vide), jamais supprimé.
+    assert (racine_scans / "garde").is_dir()
+    # Fichiers revenus à l'origine.
+    assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
 
 
 def test_compensation_double_panne_signale_l_echec(
@@ -735,6 +769,12 @@ def test_compensation_double_panne_signale_l_echec(
     # place (preuve que l'échec n'est pas silencieux).
     sur_disque = _etat_disque(racine_scans)
     assert sur_disque.get("a.tif") != b"AAA" or sur_disque.get("b.tif") != b"BBB"
+    # R4 (sûreté) : la 1re compensation a échoué → un binaire reste coincé
+    # dans `renomme/`. Le nettoyage des répertoires créés NE DOIT PAS le
+    # supprimer (rmdir ne touche que les dossiers vides) — pas de perte de
+    # données silencieuse derrière le cleanup R4.
+    assert (racine_scans / "renomme").is_dir()
+    assert any((racine_scans / "renomme").glob("*.tif"))
 
 
 # --- bout-en-bout : construire_plan (cycle + normal mélangés) → exécution ---

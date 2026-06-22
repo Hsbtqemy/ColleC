@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Journal · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-medium" style="color:#1f1f1f;letter-spacing:-0.02em;">
+    Journal
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Traçabilité des opérations sensibles — suppressions d'entités, push de
+    fichiers vers Nakala, et renommages. Lecture seule : cette page surface
+    ce que l'outil journalise automatiquement.
+  </p>
+</div>
+
+{% if journal.vide %}
+  <div class="text-sm text-gray-500 border border-border-tertiary rounded"
+       style="padding:32px;text-align:center;background:#fafafa;">
+    Aucune opération journalisée pour l'instant. Les suppressions, les push
+    Nakala et les renommages apparaîtront ici au fil du travail.
+  </div>
+{% else %}
+
+  {# ---------------------------------------------------------------- #}
+  {# Suppressions d'entités (OperationEntite)                          #}
+  {# ---------------------------------------------------------------- #}
+  <section class="mb-10" aria-labelledby="titre-suppressions">
+    <h2 id="titre-suppressions" class="text-lg font-medium mb-3"
+        style="color:#1f1f1f;">Suppressions d'entités</h2>
+    {% if journal.suppressions %}
+      <table class="w-full text-sm border border-border-tertiary rounded">
+        <thead>
+          <tr class="text-left text-gray-500 border-b border-border-tertiary"
+              style="font-size:12px;">
+            <th scope="col" class="py-2 px-3 font-medium">Type</th>
+            <th scope="col" class="py-2 px-3 font-medium">Cote</th>
+            <th scope="col" class="py-2 px-3 font-medium">Titre</th>
+            <th scope="col" class="py-2 px-3 font-medium">Cascade</th>
+            <th scope="col" class="py-2 px-3 font-medium">Quand</th>
+            <th scope="col" class="py-2 px-3 font-medium">Par</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in journal.suppressions %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2 px-3">
+              <span style="display:inline-block;padding:1px 8px;border-radius:10px;
+                           font-size:11px;background:#fee2e2;color:#991b1b;">
+                {{ s.type_entite }}
+              </span>
+            </td>
+            <td class="py-2 px-3 font-mono text-gray-700">{{ s.cote or "—" }}</td>
+            <td class="py-2 px-3 text-gray-700">{{ s.titre or "—" }}</td>
+            <td class="py-2 px-3 text-gray-500">{{ s.resume_cascade or "—" }}</td>
+            <td class="py-2 px-3 text-gray-500" title="{{ s.execute_le }}">
+              {% if s.execute_le %}{{ s.execute_le | temps_relatif }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 px-3 text-gray-500">{{ s.execute_par or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-400">Aucune suppression journalisée.</p>
+    {% endif %}
+  </section>
+
+  {# ---------------------------------------------------------------- #}
+  {# Push de fichiers Nakala (OperationPushNakala)                     #}
+  {# ---------------------------------------------------------------- #}
+  <section class="mb-10" aria-labelledby="titre-push">
+    <h2 id="titre-push" class="text-lg font-medium mb-3"
+        style="color:#1f1f1f;">Push de fichiers Nakala</h2>
+    {% if journal.push_nakala %}
+      <table class="w-full text-sm border border-border-tertiary rounded">
+        <thead>
+          <tr class="text-left text-gray-500 border-b border-border-tertiary"
+              style="font-size:12px;">
+            <th scope="col" class="py-2 px-3 font-medium">Item</th>
+            <th scope="col" class="py-2 px-3 font-medium">DOI</th>
+            <th scope="col" class="py-2 px-3 font-medium">Uploadés</th>
+            <th scope="col" class="py-2 px-3 font-medium">Retirés</th>
+            <th scope="col" class="py-2 px-3 font-medium">Quand</th>
+            <th scope="col" class="py-2 px-3 font-medium">Par</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in journal.push_nakala %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2 px-3 font-mono text-gray-700">{{ p.cote_item }}</td>
+            <td class="py-2 px-3 font-mono text-gray-500" style="font-size:12px;">
+              {{ p.doi }}
+            </td>
+            <td class="py-2 px-3 text-gray-700">{{ p.nb_uploades }}</td>
+            <td class="py-2 px-3 {% if p.nb_retires %}text-red-700{% else %}text-gray-500{% endif %}">
+              {{ p.nb_retires }}
+            </td>
+            <td class="py-2 px-3 text-gray-500" title="{{ p.execute_le }}">
+              {% if p.execute_le %}{{ p.execute_le | temps_relatif }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 px-3 text-gray-500">{{ p.execute_par or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-400">Aucun push Nakala journalisé.</p>
+    {% endif %}
+  </section>
+
+  {# ---------------------------------------------------------------- #}
+  {# Batchs de renommage (OperationFichier agrégés)                   #}
+  {# ---------------------------------------------------------------- #}
+  <section aria-labelledby="titre-renommage">
+    <h2 id="titre-renommage" class="text-lg font-medium mb-3"
+        style="color:#1f1f1f;">Renommages</h2>
+    {% if journal.renommages %}
+      <table class="w-full text-sm border border-border-tertiary rounded">
+        <thead>
+          <tr class="text-left text-gray-500 border-b border-border-tertiary"
+              style="font-size:12px;">
+            <th scope="col" class="py-2 px-3 font-medium">Batch</th>
+            <th scope="col" class="py-2 px-3 font-medium">Opérations</th>
+            <th scope="col" class="py-2 px-3 font-medium">Types</th>
+            <th scope="col" class="py-2 px-3 font-medium">État</th>
+            <th scope="col" class="py-2 px-3 font-medium">Quand</th>
+            <th scope="col" class="py-2 px-3 font-medium">Par</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in journal.renommages %}
+          <tr class="border-b border-gray-100">
+            <td class="py-2 px-3 font-mono text-gray-500" style="font-size:12px;"
+                title="{{ r.batch_id }}">{{ r.batch_id[:8] }}</td>
+            <td class="py-2 px-3 text-gray-700">{{ r.nb_operations }}</td>
+            <td class="py-2 px-3 text-gray-500">{{ r.types_operations | join(", ") }}</td>
+            <td class="py-2 px-3">
+              {% if r.annule %}
+                <span style="display:inline-block;padding:1px 8px;border-radius:10px;
+                             font-size:11px;background:#f3f4f6;color:#6b7280;">annulé</span>
+              {% else %}
+                <span style="display:inline-block;padding:1px 8px;border-radius:10px;
+                             font-size:11px;background:#a7f3d0;color:#065f46;">appliqué</span>
+              {% endif %}
+            </td>
+            <td class="py-2 px-3 text-gray-500" title="{{ r.execute_le_premier }}">
+              {% if r.execute_le_premier %}{{ r.execute_le_premier | temps_relatif }}{% else %}—{% endif %}
+            </td>
+            <td class="py-2 px-3 text-gray-500">{{ r.execute_par or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-sm text-gray-400">Aucun renommage journalisé.</p>
+    {% endif %}
+  </section>
+
+{% endif %}
+{% endblock %}

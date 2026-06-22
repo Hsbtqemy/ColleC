@@ -49,6 +49,7 @@ from archives_tool.api.routes import (
     derives,
     import_assistant,
     inline_edit,
+    journal_web,
     nakala_web,
     preferences,
     sharedocs_web,
@@ -115,3 +116,4 @@ app.include_router(import_assistant.router)
 app.include_router(annotations.router)
 app.include_router(nakala_web.router)
 app.include_router(sharedocs_web.router)
+app.include_router(journal_web.router)

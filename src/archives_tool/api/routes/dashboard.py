@@ -74,6 +74,9 @@ from archives_tool.api.services.fonds import (
     supprimer_fonds,
 )
 from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.etiquettes import (
+    etiquettes_courantes_et_disponibles,
+)
 from archives_tool.api.services.items import (
     FormulaireItem,
     ItemIntrouvable,
@@ -1177,6 +1180,12 @@ def page_item_fiche(
         raise HTTPException(
             status_code=404, detail=f"Item {cote!r} introuvable."
         ) from e
+    # Étiquettes de chantier (Lot 4b) : rendu serveur pour être glanceable
+    # (modifié ensuite en HTMX). Hors `composer_fiche_item` pour ne pas
+    # alourdir son budget SQL documenté.
+    etiquettes_courantes, etiquettes_disponibles = (
+        etiquettes_courantes_et_disponibles(db, fiche.item.id)
+    )
     return templates.TemplateResponse(
         request,
         "pages/item_fiche.html",
@@ -1188,6 +1197,8 @@ def page_item_fiche(
             visionneuse_url=f"/item/{cote}/visionneuse?fonds={fonds_obj.cote}",
             consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
             q_surligne=q,
+            etiquettes=etiquettes_courantes,
+            etiquettes_disponibles=etiquettes_disponibles,
         ),
     )
 

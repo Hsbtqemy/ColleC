@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Étiquettes · ColleC{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-medium" style="color:#1f1f1f;letter-spacing:-0.02em;">Étiquettes</h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Marquage de chantier libre et coloré, distinct de l'état de catalogage et
+    des vocabulaires contrôlés. Les étiquettes sont internes — elles ne partent
+    pas dans les exports.
+  </p>
+</div>
+
+{% macro pastille(libelle, couleur) %}
+<span style="display:inline-flex;align-items:center;background:{{ couleur }};color:white;
+             border-radius:11px;padding:2px 10px;font-size:12px;">{{ libelle }}</span>
+{% endmacro %}
+
+{# --- Liste --- #}
+{% if etiquettes %}
+<table class="w-full text-sm border border-border-tertiary rounded mb-8">
+  <thead>
+    <tr class="text-left text-gray-500 border-b border-border-tertiary" style="font-size:12px;">
+      <th scope="col" class="py-2 px-3 font-medium">Aperçu</th>
+      <th scope="col" class="py-2 px-3 font-medium">Libellé</th>
+      {% if not est_lecture_seule() %}<th scope="col" class="py-2 px-3 font-medium">Actions</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in etiquettes %}
+    <tr class="border-b border-gray-100" style="vertical-align:middle;">
+      <td class="py-2 px-3">{{ pastille(e.libelle, e.couleur) }}</td>
+      <td class="py-2 px-3 text-gray-700">{{ e.libelle }}</td>
+      {% if not est_lecture_seule() %}
+      <td class="py-2 px-3">
+        <form method="post" action="/etiquettes/{{ e.id }}/modifier"
+              style="display:inline-flex;gap:6px;align-items:center;margin-right:14px;">
+          <input type="text" name="libelle" value="{{ e.libelle }}" required maxlength="80"
+                 style="font-size:12px;padding:3px 6px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;width:160px;">
+          <select name="couleur" aria-label="Couleur"
+                  style="font-size:12px;padding:3px 6px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;">
+            {% for nom, hex in palette %}
+            <option value="{{ hex }}" {% if hex == e.couleur %}selected{% endif %}>{{ nom }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit"
+                  style="font-size:12px;padding:3px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:#f3f4f6;cursor:pointer;">
+            Enregistrer
+          </button>
+        </form>
+        {# Message de confirmation GÉNÉRIQUE — ne pas interpoler `e.libelle`
+           dans le JS inline (`'` décodé par le navigateur → injection au clic).
+           Le libellé est de toute façon visible dans la même ligne. #}
+        <form method="post" action="/etiquettes/{{ e.id }}/supprimer" style="display:inline;"
+              onsubmit="return confirm('Supprimer cette étiquette ? Elle sera retirée de tous les items.');">
+          <button type="submit"
+                  style="font-size:12px;padding:3px 10px;border:1px solid #fecaca;border-radius:4px;background:#fef2f2;color:#991b1b;cursor:pointer;">
+            Supprimer
+          </button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-sm text-gray-500 mb-8">Aucune étiquette pour l'instant.</p>
+{% endif %}
+
+{# --- Création --- #}
+{% if not est_lecture_seule() %}
+<section aria-labelledby="titre-creer-etiquette" style="max-width:520px;">
+  <h2 id="titre-creer-etiquette" class="text-lg font-medium mb-3" style="color:#1f1f1f;">
+    Nouvelle étiquette
+  </h2>
+  <form method="post" action="/etiquettes/creer" style="display:flex;flex-direction:column;gap:10px;">
+    <label style="font-size:13px;color:#374151;">
+      Libellé
+      <input type="text" name="libelle" value="{{ formulaire.libelle }}" required maxlength="80"
+             style="display:block;width:100%;margin-top:3px;font-size:13px;padding:6px 8px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;">
+      {% if erreurs.libelle %}<span style="color:#991b1b;font-size:12px;">{{ erreurs.libelle }}</span>{% endif %}
+    </label>
+    <label style="font-size:13px;color:#374151;">
+      Couleur
+      <select name="couleur"
+              style="display:block;margin-top:3px;font-size:13px;padding:6px 8px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;">
+        {% for nom, hex in palette %}
+        <option value="{{ hex }}" {% if hex == formulaire.couleur %}selected{% endif %}>{{ nom }}</option>
+        {% endfor %}
+      </select>
+      {% if erreurs.couleur %}<span style="color:#991b1b;font-size:12px;">{{ erreurs.couleur }}</span>{% endif %}
+    </label>
+    <div>
+      <button type="submit"
+              style="font-size:13px;padding:6px 16px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:#1f1f1f;color:white;cursor:pointer;">
+        Créer
+      </button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

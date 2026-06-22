@@ -25,6 +25,7 @@ from .enums import (
     TypePage,
     TypeRelationExterne,
 )
+from .etiquette import Etiquette, ItemEtiquette
 from .externe import LienExterneItem, RessourceExterne, SourceExterne
 from .fichier import Fichier, normaliser_transcription
 from .fonds import Fonds
@@ -51,6 +52,8 @@ __all__ = [
     "CollaborateurFonds",
     "Item",
     "ItemCollection",
+    "Etiquette",
+    "ItemEtiquette",
     "Fichier",
     "normaliser_transcription",
     "ProfilImport",

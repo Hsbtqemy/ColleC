@@ -27,6 +27,7 @@ from .enums import EtatCatalogage
 
 if TYPE_CHECKING:
     from .collection import Collection
+    from .etiquette import Etiquette
     from .externe import LienExterneItem
     from .fichier import Fichier
     from .fonds import Fonds
@@ -90,6 +91,9 @@ class Item(Base, TracabiliteMixin):
     )
     modifications: Mapped[list[ModificationItem]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
+    )
+    etiquettes: Mapped[list[Etiquette]] = relationship(
+        secondary="item_etiquette", back_populates="items", order_by="Etiquette.libelle"
     )
     liens_externes: Mapped[list[LienExterneItem]] = relationship(
         back_populates="item", cascade="all, delete-orphan"

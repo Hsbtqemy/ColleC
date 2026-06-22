@@ -47,6 +47,7 @@ from archives_tool.api.routes import (
     champs,
     dashboard,
     derives,
+    etiquettes,
     import_assistant,
     inline_edit,
     item_historique,
@@ -114,6 +115,7 @@ app.include_router(vocabulaires.router)
 app.include_router(preferences.router)
 app.include_router(inline_edit.router)
 app.include_router(item_historique.router)
+app.include_router(etiquettes.router)
 app.include_router(derives.router, prefix="/derives")
 app.include_router(import_assistant.router)
 app.include_router(annotations.router)

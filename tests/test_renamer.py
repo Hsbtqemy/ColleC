@@ -47,7 +47,7 @@ from archives_tool.renamer import (
     evaluer_template,
     executer_plan,
 )
-from archives_tool.renamer.plan import _detecter_cycles
+from archives_tool.renamer.plan import _TAILLE_LOT_SQL, _detecter_cycles
 from archives_tool.renamer.rapport import (
     CodeConflit,
     OperationRenommage,
@@ -358,6 +358,73 @@ def test_plan_collision_en_base_avec_no_op_occupant(
     assert op_keep.statut == StatutPlan.NO_OP  # l'occupant reste en place
     assert op_move.statut == StatutPlan.BLOQUE
     assert op_move.raison == "collision externe en base"
+
+
+def test_plan_collision_base_chunkee_au_dela_du_lot_sql(
+    session: Session, racine_scans: Path
+) -> None:
+    """R3 / portabilité (n°5) : la garde de collision base interroge la base
+    par lots de `_TAILLE_LOT_SQL` paramètres liés — sinon un renommage de fonds
+    entier dépasse l'ancien plafond SQLite de 999 variables (libsqlite3 < 3.32).
+
+    Ce test franchit la borne : `N = _TAILLE_LOT_SQL + 100` cibles, chacune
+    occupée en base par un fichier HORS-lot dont le binaire est ABSENT (la garde
+    disque ne les voit donc pas — seule la garde base les attrape). Les N ops
+    doivent TOUTES être bloquées : si la boucle ne traitait que le 1er lot, les
+    100 cibles du second resteraient PRET et l'assertion casserait. Couvre la
+    correction du fix R3 contre une régression « un seul `IN` » ou « 1er lot
+    seul » — indépendamment de l'ordre non déterministe du `set`."""
+    n = _TAILLE_LOT_SQL + 100
+    creer_fonds(session, FormulaireFonds(cote="CH", titre="CH"))
+    fonds = lire_fonds_par_cote(session, "CH")
+    # Item DANS le périmètre : N fichiers `p####.tif`, tous renommés `n####.tif`.
+    item_lot = creer_item(
+        session, FormulaireItem(cote="CH-LOT", titre="lot", fonds_id=fonds.id)
+    )
+    # Item HORS périmètre : occupe en base CHAQUE cible `n####.tif`, sans binaire.
+    item_occ = creer_item(
+        session, FormulaireItem(cote="CH-OCC", titre="occ", fonds_id=fonds.id)
+    )
+    for ordre in range(1, n + 1):
+        session.add(
+            Fichier(
+                item_id=item_lot.id,
+                racine="scans",
+                chemin_relatif=f"p{ordre:04d}.tif",
+                nom_fichier=f"p{ordre:04d}.tif",
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+        session.add(
+            Fichier(
+                item_id=item_occ.id,
+                racine="scans",
+                chemin_relatif=f"n{ordre:04d}.tif",  # = cible du fichier du lot
+                nom_fichier=f"n{ordre:04d}.tif",
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="n{ordre:04d}.{ext}",  # p####.tif → n####.tif (toutes occupées)
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(item_cote="CH-LOT", item_fonds_cote="CH"),
+    )
+
+    assert not plan.applicable
+    assert len(plan.operations) == n
+    bloquees_base = [
+        o for o in plan.operations if o.raison == "collision externe en base"
+    ]
+    # Un traitement partiel (1er lot seul) laisserait 100 ops à PRET ; la garde
+    # chunkée doit couvrir les N cibles, donc les N ops sont bloquées.
+    assert len(bloquees_base) == n
 
 
 # ---------------------------------------------------------------------------

@@ -143,10 +143,26 @@ def etiquettes_courantes_et_disponibles(
     db: Session, item_id: int
 ) -> tuple[list[Etiquette], list[Etiquette]]:
     """(`courantes`, `disponibles`) pour la section d'étiquetage d'un item :
-    ses étiquettes, et celles encore assignables (toutes − courantes)."""
-    courantes = etiquettes_de_item(db, item_id)
-    ids = {e.id for e in courantes}
-    disponibles = [e for e in lister_etiquettes(db) if e.id not in ids]
+    ses étiquettes, et celles encore assignables (toutes − courantes).
+
+    Une seule requête : on charge toutes les étiquettes (triées) avec un
+    booléen `EXISTS` indiquant l'appartenance à l'item, puis on partitionne
+    en Python (l'ordre par libellé est préservé dans les deux listes)."""
+    courante = (
+        select(ItemEtiquette.etiquette_id)
+        .where(
+            ItemEtiquette.etiquette_id == Etiquette.id,
+            ItemEtiquette.item_id == item_id,
+        )
+        .exists()
+        .label("courante")
+    )
+    courantes: list[Etiquette] = []
+    disponibles: list[Etiquette] = []
+    for etiquette, est_courante in db.execute(
+        select(Etiquette, courante).order_by(Etiquette.libelle)
+    ):
+        (courantes if est_courante else disponibles).append(etiquette)
     return courantes, disponibles
 
 

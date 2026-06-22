@@ -1506,6 +1506,52 @@ class CollectionDetail:
         return not self.est_miroir and not self.est_transversale
 
 
+def composer_options_filtres(
+    db: Session, collection: Collection
+) -> OptionsFiltresCollection:
+    """Options dynamiques du panneau de filtres d'une collection : langues /
+    types / bornes d'année (1 query distinct) + étiquettes présentes (1 query).
+
+    Extrait de `composer_page_collection` pour être appelable **seul** sur les
+    swaps HTMX (tri / pagination) : ceux-ci ont besoin de valider les filtres
+    portés en query string, mais pas du reste du contexte de page (répartition,
+    traçabilité, fonds) — qu'on évite ainsi de recalculer à chaque swap."""
+    langues_set: set[str] = set()
+    types_set: set[str] = set()
+    annee_min: int | None = None
+    annee_max: int | None = None
+    for lang, type_coar, annee in db.execute(
+        select(Item.langue, Item.type_coar, Item.annee)
+        .join(ItemCollection, ItemCollection.item_id == Item.id)
+        .where(ItemCollection.collection_id == collection.id)
+        .distinct()
+    ).all():
+        if lang:
+            langues_set.add(lang)
+        if type_coar:
+            types_set.add(type_coar)
+        if annee is not None:
+            annee_min = annee if annee_min is None else min(annee_min, annee)
+            annee_max = annee if annee_max is None else max(annee_max, annee)
+    etiquettes_presentes = tuple(
+        db.scalars(
+            select(Etiquette)
+            .join(ItemEtiquette, ItemEtiquette.etiquette_id == Etiquette.id)
+            .join(ItemCollection, ItemCollection.item_id == ItemEtiquette.item_id)
+            .where(ItemCollection.collection_id == collection.id)
+            .distinct()
+            .order_by(Etiquette.libelle)
+        ).all()
+    )
+    return OptionsFiltresCollection(
+        langues=tuple(sorted(langues_set)),
+        types_coar=tuple(sorted(types_set)),
+        annee_min=annee_min,
+        annee_max=annee_max,
+        etiquettes=etiquettes_presentes,
+    )
+
+
 def composer_page_collection(db: Session, collection: Collection) -> CollectionDetail:
     """Charge le contexte d'affichage d'une collection : compteurs,
     répartition d'états, traçabilité, options de filtres dynamiques.
@@ -1540,45 +1586,7 @@ def composer_page_collection(db: Session, collection: Collection) -> CollectionD
     )
 
     # ---- Options dynamiques pour le panneau filtres -----------------
-    # Une seule query récupère langues + types distincts + bornes
-    # d'année. Le résultat est petit (≤ ~20 valeurs distinctes par
-    # collection en pratique).
-    langues_set: set[str] = set()
-    types_set: set[str] = set()
-    annee_min: int | None = None
-    annee_max: int | None = None
-    for lang, type_coar, annee in db.execute(
-        select(Item.langue, Item.type_coar, Item.annee)
-        .join(ItemCollection, ItemCollection.item_id == Item.id)
-        .where(ItemCollection.collection_id == collection.id)
-        .distinct()
-    ).all():
-        if lang:
-            langues_set.add(lang)
-        if type_coar:
-            types_set.add(type_coar)
-        if annee is not None:
-            annee_min = annee if annee_min is None else min(annee_min, annee)
-            annee_max = annee if annee_max is None else max(annee_max, annee)
-    # Étiquettes présentes sur au moins un item de la collection (pour le
-    # sélecteur de filtre). +1 requête, bornée (peu d'étiquettes distinctes).
-    etiquettes_presentes = tuple(
-        db.scalars(
-            select(Etiquette)
-            .join(ItemEtiquette, ItemEtiquette.etiquette_id == Etiquette.id)
-            .join(ItemCollection, ItemCollection.item_id == ItemEtiquette.item_id)
-            .where(ItemCollection.collection_id == collection.id)
-            .distinct()
-            .order_by(Etiquette.libelle)
-        ).all()
-    )
-    options_filtres = OptionsFiltresCollection(
-        langues=tuple(sorted(langues_set)),
-        types_coar=tuple(sorted(types_set)),
-        annee_min=annee_min,
-        annee_max=annee_max,
-        etiquettes=etiquettes_presentes,
-    )
+    options_filtres = composer_options_filtres(db, collection)
 
     # ---- Traçabilité fusionnée avec le dernier item de la collection
     c_mod_le, c_mod_par = _tracabilite_fusionnee_avec_dernier_item(

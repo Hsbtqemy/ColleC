@@ -56,6 +56,7 @@ from archives_tool.api.routes._helpers import (
 from archives_tool.api.services.dashboard import (
     composer_dashboard,
     composer_fiche_item,
+    composer_options_filtres,
     composer_page_collection,
     composer_synthese_collection,
     composer_synthese_fonds,
@@ -715,12 +716,18 @@ def page_collection(
             return RedirectResponse(f"/fonds/{cote}", status_code=303)
 
     collection = _resoudre_collection(db, cote, fonds)
-    detail = composer_page_collection(db, collection)
-    # Parsing + validation des filtres contre les options dynamiques.
-    # Synthèse : seulement pour le rendu pleine page (pas pour les
-    # swaps HTMX qui ne rendent que le partial du tableau).
+    est_htmx = request.headers.get("HX-Request") == "true"
+    # Sur un swap HTMX (tri / pagination), seul le tableau est re-rendu : on
+    # ne calcule QUE les options de filtres (assez pour valider/appliquer les
+    # filtres portés en query string) — pas le contexte de page complet
+    # (répartition, traçabilité, fonds, synthèse) qui serait jeté.
+    detail = None
     synthese = None
-    if request.headers.get("HX-Request") != "true":
+    if est_htmx:
+        options = composer_options_filtres(db, collection)
+    else:
+        detail = composer_page_collection(db, collection)
+        options = detail.options_filtres
         synthese = composer_synthese_collection(db, collection, fonds_query=fonds)
     filtres = parser_filtres_collection(
         etat=etat,
@@ -728,7 +735,7 @@ def page_collection(
         type_coar=type_coar,
         annee_de=_annee_int_ou_none(annee_de),
         annee_a=_annee_int_ou_none(annee_a),
-        options=detail.options_filtres,
+        options=options,
         etiquette=etiquette,
     )
     listage = lister_items_collection(
@@ -749,7 +756,7 @@ def page_collection(
     # HTMX swap (tri colonne, pagination) : on ne renvoie que le partial
     # du tableau, pas la page entiere. Sinon HTMX injecte la page complete
     # dans #tableau-items et tout s'imbrique.
-    if request.headers.get("HX-Request") == "true":
+    if est_htmx:
         return templates.TemplateResponse(
             request,
             "partials/collection_items.html",

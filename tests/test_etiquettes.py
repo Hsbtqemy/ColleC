@@ -276,6 +276,38 @@ def test_collection_filtre_etiquette_via_query_et_pastille(base_demo: Path) -> N
     assert "Étiquette: Relu4cUnique" in r.text  # pastille de filtre actif
 
 
+def test_collection_swap_htmx_applique_le_filtre_etiquette(base_demo: Path) -> None:
+    """Swap HTMX (tri/pagination) : la route ne calcule que les options
+    légères (`composer_options_filtres`, pas le contexte de page complet),
+    mais valide et applique toujours le filtre étiquette porté en query
+    string, et renvoie le fragment du tableau (pas la page entière)."""
+    with _session_demo(base_demo) as db:
+        fonds_obj = db.scalars(select(Fonds).order_by(Fonds.id)).first()
+        items = db.scalars(
+            select(Item).where(Item.fonds_id == fonds_obj.id).order_by(Item.id)
+        ).all()
+        assert len(items) >= 2
+        cote_tague, cote_autre = items[0].cote, items[1].cote
+        miroir_cote = fonds_obj.collection_miroir.cote
+        fonds_cote = fonds_obj.cote
+        et = creer_etiquette(
+            db, FormulaireEtiquette(libelle="HxSwapUnique", couleur="#639922")
+        )
+        etiqueter_item(db, items[0].id, et.id)
+        et_id = et.id
+
+    client = TestClient(app)
+    r = client.get(
+        f"/collection/{miroir_cote}",
+        params={"fonds": fonds_cote, "etiquette": str(et_id)},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "<html" not in r.text.lower()  # fragment, pas la page entière
+    assert cote_tague in r.text
+    assert cote_autre not in r.text  # filtre bien appliqué sur le chemin HX léger
+
+
 # --- Routes web (gestion + étiquetage) --------------------------------------
 
 

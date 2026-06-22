@@ -179,7 +179,7 @@ masse, import profil YAML complet, push de fichiers binaires Nakala — un bouto
 | --- | --- | --- | --- | --- |
 | **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete** des valeurs existantes | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible | ✅ Lot 3 (inline déjà fait + autocomplete livré) |
 | **Étiquettes colorées** libres (≠ `etat_catalogage`) + **filtrage** | marquage workflow ; table dédiée (jamais exportée) + filtre drawer ; favori #1 | Quotidien | Faible-moyen | ✅ Lot 4 + 4c |
-| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ⏳ reste |
+| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ✅ changement d'état inline (`<select>` au survol du tableau collection) |
 | **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ⏳ reste (a11y de base posée sur les pages neuves) |
 
 ### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
@@ -195,9 +195,21 @@ relèvent du **Chantier 5** / `idees-ui-vrac.md`.
   + Panier B (inline déjà fait, autocomplete, étiquettes + filtrage) — est
   livré. Il comblait le trou le plus visible (la traçabilité existait en base
   mais était invisible dans le navigateur) et prépare la confiance V1.0.
+- **Complément (2026-06-22)** : **quick-action « changement d'état inline »**
+  au survol du tableau de collection — déclencheur ▾ discret (`group-hover`)
+  → éditeur `<select>` des 5 états en HTMX (GET ouvre / lit la version
+  fraîche, POST applique via `modifier_item` donc journalisé + verrou
+  optimiste, GET `?annuler` reswap le badge). Workflow de vérification en
+  série sans ouvrir chaque fiche. Masqué en lecture seule (trigger caché +
+  POST bloqué 423). Conflit de version → badge rechargé (pas de 409
+  invisible). `routes/etat_rapide.py` + `components/cellule_etat.html` ;
+  16 tests. **Reste du favori #3** (étiqueter / dupliquer / supprimer au
+  survol) volontairement différé : étiqueter demande une colonne étiquette
+  dans le tableau, dupliquer un service inexistant, supprimer contredirait
+  le gating par recopie de cote.
 - **Reste, opportuniste** : QA `controler` + diagnostic `comparer-fichiers`
-  (Panier A) ; quick-actions + hygiène transversale / a11y / tokens CSS
-  (Panier B) ; Panier C après l'OCR. Aucun n'est bloquant.
+  (Panier A) ; hygiène transversale / a11y / tokens CSS (Panier B) ;
+  Panier C après l'OCR. Aucun n'est bloquant.
 - **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
 

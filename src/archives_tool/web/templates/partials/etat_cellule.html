@@ -1,0 +1,4 @@
+{# Fragment d'affichage de la cellule État (badge + déclencheur ▾).
+   Servi par la route GET (annuler) et POST (après changement / conflit). #}
+{%- from 'components/cellule_etat.html' import cellule_etat -%}
+{{- cellule_etat(item_id, cote, fonds_cote, etat, editable, note) -}}

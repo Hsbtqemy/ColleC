@@ -19,8 +19,8 @@
    }
    --------------------------------------------------------------------------- #}
 
-{% from 'components/badge_etat.html' import badge_etat %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/cellule_etat.html' import cellule_etat %}
 {% from 'components/lien_doi.html' import lien_doi %}
 
 {%- set _COLS = {
@@ -38,7 +38,7 @@
   'modifie':                {'label': 'Modifié',        'align': 'right'},
 } -%}
 
-{%- macro _cell(key, item) -%}
+{%- macro _cell(key, item, etat_editable=false) -%}
   {%- if key == 'cote' -%}
     <td style="padding:12px 12px;vertical-align:top;">
       <a href="{{ item.href }}" class="font-mono hover:underline" style="font-size:13px;color:#1f1f1f;">{{ item.cote }}</a>
@@ -84,9 +84,10 @@
       {%- endif -%}
     </td>
   {%- elif key == 'etat' -%}
-    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      {{ badge_etat(item.etat) }}
-    </td>
+    {#- Cellule déléguée à `cellule_etat` : badge au repos, édition rapide
+        au survol (déclencheur ▾) quand `etat_editable`. Sinon badge seul,
+        identique à avant. -#}
+    {{ cellule_etat(item.id, item.cote, item.fonds_cote, item.etat, etat_editable) }}
   {%- elif key == 'fichiers' -%}
     <td class="font-tabular" style="padding:12px 12px;vertical-align:top;text-align:right;">
       <span style="font-size:13px;color:#1f1f1f;">{{ item.nb_fichiers }}</span>
@@ -180,7 +181,7 @@
       {%- for it in ctx['items'] %}{# bracket : `dict.items` shadowerait l'accès attribut #}
         <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group"
             style="border-color:rgba(0,0,0,0.08);">
-          {%- for k in ctx.colonnes %}{{ _cell(k, it) }}{% endfor %}
+          {%- for k in ctx.colonnes %}{{ _cell(k, it, ctx.etat_editable|default(false)) }}{% endfor %}
           {%- if ctx.url_retirer_template %}
           {# Bouton « − Retirer » discret, visible au hover de la ligne.
              Form POST sur la route /collection/<cote>/items/<id>/retirer.

@@ -57,6 +57,7 @@
     'nb_colonnes_actives': noms_cols|length,
     'url_panneau_colonnes': '/preferences/colonnes/items/' ~ collection_id if collection_id else None,
     'url_retirer_template': url_retirer,
+    'etat_editable': not est_lecture_seule(),
   }) }}
 {% else %}
   {# Collection vide : empty state proactif (V0.9.0 — pas de sous-collections,

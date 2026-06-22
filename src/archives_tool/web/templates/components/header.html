@@ -59,6 +59,14 @@
               border:1px solid rgba(0,0,0,0.10);"
        title="Journal de traçabilité (suppressions, push Nakala, renommages)">Journal</a>
 
+    {# Lien Contrôler : bilan de santé de la base (qa, lecture seule).
+       Visible même en lecture seule (page purement consultative). #}
+    <a href="/controler"
+       class="inline-flex items-center rounded hover:bg-gray-50"
+       style="padding:4px 12px;font-size:12px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);"
+       title="Contrôles de cohérence (invariants, fichiers, métadonnées)">Contrôler</a>
+
     {# Lien Étiquettes : gestion des étiquettes colorées de chantier.
        Visible en lecture seule (la page liste ; create/delete y sont masqués). #}
     <a href="/etiquettes"

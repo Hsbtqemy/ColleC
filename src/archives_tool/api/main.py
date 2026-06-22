@@ -45,6 +45,7 @@ from archives_tool.api.middleware import middleware_lecture_seule
 from archives_tool.api.routes import (
     annotations,
     champs,
+    controle_web,
     dashboard,
     derives,
     etat_rapide,
@@ -125,3 +126,4 @@ app.include_router(nakala_web.router)
 app.include_router(sharedocs_web.router)
 app.include_router(journal_web.router)
 app.include_router(suggestions.router)
+app.include_router(controle_web.router)

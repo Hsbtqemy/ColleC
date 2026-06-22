@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Contrôles · ColleC{% endblock %}
+
+{# Couleurs par sévérité (point + chip). Alignées sur badge_etat / THEME. #}
+{%- set _SEV = {
+  'erreur':        {'dot': '#E24B4A', 'chip_bg': '#fee2e2', 'chip_fg': '#991b1b', 'label': 'erreur'},
+  'avertissement': {'dot': '#BA7517', 'chip_bg': '#fef3c7', 'chip_fg': '#92400e', 'label': 'avertissement'},
+  'info':          {'dot': '#378ADD', 'chip_bg': '#dbeafe', 'chip_fg': '#1e40af', 'label': 'info'},
+} -%}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-medium" style="color:#1f1f1f;letter-spacing:-0.02em;">
+    Contrôles de cohérence
+  </h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Bilan de santé de la base — invariants, fichiers, métadonnées, doublons.
+    Lecture seule : cette page exécute les mêmes 14 contrôles que
+    <span class="font-mono">archives-tool controler</span>, sans rien modifier.
+  </p>
+</div>
+
+{# --------------------------------------------------------------- #}
+{# Sélecteur de périmètre (base entière / un fonds)                 #}
+{# --------------------------------------------------------------- #}
+<form method="get" action="/controler"
+      class="flex items-center gap-2 mb-5" style="font-size:13px;">
+  <label for="scope-fonds" class="text-gray-500">Périmètre :</label>
+  <select id="scope-fonds" name="fonds"
+          style="font-size:13px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:white;">
+    <option value="" {{ 'selected' if not vue.fonds_cote else '' }}>Base entière</option>
+    {%- for cote, libelle in vue.fonds_options %}
+    <option value="{{ cote }}" {{ 'selected' if cote == vue.fonds_cote else '' }}>{{ libelle }}</option>
+    {%- endfor %}
+  </select>
+  <button type="submit"
+          class="inline-flex items-center rounded hover:bg-gray-50"
+          style="padding:4px 12px;font-size:12px;color:#374151;background:#fff;border:1px solid rgba(0,0,0,0.10);">
+    Contrôler
+  </button>
+</form>
+
+{# --------------------------------------------------------------- #}
+{# Bandeau périmètre + bilan                                        #}
+{# --------------------------------------------------------------- #}
+<div class="rounded-lg mb-6" style="border:1px solid rgba(0,0,0,0.08);padding:16px 18px;background:#fafafa;">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <div class="text-sm font-medium" style="color:#1f1f1f;">{{ vue.scope_label }}</div>
+      <div class="text-gray-500 mt-1" style="font-size:12px;">
+        {{ vue.perimetre.fonds_count }} fonds ·
+        {{ vue.perimetre.collections_count }} collections ·
+        {{ vue.perimetre.items_count }} items ·
+        {{ vue.perimetre.fichiers_count }} fichiers
+        <span aria-hidden="true">·</span>
+        <span title="contrôlé le {{ vue.horodatage_affichage.strftime('%d/%m/%Y à %H:%M') }} (heure locale)">contrôlé {{ vue.horodatage_affichage | temps_relatif }}</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {%- if vue.tout_va_bien %}
+        <span class="inline-flex items-center gap-1.5 rounded"
+              style="padding:4px 12px;font-size:13px;background:#dcfce7;color:#065f46;">
+          <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:#639922;"></span>
+          Aucun problème détecté
+        </span>
+      {%- else %}
+        {%- if vue.nb_erreurs %}
+        <span class="inline-flex items-center gap-1.5 rounded font-tabular"
+              style="padding:4px 10px;font-size:13px;background:#fee2e2;color:#991b1b;">
+          {{ vue.nb_erreurs }} erreur{{ 's' if vue.nb_erreurs > 1 else '' }}
+        </span>
+        {%- endif %}
+        {%- if vue.nb_avertissements %}
+        <span class="inline-flex items-center gap-1.5 rounded font-tabular"
+              style="padding:4px 10px;font-size:13px;background:#fef3c7;color:#92400e;">
+          {{ vue.nb_avertissements }} avertissement{{ 's' if vue.nb_avertissements > 1 else '' }}
+        </span>
+        {%- endif %}
+        {%- if vue.nb_infos %}
+        <span class="inline-flex items-center gap-1.5 rounded font-tabular"
+              style="padding:4px 10px;font-size:13px;background:#dbeafe;color:#1e40af;">
+          {{ vue.nb_infos }} info{{ 's' if vue.nb_infos > 1 else '' }}
+        </span>
+        {%- endif %}
+      {%- endif %}
+    </div>
+  </div>
+  {%- if not vue.racines_configurees %}
+  <p class="text-gray-500 mt-3" style="font-size:12px;border-top:1px solid rgba(0,0,0,0.06);padding-top:10px;">
+    ⚠ Racines de fichiers non configurées — le contrôle
+    <span class="font-mono">FILE-MISSING</span> ne peut pas vérifier la présence
+    des fichiers sur disque (il les signale comme racines manquantes).
+  </p>
+  {%- endif %}
+</div>
+
+{# --------------------------------------------------------------- #}
+{# Problèmes détectés                                               #}
+{# --------------------------------------------------------------- #}
+{%- if vue.controles_problemes %}
+<section class="mb-8" aria-labelledby="titre-problemes">
+  <h2 id="titre-problemes" class="text-lg font-medium mb-3" style="color:#1f1f1f;">
+    Problèmes détectés
+  </h2>
+  <div class="flex flex-col gap-3">
+    {%- for c in vue.controles_problemes %}
+    {%- set sev = _SEV.get(c.severite, _SEV['info']) %}
+    <div class="rounded-lg bg-white" style="border:1px solid rgba(0,0,0,0.08);border-left:3px solid {{ sev.dot }};padding:12px 14px;">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <span class="inline-block rounded" style="padding:1px 8px;font-size:11px;background:{{ sev.chip_bg }};color:{{ sev.chip_fg }};">
+            {{ sev.label }}
+          </span>
+          <span class="font-medium" style="font-size:14px;color:#1f1f1f;">{{ c.libelle }}</span>
+          <span class="font-mono text-gray-400" style="font-size:11px;">{{ c.id }}</span>
+        </div>
+        <span class="text-gray-500 font-tabular" style="font-size:12px;">
+          {{ c.compte_problemes }} / {{ c.compte_total }}
+        </span>
+      </div>
+      {%- if c.exemples %}
+      <ul class="mt-2" style="font-size:12px;color:#6b7280;list-style:none;padding:0;margin:0;">
+        {%- for ex in c.exemples %}
+        <li style="padding:2px 0;">
+          <span aria-hidden="true" style="color:#9ca3af;">•</span>
+          {{ ex.message }}
+          {%- set fcote = ex.references.get('fonds_cote') %}
+          {%- if fcote %}
+          <a href="/fonds/{{ fcote }}" class="hover:underline" style="color:#378ADD;"
+             title="Voir le fonds {{ fcote }}" aria-label="Voir le fonds {{ fcote }}">↗</a>
+          {%- endif %}
+        </li>
+        {%- endfor %}
+        {%- if c.compte_problemes > c.exemples|length %}
+        <li class="text-gray-400" style="padding:2px 0;font-style:italic;">
+          … et {{ c.compte_problemes - c.exemples|length }} autre(s) — voir
+          <span class="font-mono">archives-tool controler --format json</span> pour la liste complète.
+        </li>
+        {%- endif %}
+      </ul>
+      {%- endif %}
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+{%- endif %}
+
+{# --------------------------------------------------------------- #}
+{# Contrôles passés (repli)                                         #}
+{# --------------------------------------------------------------- #}
+{%- if vue.controles_ok %}
+<details {{ 'open' if vue.tout_va_bien else '' }}>
+  <summary class="text-sm text-gray-500 cursor-pointer hover:text-gray-700" style="user-select:none;">
+    Contrôles passés ({{ vue.controles_ok|length }})
+  </summary>
+  <ul class="mt-3" style="list-style:none;padding:0;margin:0;">
+    {%- for c in vue.controles_ok %}
+    <li class="flex items-center gap-2" style="padding:4px 0;font-size:13px;color:#374151;">
+      <span aria-hidden="true" style="color:#639922;">✓</span>
+      {{ c.libelle }}
+      <span class="font-mono text-gray-400" style="font-size:11px;">{{ c.id }}</span>
+    </li>
+    {%- endfor %}
+  </ul>
+</details>
+{%- endif %}
+{% endblock %}

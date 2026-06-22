@@ -16,9 +16,14 @@ data/demo_derives/
 data/demo_config.yaml
 data/_import_tmp/
 data/_export_test_pf/
+data/sharedocs_import/
 
 config_local.yaml
 .env
+
+# Clés API / secrets locaux (jamais versionnés)
+secrets/
+*.key
 
 .claude/
 .vscode/

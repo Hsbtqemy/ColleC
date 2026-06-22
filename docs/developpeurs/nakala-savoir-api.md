@@ -24,12 +24,59 @@
 > `src/archives_tool/external/nakala/`, et la spec OpenAPI `GET /doc.json`.
 > Validé pour la dernière fois contre apitest le **2026-06-15**.
 >
-> ⚠️ **Portée : tous les constats ci-dessous viennent d'`apitest.nakala.fr`.**
-> Leur parité avec la **production** `nakala.fr` reste à auditer (mêmes
-> logiciel → contrat attendu identique ; divergences plausibles côté
-> DataCite/citation, modération, droits). Chantier planifié :
-> [`backlog-nakala-api.md`](backlog-nakala-api.md) § *Audit de parité
-> apitest ↔ production*.
+> ✅ **Parité prod confirmée — Volet A (lecture) + Volet B (écriture), 2026-06-20**
+> — audits `scripts/audit_parite_prod_nakala.py` (GET only, zéro pollution),
+> `scripts/audit_parite_prod_volet_b.py` (donnée/item) et
+> `scripts/audit_parite_prod_volet_b_collection.py` (collection) — chacun sur
+> des ressources `pending`/`private` jamais publiées, supprimées en fin (zéro
+> résidu vérifié) — plus `verifier_parite_vocabulaires_nakala.py` contre prod.
+> Avec la clé d'un vrai compte Huma-Num. Les constats ci-dessous (issus
+> d'`apitest.nakala.fr`) valent **à l'identique** sur la **production**
+> `api.nakala.fr`.
+>
+> **Volet A (lecture)** — identique : forme `GET /datas/{id}` (21 clés, **champs
+> de modération présents des deux côtés**), vocabulaires (`licenses` 620,
+> `datatypes` 29, `languages` 10), corps d'erreur 404 (`code/message/payload`),
+> `…/versions` (200), **IIIF `info.json`** (200), **OAI `/oai2` Identify**
+> (200 `text/xml`).
+>
+> **Volet B donnée/item (écriture, via les vrais services ColleC)** — identique :
+> dépôt `POST /datas` (pending), **enrichissement créateur** `{authorId,
+> fullName, givenname, orcid, surname}` (#2), **langue `spa`→`es`** (#422),
+> **round-trip `PUT /datas` idempotent** (0 diff après dépôt et après modif — la
+> canonicalisation des créateurs tient sur prod ⇒ pas de faux diff), **fichiers
+> granulaires** `POST/DELETE …/files` (additif, retrait ciblé par sha1),
+> **description par fichier** préservée (H11), **embargo** normalisé
+> (`2099-12-31T00:00:00+01:00` + `humanReadableEmbargoedDelay {y,m,d}`),
+> **suppression** d'un pending → 404.
+>
+> **Volet B collection (écriture)** — identique : `deposer_collection` (collection
+> `private` + items `pending`), `GET /collections/{id}` (17 clés), **round-trip
+> `pousser_metadonnees_collection` idempotent** (0 diff après dépôt ; modif titre
+> appliquée puis re-push 0 diff — la **fusion** préservant les metas non
+> modélisées tient sur prod), `DELETE /collections/{id}`.
+>
+> **Vocabulaire émis ⊆ live prod** (`verifier_parite_vocabulaires_nakala.py`) :
+> les **29** types COAR projetés et les **57** `propertyUri` émis par ColleC sont
+> tous acceptés par la prod (depositTypes 29 / properties 60). Aucune dérive.
+>
+> **Diffère (attendu, hors contrat d'API)** : (1) 🎯 **citation** — prod
+> `…/citation` publié → **200 + citation réelle** (APA + `doi.org`, DOI DataCite
+> minté), apitest → **403** « not citable » ; (2) **rôles du compte** — compte
+> prod `ROLE_USER`, compte de test apitest `ROLE_USER + ROLE_MODERATOR`.
+>
+> ⚠️ **Prod transitoirement instable** (pas observé sur apitest) : TLS handshake
+> timeouts épars, un **500 transitoire** sur un `PUT /collections` (non reproduit
+> au re-run ; `PUT /collections` validé 204 par ailleurs), et une **cohérence
+> éventuelle au DELETE** (un `DELETE /datas` peut renvoyer 404 alors que la
+> donnée est encore là → re-vérifier par GET et réessayer). **→ côté ColleC** :
+> les opérations d'écriture massives sur prod gagneraient à tolérer les 5xx
+> transitoires (retry) et à vérifier les suppressions par relecture.
+>
+> **Non rejoué sur prod** (irréversibles) : publication, relations donnée↔donnée
+> (gated publication), versioning `.vN` — présomption de parité par identité du
+> logiciel + sondes apitest. Cf.
+> [`backlog-nakala-api.md`](backlog-nakala-api.md) § *Audit de parité*.
 
 ---
 
@@ -558,13 +605,35 @@ zéro pollution) :
   relations to other data published in NAKALA ».
 - structure : `{type, repository, target, comment?}` (ex. `type="IsPartOf"`,
   `repository="nakala"`, `target="10.34847/nkl.…"`). En lecture s'ajoutent
-  `date`, `uri`, `isInferred`. `type` = nominalement vocabulaire DataCite
-  relationType (CamelCase) ; pas d'endpoint `/vocabularies/relationTypes`.
-  ✅ **Strictesse du `type` : LAX** (sondé 2026-06-18, S8/V1) — un `type`
-  arbitraire (`"NOTAREALTYPE"`) ou en mauvaise casse (`"ispartof"`) est
-  **accepté tel quel** (HTTP 200), pas de validation contre le vocabulaire.
-  → si ColleC implémente un jour les relations (V2+), il devra
-  **normaliser/valider le `type` lui-même** (Nakala ne le fera pas).
+  `date`, `uri`, `isInferred`. `type` = vocabulaire DataCite relationType
+  (CamelCase) ; pas d'endpoint `/vocabularies/relationTypes`.
+- **`type` : vocabulaire FERMÉ, STRICT, sensible à la casse** (sonde V1,
+  validée live apitest 2026-06-20 — `scripts/explorer_relations_type_nakala.py`).
+  Un `type` inconnu → **422** « Unknown relation type. The available relations
+  are : … » qui **énumère les 38 types** acceptés : `Cites`, `Collects`,
+  `Compiles`, `Continues`, `Describes`, `Documents`, `HasMetadata`, `HasPart`,
+  `HasTranslation`, `HasVersion`, `IsCitedBy`, `IsCollectedBy`, `IsCompiledBy`,
+  `IsContinuedBy`, `IsDerivedFrom`, `IsDescribedBy`, `IsDocumentedBy`,
+  `IsIdenticalTo`, `IsMetadataFor`, `IsNewVersionOf`, `IsObsoletedBy`,
+  `IsOriginalFormOf`, `IsPartOf`, `IsPreviousVersionOf`, `IsPublishedIn`,
+  `IsReferencedBy`, `IsRequiredBy`, `IsReviewedBy`, `IsSourceOf`,
+  `IsSupplementedBy`, `IsSupplementTo`, `IsTranslationOf`, `IsVariantFormOf`,
+  `IsVersionOf`, `Obsoletes`, `References`, `Requires`, `Reviews`. La casse
+  compte : `ispartof` (minuscule) vers une cible neuve → **422**, alors que
+  `IsPartOf` → 200 « 1 relation added ». **→ côté ColleC** : si les relations
+  sont un jour implémentées, valider le `type` contre cette liste **avant**
+  envoi (ne pas normaliser la casse — Nakala ne le fait pas).
+- **dédup par cible, qui court-circuite la validation du `type`** : re-poster
+  une relation vers une cible **déjà reliée** → **200 « no relation added »**
+  **sans valider le `type`** (un `ispartof` vers une cible déjà reliée renvoie
+  200, pas 422 — leurre : l'existence de la cible prime sur l'examen du type).
+- **`DELETE /datas/{id}/relations` purge TOUTES les relations** (ignore le
+  corps envoyé → « N relations deleted ») : pas de suppression sélective d'une
+  relation. Pour en retirer une, supprimer tout puis re-poster les autres.
+- ⚠️ **Faux négatif « LAX » à éviter** : poster un `type` invalide vers une
+  cible **déjà reliée** renvoie 200 (dédup, voir ci-dessus) — une sonde
+  antérieure (2026-06-18) en avait conclu « LAX » à tort. Toujours sonder le
+  `type` sur une **cible neuve**.
 - **cible Nakala : existence VALIDÉE** — `target` doit être un DOI Nakala
   **publié existant** (source publiée → cible publiée → 200) ; un DOI Nakala
   **inexistant → 422** (« The identifier … »). **Pas de référence en avant
@@ -702,7 +771,7 @@ existe mais n'est pas (encore) exploité :
 | **SPARQL** | ❌ absent | `GET /sparql` → 404 (du moins à ce chemin) |
 | **Embargo par fichier au dépôt** | ✅ accepté | `POST /datas` avec `files:[{sha1, name, embargoed:"2099-12-31"}]` accepté ; date seule **normalisée** par Nakala en `2099-12-31T00:00:00+01:00` (datetime + fuseau Europe/Paris), restituée avec un champ compagnon `humanReadableEmbargoedDelay` |
 | **`POST /datas` multi-fichiers** | ✅ à l'échelle | 20 fichiers, ordre inverse préservé (cf. §8). Pas de plafond dur recherché (marteler un serveur partagé serait abusif) |
-| **Citation** | ✅ sondée (S4) | `GET /datas/{id}/citation` → **chaîne JSON** (citation prête à l'emploi). **Sur apitest, jamais citable** : pending → **200** `"Test deposit, therefore not citable."`, publié → **403** même message (pas de DOI DataCite minté sur le serveur de test → la vraie citation nécessite la **prod**). ColleC avale le 403 (`NakalaAccesInterdit ⊂ ErreurNakala`, best-effort). Consommée : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
+| **Citation** | ✅ sondée (S4) + ✅ **confirmée prod** | `GET /datas/{id}/citation` → **chaîne JSON** (citation prête à l'emploi). **Sur apitest, jamais citable** : pending → **200** `"Test deposit, therefore not citable."`, publié → **403** même message (pas de DOI DataCite minté sur le serveur de test). **Sur prod (audit 2026-06-20), un publié → 200 + vraie citation** (ex. APA + `https://doi.org/10.34847/NKL.…`) : la fonctionnalité S4 marche bel et bien contre la production. ColleC avale le 403 apitest (`NakalaAccesInterdit ⊂ ErreurNakala`, best-effort). Consommée : `client.citation()`, CLI `nakala citer` + ligne dans `montrer`, fiche web (lazy HTMX) |
 | **Publication via `PUT …/status/{status}`** | ✅ sondée (S5) | `PUT /datas/{id}/status/published` (sans corps) → **204**, publie et **préserve les metas** (`av.metas == ap.metas`). Découple publication / écriture de metas, contrairement à `publier_item` qui re-pousse les metas locales (choix ColleC, principe n°1). ColleC garde l'approche actuelle (cf. §7) |
 | **`GET /users/me`, `/resourceprocessing/{id}`** | ✅ existent | identité de la clé ; état d'indexation ElasticSearch + DataCite (latence post-publication) — non sondés |
 | **Versioning (DOI `…​.vN`)** | ✅ déclencheur résolu | cf. §7 : **mutation de fichiers sur dépôt publié** = +1 version ; metas/pending/publication = en place. Versions = snapshot des **fichiers** (metas partagées) |

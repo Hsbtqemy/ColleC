@@ -25,7 +25,7 @@ Garde-fous alignés sur le projet :
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,6 +35,18 @@ from archives_tool.files.paths import hash_sha256, normaliser_nfc, resoudre_chem
 from archives_tool.models import Fichier, Item
 
 logger = logging.getLogger(__name__)
+
+#: Hook de progression optionnel : appelé **au début** du traitement de
+#: chaque fichier avec ``(index_1based, total, nom_fichier)``. Sert à la
+#: tâche de fond (barre de progression) — voir ``sharedocs_jobs``. Aucun
+#: effet sur la sémantique d'import (lecture seule du point de vue du hook).
+ProgressImport = Callable[[int, int, str], None]
+
+#: Sonde d'annulation coopérative optionnelle : interrogée **avant** chaque
+#: fichier. Si elle renvoie True, la boucle s'arrête proprement (les fichiers
+#: déjà importés sont conservés et commités). On ne coupe jamais un
+#: téléchargement en cours — l'arrêt prend effet à la fin du fichier courant.
+SondeAnnulation = Callable[[], bool]
 
 
 class RacineCibleInconnue(Exception):
@@ -107,6 +119,8 @@ def importer_depuis_sharedocs(
     racines: Mapping[str, Path],
     dry_run: bool = True,
     importe_par: str | None = None,
+    on_progress: ProgressImport | None = None,
+    should_cancel: SondeAnnulation | None = None,
 ) -> RapportImportShareDocs:
     """Importe les ``chemins_distants`` (ShareDocs) en ``Fichier`` de ``item``.
 
@@ -149,7 +163,17 @@ def importer_depuis_sharedocs(
         )
 
     a_persister = False
-    for chemin in chemins_distants:
+    total = len(chemins_distants)
+    for index, chemin in enumerate(chemins_distants, start=1):
+        # Annulation coopérative : vérifiée AVANT de toucher au fichier
+        # suivant. Les fichiers déjà traités restent (commit plus bas).
+        if should_cancel is not None and should_cancel():
+            break
+        # Hook de progression (tâche de fond) : signalé AVANT le
+        # téléchargement du fichier courant — la barre montre « fichier N
+        # en cours », ce qui est le moment le plus long (download réseau).
+        if on_progress is not None:
+            on_progress(index, total, chemin.rsplit("/", 1)[-1])
         nom = normaliser_nfc(chemin.rsplit("/", 1)[-1])
         if not nom:  # chemin distant finissant par "/" → basename vide
             _noter(nom, "", retenu=False, raison="nom_invalide")

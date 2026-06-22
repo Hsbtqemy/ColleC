@@ -11,6 +11,8 @@ sont bloqués en lecture seule par le middleware (423).
 
 from __future__ import annotations
 
+import threading
+from dataclasses import dataclass
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Query, Request
@@ -18,6 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from archives_tool.api.deps import (
+    chemin_base_courant,
     get_config,
     get_db,
     get_nom_base,
@@ -25,9 +28,32 @@ from archives_tool.api.deps import (
     get_utilisateur_courant,
 )
 from archives_tool.api.routes._helpers import contexte_base as _contexte_base
-from archives_tool.api.services import sharedocs_session
-from archives_tool.api.services.fonds import FondsIntrouvable, lire_fonds_par_cote
-from archives_tool.api.services.items import ItemIntrouvable, lire_item_par_cote
+from archives_tool.api.services import sharedocs_jobs, sharedocs_session
+from archives_tool.api.services.sharedocs_jobs import (
+    JobConcurrent,
+    demander_annulation,
+    est_job_actif,
+    executer_import_sharedocs,
+    lire_etat_job,
+    reserver_job,
+)
+from archives_tool.api.services.fonds import (
+    FondsIntrouvable,
+    FondsInvalide,
+    FormulaireFonds,
+    creer_fonds,
+    lire_fonds_par_cote,
+    lister_fonds,
+)
+from archives_tool.api.services.items import (
+    FormulaireItem,
+    ItemIntrouvable,
+    ItemInvalide,
+    OperationItemInterdite,
+    creer_item,
+    lire_item_par_cote,
+    lister_items_fonds,
+)
 from archives_tool.api.services.sharedocs import (
     RacineCibleInconnue,
     importer_depuis_sharedocs,
@@ -69,10 +95,123 @@ def _client_session_ou_none(config: ConfigLocale) -> ClientShareDocs | None:
         return None
 
 
-def _resoudre_item(db: Session, fonds: str, item: str) -> Item:
-    """Item par cote dans son fonds. Lève FondsIntrouvable / ItemIntrouvable."""
-    fonds_obj = lire_fonds_par_cote(db, fonds)
-    return lire_item_par_cote(db, item, fonds_id=fonds_obj.id)
+#: Valeur sentinelle des <select> fonds / item signalant « créer une
+#: nouvelle entité » (B/C) — au lieu de sélectionner une cote existante.
+_SENTINELLE_NOUVEAU = "__nouveau__"
+
+
+class _CibleErreur(Exception):
+    """Message d'erreur de résolution de cible, prêt à rediriger."""
+
+
+@dataclass
+class _Cible:
+    """Cible résolue d'un import ShareDocs.
+
+    ``item`` est l'item existant (résolu), ou un item **transitoire**
+    non persisté (aperçu d'une création à venir), ou l'item fraîchement
+    créé (confirmation). ``fonds_cree`` / ``item_cree`` indiquent ce qui
+    a été (ou serait) créé — pour le message et l'aperçu.
+    """
+
+    item: Item
+    fonds_cote: str
+    item_cote: str
+    fonds_cree: bool
+    item_cree: bool
+
+
+def _cote_effective(selection: str, nouvelle: str) -> tuple[str, bool]:
+    """``(cote, est_nouveau)``. La sentinelle « __nouveau__ » bascule sur la
+    cote saisie dans le champ de création ; sinon c'est la cote sélectionnée."""
+    if selection == _SENTINELLE_NOUVEAU:
+        return (nouvelle or "").strip(), True
+    return (selection or "").strip(), False
+
+
+def _resoudre_cible(
+    db: Session,
+    *,
+    fonds: str,
+    nouveau_fonds_cote: str,
+    nouveau_fonds_titre: str,
+    item: str,
+    nouveau_item_cote: str,
+    nouveau_item_titre: str,
+    creer: bool,
+    cree_par: str | None,
+) -> _Cible:
+    """Résout (ou crée si ``creer``) le fonds + l'item cibles.
+
+    ``creer=False`` (aperçu) ne touche jamais la base : une cible neuve
+    donne un item **transitoire** pour piloter le dry-run. ``creer=True``
+    (confirmation) crée réellement via les services métier (qui posent
+    les invariants : miroir auto, rattachement). Lève ``_CibleErreur``
+    avec un message prêt à afficher.
+    """
+    fonds_cote, fonds_nouveau = _cote_effective(fonds, nouveau_fonds_cote)
+    item_cote, item_nouveau = _cote_effective(item, nouveau_item_cote)
+    # Un fonds neuf n'a aucun item : l'item est alors forcément neuf aussi.
+    if fonds_nouveau:
+        item_nouveau = True
+    if not fonds_cote:
+        raise _CibleErreur("Cote du fonds manquante.")
+    if not item_cote:
+        raise _CibleErreur("Cote de l'item manquante.")
+
+    # --- Fonds ---
+    if fonds_nouveau:
+        if creer:
+            try:
+                fonds_obj = creer_fonds(
+                    db,
+                    FormulaireFonds(cote=fonds_cote, titre=nouveau_fonds_titre),
+                    cree_par=cree_par,
+                )
+            except FondsInvalide as e:
+                raise _CibleErreur(f"Fonds invalide : {e}") from e
+        else:
+            fonds_obj = None  # aperçu : aucune écriture
+    else:
+        try:
+            fonds_obj = lire_fonds_par_cote(db, fonds_cote)
+        except FondsIntrouvable:
+            raise _CibleErreur(f"Fonds {fonds_cote!r} introuvable.") from None
+
+    # --- Item ---
+    if item_nouveau:
+        if creer:
+            try:
+                item_obj = creer_item(
+                    db,
+                    FormulaireItem(
+                        cote=item_cote,
+                        titre=nouveau_item_titre,
+                        fonds_id=fonds_obj.id,
+                    ),
+                    cree_par=cree_par,
+                )
+            except (ItemInvalide, OperationItemInterdite) as e:
+                raise _CibleErreur(f"Item invalide : {e}") from e
+        else:
+            # Item transitoire (jamais persisté) : .fichiers == [] → le
+            # dry-run voit un item vierge, tous les fichiers sont « nouveaux ».
+            item_obj = Item(cote=item_cote, fonds_id=fonds_obj.id if fonds_obj else 0)
+    else:
+        try:
+            item_obj = lire_item_par_cote(db, item_cote, fonds_id=fonds_obj.id)
+        except ItemIntrouvable:
+            raise _CibleErreur(
+                f"Item {item_cote!r} introuvable dans le fonds {fonds_cote!r}."
+            ) from None
+
+    return _Cible(
+        item=item_obj,
+        fonds_cote=fonds_cote,
+        item_cote=item_cote,
+        fonds_cree=fonds_nouveau,
+        item_cree=item_nouveau,
+    )
 
 
 def _fil_ariane(chemin: str) -> list[tuple[str, str]]:
@@ -91,6 +230,7 @@ def page_sharedocs(
     chemin: str = Query(""),
     erreur: str | None = Query(None),
     message: str | None = Query(None),
+    db: Session = Depends(get_db),
     config: ConfigLocale = Depends(get_config),
     racines=Depends(get_racines),
     nom_base: str = Depends(get_nom_base),
@@ -125,6 +265,14 @@ def page_sharedocs(
             erreur = erreur or "ShareDocs injoignable (réseau / timeout)."
         except (ShareDocsCheminInvalide, ErreurShareDocs) as e:
             erreur = erreur or f"Erreur ShareDocs : {e}"
+
+    # Cibles d'import (B/C) : liste des fonds + items du 1er fonds (celui
+    # présélectionné dans le <select>). Inutile si déconnecté (le formulaire
+    # d'import n'est pas rendu) → on évite les requêtes.
+    fonds_list = lister_fonds(db) if ids is not None else []
+    items_initiaux = (
+        lister_items_fonds(db, fonds_list[0].id, par_page=0).items if fonds_list else []
+    )
     return templates.TemplateResponse(
         request,
         "pages/sharedocs.html",
@@ -137,9 +285,34 @@ def page_sharedocs(
             fil=fil,
             base_url_defaut=(config.sharedocs.base_url if config.sharedocs else ""),
             racines=sorted(racines),
+            fonds_list=fonds_list,
+            items_initiaux=items_initiaux,
             erreur=erreur,
             message=message,
         ),
+    )
+
+
+@router.get("/sharedocs/cible-items", response_class=HTMLResponse)
+def cible_items(
+    request: Request,
+    fonds: str = Query(""),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Fragment HTMX : ``<select>`` des items du fonds choisi (+ option de
+    création). Rechargé au changement de fonds. Un fonds neuf (sentinelle)
+    ou introuvable ne propose que la création d'un item."""
+    items: list = []
+    if fonds and fonds != _SENTINELLE_NOUVEAU:
+        try:
+            fonds_obj = lire_fonds_par_cote(db, fonds)
+            items = lister_items_fonds(db, fonds_obj.id, par_page=0).items
+        except FondsIntrouvable:
+            items = []
+    return templates.TemplateResponse(
+        request,
+        "partials/_sharedocs_cible_items.html",
+        {"items": items},
     )
 
 
@@ -148,6 +321,10 @@ def apercu_importer(
     request: Request,
     fonds: str = Query(...),
     item: str = Query(...),
+    nouveau_fonds_cote: str = Query(""),
+    nouveau_fonds_titre: str = Query(""),
+    nouveau_item_cote: str = Query(""),
+    nouveau_item_titre: str = Query(""),
     racine: str = Query(...),
     fichiers: list[str] = Query(default=[]),
     chemin: str = Query(""),
@@ -157,29 +334,45 @@ def apercu_importer(
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> HTMLResponse | RedirectResponse:
-    """Aperçu (dry-run) de l'import des fichiers cochés vers un item."""
+    """Aperçu (dry-run) de l'import des fichiers cochés vers un item.
+
+    N'écrit jamais : une cible neuve (fonds/item à créer) est résolue en
+    item transitoire, et l'aperçu signale ce qui sera créé. La création
+    réelle n'a lieu qu'à la confirmation (POST)."""
     if not fichiers:
         return _redirect_erreur("Aucun fichier sélectionné.")
+    if racine not in racines:
+        return _redirect_erreur(f"Racine {racine!r} inconnue.")
     client = _client_session_ou_none(config)
     if client is None:
         return _redirect_erreur("Non connecté à ShareDocs.")
     try:
-        item_obj = _resoudre_item(db, fonds, item)
-    except (FondsIntrouvable, ItemIntrouvable):
-        client.fermer()
-        return _redirect_erreur(f"Item {item!r} introuvable dans le fonds {fonds!r}.")
-    try:
-        rapport = importer_depuis_sharedocs(
-            db,
-            client,
-            fichiers,
-            item_obj,
-            racine_cible=racine,
-            racines=dict(racines),
-            dry_run=True,
-        )
-    except RacineCibleInconnue as e:
-        return _redirect_erreur(str(e))
+        try:
+            cible = _resoudre_cible(
+                db,
+                fonds=fonds,
+                nouveau_fonds_cote=nouveau_fonds_cote,
+                nouveau_fonds_titre=nouveau_fonds_titre,
+                item=item,
+                nouveau_item_cote=nouveau_item_cote,
+                nouveau_item_titre=nouveau_item_titre,
+                creer=False,
+                cree_par=None,
+            )
+        except _CibleErreur as e:
+            return _redirect_erreur(str(e))
+        try:
+            rapport = importer_depuis_sharedocs(
+                db,
+                client,
+                fichiers,
+                cible.item,
+                racine_cible=racine,
+                racines=dict(racines),
+                dry_run=True,
+            )
+        except RacineCibleInconnue as e:
+            return _redirect_erreur(str(e))
     finally:
         client.fermer()
     return templates.TemplateResponse(
@@ -191,8 +384,16 @@ def apercu_importer(
             rapport=rapport,
             fonds=fonds,
             item=item,
+            nouveau_fonds_cote=nouveau_fonds_cote,
+            nouveau_fonds_titre=nouveau_fonds_titre,
+            nouveau_item_cote=nouveau_item_cote,
+            nouveau_item_titre=nouveau_item_titre,
             racine=racine,
             chemin=chemin,
+            fonds_cote=cible.fonds_cote,
+            item_cote=cible.item_cote,
+            fonds_sera_cree=cible.fonds_cree,
+            item_sera_cree=cible.item_cree,
         ),
     )
 
@@ -201,6 +402,10 @@ def apercu_importer(
 def executer_importer(
     fonds: str = Form(...),
     item: str = Form(...),
+    nouveau_fonds_cote: str = Form(""),
+    nouveau_fonds_titre: str = Form(""),
+    nouveau_item_cote: str = Form(""),
+    nouveau_item_titre: str = Form(""),
     racine: str = Form(...),
     fichiers: list[str] = Form(default=[]),
     chemin: str = Form(""),
@@ -209,39 +414,143 @@ def executer_importer(
     racines=Depends(get_racines),
     utilisateur: str = Depends(get_utilisateur_courant),
 ) -> RedirectResponse:
-    """Importe réellement les fichiers cochés (bloqué 423 en lecture seule)."""
+    """Crée le fonds/item cible si besoin (synchrone, rapide), puis **lance
+    le téléchargement en tâche de fond** et redirige vers la page de suivi.
+
+    Le download de gros scans est lent : on ne bloque plus la requête. La
+    racine est validée **avant** toute création (pas d'entité orpheline) ;
+    le thread reçoit les identifiants ShareDocs explicitement (jamais lus
+    d'un global). Bloqué 423 en lecture seule par le middleware."""
     if not fichiers:
         return _redirect_erreur("Aucun fichier sélectionné.")
-    client = _client_session_ou_none(config)
-    if client is None:
+    if racine not in racines:
+        return _redirect_erreur(f"Racine {racine!r} inconnue.")
+    ids = sharedocs_session.identifiants()
+    if ids is None:
         return _redirect_erreur("Non connecté à ShareDocs.")
+    # Garde anti-concurrent AVANT toute création : si un import tourne déjà,
+    # on refuse tout de suite (sinon `_resoudre_cible` créerait un fonds/item
+    # qui resterait orphelin quand `reserver_job` lèverait `JobConcurrent`).
+    # `reserver_job` reste l'autorité atomique ci-dessous (fenêtre TOCTOU
+    # négligeable en mono-utilisateur).
+    if est_job_actif():
+        return _redirect_erreur("Un import ShareDocs est déjà en cours.")
+    # Cible créée/résolue dans la requête (rapide) ; le thread ne fait que
+    # le download (lent). On capture la cote/id avant de quitter la session.
     try:
-        item_obj = _resoudre_item(db, fonds, item)
-    except (FondsIntrouvable, ItemIntrouvable):
-        client.fermer()
-        return _redirect_erreur(f"Item {item!r} introuvable dans le fonds {fonds!r}.")
-    try:
-        rapport = importer_depuis_sharedocs(
+        cible = _resoudre_cible(
             db,
-            client,
-            fichiers,
-            item_obj,
-            racine_cible=racine,
-            racines=dict(racines),
-            dry_run=False,
-            importe_par=utilisateur,
+            fonds=fonds,
+            nouveau_fonds_cote=nouveau_fonds_cote,
+            nouveau_fonds_titre=nouveau_fonds_titre,
+            item=item,
+            nouveau_item_cote=nouveau_item_cote,
+            nouveau_item_titre=nouveau_item_titre,
+            creer=True,
+            cree_par=utilisateur,
         )
-    except RacineCibleInconnue as e:
+    except _CibleErreur as e:
         return _redirect_erreur(str(e))
-    finally:
-        client.fermer()
-    msg = f"{rapport.nb_retenus} fichier(s) importé(s) vers {item}" + (
-        f", {rapport.nb_sautes} sauté(s)" if rapport.nb_sautes else ""
+    item_id = cible.item.id
+
+    try:
+        job_id = reserver_job(
+            item_cote=cible.item_cote,
+            fonds_cote=cible.fonds_cote,
+            racine=racine,
+            chemin_retour=chemin,
+            chemins_distants=fichiers,
+            fonds_cree=cible.fonds_cree,
+            item_cree=cible.item_cree,
+        )
+    except JobConcurrent as e:
+        return _redirect_erreur(str(e))
+
+    thread = threading.Thread(
+        target=executer_import_sharedocs,
+        args=(job_id,),
+        kwargs={
+            "chemin_db": chemin_base_courant(),
+            "item_id": item_id,
+            "chemins_distants": list(fichiers),
+            "racine_cible": racine,
+            "racines": dict(racines),
+            "base_url": ids[0],
+            "user": ids[1],
+            "password": ids[2],
+            "hotes_autorises": _hotes(config),
+            "importe_par": utilisateur,
+        },
+        daemon=True,
+        name=f"import-sharedocs-{job_id[:8]}",
     )
-    retour = quote(chemin)
-    return RedirectResponse(
-        f"/sharedocs?chemin={retour}&message={quote(msg)}", status_code=303
+    try:
+        thread.start()
+    except RuntimeError as exc:
+        # Défense en profondeur : libérer la garde + marquer le job en échec.
+        with sharedocs_jobs._lock:
+            etat = sharedocs_jobs._JOBS.get(job_id)
+            if etat is not None:
+                etat.statut = "echec"
+                etat.erreur_globale = f"Démarrage du thread impossible : {exc}"
+            sharedocs_jobs._id_actuel = None
+        return _redirect_erreur(f"Démarrage de l'import échoué : {exc}")
+
+    return RedirectResponse(f"/sharedocs/importer/suivi/{job_id}", status_code=303)
+
+
+@router.get(
+    "/sharedocs/importer/suivi/{job_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def page_suivi_import(
+    job_id: str,
+    request: Request,
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse | RedirectResponse:
+    """Page de suivi de l'import — barre de progression (HTMX every 2s).
+
+    Si le job est inconnu (serveur redémarré → registre vidé), retour au
+    parcours avec un message."""
+    etat = lire_etat_job(job_id)
+    if etat is None:
+        return _redirect_erreur(
+            f"Import {job_id[:8]}… introuvable (serveur redémarré ou job "
+            "nettoyé). Relancer l'import depuis le parcours."
+        )
+    return templates.TemplateResponse(
+        request,
+        "pages/sharedocs_import_suivi.html",
+        _contexte_base(nom_base, utilisateur, etat=etat, job_id=job_id),
     )
+
+
+@router.get(
+    "/sharedocs/importer/statut/{job_id}",
+    response_class=HTMLResponse,
+    response_model=None,
+)
+def fragment_statut_import(job_id: str, request: Request) -> HTMLResponse:
+    """Fragment HTMX (every 2s) — barre + fichier courant. 404 si inconnu."""
+    etat = lire_etat_job(job_id)
+    if etat is None:
+        return HTMLResponse("<p>Import introuvable.</p>", status_code=404)
+    return templates.TemplateResponse(
+        request,
+        "partials/sharedocs_import_statut.html",
+        {"etat": etat, "request": request},
+    )
+
+
+@router.post("/sharedocs/importer/annuler/{job_id}")
+def annuler_import(job_id: str) -> RedirectResponse:
+    """Demande l'annulation coopérative d'un import en cours, puis revient à
+    la page de suivi (le runner s'arrête après le fichier courant ; les
+    fichiers déjà importés sont conservés). Bloqué 423 en lecture seule."""
+    demander_annulation(job_id)
+    return RedirectResponse(f"/sharedocs/importer/suivi/{job_id}", status_code=303)
 
 
 @router.post("/sharedocs/connexion")

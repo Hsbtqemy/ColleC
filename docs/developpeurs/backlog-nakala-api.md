@@ -475,24 +475,89 @@ l'historique `/versions` en lecture sur la fiche item ; basculer le chemin
 
 ## À vérifier (sondes en attente)
 
-Sondes apitest pas encore faites — à compléter quand l'occasion se présente
-(toutes faisables sur les dépôts publiés déjà sacrifiés, sans nouvelle
-pollution) :
+- **V1 — Vocabulaire des `type` de relation (S8)** : ✅ **résolu (live apitest
+  2026-06-20)** via `scripts/explorer_relations_type_nakala.py`. Le `type` est
+  un **vocabulaire FERMÉ, STRICT et sensible à la casse** : un type inconnu →
+  **422** « Unknown relation type. The available relations are : … » qui
+  **énumère les 38 types DataCite** acceptés ; `ispartof` (minuscule) vers une
+  cible neuve → **422** (la casse compte), `IsPartOf` → « 1 relation added ».
+  Constats annexes : (a) **dédup par cible** qui court-circuite la validation
+  du `type` (re-poster vers une cible déjà reliée → 200 « no relation added »
+  sans examiner le type) ; (b) `DELETE /datas/{id}/relations` **purge toutes**
+  les relations (ignore le corps). **Impact ColleC** : si les relations sont un
+  jour implémentées, valider le `type` contre la liste avant envoi, **sans
+  normaliser la casse**. Détail dans `nakala-savoir-api.md` § *Relations entre
+  données*.
+  **Rectification** : une sonde antérieure (2026-06-18) avait conclu « LAX »
+  **à tort** — elle postait les 3 types vers `d5dduly8`, **cible déjà reliée**
+  à la source, donc le `200 « no relation added »` de la **dédup-par-cible**
+  masquait la validation du type. La re-sonde sur **cibles neuves**
+  (`explorer_relations_type_nakala.py`, auto-restaurante) tranche : **STRICT**
+  (422 + liste des 38 types). C'est exactement le cas T4 du script.
 
-- **V1 — Vocabulaire des `type` de relation (S8)** — ✅ **RÉSOLU
-  (2026-06-18, apitest revenu)** : **LAX**. POST `/datas/1eb87r1j/relations`
-  → cible `d5dduly8` avec un `type` valide (`References`), bidon
-  (`NOTAREALTYPE`) ET mauvaise casse (`ispartof`) → **tous HTTP 200**.
-  Nakala **n'applique aucune validation** du `type` contre le vocabulaire
-  DataCite (et pas d'endpoint `/vocabularies/relationTypes`). Sonde nettoyée
-  (DELETE des 3 relations ajoutées → source revenue à ses 2 relations).
-  **Impact** : si ColleC implémente les relations (V2+), il devra
-  **normaliser/valider le `type` lui-même** (CamelCase DataCite) — Nakala ne
-  rattrapera pas une faute. Pas un blocage (aucun rejet à craindre).
+Aucune sonde apitest restante en attente.
 
 ---
 
-## Audit de parité apitest ↔ production (chantier futur) `☐` · P2
+## Audit de parité apitest ↔ production — Volet A ✅ · Volet B ✅ · P2
+
+> **Volet A livré (lecture seule, 2026-06-20)** —
+> `scripts/audit_parite_prod_nakala.py` (clé d'un vrai compte Huma-Num,
+> GET only + listing `readable`, **zéro pollution**). Le script interroge
+> prod ET apitest et diffe. **Résultats** :
+> - **Parité confirmée (identique prod ↔ apitest)** : forme `GET /datas/{id}`
+>   (21 clés, **champs de modération `lastModerator…` présents des deux côtés**),
+>   vocabulaires (`licenses` 620, `datatypes` 29, `languages` 10), corps
+>   d'erreur 404 (`code/message/payload`), `…/versions` (200), **IIIF
+>   `info.json`** (200), **OAI `/oai2` Identify** (200 `text/xml`).
+> - **Divergences (attendues, hors contrat d'API)** : (1) 🎯 **citation** —
+>   prod `…/citation` publié → **200 + citation réelle** (APA + `doi.org`),
+>   apitest → **403** « not citable » → S4 validé contre la prod ; (2) **rôles**
+>   — compte prod `ROLE_USER`, compte de test apitest `ROLE_USER +
+>   ROLE_MODERATOR`.
+> - **Constats méthodo annexes** : `/search` renvoie des identifiants **non
+>   GETtables** en direct (index ≠ store) → échantillonner via la liste
+>   `readable` ; le bon endpoint OAI est **`/oai2`** (pas `/oai`) ;
+>   `/vocabularies/countries` → 404 des deux côtés (chemin inexistant).
+>
+> **Volet B livré (écriture, 2026-06-20)** —
+> `scripts/audit_parite_prod_volet_b.py` (via les **vrais services ColleC**
+> `deposer_item`/`pousser_item`/`ajouter_fichier`/…, **UN dépôt `pending`
+> jamais publié, supprimé en fin** → 404 confirmé, zéro résidu). **Tout le
+> chemin d'écriture de ColleC se comporte à l'identique sur prod** :
+> - dépôt `POST /datas` (pending) ; **enrichissement créateur** `{authorId,
+>   fullName, givenname, orcid, surname}` (#2) ; **langue `spa`→`es`** (#422) ;
+> - **round-trip `PUT /datas` IDEMPOTENT** — 0 diff juste après dépôt et après
+>   une modif de titre poussée puis relue. C'était le risque n°1 (si prod
+>   enrichissait les créateurs autrement, `diff_push` ferait de faux diffs à
+>   l'infini) : **levé** ;
+> - **fichiers granulaires** `POST/DELETE …/files` (additif, retrait ciblé par
+>   sha1) ; **description par fichier** préservée (H11) ; **embargo** normalisé
+>   (`…T00:00:00+01:00` + `humanReadableEmbargoedDelay {y,m,d}`) ;
+> - **suppression** d'un pending → 404.
+>
+> **Volet B niveau collection livré** —
+> `scripts/audit_parite_prod_volet_b_collection.py` (collection `private` + item
+> `pending`, supprimés en fin) : `deposer_collection` OK, `GET /collections`
+> (17 clés), **`pousser_metadonnees_collection` round-trip IDEMPOTENT** (0 diff
+> après dépôt ; modif titre appliquée puis re-push 0 diff — la **fusion**
+> préservant les metas non modélisées tient sur prod), `DELETE /collections` OK.
+>
+> **Parité vocabulaire émis** — `verifier_parite_vocabulaires_nakala.py` contre
+> prod : 29 types COAR projetés + 57 `propertyUri` émis par ColleC **⊆** live
+> (depositTypes 29 / properties 60). Aucune dérive.
+>
+> **Constats opérationnels prod (≠ apitest, plus stable)** : TLS timeouts épars ;
+> un **500 transitoire** sur `PUT /collections` (non reproduit ; PUT validé 204
+> par ailleurs) ; **cohérence éventuelle au DELETE** (un `DELETE /datas` a
+> renvoyé 404 alors que la donnée persistait → re-GET + retry l'ont supprimée).
+> → ColleC : prévoir retry sur 5xx transitoires + vérifier les suppressions par
+> relecture pour les opérations massives sur prod.
+>
+> - **Non rejoué sur prod** (irréversibles) : publication, relations
+>   donnée↔donnée (gated publication), versioning `.vN` — présomption de parité
+>   par identité du logiciel + sondes apitest (V1 relations sur apitest, §
+>   *À vérifier*).
 
 **Objectif.** Tous les constats de `nakala-savoir-api.md` ont été validés
 contre **`apitest.nakala.fr`**. Vérifier s'ils valent **à l'identique** sur
@@ -537,10 +602,12 @@ concentrent sur ce qu'apitest ne peut pas montrer.
 sonde existants (`scripts/explorer_*_nakala.py`) avec `NAKALA_HOST=https://
 api.nakala.fr` + `NAKALA_API_KEY=<clé prod réelle>`.
 
-**Prérequis (bloquant).** Une **clé API d'un vrai compte Huma-Num** sur
-`nakala.fr` + accord pour un éventuel dépôt sacrificiel. Sans ça, seul le
-Volet A est faisable. Inclure aussi la sonde **V1** (§ À vérifier) dans cet
-audit.
+**Prérequis.** ~~Clé API d'un vrai compte Huma-Num~~ obtenue → **Volets A
+et B faits** (cf. encadrés ci-dessus). Volet B mené avec **un seul dépôt
+`pending` jamais publié, supprimé automatiquement** (zéro résidu) — pas de
+DOI DataCite minté. **Reste hors scope** (irréversible) : publication réelle,
+relations donnée↔donnée, versioning `.vN` sur prod ; couverts par présomption
+d'identité logicielle + sondes apitest.
 
 ---
 

@@ -42,6 +42,10 @@
      suppression tant que la cote n'est pas recopiée correctement.
      Inerte (no-op) en l'absence de formulaire `[data-cote-confirmer]`. #}
   <script src="{{ url_for('static', path='js/zone_suppression.js') }}"></script>
+  {# ShareDocs : case maître « Tout sélectionner » + révélation des champs
+     de création de fonds/item (sentinelle « __nouveau__ »). Inerte (no-op)
+     hors de la page /sharedocs. #}
+  <script src="{{ url_for('static', path='js/sharedocs.js') }}"></script>
   {% if est_lecture_seule() %}
     {# Filet de sécurité : si un utilisateur appuie sur Entrée dans un
        input texte d'un form POST (les boutons submit sont masqués

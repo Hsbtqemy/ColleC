@@ -1,0 +1,18 @@
+{# Fragment HTMX : <select> des items du fonds choisi + option « créer ».
+   Rendu inline au chargement (via {% with items = items_initiaux %}) ET
+   seul au changement de fonds (route GET /sharedocs/cible-items).
+   Auto-suffisant en styles pour les deux chemins de rendu. #}
+{% set label_style = "display:block;font-size:12px;color:#374151;margin-bottom:4px;" %}
+{% set input_style = "width:100%;padding:6px 10px;font-size:13px;border:1px solid rgba(0,0,0,0.15);border-radius:4px;" %}
+<label style="{{ label_style }}" for="imp-item">Item cible</label>
+<select id="imp-item" name="item" required data-sd-cible="item" style="{{ input_style }}">
+  {% for it in items %}<option value="{{ it.cote }}">{{ it.cote }}{% if it.titre %} — {{ it.titre }}{% endif %}</option>{% endfor %}
+  <option value="__nouveau__"{% if not items %} selected{% endif %}>➕ Créer un nouvel item…</option>
+</select>
+<div data-sd-nouveau="item" {% if items %}hidden{% endif %}
+     style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+  <input type="text" name="nouveau_item_cote" data-sd-requis {% if items %}disabled{% endif %}
+         placeholder="Cote du nouvel item" style="{{ input_style }}">
+  <input type="text" name="nouveau_item_titre" data-sd-requis {% if items %}disabled{% endif %}
+         placeholder="Titre de l'item" style="{{ input_style }}">
+</div>

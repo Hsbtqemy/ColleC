@@ -91,6 +91,42 @@
     return trimmed;
   }
 
+  async function attacherSuggestions(input, ligne) {
+    // Datalist d'autocomplete sur un champ libre marqué
+    // `data-edit-suggest="<type>:<champ>"` (ex. "fonds:editeur") : propose
+    // les valeurs déjà saisies ailleurs (le navigateur filtre au fil de la
+    // frappe). Texte libre malgré tout — c'est une aide, pas une contrainte.
+    // Silencieux en cas d'erreur réseau : l'édition reste possible sans.
+    const source = ligne.dataset.editSuggest;
+    if (!source || input.tagName !== "INPUT") return;
+    const sep = source.indexOf(":");
+    if (sep < 0) return;
+    const type = source.slice(0, sep);
+    const champ = source.slice(sep + 1);
+    try {
+      const resp = await fetch(
+        "/api/suggestions?type=" + encodeURIComponent(type) +
+          "&champ=" + encodeURIComponent(champ)
+      );
+      if (!resp.ok) return;
+      const valeurs = await resp.json();
+      if (!Array.isArray(valeurs) || valeurs.length === 0) return;
+      const parent = input.parentNode;
+      if (!parent) return; // édition déjà refermée avant la réponse
+      const dl = document.createElement("datalist");
+      dl.id = "dl-suggest-" + type + "-" + champ;
+      for (const v of valeurs) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        dl.appendChild(opt);
+      }
+      input.setAttribute("list", dl.id);
+      parent.appendChild(dl); // dans [data-value] → retiré au reset innerHTML
+    } catch (e) {
+      /* silencieux */
+    }
+  }
+
   function activer(ligne, ctx) {
     const zoneValeur = ligne.querySelector("[data-value]");
     if (!zoneValeur) return;
@@ -154,6 +190,7 @@
     zoneValeur.appendChild(input);
     input.focus();
     if (input.select) input.select();
+    attacherSuggestions(input, ligne); // datalist si data-edit-suggest (async, non bloquant)
 
     let envoye = false;
 

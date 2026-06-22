@@ -1,0 +1,47 @@
+{# Fragment HTMX (Lot 4b) : étiquettes d'un item — chips colorées + ajout.
+   Cible de swap : #section-etiquettes-item (outerHTML) à attach/detach.
+   Contexte : item, fonds_cote, etiquettes (courantes), etiquettes_disponibles. #}
+<div id="section-etiquettes-item">
+  {% if etiquettes %}
+    <span style="display:inline-flex;flex-wrap:wrap;gap:6px;vertical-align:middle;">
+      {% for e in etiquettes %}
+      <span style="display:inline-flex;align-items:center;gap:5px;background:{{ e.couleur }};
+                   color:white;border-radius:11px;padding:2px 4px 2px 10px;font-size:12px;">
+        {{ e.libelle }}
+        {% if not est_lecture_seule() %}
+        <button type="button" aria-label="Retirer l'étiquette {{ e.libelle }}"
+                hx-post="/item/{{ item.cote | urlencode }}/etiquettes/{{ e.id }}/retirer?fonds={{ fonds_cote | urlencode }}"
+                hx-target="#section-etiquettes-item" hx-swap="outerHTML"
+                style="border:none;background:rgba(255,255,255,0.28);color:white;border-radius:50%;
+                       width:16px;height:16px;line-height:1;cursor:pointer;font-size:12px;padding:0;">×</button>
+        {% endif %}
+      </span>
+      {% endfor %}
+    </span>
+  {% else %}
+    <span style="font-size:12px;color:#9ca3af;font-style:italic;">Aucune étiquette.</span>
+  {% endif %}
+
+  {% if not est_lecture_seule() %}
+    {% if etiquettes_disponibles %}
+    <form hx-post="/item/{{ item.cote | urlencode }}/etiquettes?fonds={{ fonds_cote | urlencode }}"
+          hx-target="#section-etiquettes-item" hx-swap="outerHTML"
+          style="display:inline-flex;gap:6px;align-items:center;margin-left:8px;vertical-align:middle;">
+      <select name="etiquette_id" required aria-label="Étiquette à ajouter"
+              style="font-size:12px;padding:3px 6px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:white;">
+        {% for e in etiquettes_disponibles %}
+        <option value="{{ e.id }}">{{ e.libelle }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit"
+              style="font-size:12px;padding:3px 10px;border:1px solid rgba(0,0,0,0.12);border-radius:4px;background:#f3f4f6;cursor:pointer;">
+        + Ajouter
+      </button>
+    </form>
+    {% elif not etiquettes %}
+    <span style="font-size:11px;color:#9ca3af;margin-left:6px;">
+      Aucune étiquette définie. <a href="/etiquettes" style="color:#378ADD;">Créer →</a>
+    </span>
+    {% endif %}
+  {% endif %}
+</div>

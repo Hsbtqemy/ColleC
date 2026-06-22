@@ -52,6 +52,8 @@ from archives_tool.models import (
     Fonds,
     Item,
     ItemCollection,
+    ItemEtiquette,
+    ModificationItem,
     TypeCollection,
 )
 
@@ -218,6 +220,68 @@ _OPTIONNELS_NULLABLES: tuple[str, ...] = (
     "doi_collection_nakala",
 )
 
+#: Colonnes scalaires dont les changements sont journalisés dans
+#: `ModificationItem` (historique de la fiche item). `annee` est exclue
+#: (dérivée de `date` → bruit), `numero_tri` et `version` aussi (internes).
+#: Les clés de `metadonnees` sont diffées à part, préfixées `meta.`.
+_CHAMPS_JOURNALISES: tuple[str, ...] = (
+    "cote",
+    "titre",
+    "etat_catalogage",
+    *_OPTIONNELS_NULLABLES,
+)
+
+
+def _valeur_journal(valeur: object) -> str | None:
+    """Normalise une valeur en chaîne pour l'historique (None si vide).
+    Les listes (métadonnées multi-valeurs) sont jointes lisiblement."""
+    if valeur is None:
+        return None
+    if isinstance(valeur, str):
+        return valeur or None
+    if isinstance(valeur, (list, tuple)):
+        return ", ".join(str(v) for v in valeur) or None
+    return str(valeur)
+
+
+def _snapshot_journal(item: Item) -> dict[str, str | None]:
+    """Aplatit les champs suivis d'un item en `{champ: valeur_str}` pour
+    le diff d'historique. Les clés de `metadonnees` sont préfixées
+    `meta.` afin de ne pas entrer en collision avec les colonnes."""
+    snap: dict[str, str | None] = {
+        nom: _valeur_journal(getattr(item, nom)) for nom in _CHAMPS_JOURNALISES
+    }
+    for cle, val in (item.metadonnees or {}).items():
+        snap[f"meta.{cle}"] = _valeur_journal(val)
+    return snap
+
+
+def _journaliser_modifications(
+    db: Session,
+    item: Item,
+    avant: dict[str, str | None],
+    *,
+    modifie_par: str | None,
+) -> None:
+    """Compare l'état d'un item à son snapshot `avant` (pris avant
+    `_appliquer_formulaire`) et insère une `ModificationItem` par champ
+    modifié — sans commit (l'appelant committe une seule fois, atomique
+    avec l'update et l'incrément de version)."""
+    apres = _snapshot_journal(item)
+    for champ in sorted(set(avant) | set(apres)):
+        v_avant = avant.get(champ)
+        v_apres = apres.get(champ)
+        if v_avant != v_apres:
+            db.add(
+                ModificationItem(
+                    item_id=item.id,
+                    champ=champ,
+                    valeur_avant=v_avant,
+                    valeur_apres=v_apres,
+                    modifie_par=modifie_par,
+                )
+            )
+
 
 _REGEX_ANNEE_EDTF = re.compile(r"^-?(\d{4})")
 
@@ -370,6 +434,7 @@ def lister_items_collection(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
     tri: str | None = None,
     ordre: Ordre = "asc",
     page: int = 1,
@@ -390,6 +455,7 @@ def lister_items_collection(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
         tri=tri,
         ordre=ordre,
         page=page,
@@ -406,6 +472,7 @@ def _appliquer_filtres_items(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
 ) -> tuple[object, dict[str, object]]:
     """Applique les filtres optionnels à une requête (`base_stmt` ou
     `count_stmt`). Retourne `(stmt_filtré, filtres_appliqués)` où le
@@ -437,6 +504,18 @@ def _appliquer_filtres_items(
     if annee_a is not None:
         stmt = stmt.where(Item.annee <= annee_a)
         filtres["annee_a"] = annee_a
+    if etiquettes:
+        ids = [int(e) for e in etiquettes]
+        # OR au sein de la dimension : items portant AU MOINS une des
+        # étiquettes sélectionnées (cohérent avec etats/langues en `.in_()`).
+        stmt = stmt.where(
+            Item.id.in_(
+                select(ItemEtiquette.item_id).where(
+                    ItemEtiquette.etiquette_id.in_(ids)
+                )
+            )
+        )
+        filtres["etiquettes"] = ids
     return stmt, filtres
 
 
@@ -450,6 +529,7 @@ def _lister_items(
     types_coar: list[str] | tuple[str, ...] | None = None,
     annee_de: int | None = None,
     annee_a: int | None = None,
+    etiquettes: list[int] | tuple[int, ...] | None = None,
     tri: str | None,
     ordre: Ordre,
     page: int,
@@ -468,6 +548,7 @@ def _lister_items(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
     )
 
     mapping_tri = {
@@ -491,6 +572,7 @@ def _lister_items(
         types_coar=types_coar,
         annee_de=annee_de,
         annee_a=annee_a,
+        etiquettes=etiquettes,
     )
     total = db.scalar(count_stmt) or 0
 
@@ -883,10 +965,14 @@ def modifier_item(
     item = lire_item(db, item_id)
     if formulaire.fonds_id != item.fonds_id:
         raise OperationItemInterdite("Le fonds d'un item ne peut pas être modifié.")
+    avant = _snapshot_journal(item)  # AVANT mutation (valeurs courantes)
     _appliquer_formulaire(item, formulaire)
     item.modifie_par = modifie_par
     item.modifie_le = datetime.now()
     verifier_et_incrementer_version(item, formulaire)
+    # Historique : une ligne ModificationItem par champ modifié, dans la
+    # même transaction que l'update (atomique).
+    _journaliser_modifications(db, item, avant, modifie_par=modifie_par)
 
     with (
         garde_cote_unique(db, ItemInvalide, item.cote),
@@ -895,6 +981,24 @@ def modifier_item(
         db.commit()
     db.refresh(item)
     return item
+
+
+def lister_modifications_item(
+    db: Session, item_id: int, *, limite: int = 100
+) -> list[ModificationItem]:
+    """Historique des modifications d'un item, plus récentes d'abord.
+
+    Tri secondaire par `id` décroissant : les lignes d'une même édition
+    partagent le même `modifie_le` (un seul commit) — l'id départage de
+    façon stable."""
+    return list(
+        db.scalars(
+            select(ModificationItem)
+            .where(ModificationItem.item_id == item_id)
+            .order_by(ModificationItem.modifie_le.desc(), ModificationItem.id.desc())
+            .limit(limite)
+        ).all()
+    )
 
 
 def supprimer_item(

@@ -56,6 +56,7 @@ from archives_tool.api.routes._helpers import (
 from archives_tool.api.services.dashboard import (
     composer_dashboard,
     composer_fiche_item,
+    composer_options_filtres,
     composer_page_collection,
     composer_synthese_collection,
     composer_synthese_fonds,
@@ -74,6 +75,9 @@ from archives_tool.api.services.fonds import (
     supprimer_fonds,
 )
 from archives_tool.api.services.conflits import ConflitVersion
+from archives_tool.api.services.etiquettes import (
+    etiquettes_courantes_et_disponibles,
+)
 from archives_tool.api.services.items import (
     FormulaireItem,
     ItemIntrouvable,
@@ -683,6 +687,9 @@ def page_collection(
     type_coar: list[str] | None = Query(
         None, description="Filtre par type COAR (mêmes formats que `etat`)."
     ),
+    etiquette: list[str] | None = Query(
+        None, description="Filtre par étiquette (id ; mêmes formats que `etat`)."
+    ),
     # `str | None` plutot que `int | None` : le drawer Filtrer soumet
     # `annee_de=&annee_a=` quand les champs sont vides, ce que la
     # validation int rejette en 422. On parse + filtre les valeurs
@@ -709,12 +716,18 @@ def page_collection(
             return RedirectResponse(f"/fonds/{cote}", status_code=303)
 
     collection = _resoudre_collection(db, cote, fonds)
-    detail = composer_page_collection(db, collection)
-    # Parsing + validation des filtres contre les options dynamiques.
-    # Synthèse : seulement pour le rendu pleine page (pas pour les
-    # swaps HTMX qui ne rendent que le partial du tableau).
+    est_htmx = request.headers.get("HX-Request") == "true"
+    # Sur un swap HTMX (tri / pagination), seul le tableau est re-rendu : on
+    # ne calcule QUE les options de filtres (assez pour valider/appliquer les
+    # filtres portés en query string) — pas le contexte de page complet
+    # (répartition, traçabilité, fonds, synthèse) qui serait jeté.
+    detail = None
     synthese = None
-    if request.headers.get("HX-Request") != "true":
+    if est_htmx:
+        options = composer_options_filtres(db, collection)
+    else:
+        detail = composer_page_collection(db, collection)
+        options = detail.options_filtres
         synthese = composer_synthese_collection(db, collection, fonds_query=fonds)
     filtres = parser_filtres_collection(
         etat=etat,
@@ -722,7 +735,8 @@ def page_collection(
         type_coar=type_coar,
         annee_de=_annee_int_ou_none(annee_de),
         annee_a=_annee_int_ou_none(annee_a),
-        options=detail.options_filtres,
+        options=options,
+        etiquette=etiquette,
     )
     listage = lister_items_collection(
         db,
@@ -736,12 +750,13 @@ def page_collection(
         types_coar=filtres.types_coar,
         annee_de=filtres.annee_de,
         annee_a=filtres.annee_a,
+        etiquettes=filtres.etiquettes,
     )
     resolu = charger_colonnes_actives(db, utilisateur, collection.id, "items")
     # HTMX swap (tri colonne, pagination) : on ne renvoie que le partial
     # du tableau, pas la page entiere. Sinon HTMX injecte la page complete
     # dans #tableau-items et tout s'imbrique.
-    if request.headers.get("HX-Request") == "true":
+    if est_htmx:
         return templates.TemplateResponse(
             request,
             "partials/collection_items.html",
@@ -1177,6 +1192,12 @@ def page_item_fiche(
         raise HTTPException(
             status_code=404, detail=f"Item {cote!r} introuvable."
         ) from e
+    # Étiquettes de chantier (Lot 4b) : rendu serveur pour être glanceable
+    # (modifié ensuite en HTMX). Hors `composer_fiche_item` pour ne pas
+    # alourdir son budget SQL documenté.
+    etiquettes_courantes, etiquettes_disponibles = (
+        etiquettes_courantes_et_disponibles(db, fiche.item.id)
+    )
     return templates.TemplateResponse(
         request,
         "pages/item_fiche.html",
@@ -1188,6 +1209,8 @@ def page_item_fiche(
             visionneuse_url=f"/item/{cote}/visionneuse?fonds={fonds_obj.cote}",
             consultation_url=f"/lire/{fonds_obj.cote}/{cote}",
             q_surligne=q,
+            etiquettes=etiquettes_courantes,
+            etiquettes_disponibles=etiquettes_disponibles,
         ),
     )
 

@@ -32,14 +32,21 @@ Mode actuel : **local mono-utilisateur**.
 4. **Diffusion après l'OCR.**
 5. **Confort / interop** (V2/V3) en opportuniste.
 
+> **Chantier UI⁺** (surfaçage de l'existant + polissage du front) — ajouté au
+> point d'approfondissement du 2026-06-22, **mini-chantier resserré livré le
+> jour même** (traçabilité + autocomplete + étiquettes). Sans dépendance dure
+> (interleavable). Détail, reste et évaluation valeur/coût dans sa section
+> dédiée plus bas.
+
 ---
 
 ## Horizon 0 — Consolidation (en cours / continu)
 
-- **FF `main`** pour promouvoir le palier S7 **+ le Chantier 1 ShareDocs**.
-- **Quick wins** : S6 (validation licence SPDX au preflight/export) ;
-  `notebooks-sdk` (page-guide — l'API publique existe déjà, ne dépend de
-  rien, tirable n'importe quand).
+- **FF `main`** pour promouvoir le palier S7 **+ le Chantier 1 ShareDocs**
+  (y compris le durcissement UX de l'import web — cf. Chantier 1).
+- **Quick wins** : ✅ S6 (validation licence SPDX au preflight/export, livré) ;
+  ✅ `notebooks-sdk` (page-guide **déjà livrée** — [`guide/notebook.md`](../guide/notebook.md),
+  dans la nav MkDocs). Les deux quick wins d'Horizon 0 sont faits.
 - **Passif / bloqué externe** : **apitest revenu le 2026-06-18** → suite
   d'intégration relancée (12 passed), **smoke S7 live FAIT** + sonde
   omit-vs-wipe résolue (→ WIPE, cf. `nakala-savoir-api.md` H12) + **sonde
@@ -95,9 +102,108 @@ coffre chiffré multi-comptes scopés par espace reste **V1.0** (Chantier 3).
 tracés cf. `ocr-module-future.md` (§ Emprunts BD_ditor) et mémoire
 `bd-ditor-sibling`.
 
-**Reste possible (non bloquant)** : smoke test contre un vrai partage
-ShareDocs (jamais exercé en live — tout est validé via `MockTransport`),
-le jour où un accès Huma-Num est disponible.
+**Smoke live ✅ FAIT (2026-06-21)** : connexion + parcours + import validés
+contre le vrai partage `sharedocs.huma-num.fr` (le dernier angle jamais
+exercé ; tout le reste restait couvert via `MockTransport`). Plus aucun
+« reste » bloquant sur le Chantier 1.
+
+**Durcissement UX de l'import web (2026-06-21)** — relevé au test d'usage :
+cibles assistées (selects fonds/item, item rechargé en HTMX) + création
+inline (fonds/item depuis la page, création au POST seulement) + « Tout
+sélectionner » ; **import en tâche de fond** (2ᵉ tâche de fond : module
+`sharedocs_jobs`, garde mono-job indépendante, barre de progression HTMX) +
+**annulation coopérative** (arrêt entre fichiers, partiel conservé, reprise).
+Cf. `CLAUDE.md` § Chantier 1. **Dette confirmée** : la garde mono-job de
+`sharedocs_jobs` est, comme celle de Nakala, per-process et non isolée
+per-utilisateur → à factoriser au Chantier 3 (cf. § Transverse, isolation
+des états module-globaux).
+
+---
+
+## Chantier UI⁺ — Surfaçage de l'existant & polissage du front (interleavable)
+
+**Origine** : point d'approfondissement du 2026-06-22 (revue de l'UI/front +
+cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **mini-chantier
+resserré LIVRÉ (2026-06-22, sur `dev`)** — Panier A (traçabilité) + Panier B
+(inline déjà fait, autocomplete, étiquettes + filtrage). **Reste optionnel** :
+QA / comparer-fichiers (A), quick-actions / hygiène transversale (B), Panier C.
+Sans dépendance dure (interleavable avec/avant le Chantier 2).
+
+!!! success "Livré (chantier UI⁺, 2026-06-22)"
+    **Lot 1** page `/journal` (suppressions + push Nakala + renommages) ·
+    **Lot 2** historique des modifications sur la fiche item (`ModificationItem`,
+    modèle qui était **dormant** → producteur livré) · **Lot 3** autocomplete
+    des valeurs existantes sur les champs libres (l'inline étendu était déjà
+    en place) · **Lot 4 + 4c** étiquettes colorées de chantier (modèle +
+    page de gestion + étiquetage HTMX sur la fiche + filtrage drawer/pastilles).
+    ~+90 tests ; suite à 2045 verts. Chaque lot revu (a trouvé du réel à
+    chaque fois : branches non testées, cascades, injection JS, round-trip).
+
+**Constat** : le back/CLI/Nakala a pris une avance nette sur le front. Logique
+métier ~90 % couverte, CLI ~100 %, **UI web ~50 %** des capacités et **~7/10
+de finition** (« fonctionnel, pas poli » ; accessibilité ~40 %). Une partie de
+l'écart est **assumée** (masse / admin / audit = power-user CLI, cf. décision
+« UI = workflow catalogage récurrent »), mais le différentiel sert mal deux
+piliers du positionnement : *traçabilité / capitalisation de la connaissance
+tacite* et *préparation de la confiance multi-utilisateurs (V1.0)*.
+L'investissement le plus rentable ici n'est **pas du net-new** mais
+**(A) surfacer en UI ce qui existe déjà côté service** et **(B) polir le
+front**.
+
+!!! note "Correctifs de cartographie (déjà livrés en UI — ne pas recompter)"
+    Création **en série d'items** (`/collection/{cote}/items/serie`), création
+    de **collection libre** (`/collections/nouvelle`), **édition page
+    complète** (`/{item,collection,fonds}/{cote}/modifier` GET+POST), et
+    **ShareDocs web** (`/sharedocs` + tâche de fond) existent bien — une sonde
+    automatique les avait à tort signalés comme manquants.
+
+### Panier A — Surfacer l'existant (back prêt, ROI max, risque min)
+
+Données déjà journalisées, services de lecture déjà écrits → essentiellement
+des **pages read-only** à brancher.
+
+| Piste | Back disponible | Valeur | Coût | État |
+| --- | --- | --- | --- | --- |
+| Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible | ✅ Lot 1 |
+| Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible | ✅ Lot 2 |
+| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ⏳ reste |
+| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ⏳ reste |
+
+**Resté CLI volontairement** (principe n°6) : renommage batch, dérivés en
+masse, import profil YAML complet, push de fichiers binaires Nakala — un bouton
+« renommer 7500 fichiers » dans un onglet navigateur n'en vaut pas le risque.
+
+### Panier B — Polir le front (augmentation > prolifération)
+
+| Piste | Pourquoi | Valeur | Coût | État |
+| --- | --- | --- | --- | --- |
+| **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete** des valeurs existantes | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible | ✅ Lot 3 (inline déjà fait + autocomplete livré) |
+| **Étiquettes colorées** libres (≠ `etat_catalogage`) + **filtrage** | marquage workflow ; table dédiée (jamais exportée) + filtre drawer ; favori #1 | Quotidien | Faible-moyen | ✅ Lot 4 + 4c |
+| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ⏳ reste |
+| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ⏳ reste (a11y de base posée sur les pages neuves) |
+
+### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
+
+Command palette (Ctrl+K étendu), preview pane, **vue Avancement consolidée**
+(`plan-de-chantier`), modes comparaison / similaires / diaporama. Payback plus
+incertain ; la recherche plein-texte (Chantier 2) les rend plus puissants. →
+relèvent du **Chantier 5** / `idees-ui-vrac.md`.
+
+### Suite (mini-chantier resserré FAIT)
+
+- **Fait (2026-06-22)** : le mini-chantier resserré — Panier A (traçabilité)
+  + Panier B (inline déjà fait, autocomplete, étiquettes + filtrage) — est
+  livré. Il comblait le trou le plus visible (la traçabilité existait en base
+  mais était invisible dans le navigateur) et prépare la confiance V1.0.
+- **Reste, opportuniste** : QA `controler` + diagnostic `comparer-fichiers`
+  (Panier A) ; quick-actions + hygiène transversale / a11y / tokens CSS
+  (Panier B) ; Panier C après l'OCR. Aucun n'est bloquant.
+- **Hors scope ici** : l'isolation per-user des états module-globaux reste un
+  **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
+
+**Renvois** : `idees-ui-vrac.md` (paniers B/C), `plan-de-chantier.md` (vue
+Avancement), `annotations-image-future.md` (l'autocomplete vocab y prépare le
+terrain).
 
 ---
 
@@ -188,7 +294,10 @@ interne, consommation **aval** ».
 - **Versioning fichiers**, opérations sur scans, **packaging distribuable**
   (V3).
 - `vocabulaire-scoping` T4, `plan-de-chantier` (onglet Avancement),
-  `idees-ui-vrac` — à interleaver.
+  `idees-ui-vrac` — à interleaver. **Les pistes UI/front à fort ROI
+  (surfaçage traçabilité, inline étendu, étiquettes) sont remontées dans le
+  *Chantier UI⁺*** ; ne restent ici que le confort lourd ou tardif (vue
+  tableau éditable, modes comparaison/graphe, packaging).
 
 **Renvois** : docs `*-future.md` correspondants + `idees-ui-vrac.md`.
 
@@ -209,6 +318,10 @@ interne, consommation **aval** ».
     extraction texte sera une 2ᵉ tâche de fond mutant des `Fichier`/`OcrPage`
     → la garde mono-job actuelle ne suffira plus (condition de remise en
     cause déjà documentée dans CLAUDE.md § *Tâches de fond*).
+  - **Parité FK `Fichier.item_id`** (R5) **✅ résolu (2026-06-22)** —
+    `ondelete="CASCADE"` posé au niveau SQL (migration `v0z1a2b3c4d5`), en
+    parité avec les FK sœurs ; défense en profondeur contre un futur
+    `delete()` bulk. Cf. `backlog-revue-generale.md` R5.
   - **Verrou optimiste `Fichier`** (colonne `version` non câblée, ≠ Item/
     Collection/Fonds). Risque réel limité aujourd'hui (ShareDocs ne fait que
     *créer* des Fichier, le push fichiers est CLI-only, `IncoherenceFichierORM`
@@ -231,9 +344,12 @@ interne, consommation **aval** ».
   blast-radius **✅ corrigé** (section `nakala`/`sharedocs` invalide
   désactivée seule, `lecture_seule`/`racines` préservés), **R3** collision
   plan.py disque-seul vs base **✅ corrigé** (garde base au plan), **R4**
-  mkdir orphelins au rollback (verrouillé par test), **R5** `Fichier.item_id`
-  sans `ON DELETE CASCADE`. **Reste ouvert : R5 seul** (LOW, nécessite une
-  migration). Sécurité + invariants vérifiés sains (aucun ticket).
+  **R4** mkdir orphelins au rollback **✅ corrigé (2026-06-22 : cleanup
+  `rmdir` des répertoires créés en phase 2, best-effort, préserve les
+  préexistants)**, **R5** `Fichier.item_id` sans `ON DELETE CASCADE` **✅
+  corrigé (2026-06-22, migration `v0z1a2b3c4d5` + parité FK testée)**.
+  **Backlog revue générale entièrement soldé** (R1–R5). Sécurité +
+  invariants vérifiés sains (aucun ticket).
 - **Audit de parité Nakala apitest ↔ prod** ✅ **FAIT (2026-06-20)** — clé
   d'un vrai compte Huma-Num ; Volets A (lecture) + B (écriture item +
   collection) + parité vocab ; parité totale du contrat d'API. Cf.

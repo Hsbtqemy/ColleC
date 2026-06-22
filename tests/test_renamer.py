@@ -47,7 +47,7 @@ from archives_tool.renamer import (
     evaluer_template,
     executer_plan,
 )
-from archives_tool.renamer.plan import _detecter_cycles
+from archives_tool.renamer.plan import _TAILLE_LOT_SQL, _detecter_cycles
 from archives_tool.renamer.rapport import (
     CodeConflit,
     OperationRenommage,
@@ -306,7 +306,125 @@ def test_plan_collision_externe_en_base_binaire_absent(
     assert CodeConflit.COLLISION_EXTERNE in {c.code for c in plan.conflits}
     op = next(o for o in plan.operations if o.chemin_avant == "src.tif")
     assert op.statut == StatutPlan.BLOQUE
-    assert "base" in (op.raison or "")
+    assert op.raison == "collision externe en base"
+
+
+def test_plan_collision_en_base_avec_no_op_occupant(
+    session: Session, racine_scans: Path
+) -> None:
+    """R3 : un fichier du périmètre qui RESTE en place (NO_OP, binaire absent)
+    est un occupant légitime. Une autre op qui vise son chemin est bloquée par
+    la garde BASE — pas par l'intra-batch (qui ignore les NO_OP) ni par le
+    disque (binaire absent). Verrouille l'affirmation fragile du fix R3."""
+    creer_fonds(session, FormulaireFonds(cote="W", titre="W"))
+    fonds = lire_fonds_par_cote(session, "W")
+    item = creer_item(session, FormulaireItem(cote="W-1", titre="N", fonds_id=fonds.id))
+    # f_keep : reste en place (template = son chemin → NO_OP), binaire ABSENT.
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="keep.tif",
+            nom_fichier="keep.tif",
+            ordre=1,
+            format="tif",
+            type_page="page",
+        )
+    )
+    # f_move : binaire présent, vise "keep.tif".
+    (racine_scans / "move.tif").write_bytes(b"X")
+    session.add(
+        Fichier(
+            item_id=item.id,
+            racine="scans",
+            chemin_relatif="move.tif",
+            nom_fichier="move.tif",
+            ordre=2,
+            format="tif",
+            type_page="page",
+        )
+    )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="keep.{ext}",  # f_keep → NO_OP ; f_move → "keep.tif"
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(item_cote="W-1", item_fonds_cote="W"),
+    )
+    assert not plan.applicable
+    op_keep = next(o for o in plan.operations if o.chemin_avant == "keep.tif")
+    op_move = next(o for o in plan.operations if o.chemin_avant == "move.tif")
+    assert op_keep.statut == StatutPlan.NO_OP  # l'occupant reste en place
+    assert op_move.statut == StatutPlan.BLOQUE
+    assert op_move.raison == "collision externe en base"
+
+
+def test_plan_collision_base_chunkee_au_dela_du_lot_sql(
+    session: Session, racine_scans: Path
+) -> None:
+    """R3 / portabilité (n°5) : la garde de collision base interroge la base
+    par lots de `_TAILLE_LOT_SQL` paramètres liés — sinon un renommage de fonds
+    entier dépasse l'ancien plafond SQLite de 999 variables (libsqlite3 < 3.32).
+
+    Ce test franchit la borne : `N = _TAILLE_LOT_SQL + 100` cibles, chacune
+    occupée en base par un fichier HORS-lot dont le binaire est ABSENT (la garde
+    disque ne les voit donc pas — seule la garde base les attrape). Les N ops
+    doivent TOUTES être bloquées : si la boucle ne traitait que le 1er lot, les
+    100 cibles du second resteraient PRET et l'assertion casserait. Couvre la
+    correction du fix R3 contre une régression « un seul `IN` » ou « 1er lot
+    seul » — indépendamment de l'ordre non déterministe du `set`."""
+    n = _TAILLE_LOT_SQL + 100
+    creer_fonds(session, FormulaireFonds(cote="CH", titre="CH"))
+    fonds = lire_fonds_par_cote(session, "CH")
+    # Item DANS le périmètre : N fichiers `p####.tif`, tous renommés `n####.tif`.
+    item_lot = creer_item(
+        session, FormulaireItem(cote="CH-LOT", titre="lot", fonds_id=fonds.id)
+    )
+    # Item HORS périmètre : occupe en base CHAQUE cible `n####.tif`, sans binaire.
+    item_occ = creer_item(
+        session, FormulaireItem(cote="CH-OCC", titre="occ", fonds_id=fonds.id)
+    )
+    for ordre in range(1, n + 1):
+        session.add(
+            Fichier(
+                item_id=item_lot.id,
+                racine="scans",
+                chemin_relatif=f"p{ordre:04d}.tif",
+                nom_fichier=f"p{ordre:04d}.tif",
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+        session.add(
+            Fichier(
+                item_id=item_occ.id,
+                racine="scans",
+                chemin_relatif=f"n{ordre:04d}.tif",  # = cible du fichier du lot
+                nom_fichier=f"n{ordre:04d}.tif",
+                ordre=ordre,
+                format="tif",
+                type_page="page",
+            )
+        )
+    session.commit()
+
+    plan = construire_plan(
+        session,
+        template="n{ordre:04d}.{ext}",  # p####.tif → n####.tif (toutes occupées)
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(item_cote="CH-LOT", item_fonds_cote="CH"),
+    )
+
+    assert not plan.applicable
+    assert len(plan.operations) == n
+    bloquees_base = [
+        o for o in plan.operations if o.raison == "collision externe en base"
+    ]
+    # Un traitement partiel (1er lot seul) laisserait 100 ops à PRET ; la garde
+    # chunkée doit couvrir les N cibles, donc les N ops sont bloquées.
+    assert len(bloquees_base) == n
 
 
 # ---------------------------------------------------------------------------
@@ -400,9 +518,11 @@ def test_annulation_remet_chemins_initiaux(
     )
     assert not rap_annul.erreurs
 
-    # Disque : ancien chemin restauré. Le répertoire `renomme/` peut
-    # subsister vide (le moteur ne supprime pas les répertoires créés
-    # — c'est conservateur, à l'utilisateur de faire le ménage).
+    # Disque : ancien chemin restauré. L'annulation d'un batch RÉUSSI ne
+    # nettoie pas les répertoires créés (contrairement à la compensation
+    # d'un échec de phase 2 — R4) : annuler est un undo volontaire d'une
+    # opération aboutie, on préserve l'arborescence. Le dossier `renomme/`
+    # peut donc subsister vide.
     assert (racine_scans / "HK-001-001.tif").exists()
     assert not any((racine_scans / "renomme").glob("*"))
 
@@ -587,14 +707,46 @@ def test_compensation_echec_phase2_restaure_tout(
     assert etat["n"] == 7
     # Disque : les .tif reviennent intégralement à l'origine (tmp résorbés).
     assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
-    # R4 (dette connue) : le dossier `renomme/` créé en phase 2 subsiste
-    # vide — le moteur ne nettoie pas les répertoires créés. Verrouillé ici
-    # pour documenter le comportement (cf. backlog-revue-generale R4).
-    assert (racine_scans / "renomme").is_dir()
+    # R4 (résolu) : le dossier `renomme/` créé en phase 2 est résorbé par la
+    # compensation (il est vide une fois les fichiers rejoués vers la source).
+    assert not (racine_scans / "renomme").exists()
     chemins = {
         f.nom_fichier: f.chemin_relatif for f in deux_fichiers.scalars(select(Fichier))
     }
     assert chemins == {"a.tif": "a.tif", "b.tif": "b.tif"}
+
+
+def test_compensation_phase2_nettoie_arbo_creee_mais_preserve_preexistant(
+    deux_fichiers: Session, racine_scans: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R4 : à la compensation d'un échec phase 2, l'arborescence créée par le
+    `mkdir(parents=True)` est résorbée niveau par niveau (du plus profond au
+    plus haut), MAIS un répertoire préexistant sur le chemin est préservé —
+    le helper ne nettoie que ce que la phase 2 a réellement créé.
+
+    Cas : `garde/` préexiste (vide), le template route vers
+    `garde/sous/profond/` → la phase 2 crée `sous/` et `profond/`. Échec au
+    2e rename phase 2 → après compensation, `sous/` et `profond/` disparus,
+    `garde/` intact (jamais tracé car il existait déjà)."""
+    (racine_scans / "garde").mkdir()  # préexistant, vide
+    plan = construire_plan(
+        deux_fichiers,
+        template="garde/sous/profond/p{ordre:03d}.{ext}",
+        racines=_racines(racine_scans),
+        perimetre=Perimetre(fonds_cote="X"),
+    )
+    _patch_rename(monkeypatch, fail_on={4})  # 2e tmp→dst
+    rap = executer_plan(
+        deux_fichiers, plan, racines=_racines(racine_scans), dry_run=False
+    )
+    assert rap.erreurs and "phase 2" in rap.erreurs[0]
+    # Niveaux créés par la phase 2 : résorbés.
+    assert not (racine_scans / "garde" / "sous" / "profond").exists()
+    assert not (racine_scans / "garde" / "sous").exists()
+    # Répertoire préexistant : préservé (même vide), jamais supprimé.
+    assert (racine_scans / "garde").is_dir()
+    # Fichiers revenus à l'origine.
+    assert _etat_disque(racine_scans) == {"a.tif": b"AAA", "b.tif": b"BBB"}
 
 
 def test_compensation_double_panne_signale_l_echec(
@@ -617,6 +769,12 @@ def test_compensation_double_panne_signale_l_echec(
     # place (preuve que l'échec n'est pas silencieux).
     sur_disque = _etat_disque(racine_scans)
     assert sur_disque.get("a.tif") != b"AAA" or sur_disque.get("b.tif") != b"BBB"
+    # R4 (sûreté) : la 1re compensation a échoué → un binaire reste coincé
+    # dans `renomme/`. Le nettoyage des répertoires créés NE DOIT PAS le
+    # supprimer (rmdir ne touche que les dossiers vides) — pas de perte de
+    # données silencieuse derrière le cleanup R4.
+    assert (racine_scans / "renomme").is_dir()
+    assert any((racine_scans / "renomme").glob("*.tif"))
 
 
 # --- bout-en-bout : construire_plan (cycle + normal mélangés) → exécution ---

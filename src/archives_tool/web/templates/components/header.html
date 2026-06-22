@@ -51,6 +51,22 @@
               border:1px solid rgba(0,0,0,0.10);"
        title="Parcourir / importer depuis un partage ShareDocs (WebDAV)">ShareDocs</a>
 
+    {# Lien Journal : traçabilité lecture seule (suppressions, push Nakala,
+       renommages). Visible même en lecture seule (page purement consultative). #}
+    <a href="/journal"
+       class="inline-flex items-center rounded hover:bg-gray-50"
+       style="padding:4px 12px;font-size:12px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);"
+       title="Journal de traçabilité (suppressions, push Nakala, renommages)">Journal</a>
+
+    {# Lien Étiquettes : gestion des étiquettes colorées de chantier.
+       Visible en lecture seule (la page liste ; create/delete y sont masqués). #}
+    <a href="/etiquettes"
+       class="inline-flex items-center rounded hover:bg-gray-50"
+       style="padding:4px 12px;font-size:12px;color:#374151;
+              border:1px solid rgba(0,0,0,0.10);"
+       title="Gérer les étiquettes colorées de chantier">Étiquettes</a>
+
     {# Menu « Importer » : entrée principale vers /import + raccourci
        « Nouvelle collection vide ». Masqué en lecture seule (le wizard
        est de toute façon bloqué par le middleware en 423). #}

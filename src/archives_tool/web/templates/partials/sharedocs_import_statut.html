@@ -1,0 +1,107 @@
+{# Fragment HTMX du suivi d'import ShareDocs — recharge every 2s.
+
+   Variables :
+   - etat : EtatJobImport (snapshot deepcopy)
+
+   Le wrapper `#statut-import` porte les hx-* ; quand le job est arrêté
+   (`termine` / `echec` / `annule`), on retire `hx-trigger` pour stopper le
+   polling.
+#}
+{%- set arret = etat.statut in ("termine", "echec", "annule") -%}
+<div id="statut-import"
+     {%- if not arret %}
+     hx-get="/sharedocs/importer/statut/{{ etat.job_id }}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {%- endif %}>
+
+  {%- set pct = (100 * etat.faits / etat.total) if etat.total > 0 else 0 -%}
+  {# `background-color` (pas le raccourci `background`) pour laisser la classe
+     `sd-barre-active` superposer ses rayures animées par-dessus. #}
+  <div style="background:#e5e7eb;border-radius:6px;overflow:hidden;height:18px;margin-bottom:12px;">
+    <div class="{% if not arret %}sd-barre-active{% endif %}"
+         style="height:100%;width:{{ pct|round(1) }}%;background-color:{% if etat.statut == 'echec' %}#991b1b{% elif etat.statut == 'annule' %}#b45309{% elif arret %}#065f46{% else %}#1e40af{% endif %};transition:width 0.3s;"></div>
+  </div>
+  <p class="text-sm" style="margin-bottom:8px;color:#374151;">
+    <strong>{{ etat.faits }} / {{ etat.total }}</strong> fichier(s)
+    {%- if etat.fichier_courant and not arret %}
+    — en cours : <code style="font-family:monospace;">{{ etat.fichier_courant }}</code>
+    {%- endif %}
+  </p>
+
+  {%- if etat.statut == "en_cours" and etat.annule %}
+  <p class="text-sm" style="color:#b45309;">
+    <span class="sd-spinner" aria-hidden="true"></span>
+    Annulation demandée — arrêt après le fichier en cours…
+  </p>
+  {%- elif etat.statut == "en_cours" %}
+  <p class="text-sm" style="color:#1e40af;">
+    <span class="sd-spinner" aria-hidden="true"></span>
+    Téléchargement en cours… (ne ferme pas l'onglet)
+  </p>
+  <form method="post" action="/sharedocs/importer/annuler/{{ etat.job_id }}" style="margin-top:8px;">
+    <button type="submit"
+            style="padding:5px 12px;font-size:12px;border-radius:5px;
+                   border:1px solid rgba(0,0,0,0.15);background:white;color:#b45309;cursor:pointer;">
+      Annuler l'import
+    </button>
+  </form>
+  {%- elif etat.statut == "termine" %}
+  <p class="text-sm" style="color:#065f46;">✓ Import terminé.</p>
+  {%- elif etat.statut == "annule" %}
+  <p class="text-sm" style="color:#b45309;">⏹ Import annulé — les fichiers déjà
+    téléchargés sont conservés ; le reste n'a pas été téléchargé.</p>
+  {%- elif etat.statut == "echec" %}
+  <p class="text-sm" style="color:#991b1b;">✗ Échec : {{ etat.erreur_globale }}</p>
+  {%- endif %}
+
+  {%- if arret %}
+  <div class="flex gap-3 mb-4 flex-wrap mt-3">
+    {%- set carte = "border:1px solid rgba(0,0,0,0.10);border-radius:8px;padding:10px 14px;min-width:110px;" %}
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:#065f46;">{{ etat.retenus }}</div>
+      <div class="text-xs text-gray-500">importé(s)</div>
+    </div>
+    <div style="{{ carte }}">
+      <div class="text-xl font-medium" style="color:#92400e;">{{ etat.sautes }}</div>
+      <div class="text-xs text-gray-500">sauté(s)</div>
+    </div>
+  </div>
+
+  {%- if etat.details_sautes %}
+  <details class="mb-4" style="font-size:13px;">
+    <summary style="cursor:pointer;color:#92400e;">{{ etat.details_sautes|length }} fichier(s) sauté(s)</summary>
+    <ul style="margin:8px 0 0 18px;color:#78350f;">
+      {%- for nom, raison in etat.details_sautes %}
+      <li><code style="font-family:monospace;">{{ nom }}</code> — {{ raison }}</li>
+      {%- endfor %}
+    </ul>
+  </details>
+  {%- endif %}
+
+  <div class="mt-4 flex gap-2 flex-wrap">
+    <a href="/sharedocs?chemin={{ etat.chemin_retour | urlencode }}"
+       style="padding:6px 14px;font-size:13px;border-radius:4px;background:#1e40af;color:white;text-decoration:none;">
+      Retour au parcours
+    </a>
+    {%- if etat.statut in ("echec", "annule") %}
+    {# Reprise : re-POST vers l'item désormais existant (pas de re-création).
+       Les fichiers déjà téléchargés sont adoptés (idempotence) — pour un
+       import annulé, « Reprendre » continue donc le reste. #}
+    <form method="post" action="/sharedocs/importer" style="display:inline;">
+      <input type="hidden" name="fonds" value="{{ etat.fonds_cote }}">
+      <input type="hidden" name="item" value="{{ etat.item_cote }}">
+      <input type="hidden" name="racine" value="{{ etat.racine }}">
+      <input type="hidden" name="chemin" value="{{ etat.chemin_retour }}">
+      {%- for ch in etat.chemins_distants %}
+      <input type="hidden" name="fichiers" value="{{ ch }}">
+      {%- endfor %}
+      <button type="submit"
+              style="padding:6px 14px;font-size:13px;border-radius:4px;background:#92400e;color:white;border:0;cursor:pointer;">
+        Reprendre
+      </button>
+    </form>
+    {%- endif %}
+  </div>
+  {%- endif %}
+</div>

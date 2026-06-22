@@ -110,6 +110,14 @@
     {% elif entrees | length == 0 %}
       <p class="text-sm text-gray-500">(dossier vide)</p>
     {% else %}
+      {% set nb_fichiers_listes = entrees | rejectattr('est_dossier') | list | length %}
+      {% if importable and nb_fichiers_listes > 0 %}
+      <label style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:12px;
+                    color:#6b7280;border-bottom:1px solid rgba(0,0,0,0.08);margin-bottom:4px;">
+        <input type="checkbox" data-sd-tout aria-label="Tout sélectionner">
+        Tout sélectionner ({{ nb_fichiers_listes }} fichier{{ 's' if nb_fichiers_listes > 1 else '' }})
+      </label>
+      {% endif %}
       <ul style="list-style:none;margin:0;padding:0;">
         {% for e in entrees %}
         <li style="display:flex;align-items:center;gap:10px;padding:6px 0;
@@ -138,20 +146,33 @@
   </section>
 
   {% if importable %}
-    {# Cible de l'import : fonds + item + racine locale #}
+    {# Cible de l'import : fonds + item (existants ou à créer) + racine.
+       Choisir « ➕ Créer… » révèle les champs cote/titre (sharedocs.js).
+       Le <select> item se recharge en HTMX au changement de fonds. #}
     <section style="{{ carte_style }}">
       <h2 class="text-base font-medium mb-1" style="color:#1f1f1f;">Importer la sélection</h2>
       <p class="text-xs text-gray-500 mb-3">
-        Coche des fichiers ci-dessus, indique l'item cible, puis aperçu avant import.
+        Coche des fichiers ci-dessus, choisis (ou crée) le fonds et l'item cibles,
+        puis aperçu avant import.
       </p>
       <div class="flex gap-4 flex-wrap" style="margin-bottom:12px;">
-        <div style="flex:1;min-width:140px;">
-          <label style="{{ label_style }}" for="imp-fonds">Cote du fonds</label>
-          <input id="imp-fonds" type="text" name="fonds" required style="{{ input_style }}">
+        <div style="flex:1;min-width:180px;">
+          <label style="{{ label_style }}" for="imp-fonds">Fonds cible</label>
+          <select id="imp-fonds" name="fonds" required data-sd-cible="fonds" style="{{ input_style }}"
+                  hx-get="/sharedocs/cible-items" hx-target="#imp-item-zone" hx-trigger="change">
+            {% for f in fonds_list %}<option value="{{ f.cote }}">{{ f.cote }} — {{ f.titre }}</option>{% endfor %}
+            <option value="__nouveau__"{% if not fonds_list %} selected{% endif %}>➕ Créer un nouveau fonds…</option>
+          </select>
+          <div data-sd-nouveau="fonds" {% if fonds_list %}hidden{% endif %}
+               style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+            <input type="text" name="nouveau_fonds_cote" data-sd-requis {% if fonds_list %}disabled{% endif %}
+                   placeholder="Cote du nouveau fonds" style="{{ input_style }}">
+            <input type="text" name="nouveau_fonds_titre" data-sd-requis {% if fonds_list %}disabled{% endif %}
+                   placeholder="Titre du fonds" style="{{ input_style }}">
+          </div>
         </div>
-        <div style="flex:1;min-width:140px;">
-          <label style="{{ label_style }}" for="imp-item">Cote de l'item</label>
-          <input id="imp-item" type="text" name="item" required style="{{ input_style }}">
+        <div id="imp-item-zone" style="flex:1;min-width:180px;">
+          {% with items = items_initiaux %}{% include "partials/_sharedocs_cible_items.html" %}{% endwith %}
         </div>
         <div style="flex:1;min-width:140px;">
           <label style="{{ label_style }}" for="imp-racine">Racine locale cible</label>

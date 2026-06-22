@@ -1,0 +1,34 @@
+{# Fragment HTMX (Lot 2 UI⁺) : historique des modifications d'un item.
+   Chargé à la demande depuis la fiche (`item_fiche.html`). Read-only. #}
+{% if modifications %}
+<table style="width:100%;font-size:12px;border-collapse:collapse;">
+  <thead>
+    <tr style="color:#9ca3af;border-bottom:1px solid rgba(0,0,0,0.08);text-align:left;">
+      <th scope="col" style="padding:4px 6px;">Champ</th>
+      <th scope="col" style="padding:4px 6px;">Avant</th>
+      <th scope="col" style="padding:4px 6px;">Après</th>
+      <th scope="col" style="padding:4px 6px;">Par</th>
+      <th scope="col" style="padding:4px 6px;">Quand</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in modifications %}
+    <tr style="border-bottom:1px solid rgba(0,0,0,0.04);vertical-align:top;">
+      <td style="padding:6px;color:#374151;">
+        {{ m.champ | replace("meta.", "") | replace("_", " ") }}
+      </td>
+      <td style="padding:6px;color:#9ca3af;">{{ m.valeur_avant or "—" }}</td>
+      <td style="padding:6px;color:#374151;">{{ m.valeur_apres or "—" }}</td>
+      <td style="padding:6px;color:#6b7280;">{{ m.modifie_par or "—" }}</td>
+      <td style="padding:6px;color:#9ca3af;" title="{{ m.modifie_le }}">
+        {% if m.modifie_le %}{{ m.modifie_le | temps_relatif }}{% else %}—{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="font-size:12px;color:#9ca3af;font-style:italic;margin:0;">
+  Aucune modification enregistrée pour cet item.
+</p>
+{% endif %}

@@ -45,6 +45,12 @@ from .rapport import (
 )
 from .template import EchecTemplate, evaluer_template
 
+#: Taille de lot pour les `IN (...)` SQL. Marge sous l'ancien plafond
+#: `SQLITE_MAX_VARIABLE_NUMBER = 999` (libsqlite3 < 3.32) — la garde de
+#: collision base d'un renommage de fonds entier (PF ~7500 scans)
+#: dépasserait sinon la limite sur certains déploiements (portabilité, n°5).
+_TAILLE_LOT_SQL = 900
+
 
 @dataclass(frozen=True)
 class Perimetre:
@@ -307,35 +313,43 @@ def construire_plan(
     # pas encore copiés). Sans ça, la phase 2 violerait `uq_fichier_chemin`
     # tardivement (IntegrityError → rollback compensateur) au lieu d'un
     # conflit propre signalé ici. Les fichiers du lot sont exclus (ils
-    # libèrent leur chemin actuel — un swap/cycle reste valide).
+    # libèrent leur chemin actuel — un swap/cycle reste valide ; un NO_OP qui
+    # reste en place est, lui, un occupant légitime). Tous états confondus :
+    # `uq_fichier_chemin` est une UNIQUE globale (un Fichier remplacé/corbeille
+    # occupe quand même le slot, donc déclencherait l'IntegrityError).
     ops_actives = [
         op for op in operations if op.statut in (StatutPlan.PRET, StatutPlan.EN_CYCLE)
     ]
-    cibles_apres = {op.chemin_apres for op in ops_actives}
     batch_ids = {op.fichier_id for op in ops_actives}
-    if cibles_apres:
-        rows = session.scalars(
-            select(Fichier).where(
-                Fichier.chemin_relatif.in_(list(cibles_apres)),
-                Fichier.id.notin_(list(batch_ids)),
+    cibles_apres = list({op.chemin_apres for op in ops_actives})
+    # Requête chunkée (≤ _TAILLE_LOT_SQL liés) + exclusion du lot en Python :
+    # un `IN`/`NOT IN` unique sur un renommage de fonds entier dépasserait la
+    # limite SQLite des anciennes libsqlite3 (cf. _TAILLE_LOT_SQL).
+    occupes_en_base: set[tuple[str, str]] = set()
+    for offset in range(0, len(cibles_apres), _TAILLE_LOT_SQL):
+        chunk = cibles_apres[offset : offset + _TAILLE_LOT_SQL]
+        for fid, racine_f, chemin_f in session.execute(
+            select(Fichier.id, Fichier.racine, Fichier.chemin_relatif).where(
+                Fichier.chemin_relatif.in_(chunk)
             )
-        ).all()
-        occupes_en_base = {(f.racine, f.chemin_relatif) for f in rows}
-        for op in ops_actives:
-            if (op.racine, op.chemin_apres) in occupes_en_base:
-                rap.conflits.append(
-                    Conflit(
-                        code=CodeConflit.COLLISION_EXTERNE,
-                        message=(
-                            f"Fichier {op.fichier_id} : la cible "
-                            f"{op.racine}:{op.chemin_apres} est déjà occupée en "
-                            "base par un autre fichier (hors lot)."
-                        ),
-                        fichier_ids=[op.fichier_id],
-                    )
+        ):
+            if fid not in batch_ids:
+                occupes_en_base.add((racine_f, chemin_f))
+    for op in ops_actives:
+        if (op.racine, op.chemin_apres) in occupes_en_base:
+            rap.conflits.append(
+                Conflit(
+                    code=CodeConflit.COLLISION_EXTERNE,
+                    message=(
+                        f"Fichier {op.fichier_id} : la cible "
+                        f"{op.racine}:{op.chemin_apres} est déjà occupée en "
+                        "base par un autre fichier (hors lot)."
+                    ),
+                    fichier_ids=[op.fichier_id],
                 )
-                op.statut = StatutPlan.BLOQUE
-                op.raison = "collision externe en base"
+            )
+            op.statut = StatutPlan.BLOQUE
+            op.raison = "collision externe en base"
 
     rap.operations = operations
     rap.duree_secondes = time.perf_counter() - debut

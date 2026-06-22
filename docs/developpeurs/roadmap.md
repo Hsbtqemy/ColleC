@@ -32,6 +32,11 @@ Mode actuel : **local mono-utilisateur**.
 4. **Diffusion après l'OCR.**
 5. **Confort / interop** (V2/V3) en opportuniste.
 
+> **Chantier UI⁺** (surfaçage de l'existant + polissage du front) — ajouté au
+> point d'approfondissement du 2026-06-22 : **sans dépendance dure**, donc
+> **interleavable** avant ou pendant le Chantier 2. Détail et évaluation
+> valeur/coût dans sa section dédiée plus bas.
+
 ---
 
 ## Horizon 0 — Consolidation (en cours / continu)
@@ -111,6 +116,79 @@ Cf. `CLAUDE.md` § Chantier 1. **Dette confirmée** : la garde mono-job de
 `sharedocs_jobs` est, comme celle de Nakala, per-process et non isolée
 per-utilisateur → à factoriser au Chantier 3 (cf. § Transverse, isolation
 des états module-globaux).
+
+---
+
+## Chantier UI⁺ — Surfaçage de l'existant & polissage du front (interleavable)
+
+**Origine** : point d'approfondissement du 2026-06-22 (revue de l'UI/front +
+cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : évaluation à
+arbitrer — **aucune dépendance dure**, interleavable avec/avant le Chantier 2.
+
+**Constat** : le back/CLI/Nakala a pris une avance nette sur le front. Logique
+métier ~90 % couverte, CLI ~100 %, **UI web ~50 %** des capacités et **~7/10
+de finition** (« fonctionnel, pas poli » ; accessibilité ~40 %). Une partie de
+l'écart est **assumée** (masse / admin / audit = power-user CLI, cf. décision
+« UI = workflow catalogage récurrent »), mais le différentiel sert mal deux
+piliers du positionnement : *traçabilité / capitalisation de la connaissance
+tacite* et *préparation de la confiance multi-utilisateurs (V1.0)*.
+L'investissement le plus rentable ici n'est **pas du net-new** mais
+**(A) surfacer en UI ce qui existe déjà côté service** et **(B) polir le
+front**.
+
+!!! note "Correctifs de cartographie (déjà livrés en UI — ne pas recompter)"
+    Création **en série d'items** (`/collection/{cote}/items/serie`), création
+    de **collection libre** (`/collections/nouvelle`), **édition page
+    complète** (`/{item,collection,fonds}/{cote}/modifier` GET+POST), et
+    **ShareDocs web** (`/sharedocs` + tâche de fond) existent bien — une sonde
+    automatique les avait à tort signalés comme manquants.
+
+### Panier A — Surfacer l'existant (back prêt, ROI max, risque min)
+
+Données déjà journalisées, services de lecture déjà écrits → essentiellement
+des **pages read-only** à brancher.
+
+| Piste | Back disponible | Valeur | Coût |
+| --- | --- | --- | --- |
+| Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible |
+| Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible |
+| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen |
+| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen |
+
+**Resté CLI volontairement** (principe n°6) : renommage batch, dérivés en
+masse, import profil YAML complet, push de fichiers binaires Nakala — un bouton
+« renommer 7500 fichiers » dans un onglet navigateur n'en vaut pas le risque.
+
+### Panier B — Polir le front (augmentation > prolifération)
+
+| Piste | Pourquoi | Valeur | Coût |
+| --- | --- | --- | --- |
+| **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete vocabulaires** | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible |
+| **Étiquettes colorées** libres (≠ `etat_catalogage`) | marquage workflow ; table simple + filtre natif ; favori #1 | Quotidien | Faible-moyen |
+| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible |
+| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots |
+
+### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
+
+Command palette (Ctrl+K étendu), preview pane, **vue Avancement consolidée**
+(`plan-de-chantier`), modes comparaison / similaires / diaporama. Payback plus
+incertain ; la recherche plein-texte (Chantier 2) les rend plus puissants. →
+relèvent du **Chantier 5** / `idees-ui-vrac.md`.
+
+### Recommandation & arbitrage
+
+- **Si test à plusieurs / démo proche** → **mini-chantier resserré = Panier A
+  + (inline étendu, étiquettes) du Panier B**, *avant* l'OCR : peu de code,
+  comble le trou le plus visible (la traçabilité existe en base mais est
+  invisible dans le navigateur), prépare la confiance V1.0.
+- **Sinon** → enchaîner le **Chantier 2 (OCR)** et **interleaver** le Panier A
+  au fil de l'eau.
+- **Hors scope ici** : l'isolation per-user des états module-globaux est un
+  **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
+
+**Renvois** : `idees-ui-vrac.md` (paniers B/C), `plan-de-chantier.md` (vue
+Avancement), `annotations-image-future.md` (l'autocomplete vocab y prépare le
+terrain).
 
 ---
 
@@ -201,7 +279,10 @@ interne, consommation **aval** ».
 - **Versioning fichiers**, opérations sur scans, **packaging distribuable**
   (V3).
 - `vocabulaire-scoping` T4, `plan-de-chantier` (onglet Avancement),
-  `idees-ui-vrac` — à interleaver.
+  `idees-ui-vrac` — à interleaver. **Les pistes UI/front à fort ROI
+  (surfaçage traçabilité, inline étendu, étiquettes) sont remontées dans le
+  *Chantier UI⁺*** ; ne restent ici que le confort lourd ou tardif (vue
+  tableau éditable, modes comparaison/graphe, packaging).
 
 **Renvois** : docs `*-future.md` correspondants + `idees-ui-vrac.md`.
 

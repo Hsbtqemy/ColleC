@@ -166,8 +166,8 @@ des **pages read-only** à brancher.
 | --- | --- | --- | --- | --- |
 | Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible | ✅ Lot 1 |
 | Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible | ✅ Lot 2 |
-| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ⏳ reste |
-| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ⏳ reste |
+| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ✅ page `/controler` (base \| fonds) |
+| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ✅ lazy-load HTMX sur la fiche (lecture seule) |
 
 **Resté CLI volontairement** (principe n°6) : renommage batch, dérivés en
 masse, import profil YAML complet, push de fichiers binaires Nakala — un bouton
@@ -207,9 +207,14 @@ relèvent du **Chantier 5** / `idees-ui-vrac.md`.
   survol) volontairement différé : étiqueter demande une colonne étiquette
   dans le tableau, dupliquer un service inexistant, supprimer contredirait
   le gating par recopie de cote.
-- **Reste, opportuniste** : QA `controler` + diagnostic `comparer-fichiers`
-  (Panier A) ; hygiène transversale / a11y / tokens CSS (Panier B) ;
-  Panier C après l'OCR. Aucun n'est bloquant.
+- **Panier A complété (2026-06-22)** : **page QA `/controler`** (bilan de
+  santé, base \| fonds, lecture seule — surface les 14 contrôles `qa`) +
+  **diagnostic `comparer-fichiers`** en lazy-load HTMX sur la fiche item
+  (pré-visualise un push : nouveaux / modifiés / orphelins / fantômes /
+  transcriptions ; appel réseau à la demande, best-effort sans 500). Panier A
+  est désormais **entièrement livré**.
+- **Reste, opportuniste** : hygiène transversale / a11y / tokens CSS
+  (Panier B) ; Panier C après l'OCR. Aucun n'est bloquant.
 - **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
 

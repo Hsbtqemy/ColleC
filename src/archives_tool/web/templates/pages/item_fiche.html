@@ -255,6 +255,24 @@
           <span style="font-size:11px;color:#9ca3af;margin-left:8px;">depuis Nakala (peut prendre quelques secondes)</span>
         </div>
       </section>
+
+      {# Synchronisation fichiers (P3+b) : diagnostic à la demande de l'état
+         des fichiers locaux vs le dépôt Nakala (lecture seule, lazy — fait un
+         appel réseau + recalcul SHA-1). Pré-visualise un push. #}
+      <section style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+          Synchronisation fichiers
+        </h3>
+        <div id="comparaison-fichiers-nakala">
+          <button type="button"
+                  hx-get="/nakala/item/{{ item.cote | urlencode }}/comparer-fichiers?fonds={{ fonds.cote | urlencode }}"
+                  hx-target="#comparaison-fichiers-nakala" hx-swap="innerHTML"
+                  style="font-size:12px;color:#374151;background:#f3f4f6;border:1px solid rgba(0,0,0,0.1);border-radius:6px;padding:5px 10px;cursor:pointer;">
+            Comparer avec Nakala
+          </button>
+          <span style="font-size:11px;color:#9ca3af;margin-left:8px;">diagnostic (peut prendre quelques secondes)</span>
+        </div>
+      </section>
       {% endif %}
 
     </div>

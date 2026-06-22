@@ -56,6 +56,10 @@
         ('responsable_archives', 'Responsable', 'texte', ''),
         ('personnalite_associee', 'Personnalité', 'texte', ''),
       ] %}
+      {# Champs libres récurrents → autocomplete des valeurs déjà saisies
+         (Lot 3 UI⁺). ISSN/dates exclus (uniques / non répétés). #}
+      {% set _suggestibles = ['editeur', 'lieu_edition', 'periodicite',
+                              'responsable_archives', 'personnalite_associee'] %}
       {% set _ns = namespace(au_moins_une_valeur=False) %}
       {% for _cle, _libelle, _type, _classes in _champs_identifiants %}
         {% if synthese[_cle] %}{% set _ns.au_moins_une_valeur = true %}{% endif %}
@@ -75,6 +79,7 @@
             <span data-edit-field="{{ _cle }}"
                   data-edit-type="{{ _type }}"
                   data-editable="{{ '1' if _editable else '0' }}"
+                  {% if _editable and _cle in _suggestibles %}data-edit-suggest="fonds:{{ _cle }}"{% endif %}
                   {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;color:#374151;"{% else %}style="color:#374151;"{% endif %}
                   {% if _classes %}class="{{ _classes }}"{% endif %}>
               <span data-value>{%- if _val -%}

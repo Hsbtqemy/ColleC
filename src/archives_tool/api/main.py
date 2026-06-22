@@ -54,6 +54,7 @@ from archives_tool.api.routes import (
     nakala_web,
     preferences,
     sharedocs_web,
+    suggestions,
     vocabulaires,
 )
 from archives_tool.db import assurer_tables_fts, creer_engine
@@ -119,3 +120,4 @@ app.include_router(annotations.router)
 app.include_router(nakala_web.router)
 app.include_router(sharedocs_web.router)
 app.include_router(journal_web.router)
+app.include_router(suggestions.router)

@@ -218,6 +218,35 @@ relèvent du **Chantier 5** / `idees-ui-vrac.md`.
 - **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
 
+#### Point de reprise — prochaine session (consigné 2026-06-22)
+
+**Panier A : terminé.** **Panier B : seul l'« hygiène transversale » reste**,
+décomposable en lots indépendants et pickables (aucune dépendance dure entre
+eux) :
+
+- **B-hyg-1 — Tokens CSS.** Les couleurs sémantiques sont dupliquées en dur
+  dans plusieurs templates (`badge_etat.html`, `cellule_etat.html`,
+  `controle.html`, `nakala_comparaison.html` : `#E24B4A` erreur, `#BA7517`
+  avert, `#639922` ok, `#378ADD` info, `#888780` gris). Les extraire en
+  variables (Tailwind `theme.extend` ou CSS custom props) — source unique,
+  réutilisée. Le plus rentable car déjà étalé.
+- **B-hyg-2 — a11y de base.** Landmarks (`<main>`/`<nav>` dans `base.html` /
+  `header.html`), `aria` sur les tableaux + la pagination, focus-trap des
+  modales/drawers (`panneau_colonnes_modale`, `panneau_filtres`). Les pages
+  neuves (journal, étiquettes, contrôler) ont déjà une base aria correcte ;
+  c'est l'existant ancien qui est à reprendre.
+- **B-hyg-3 — états vides + pagination visible + validation client légère.**
+  Passe « fonctionnel → poli » sur les listes/formulaires hérités.
+
+**Panier C : différé** (command palette, preview pane, vue Avancement
+consolidée `plan-de-chantier`, modes comparaison/diaporama) — meilleur après
+le **Chantier 2 (OCR / recherche plein-texte)**, dont il décuple la valeur.
+Relève du **Chantier 5** / [`idees-ui-vrac.md`](idees-ui-vrac.md).
+
+**Alternative au polish** : basculer directement sur le **Chantier 2 (OCR
+text-first)** — le prochain saut de valeur dans l'ordre des dépendances. Le
+Panier B reste opportuniste et interleavable.
+
 **Renvois** : `idees-ui-vrac.md` (paniers B/C), `plan-de-chantier.md` (vue
 Avancement), `annotations-image-future.md` (l'autocomplete vocab y prépare le
 terrain).

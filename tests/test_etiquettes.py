@@ -32,6 +32,7 @@ from archives_tool.api.services.fonds import (
     FormulaireFonds,
     creer_fonds,
     lire_fonds_par_cote,
+    supprimer_fonds,
 )
 from archives_tool.api.services.items import (
     FormulaireItem,
@@ -159,6 +160,20 @@ def test_supprimer_item_retire_les_etiquetages_mais_garde_letiquette(
         )
         == 0
     )
+    assert etiquette_par_id(session, et.id) is not None  # l'étiquette survit
+
+
+def test_supprimer_fonds_avec_item_etiquete_cascade(session: Session) -> None:
+    """Intégration cross-lot : supprimer un FONDS dont un item est étiqueté
+    doit cascader fonds→items→item_etiquette sans violer la FK. Distinct du
+    `supprimer_item` couvert en 4a — la cascade fonds passe par un autre
+    chemin (`Fonds.items` delete-orphan)."""
+    item = _item(session)
+    fonds_id = item.fonds_id
+    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    etiqueter_item(session, item.id, et.id)
+    supprimer_fonds(session, fonds_id)  # ne doit pas lever
+    assert session.scalar(select(func.count()).select_from(ItemEtiquette)) == 0
     assert etiquette_par_id(session, et.id) is not None  # l'étiquette survit
 
 

@@ -51,7 +51,7 @@
           <span data-edit-field="doi_nakala"
                 data-edit-type="texte"
                 data-editable="{{ '1' if _editable else '0' }}"
-                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% endif %}>
+                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:var(--state-info);"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:var(--state-info);"{% endif %}>
             <span data-value>{% if synthese.doi_nakala -%}
               {{ synthese.doi_nakala }}
             {%- else -%}
@@ -65,7 +65,7 @@
           <span data-edit-field="doi_collection_nakala_parent"
                 data-edit-type="texte"
                 data-editable="{{ '1' if _editable else '0' }}"
-                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:#378ADD;"{% endif %}>
+                {% if _editable %}title="Double-cliquer pour modifier" style="cursor:text;font-family:ui-monospace,monospace;font-size:11px;color:var(--state-info);"{% else %}style="font-family:ui-monospace,monospace;font-size:11px;color:var(--state-info);"{% endif %}>
             <span data-value>{% if synthese.doi_collection_nakala_parent -%}
               {{ synthese.doi_collection_nakala_parent }}
             {%- else -%}
@@ -107,7 +107,7 @@
               {% if b.count and h >= 25 %}
                 <span style="font-size:9px;color:#6b7280;line-height:1;margin-bottom:2px;">{{ b.count }}</span>
               {% endif %}
-              <div style="width:100%;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}#378ADD{% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"
+              <div style="width:100%;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}var(--state-info){% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"
                    aria-label="{{ b.annee_debut }}{% if b.annee_fin != b.annee_debut %}–{{ b.annee_fin }}{% endif %} : {{ b.count }}"></div>
             </div>
           {% endfor %}

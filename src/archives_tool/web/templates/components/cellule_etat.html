@@ -29,7 +29,7 @@
       {{ badge_etat(etat) }}
       {%- if note %}
       <span aria-hidden="true" title="{{ note }}"
-            style="font-size:11px;color:#BA7517;line-height:1;">⚠</span>
+            style="font-size:11px;color:var(--state-warn);line-height:1;">⚠</span>
       {%- endif %}
       {%- if editable %}
       <button type="button"

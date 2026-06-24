@@ -192,7 +192,7 @@
                    `ligne.position` = index 1-based dans la liste
                    pour cibler le bon fichier dans la visionneuse. #}
                 <a href="{{ visionneuse_url }}&fichier_courant={{ ligne.position }}"
-                   style="color:#378ADD;text-decoration:none;">
+                   style="color:var(--state-info);text-decoration:none;">
                   {{ '%02d' | format(ligne.ordre) }}
                 </a>
               </td>
@@ -365,7 +365,7 @@
                 {{ vignette_placeholder(f.extension, taille='carre') }}
               {% endif %}
               {% if _has_meta %}
-                <span style="position:absolute;top:3px;right:3px;background:#378ADD;color:white;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;"
+                <span style="position:absolute;top:3px;right:3px;background:var(--state-info);color:white;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;"
                       aria-label="page avec metadonnees documentaires">✓</span>
               {% endif %}
               <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,0.88);padding:1px 4px;font-size:10px;color:#374151;text-align:center;font-variant-numeric:tabular-nums;">

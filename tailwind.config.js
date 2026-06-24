@@ -43,12 +43,14 @@ module.exports = {
           secondary: "rgba(0, 0, 0, 0.16)",
           primary: "rgba(0, 0, 0, 0.28)",
         },
-        // Couleurs sémantiques (points de badges, accents).
-        "state-info": "#378ADD",
-        "state-warn": "#BA7517",
-        "state-ok":   "#639922",
-        "state-err":  "#E24B4A",
-        "state-neutral": "#888780",
+        // Couleurs sémantiques (points de badges, accents). La valeur
+        // hex vit dans input.css (:root) — ces tokens et les `var(--state-*)`
+        // inline/JS partagent donc une source unique.
+        "state-info": "var(--state-info)",
+        "state-warn": "var(--state-warn)",
+        "state-ok":   "var(--state-ok)",
+        "state-err":  "var(--state-err)",
+        "state-neutral": "var(--state-neutral)",
         // Versions désaturées pour les segments d'avancement.
         "seg-brouillon":  "#D3D1C7",
         "seg-a-verifier": "#FAC775",

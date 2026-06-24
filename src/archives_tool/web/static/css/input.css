@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 @layer base {
+  /* Source unique des couleurs sémantiques (points de badges, accents,
+     liens d'action). Référencées par les tokens Tailwind `state-*`
+     (cf. tailwind.config.js) ET directement en `var(--state-*)` dans les
+     styles inline, les dicts Jinja et le JS (inline_edit.js,
+     panneau_colonnes.js). Pour changer une couleur d'état : ici, une fois. */
+  :root {
+    --state-info: #378ADD;
+    --state-warn: #BA7517;
+    --state-ok: #639922;
+    --state-err: #E24B4A;
+    --state-neutral: #888780;
+  }
   body {
     @apply text-gray-900 antialiased;
     font-feature-settings: "tnum" on;

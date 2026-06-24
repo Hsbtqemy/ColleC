@@ -161,7 +161,7 @@
                 <td style="padding:5px 6px;width:40%;">
                   <div style="display:flex;align-items:center;gap:6px;">
                     <div style="flex:1;height:6px;background:#f3f4f6;border-radius:3px;overflow:hidden;">
-                      <div style="height:100%;width:{{ _ratio }}%;background:{% if e.est_miroir %}#9ca3af{% else %}#378ADD{% endif %};"></div>
+                      <div style="height:100%;width:{{ _ratio }}%;background:{% if e.est_miroir %}#9ca3af{% else %}var(--state-info){% endif %};"></div>
                     </div>
                     <span style="font-variant-numeric:tabular-nums;color:#6b7280;min-width:38px;text-align:right;">
                       {{ e.nb_items }}
@@ -213,7 +213,7 @@
               {% if b.count and h >= 25 %}
                 <span style="font-size:9px;color:#6b7280;line-height:1;margin-bottom:2px;">{{ b.count }}</span>
               {% endif %}
-              <div style="width:100%;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}#378ADD{% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"></div>
+              <div style="width:100%;height:{{ h }}%;min-height:{% if b.count %}3px{% else %}0{% endif %};background:{% if b.count %}var(--state-info){% else %}#e5e7eb{% endif %};border-radius:1px 1px 0 0;"></div>
             </div>
           {% endfor %}
         </div>

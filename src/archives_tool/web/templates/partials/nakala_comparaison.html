@@ -6,7 +6,7 @@
   {%- if fichiers -%}
   <li style="padding:3px 0;font-size:12px;color:#374151;">
     <span aria-hidden="true" style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:{{ couleur }};margin-right:6px;"></span>
-    {%- if alerte %}<span aria-hidden="true" style="color:#BA7517;">⚠ </span>{% endif -%}
+    {%- if alerte %}<span aria-hidden="true" style="color:var(--state-warn);">⚠ </span>{% endif -%}
     <span style="font-weight:500;">{{ libelle }}</span>
     <span class="font-tabular" style="color:#6b7280;">· {{ fichiers | length }}</span>
     <div style="color:#9ca3af;font-size:11px;margin-left:13px;line-height:1.5;">
@@ -34,7 +34,7 @@
 
   {%- if rapport.aucun_changement -%}
     <p style="font-size:12px;color:#065f46;margin:0;display:flex;align-items:center;gap:6px;">
-      <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:#639922;"></span>
+      <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:var(--state-ok);"></span>
       Fichiers synchronisés avec Nakala — un push serait sans effet.
     </p>
     {%- if rapport.inchanges or rapport.nakala_only_sans_local %}
@@ -44,12 +44,12 @@
     {%- endif %}
   {%- else -%}
     <ul style="margin:0;padding:0;list-style:none;">
-      {{ _ligne("À ajouter (upload au push)", rapport.nouveaux, "#378ADD") }}
-      {{ _ligne("Modifiés (ré-upload)", rapport.modifies, "#BA7517") }}
-      {{ _ligne("Transcriptions modifiées", rapport.descriptions_divergentes, "#378ADD") }}
-      {{ _ligne("Distants sans local (retirés au push sauf --retirer-orphelins)", rapport.orphelins_distants, "#E24B4A", alerte=true) }}
-      {{ _ligne("Références fantômes (re-rapatrier l'item)", rapport.fichiers_fantomes, "#E24B4A", alerte=true) }}
-      {{ _ligne("À retirer (corbeille)", rapport.non_actifs_a_retirer, "#888780") }}
+      {{ _ligne("À ajouter (upload au push)", rapport.nouveaux, "var(--state-info)") }}
+      {{ _ligne("Modifiés (ré-upload)", rapport.modifies, "var(--state-warn)") }}
+      {{ _ligne("Transcriptions modifiées", rapport.descriptions_divergentes, "var(--state-info)") }}
+      {{ _ligne("Distants sans local (retirés au push sauf --retirer-orphelins)", rapport.orphelins_distants, "var(--state-err)", alerte=true) }}
+      {{ _ligne("Références fantômes (re-rapatrier l'item)", rapport.fichiers_fantomes, "var(--state-err)", alerte=true) }}
+      {{ _ligne("À retirer (corbeille)", rapport.non_actifs_a_retirer, "var(--state-neutral)") }}
     </ul>
     {%- if rapport.inchanges or rapport.nakala_only_sans_local %}
     <p class="font-tabular" style="font-size:11px;color:#9ca3af;margin:6px 0 0;">

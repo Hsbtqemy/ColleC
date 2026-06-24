@@ -217,7 +217,7 @@
                         style="grid-column:1 / -1;font-size:12px;padding:5px 8px;border:1px solid rgba(0,0,0,0.20);border-radius:3px;background:white;font-family:inherit;resize:vertical;">{{ formulaire_valeur.description_interne }}</textarea>
             </form>
             {% if erreurs_valeur %}
-              <p style="font-size:12px;color:#E24B4A;margin:8px 0 0 0;">
+              <p style="font-size:12px;color:var(--state-err);margin:8px 0 0 0;">
                 {% for champ, msg in erreurs_valeur.items() %}
                   <strong>{{ champ }}</strong> : {{ msg }}{% if not loop.last %} · {% endif %}
                 {% endfor %}
@@ -236,7 +236,7 @@
           <td style="padding:8px 10px;text-align:right;color:#6b7280;">{{ v.ordre or 0 }}</td>
           <td style="padding:8px 10px;">
             {% if v.actif %}
-              <span style="color:#639922;">actif</span>
+              <span style="color:var(--state-ok);">actif</span>
             {% else %}
               <span style="color:#9ca3af;font-style:italic;">déprécié</span>
             {% endif %}
@@ -266,7 +266,7 @@
                       style="display:inline;">
                   <button type="submit"
                           class="rounded hover:bg-gray-50"
-                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#378ADD;">
+                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:var(--state-info);">
                     Réactiver
                   </button>
                 </form>
@@ -277,7 +277,7 @@
                     onsubmit="return confirm('Supprimer cette valeur ? Les items qui la portent en metadonnées conserveront leur valeur brute.');">
                 <button type="submit"
                         class="rounded hover:bg-red-50"
-                        style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+                        style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:var(--state-err);">
                   Supprimer
                 </button>
               </form>
@@ -344,7 +344,7 @@
         onsubmit='return confirm({{ ("Supprimer définitivement le vocabulaire « " + vocabulaire.libelle + " » et toutes ses valeurs ? Refusé si encore référencé par un champ personnalisé.") | tojson }});'>
     <button type="submit"
             class="inline-flex items-center gap-1.5 rounded hover:bg-red-50"
-            style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+            style="padding:6px 14px;font-size:13px;border:1px solid rgba(0,0,0,0.10);color:var(--state-err);">
       Supprimer le vocabulaire
     </button>
   </form>

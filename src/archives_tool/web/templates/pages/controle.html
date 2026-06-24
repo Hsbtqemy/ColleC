@@ -4,9 +4,9 @@
 
 {# Couleurs par sévérité (point + chip). Alignées sur badge_etat / THEME. #}
 {%- set _SEV = {
-  'erreur':        {'dot': '#E24B4A', 'chip_bg': '#fee2e2', 'chip_fg': '#991b1b', 'label': 'erreur'},
-  'avertissement': {'dot': '#BA7517', 'chip_bg': '#fef3c7', 'chip_fg': '#92400e', 'label': 'avertissement'},
-  'info':          {'dot': '#378ADD', 'chip_bg': '#dbeafe', 'chip_fg': '#1e40af', 'label': 'info'},
+  'erreur':        {'dot': 'var(--state-err)', 'chip_bg': '#fee2e2', 'chip_fg': '#991b1b', 'label': 'erreur'},
+  'avertissement': {'dot': 'var(--state-warn)', 'chip_bg': '#fef3c7', 'chip_fg': '#92400e', 'label': 'avertissement'},
+  'info':          {'dot': 'var(--state-info)', 'chip_bg': '#dbeafe', 'chip_fg': '#1e40af', 'label': 'info'},
 } -%}
 
 {% block content %}
@@ -61,7 +61,7 @@
       {%- if vue.tout_va_bien %}
         <span class="inline-flex items-center gap-1.5 rounded"
               style="padding:4px 12px;font-size:13px;background:#dcfce7;color:#065f46;">
-          <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:#639922;"></span>
+          <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:var(--state-ok);"></span>
           Aucun problème détecté
         </span>
       {%- else %}
@@ -127,7 +127,7 @@
           {{ ex.message }}
           {%- set fcote = ex.references.get('fonds_cote') %}
           {%- if fcote %}
-          <a href="/fonds/{{ fcote }}" class="hover:underline" style="color:#378ADD;"
+          <a href="/fonds/{{ fcote }}" class="hover:underline" style="color:var(--state-info);"
              title="Voir le fonds {{ fcote }}" aria-label="Voir le fonds {{ fcote }}">↗</a>
           {%- endif %}
         </li>
@@ -157,7 +157,7 @@
   <ul class="mt-3" style="list-style:none;padding:0;margin:0;">
     {%- for c in vue.controles_ok %}
     <li class="flex items-center gap-2" style="padding:4px 0;font-size:13px;color:#374151;">
-      <span aria-hidden="true" style="color:#639922;">✓</span>
+      <span aria-hidden="true" style="color:var(--state-ok);">✓</span>
       {{ c.libelle }}
       <span class="font-mono text-gray-400" style="font-size:11px;">{{ c.id }}</span>
     </li>

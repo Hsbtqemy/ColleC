@@ -15,11 +15,11 @@
   // Si la table change côté Jinja, la mettre à jour ici aussi (rare :
   // 5 états workflow stables).
   const BADGE_ETAT_ITEM = {
-    brouillon: { label: "Brouillon", dot: "#888780" },
-    a_verifier: { label: "À vérifier", dot: "#BA7517" },
-    verifie: { label: "Vérifié", dot: "#378ADD" },
-    valide: { label: "Validé", dot: "#639922" },
-    a_corriger: { label: "À corriger", dot: "#E24B4A" },
+    brouillon: { label: "Brouillon", dot: "var(--state-neutral)" },
+    a_verifier: { label: "À vérifier", dot: "var(--state-warn)" },
+    verifie: { label: "Vérifié", dot: "var(--state-info)" },
+    valide: { label: "Validé", dot: "var(--state-ok)" },
+    a_corriger: { label: "À corriger", dot: "var(--state-err)" },
   };
 
   function rafraichirBadgeEtatItem(nouvelleValeur) {

@@ -44,6 +44,7 @@
 {% if items.items or nb_f > 0 %}
   {{ tableau_items({
     'colonnes': noms_cols,
+    'colonnes_triables': TRIS_ITEMS,
     'sort': items.tri,
     'ordre': items.ordre,
     'cible_url': cible,

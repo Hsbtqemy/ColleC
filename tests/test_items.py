@@ -249,6 +249,34 @@ def test_lister_items_fonds_tri_desc(session: Session, fonds_hk: Fonds) -> None:
     assert [i.cote for i in listing.items] == ["HK-002", "HK-001"]
 
 
+def test_mapping_tri_items_couvre_exactement_tris_items() -> None:
+    """Garde-fou anti-dérive : les clés du mapping SQL de tri doivent être
+    exactement la whitelist publique `TRIS_ITEMS` (qui pilote l'affordance
+    UI). Sans ça, une colonne peut être annoncée triable mais retomber
+    silencieusement sur le tri par défaut (le bug d'origine), ou l'inverse."""
+    from archives_tool.api.services.items import _MAPPING_TRI_ITEMS
+    from archives_tool.api.services.tri import TRIS_ITEMS
+
+    assert set(_MAPPING_TRI_ITEMS) == set(TRIS_ITEMS)
+
+
+def test_lister_items_fonds_tri_honore_chaque_colonne_triable(
+    session: Session, fonds_hk: Fonds
+) -> None:
+    """Chaque clé de `TRIS_ITEMS` est réellement honorée (tri effectif =
+    clé demandée) ; une clé non triable retombe sur le défaut `cote`."""
+    from archives_tool.api.services.tri import TRIS_ITEMS
+
+    creer_item(session, _form(fonds_hk, cote="HK-001"))
+    for cle in TRIS_ITEMS:
+        listing = lister_items_fonds(session, fonds_hk.id, tri=cle, ordre="asc")
+        assert listing.tri == cle, f"colonne {cle!r} non honorée par le tri"
+    # Colonne inconnue / non triable (métadonnée perso, nombre de fichiers) :
+    # retombe silencieusement sur le défaut sans erreur.
+    bidon = lister_items_fonds(session, fonds_hk.id, tri="auteur", ordre="asc")
+    assert bidon.tri == "cote"
+
+
 def test_lister_items_collection(session: Session, fonds_hk: Fonds) -> None:
     item1 = creer_item(session, _form(fonds_hk, cote="HK-001"))
     creer_item(session, _form(fonds_hk, cote="HK-002"))

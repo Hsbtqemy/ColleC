@@ -17,8 +17,30 @@ Ordre = Literal["asc", "desc"]
 T = TypeVar("T")
 
 # Whitelists des clés de tri publiques par tableau.
+#
+# `TRIS_ITEMS` est la **source de vérité unique** des colonnes triables du
+# tableau d'items : elle pilote à la fois l'affordance UI (seules ces
+# colonnes reçoivent curseur + flèche + `hx-get` dans `tableau_items.html`,
+# via le global Jinja `TRIS_ITEMS`) et le mapping SQL réel
+# (`items._MAPPING_TRI_ITEMS`, dont un test garde-fou vérifie l'égalité des
+# clés). Toute colonne hors de ce tuple est rendue inerte côté UI et
+# retomberait sur le tri par défaut côté service. Restreint aux colonnes
+# scalaires indexables : ni le nombre de fichiers (COUNT), ni les
+# métadonnées personnalisées (JSON) n'y figurent.
 TRIS_COLLECTIONS = ("cote", "titre", "items", "fichiers", "modifie")
-TRIS_ITEMS = ("cote", "titre", "type", "date", "etat", "fichiers", "modifie")
+TRIS_ITEMS = (
+    "cote",
+    "titre",
+    "type",
+    "date",
+    "annee",
+    "langue",
+    "etat",
+    "description",
+    "doi_nakala",
+    "doi_collection_nakala",
+    "modifie",
+)
 TRIS_FICHIERS = ("item", "nom", "ordre", "type", "taille", "etat")
 
 

@@ -19,6 +19,7 @@ from archives_tool.affichage.formatters import (
     temps_relatif,
 )
 from archives_tool.api.deps import est_lecture_seule
+from archives_tool.api.services.tri import TRIS_ITEMS
 from archives_tool.api.services.vocabulaires import (
     LANGUES_OPTIONS,
     TYPES_COAR_OPTIONS,
@@ -238,3 +239,6 @@ templates.env.filters["surligner_q"] = _surligner_q
 templates.env.globals["pages_visibles"] = _pages_visibles
 templates.env.globals["est_lecture_seule"] = est_lecture_seule
 templates.env.globals["static_url"] = _static_url
+# Colonnes triables du tableau d'items — pilote l'affordance UI (curseur,
+# flèche, hx-get) dans `tableau_items.html`. Source de vérité : `tri.py`.
+templates.env.globals["TRIS_ITEMS"] = TRIS_ITEMS

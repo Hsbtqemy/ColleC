@@ -449,3 +449,44 @@ def test_post_preferences_persistance_aller_retour(base_demo: Path) -> None:
     assert 'data-sort-key="etat"' in resp.text
     # « titre » ne fait pas partie de la sélection persistée.
     assert 'data-sort-key="titre"' not in resp.text
+
+
+def test_entetes_tableau_triables_vs_non_triables(base_demo: Path) -> None:
+    """Affordance honnête des en-têtes : une colonne triable (Type) est
+    cliquable (hx-get + « Trier par »), une colonne non triable (Fich.,
+    un COUNT) est inerte (pas de hx-get, « Colonne non triable »). Ferme
+    le piège d'origine où tous les en-têtes paraissaient cliquables mais
+    la moitié retombait en silence sur le tri par cote."""
+    import re
+
+    client = TestClient(app)
+    resp = client.get("/collection/HK?fonds=HK")
+    assert resp.status_code == 200
+
+    def _th(key: str) -> str:
+        # Capture la balise ouvrante <th ...> portant ce data-sort-key
+        # (les attributs ne contiennent pas de '>' avant la fermeture).
+        m = re.search(
+            r'<th\b[^>]*data-sort-key="' + re.escape(key) + r'"[^>]*>', resp.text
+        )
+        assert m, f"en-tête {key!r} introuvable dans le tableau"
+        return m.group(0)
+
+    # Type : désormais triable (avant, annoncé dans TRIS_ITEMS mais absent
+    # du mapping SQL → clic sans effet). Triable non actif → aria-sort=none.
+    th_type = _th("type")
+    assert "hx-get=" in th_type
+    assert "Trier par" in th_type
+    assert 'aria-sort="none"' in th_type
+
+    # Nombre de fichiers : non triable (agrégat COUNT, hors périmètre
+    # scalaire) → en-tête inerte, aucun hx-get, pas d'aria-sort.
+    th_fichiers = _th("fichiers")
+    assert "hx-get=" not in th_fichiers
+    assert "Colonne non triable" in th_fichiers
+    assert "aria-sort" not in th_fichiers
+
+    # Colonne de tri active par défaut (cote asc) → aria-sort=ascending
+    # pour les lecteurs d'écran.
+    th_cote = _th("cote")
+    assert 'aria-sort="ascending"' in th_cote

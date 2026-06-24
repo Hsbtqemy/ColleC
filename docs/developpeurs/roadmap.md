@@ -123,11 +123,13 @@ des états module-globaux).
 ## Chantier UI⁺ — Surfaçage de l'existant & polissage du front (interleavable)
 
 **Origine** : point d'approfondissement du 2026-06-22 (revue de l'UI/front +
-cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **mini-chantier
-resserré LIVRÉ (2026-06-22, sur `dev`)** — Panier A (traçabilité) + Panier B
-(inline déjà fait, autocomplete, étiquettes + filtrage). **Reste optionnel** :
-QA / comparer-fichiers (A), quick-actions / hygiène transversale (B), Panier C.
-Sans dépendance dure (interleavable avec/avant le Chantier 2).
+cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **Paniers A et
+B entièrement livrés** (mini-chantier resserré 2026-06-22 + hygiène
+transversale B-hyg-1/2/3 le 2026-06-24, sur `dev`) — traçabilité, inline +
+autocomplete, étiquettes + filtrage, QA / comparer-fichiers, quick-actions,
+tokens CSS, a11y de base, états vides. **Reste optionnel** : a11y large +
+Panier C (net-new). Sans dépendance dure (interleavable avec/avant le
+Chantier 2).
 
 !!! success "Livré (chantier UI⁺, 2026-06-22)"
     **Lot 1** page `/journal` (suppressions + push Nakala + renommages) ·
@@ -180,7 +182,7 @@ masse, import profil YAML complet, push de fichiers binaires Nakala — un bouto
 | **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete** des valeurs existantes | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible | ✅ Lot 3 (inline déjà fait + autocomplete livré) |
 | **Étiquettes colorées** libres (≠ `etat_catalogage`) + **filtrage** | marquage workflow ; table dédiée (jamais exportée) + filtre drawer ; favori #1 | Quotidien | Faible-moyen | ✅ Lot 4 + 4c |
 | **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ✅ changement d'état inline (`<select>` au survol du tableau collection) |
-| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ⏳ reste (a11y de base posée sur les pages neuves) |
+| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ✅ B-hyg-1/2/3 (2026-06-24) |
 
 ### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
 
@@ -218,25 +220,37 @@ relèvent du **Chantier 5** / `idees-ui-vrac.md`.
 - **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
 
-#### Point de reprise — prochaine session (consigné 2026-06-22)
+#### Panier B « hygiène transversale » — ✅ LIVRÉ (2026-06-24)
 
-**Panier A : terminé.** **Panier B : seul l'« hygiène transversale » reste**,
-décomposable en lots indépendants et pickables (aucune dépendance dure entre
-eux) :
+**Panier A : terminé.** **Panier B : terminé** — les trois lots d'hygiène
+transversale livrés en une passe (commits `f2021fd`, `81b1b58`, `d4ee5f2`
+sur `dev`) :
 
-- **B-hyg-1 — Tokens CSS.** Les couleurs sémantiques sont dupliquées en dur
-  dans plusieurs templates (`badge_etat.html`, `cellule_etat.html`,
-  `controle.html`, `nakala_comparaison.html` : `#E24B4A` erreur, `#BA7517`
-  avert, `#639922` ok, `#378ADD` info, `#888780` gris). Les extraire en
-  variables (Tailwind `theme.extend` ou CSS custom props) — source unique,
-  réutilisée. Le plus rentable car déjà étalé.
-- **B-hyg-2 — a11y de base.** Landmarks (`<main>`/`<nav>` dans `base.html` /
-  `header.html`), `aria` sur les tableaux + la pagination, focus-trap des
-  modales/drawers (`panneau_colonnes_modale`, `panneau_filtres`). Les pages
-  neuves (journal, étiquettes, contrôler) ont déjà une base aria correcte ;
-  c'est l'existant ancien qui est à reprendre.
-- **B-hyg-3 — états vides + pagination visible + validation client légère.**
-  Passe « fonctionnel → poli » sur les listes/formulaires hérités.
+- **B-hyg-1 — Tokens CSS ✅.** Les 5 couleurs sémantiques (~74 hex dupliqués
+  en styles inline, dicts Jinja et chaînes JS) centralisées en custom
+  properties CSS dans `input.css` `:root` (`--state-info/warn/ok/err/neutral`) ;
+  les tokens Tailwind `state-*` pointent dessus → source unique partagée par
+  les classes utilitaires ET les usages inline/JS. Changer une couleur = une
+  ligne. Zéro changement visuel.
+- **B-hyg-2 — a11y de base ✅.** Lien d'évitement (`.skip-link`) →
+  `<main id="contenu">` ; `<nav aria-label="Navigation principale">` (header,
+  `class="contents"` = zéro impact flex) ; `scope="col"` + `<caption>` sr-only
+  sur `tableau_items`/`tableau_collections` ; `<nav aria-label="Pagination">`.
+  **Focus-trap** : nouvel utilitaire partagé `static/js/focus_trap.js`
+  (`window.ColleCFocusTrap`) réutilisé par les deux overlays — drawer filtres
+  (`role=dialog` + `inert` à l'état fermé) et modale colonnes (`role=dialog`,
+  focus rendu au déclencheur à la fermeture).
+- **B-hyg-3 — états vides ✅.** Ligne d'état vide for-else sur `tableau_items`
+  (cas filtres-actifs-sans-résultat, avant : corps vide muet) et
+  `tableau_collections` ; état vide + CTA import + a11y sur `fonds_liste`. La
+  validation client (`required`) était déjà fournie par les macros
+  `_champ_form` ; la pagination déjà visible (compteur + nav). 4 tests
+  (`test_etats_vides`).
+
+Reste optionnel/opportuniste : la couverture a11y plus large (tous les
+formulaires hérités, contraste, gestion du focus sur swaps HTMX) et les tokens
+CSS non-sémantiques (gris, chips) — non bloquants, à puiser au gré des
+opportunités.
 
 **Panier C : différé** (command palette, preview pane, vue Avancement
 consolidée `plan-de-chantier`, modes comparaison/diaporama) — meilleur après

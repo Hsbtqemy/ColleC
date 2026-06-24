@@ -123,14 +123,21 @@ def test_resumer_technique_fichiers_embargo_echu() -> None:
     assert rt.embargo_texte == "Embargo échu (15/05/2020)"
 
 
-def test_resumer_technique_fichiers_sans_meta() -> None:
+def test_resumer_technique_fichiers_sans_meta_repli_extension() -> None:
+    """Sans mime type (corpus local/non-Nakala), le format est déduit de
+    l'extension — pas de « inconnu » bruité pour des images normales."""
     rt = _resumer_technique_fichiers(
-        [Fichier(ordre=1, nom_fichier="x.bin", metadonnees=None)],
+        [
+            Fichier(ordre=1, nom_fichier="scan.jpg", metadonnees=None),
+            Fichier(ordre=2, nom_fichier="scan.png", metadonnees=None),
+            Fichier(ordre=3, nom_fichier="notes.bin", metadonnees=None),
+        ],
         today=date(2026, 1, 1),
     )
     assert rt.embargo_texte is None
-    assert rt.a_technique is False
-    assert rt.formats_texte == "1 inconnu"
+    assert rt.a_technique is False  # ni sha1 ni puid
+    # jpg + png → 2 images (repli extension) ; .bin inconnu → libellé brut.
+    assert rt.formats_texte == "2 images · 1 bin"
 
 
 # ---------------------------------------------------------------------------

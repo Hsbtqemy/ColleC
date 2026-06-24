@@ -17,6 +17,7 @@ Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
 # `date` aliasé : des boucles existantes déballent une colonne nommée
 # `date` (EDTF) — éviter le shadow (F402) sans les renommer.
 from datetime import date as _date
@@ -3139,13 +3140,41 @@ def _agreger_fichier_metadonnees(
 _FORMATS_PLURIELS: frozenset[str] = frozenset({"image", "tableur", "texte", "vidéo"})
 
 
-def _libelle_format(mime: str | None) -> str:
-    """Regroupe un mime type en libellé humain singulier (« image »,
-    « PDF », « tableur »…). Mime inconnu → renvoyé tel quel ; absent →
+#: extension de fichier → libellé de format humain (repli quand le mime
+#: type est absent, cas des corpus non-Nakala / locaux).
+_EXT_VERS_FORMAT: dict[str, str] = {
+    **{
+        e: "image"
+        for e in (
+            "jpg",
+            "jpeg",
+            "png",
+            "gif",
+            "webp",
+            "bmp",
+            "tif",
+            "tiff",
+            "jp2",
+            "svg",
+        )
+    },
+    "pdf": "PDF",
+    "json": "JSON",
+    **{e: "tableur" for e in ("xls", "xlsx", "ods", "csv")},
+    **{e: "texte" for e in ("txt", "md")},
+    **{e: "audio" for e in ("mp3", "wav", "ogg", "flac", "m4a", "aac")},
+    **{e: "vidéo" for e in ("mp4", "mov", "webm", "avi", "mkv")},
+}
+
+
+def _libelle_format(mime: str | None, nom_fichier: str | None = None) -> str:
+    """Regroupe un fichier en libellé de format humain singulier (« image »,
+    « PDF », « tableur »…), d'abord par mime type, sinon par extension.
+
+    Mime inconnu → renvoyé tel quel. Sans mime, repli sur l'extension
+    (`_EXT_VERS_FORMAT`, puis l'extension brute). Rien d'exploitable →
     « inconnu »."""
     m = (mime or "").lower().strip()
-    if not m:
-        return "inconnu"
     if m.startswith("image/"):
         return "image"
     if m == "application/pdf":
@@ -3160,7 +3189,13 @@ def _libelle_format(mime: str | None) -> str:
         return "vidéo"
     if "spreadsheet" in m or m.endswith("ms-excel"):
         return "tableur"
-    return m
+    if m:
+        return m
+    # Pas de mime → repli sur l'extension du fichier.
+    ext = _extension(nom_fichier or "")
+    if ext in _EXT_VERS_FORMAT:
+        return _EXT_VERS_FORMAT[ext]
+    return ext or "inconnu"
 
 
 def _date_iso(val: object) -> _date | None:
@@ -3195,7 +3230,7 @@ def _resumer_technique_fichiers(
         meta = f.metadonnees if isinstance(f.metadonnees, dict) else {}
         mime = meta.get("mime_type") or meta.get("mimetype")
         emb_brut = meta.get("embargoed") or meta.get("embargo")
-        formats[_libelle_format(mime)] += 1
+        formats[_libelle_format(mime, f.nom_fichier)] += 1
         d = _date_iso(emb_brut)
         if d is not None:
             embargo_dates.append(d)

@@ -170,8 +170,11 @@ Le point 2 (scaffold) est surtout un manque d'**ergonomie** :
 
 ## Questions ouvertes (à itérer)
 
-- [ ] **Bulk-fill / propagation** d'une valeur sur N items : mécanique + UX
-      (sans casser l'autonomie ni surprendre). Prochain fil à creuser.
+- [ ] **Bulk-fill / propagation** d'une valeur sur N items → traité comme
+      membre d'un socle d'opérations par lot :
+      [`operations-par-lot-future.md`](operations-par-lot-future.md).
+      (Rappel : la propagation de l'*entrée* = le scaffold, déjà en place ;
+      seule la propagation de *valeur* reste à faire.)
 - [ ] **Qui a le droit de mapper** (registre) — lié à l'auth V1.0.
 - [ ] Metas au niveau **collection Nakala** (valeur unique de l'ensemble).
 - [ ] **Ordre de chantier** — à décider (le registre `slug→propertyUri` + le

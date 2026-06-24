@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="{{ url_for('static', path='css/output.css') }}">
 </head>
 <body class="bg-white">
+  {# Lien d'évitement : 1er élément focusable de la page. Masqué jusqu'au
+     focus clavier (cf. .skip-link dans input.css), il amène directement
+     au contenu principal sans retraverser le header à chaque page. #}
+  <a href="#contenu" class="skip-link">Aller au contenu</a>
   {% if est_lecture_seule() %}
   <div role="status"
        style="background:#fef3c7;border-bottom:1px solid #fcd34d;
@@ -27,11 +31,17 @@
   <div class="{% block container_class %}max-w-[1700px]{% endblock %} mx-auto px-6 py-8">
     {% include "components/header.html" %}
     {% block breadcrumb %}{% endblock %}
-    <main>
+    {# tabindex=-1 : cible programmable du lien d'évitement (sinon le
+       navigateur ne déplace pas le focus sur un <main> non focusable). #}
+    <main id="contenu" tabindex="-1">
       {% block content %}{% endblock %}
     </main>
   </div>
   <script src="{{ url_for('static', path='js/vendor/htmx/htmx.min.js') }}"></script>
+  {# Utilitaire focus-trap (window.ColleCFocusTrap) pour les modales /
+     drawers. Chargé avant les consommateurs (block scripts des pages) ;
+     inerte tant qu'il n'est pas appelé. #}
+  <script src="{{ url_for('static', path='js/focus_trap.js') }}"></script>
   {# Recherche globale (Lot C V0.9.x) : raccourci `/` ou Cmd+K
      focus la barre du header. Présent sur toutes les pages. #}
   <script src="{{ url_for('static', path='js/recherche_globale.js') }}"></script>

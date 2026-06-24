@@ -144,6 +144,7 @@
 
   <div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
     <table class="w-full" style="border-collapse:separate;border-spacing:0;">
+      <caption class="sr-only">Items de la collection</caption>
       <thead>
         <tr class="bg-gray-50">
           {%- set ordre = ctx.ordre|default('asc') -%}
@@ -156,7 +157,7 @@
             {%- if triable %}
             {#- Colonne triable : en-tête cliquable (swap HTMX), flèche pleine
                 sur la colonne active, chevron ⇕ discret sinon (affordance). -#}
-            <th class="border-b cursor-pointer hover:text-gray-900 select-none"
+            <th scope="col" class="border-b cursor-pointer hover:text-gray-900 select-none"
                 style="border-color:rgba(0,0,0,0.08);padding:8px 12px;font-size:12px;font-weight:500;
                        color:{{ '#1f1f1f' if active else '#6b7280' }};
                        text-align:{{ meta.align }};white-space:nowrap;"
@@ -192,7 +193,7 @@
                 n'est pas désactivée, ses données restent visibles — seul le
                 tri est indisponible. La non-interactivité est signalée par
                 l'absence de chevron, de curseur main et d'effet de survol. -#}
-            <th class="border-b"
+            <th scope="col" class="border-b"
                 style="border-color:rgba(0,0,0,0.08);padding:8px 12px;font-size:12px;font-weight:500;
                        color:#6b7280;cursor:default;
                        text-align:{{ meta.align }};white-space:nowrap;"
@@ -203,7 +204,7 @@
             {%- endif %}
           {%- endfor %}
           {%- if ctx.url_retirer_template %}
-          <th class="border-b" style="border-color:rgba(0,0,0,0.08);padding:8px 8px;width:36px;" aria-label="Retirer"></th>
+          <th scope="col" class="border-b" style="border-color:rgba(0,0,0,0.08);padding:8px 8px;width:36px;" aria-label="Retirer"></th>
           {%- endif %}
         </tr>
       </thead>

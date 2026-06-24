@@ -28,7 +28,7 @@
      rendrait des entetes cliquables qui injecteraient la page complete
      dans la table — exactement le bug observe sur le dashboard. #}
   {%- set actif_htmx = sortable and ctx.cible_url -%}
-  <th class="border-b {{ 'cursor-pointer hover:text-gray-900' if actif_htmx else '' }}"
+  <th scope="col" class="border-b {{ 'cursor-pointer hover:text-gray-900' if actif_htmx else '' }}"
       style="border-color:rgba(0,0,0,0.08);padding:10px 14px;font-size:12px;font-weight:500;
              color:{{ '#1f1f1f' if active else '#6b7280' }};text-align:{{ align }};white-space:nowrap;"
       {% if actif_htmx %}data-sort-key="{{ key }}"
@@ -54,6 +54,7 @@
 <div id="{{ ctx.id|default('tableau-collections') }}"
      class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
   <table class="w-full" style="border-collapse:separate;border-spacing:0;">
+    <caption class="sr-only">Collections</caption>
     <thead>
       <tr class="bg-gray-50">
         {{ _th('cote', 'Cote', ctx) }}

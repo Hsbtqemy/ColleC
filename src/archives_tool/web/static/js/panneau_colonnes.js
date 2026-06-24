@@ -8,7 +8,16 @@
 // après sauvegarde réussie.
 
 (function () {
+  // Libération du focus-trap de la modale ouverte (null sinon).
+  let libererTrap = null;
+
   function fermerModale() {
+    if (libererTrap) {
+      // Libérer AVANT le retrait DOM : restaure le focus sur le bouton
+      // « Colonnes » déclencheur tant qu'il existe encore.
+      libererTrap();
+      libererTrap = null;
+    }
     document.querySelectorAll("[data-modal-colonnes]").forEach((m) => m.remove());
   }
 
@@ -188,6 +197,10 @@
       if (m && !m.dataset.cable) {
         m.dataset.cable = "1";
         gerePanneau(m);
+        // Focus-trap sur le panneau (l'overlay reste cliquable pour fermer).
+        if (window.ColleCFocusTrap) {
+          libererTrap = window.ColleCFocusTrap.activer(m.querySelector("aside") || m);
+        }
       }
     }
   });

@@ -33,6 +33,10 @@
       <span>{{ utilisateur }}</span>
     </div>
 
+    {# Landmark de navigation principale. `class="contents"` : le <nav>
+       n'introduit aucune boîte (display:contents), ses enfants restent
+       dans le flex du parent — landmark a11y sans impact visuel. #}
+    <nav aria-label="Navigation principale" class="contents">
     {# Lien Nakala : page autonome export / rapatriement / rafraîchissement.
        Visible même en lecture seule (l'export est en lecture ; les écritures
        y sont bloquées par le middleware). #}
@@ -101,5 +105,6 @@
         Mode consultation
       </a>
     {% endif %}
+    </nav>
   </div>
 </header>

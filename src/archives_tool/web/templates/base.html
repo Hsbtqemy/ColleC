@@ -46,6 +46,13 @@
      de création de fonds/item (sentinelle « __nouveau__ »). Inerte (no-op)
      hors de la page /sharedocs. #}
   <script src="{{ url_for('static', path='js/sharedocs.js') }}"></script>
+  {# Ligne de tableau d'items cliquable → fiche notice (data-row-href).
+     Délégué sur document, survit aux swaps HTMX. Inerte hors des tableaux
+     d'items. #}
+  <script src="{{ url_for('static', path='js/ligne_cliquable.js') }}"></script>
+  {# Boutons « copier » génériques ([data-copier]), ex. citation Nakala.
+     Délégué sur document, survit au lazy-load HTMX. Inerte sans bouton. #}
+  <script src="{{ url_for('static', path='js/copier.js') }}"></script>
   {% if est_lecture_seule() %}
     {# Filet de sécurité : si un utilisateur appuie sur Entrée dans un
        input texte d'un form POST (les boutons submit sont masqués

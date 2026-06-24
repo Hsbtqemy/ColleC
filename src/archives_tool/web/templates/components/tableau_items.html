@@ -209,8 +209,14 @@
       </thead>
       <tbody>
       {%- for it in ctx['items'] %}{# bracket : `dict.items` shadowerait l'accès attribut #}
-        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group"
-            style="border-color:rgba(0,0,0,0.08);">
+        {#- Ligne entière cliquable → fiche notice. Le JS `ligne_cliquable.js`
+            (délégué sur document, survit aux swaps HTMX) navigue vers
+            `data-row-href` au clic, sauf sur une zone interactive (cote/lien,
+            bouton − Retirer, édition d'état inline) ou pendant une sélection
+            de texte. La cote reste le lien clavier-accessible. -#}
+        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group cursor-pointer"
+            style="border-color:rgba(0,0,0,0.08);"
+            data-row-href="{{ it.href }}">
           {%- for k in ctx.colonnes %}{{ _cell(k, it, ctx.etat_editable|default(false)) }}{% endfor %}
           {%- if ctx.url_retirer_template %}
           {# Bouton « − Retirer » discret, visible au hover de la ligne.

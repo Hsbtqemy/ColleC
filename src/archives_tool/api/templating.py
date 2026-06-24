@@ -138,6 +138,51 @@ def _snippet_fts_safe(snippet: str | None) -> str:
     return Markup(safe)
 
 
+#: URLs http(s) dans une citation déjà échappée — pour les rendre
+#: cliquables. `[^\s<]` s'arrête à un espace ou un `<` (donc ne mange
+#: jamais une balise `<i>`/`</i>` réinjectée). Seul `https?://` est
+#: matché → jamais de `javascript:`/`data:`.
+_URL_CITATION = re.compile(r"https?://[^\s<]+")
+
+
+def _lien_citation(match: re.Match[str]) -> str:
+    """Enveloppe une URL (déjà échappée) dans un `<a>` sûr, en laissant
+    hors du lien une ponctuation finale (`.`, `,`, `)`…) qui n'en fait
+    pas partie."""
+    url = match.group(0)
+    suffixe = ""
+    while url and url[-1] in ".,;:)]":
+        suffixe = url[-1] + suffixe
+        url = url[:-1]
+    if not url:
+        return match.group(0)
+    return (
+        f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+        f'style="color:#378ADD;text-decoration:none;">{url}</a>{suffixe}'
+    )
+
+
+def _citation_html_safe(citation: object) -> str:
+    """Rend une citation Nakala en n'autorisant QUE l'italique
+    (`<i>`/`<em>`, le titre) et en rendant les URLs cliquables.
+
+    La citation vient de l'API Nakala (`GET /datas/{id}/citation`, style
+    APA) : le titre y est balisé `<i>…</i>`, et elle contient le DOI +
+    l'URL Nakala. Jinja l'échapperait (balises visibles en texte brut).
+    On échappe tout (anti-XSS — entrée externe), on dé-échappe uniquement
+    les `<i>`/`<em>` connues, puis on transforme les URLs `http(s)` en
+    liens. Même technique de base que :func:`_snippet_fts_safe`.
+    """
+    if not citation:
+        return ""
+    safe = str(escape(str(citation)))  # str pour .replace() sans réescape
+    for tag in ("i", "em"):
+        safe = safe.replace(f"&lt;{tag}&gt;", f"<{tag}>")
+        safe = safe.replace(f"&lt;/{tag}&gt;", f"</{tag}>")
+    safe = _URL_CITATION.sub(_lien_citation, safe)
+    return Markup(safe)
+
+
 def _surligner_q(text: object, q: str | None) -> str:
     """Surligne les mots de `q` dans `text` via des balises `<mark>`.
 
@@ -235,6 +280,7 @@ templates.env.filters["taille_humaine"] = formater_taille_octets
 templates.env.filters["url_tri"] = _url_tri
 templates.env.filters["url_page"] = _url_page
 templates.env.filters["snippet_fts_safe"] = _snippet_fts_safe
+templates.env.filters["citation_html_safe"] = _citation_html_safe
 templates.env.filters["surligner_q"] = _surligner_q
 templates.env.globals["pages_visibles"] = _pages_visibles
 templates.env.globals["est_lecture_seule"] = est_lecture_seule

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from archives_tool.api.services.dashboard import (
     _META_FICHIER_TECHNIQUES,
     _meta_documentaires,
+    _resumer_technique_fichiers,
     composer_fiche_item,
 )
 from archives_tool.api.services.fonds import lire_fonds_par_cote
@@ -59,6 +61,76 @@ def test_meta_documentaires_valeurs_vides_ignorees() -> None:
     `_valeur_metadonnee_str` qui retourne None)."""
     meta = {"dessinateur": "Perich", "vide": "", "nul": None}
     assert _meta_documentaires(meta) == {"dessinateur": "Perich"}
+
+
+def test_meta_documentaires_exclut_empreintes_nakala() -> None:
+    """sha1/puid/mime_type/embargoed (empreintes Nakala) sont retirés des
+    métadonnées documentaires — ils ont leur propre traitement (résumé
+    format + badge embargo + bloc replié), pas l'agrégat documentaire."""
+    meta = {
+        "sha1": "deadbeef",
+        "puid": "fmt/43",
+        "mime_type": "image/jpeg",
+        "embargoed": "2025-05-15T00:00:00+02:00",
+        "auteur_page": "Topor",  # seul documentaire
+    }
+    assert _meta_documentaires(meta) == {"auteur_page": "Topor"}
+
+
+# ---------------------------------------------------------------------------
+# Helpers : _resumer_technique_fichiers (résumé format + embargo + empreintes)
+# ---------------------------------------------------------------------------
+
+
+def _fich_tech(ordre: int, mime: str, embargo: str | None) -> Fichier:
+    return Fichier(
+        ordre=ordre,
+        nom_fichier=f"scan_{ordre}.bin",
+        metadonnees={
+            "mime_type": mime,
+            "sha1": f"sha{ordre}",
+            "puid": "fmt/43",
+            "embargoed": embargo,
+        },
+    )
+
+
+def test_resumer_technique_fichiers_formats_et_embargo_actif() -> None:
+    fichiers = [
+        _fich_tech(1, "image/jpeg", "2999-01-01T00:00:00+02:00"),
+        _fich_tech(2, "image/jpeg", "2999-01-01T00:00:00+02:00"),
+        _fich_tech(3, "application/pdf", "2999-01-01T00:00:00+02:00"),
+    ]
+    rt = _resumer_technique_fichiers(fichiers, today=date(2026, 1, 1))
+    assert rt.nb_total == 3
+    # Tri par fréquence décroissante + pluriel sur « image ».
+    assert rt.formats_texte == "2 images · 1 PDF"
+    # Embargo dans le futur → actif (badge ambre).
+    assert rt.embargo_actif is True
+    assert rt.embargo_texte is not None
+    assert "Sous embargo" in rt.embargo_texte and "01/01/2999" in rt.embargo_texte
+    # Empreintes présentes → le bloc replié a du contenu.
+    assert rt.a_technique is True
+    assert rt.lignes[0].sha1 == "sha1" and rt.lignes[0].puid == "fmt/43"
+
+
+def test_resumer_technique_fichiers_embargo_echu() -> None:
+    rt = _resumer_technique_fichiers(
+        [_fich_tech(1, "image/jpeg", "2020-05-15T00:00:00+02:00")],
+        today=date(2026, 1, 1),
+    )
+    assert rt.embargo_actif is False
+    assert rt.embargo_texte == "Embargo échu (15/05/2020)"
+
+
+def test_resumer_technique_fichiers_sans_meta() -> None:
+    rt = _resumer_technique_fichiers(
+        [Fichier(ordre=1, nom_fichier="x.bin", metadonnees=None)],
+        today=date(2026, 1, 1),
+    )
+    assert rt.embargo_texte is None
+    assert rt.a_technique is False
+    assert rt.formats_texte == "1 inconnu"
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +191,40 @@ def test_composer_fiche_item_agregats_si_meta_fichiers(base_demo: Path) -> None:
         assert ag.valeurs[1] == ("Reiser", 2)
         # data_url NON dans les agrégats (filtré par _META_FICHIER_TECHNIQUES).
         assert all(a.cle != "data_url" for a in fiche.agregats_fichier)
+    engine.dispose()
+
+
+def test_fiche_item_empreintes_nakala_hors_agregats_dans_resume(
+    base_demo: Path,
+) -> None:
+    """Un item à fichiers Nakala (sha1/puid/mime/embargo seuls) n'a PAS
+    d'agrégat documentaire bruité : ces clés vont dans le résumé technique
+    (format + embargo + empreintes repliées)."""
+    engine = creer_engine(base_demo)
+    factory = creer_session_factory(engine)
+    with factory() as s:
+        item = s.scalar(select(Item).where(Item.cote == "HK-001"))
+        fichiers = list(
+            s.scalars(select(Fichier).where(Fichier.item_id == item.id).limit(3)).all()
+        )
+        for f in fichiers:
+            f.metadonnees = {
+                "sha1": "deadbeef",
+                "puid": "fmt/43",
+                "mime_type": "image/jpeg",
+                "embargoed": "2999-01-01T00:00:00+02:00",
+            }
+            flag_modified(f, "metadonnees")
+        s.commit()
+
+        fonds = lire_fonds_par_cote(s, "HK")
+        fiche = composer_fiche_item(s, "HK-001", fonds)
+        # Aucune des 4 clés Nakala ne pollue les agrégats documentaires.
+        assert fiche.agregats_fichier == ()
+        rt = fiche.resume_technique_fichiers
+        assert "image" in rt.formats_texte
+        assert rt.a_technique is True
+        assert any(ligne.sha1 == "deadbeef" for ligne in rt.lignes)
     engine.dispose()
 
 

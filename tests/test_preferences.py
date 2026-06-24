@@ -490,3 +490,18 @@ def test_entetes_tableau_triables_vs_non_triables(base_demo: Path) -> None:
     # pour les lecteurs d'écran.
     th_cote = _th("cote")
     assert 'aria-sort="ascending"' in th_cote
+
+
+def test_lignes_items_cliquables_vers_fiche(base_demo: Path) -> None:
+    """Chaque ligne du tableau porte data-row-href vers la fiche notice
+    (/item/<cote>), et le JS de navigation déléguée est chargé. La cote
+    reste un lien explicite (chemin clavier)."""
+    client = TestClient(app)
+    resp = client.get("/collection/HK?fonds=HK")
+    assert resp.status_code == 200
+    # Au moins une ligne cliquable pointant vers une fiche item.
+    assert 'data-row-href="/item/' in resp.text
+    # Le script de navigation déléguée est inclus globalement.
+    assert "js/ligne_cliquable.js" in resp.text
+    # La cote reste un lien <a> (accessibilité clavier).
+    assert 'href="/item/' in resp.text

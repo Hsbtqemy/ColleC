@@ -125,11 +125,25 @@
   <div>
     <div class="bg-white rounded-lg" style="border:1px solid rgba(0,0,0,0.08);">
 
-      {# Header colonne #}
+      {# Header colonne — résumé format (mime regroupé) + badge embargo.
+         Les empreintes pures (sha1/puid) vont dans « Détails techniques »
+         repliés plus bas, pas ici. #}
+      {% set rt = fiche.resume_technique_fichiers %}
       <div style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.08);background:#f9fafb;">
         <h2 style="font-size:12px;font-weight:500;color:#374151;">
           Fichiers · {{ fiche.nb_fichiers }}
+          {% if rt.formats_texte %}
+            <span style="color:#9ca3af;font-weight:400;"> · {{ rt.formats_texte }}</span>
+          {% endif %}
         </h2>
+        {% if rt.embargo_texte %}
+          <div style="margin-top:6px;display:inline-flex;align-items:center;gap:4px;
+                      font-size:11px;padding:2px 8px;border-radius:10px;
+                      {% if rt.embargo_actif %}background:#fef3c7;color:#92400e;
+                      {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+            ⏳ {{ rt.embargo_texte }}
+          </div>
+        {% endif %}
       </div>
 
       {# Agrégats #}
@@ -194,6 +208,42 @@
             {% endfor %}
           </tbody>
         </table>
+      </section>
+      {% endif %}
+
+      {# Détails techniques (empreintes) — repliés par défaut. sha1/puid
+         par fichier : précieux pour l'intégrité et le round-trip Nakala,
+         mais hors de la lecture archivistique courante (d'où le <details>
+         fermé). mime/embargo sont déjà résumés dans le header. #}
+      {% if rt.a_technique %}
+      <section style="padding:10px 14px;border-bottom:1px solid rgba(0,0,0,0.06);">
+        <details>
+          <summary style="cursor:pointer;font-size:11px;font-weight:500;color:#9ca3af;
+                          letter-spacing:.04em;text-transform:uppercase;">
+            Détails techniques ({{ rt.nb_total }} fichier{{ 's' if rt.nb_total > 1 else '' }})
+          </summary>
+          <table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:8px;">
+            <thead>
+              <tr style="color:#9ca3af;border-bottom:1px solid rgba(0,0,0,0.08);">
+                <th style="text-align:left;padding:4px 6px;width:30px;">#</th>
+                <th style="text-align:left;padding:4px 6px;">sha1 · puid · mime · embargo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for l in rt.lignes %}
+              <tr style="border-bottom:1px solid rgba(0,0,0,0.04);vertical-align:top;">
+                <td style="padding:4px 6px;color:#9ca3af;font-variant-numeric:tabular-nums;">{{ '%02d' | format(l.ordre) }}</td>
+                <td style="padding:4px 6px;color:#6b7280;line-height:1.5;word-break:break-all;">
+                  {% if l.sha1 %}<span style="font-family:monospace;">{{ l.sha1 }}</span>{% endif %}
+                  {% if l.puid %}<span style="margin-left:6px;color:#9ca3af;">{{ l.puid }}</span>{% endif %}
+                  {% if l.mime_type %}<span style="margin-left:6px;color:#9ca3af;">{{ l.mime_type }}</span>{% endif %}
+                  {% if l.embargo %}<span style="margin-left:6px;color:#9ca3af;">embargo {{ l.embargo }}</span>{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </details>
       </section>
       {% endif %}
 

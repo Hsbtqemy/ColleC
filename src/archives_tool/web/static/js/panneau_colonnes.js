@@ -8,7 +8,16 @@
 // après sauvegarde réussie.
 
 (function () {
+  // Libération du focus-trap de la modale ouverte (null sinon).
+  let libererTrap = null;
+
   function fermerModale() {
+    if (libererTrap) {
+      // Libérer AVANT le retrait DOM : restaure le focus sur le bouton
+      // « Colonnes » déclencheur tant qu'il existe encore.
+      libererTrap();
+      libererTrap = null;
+    }
     document.querySelectorAll("[data-modal-colonnes]").forEach((m) => m.remove());
   }
 
@@ -146,7 +155,7 @@
       // Coche bleue (SVG statique).
       const coche = document.createElement("span");
       coche.className = "inline-flex items-center justify-center";
-      coche.style.cssText = "width:14px;height:14px;border-radius:3px;background:#378ADD;";
+      coche.style.cssText = "width:14px;height:14px;border-radius:3px;background:var(--state-info);";
       coche.appendChild(svgRaw(
         '<svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">' +
         '<path d="M1.5 4.5 L3.5 6.5 L7.5 2" fill="none" stroke="white" ' +
@@ -188,6 +197,10 @@
       if (m && !m.dataset.cable) {
         m.dataset.cable = "1";
         gerePanneau(m);
+        // Focus-trap sur le panneau (l'overlay reste cliquable pour fermer).
+        if (window.ColleCFocusTrap) {
+          libererTrap = window.ColleCFocusTrap.activer(m.querySelector("aside") || m);
+        }
       }
     }
   });

@@ -17,6 +17,10 @@ Les compteurs et listings sont obtenus en agrégats SQL — pas de N+1.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+# `date` aliasé : des boucles existantes déballent une colonne nommée
+# `date` (EDTF) — éviter le shadow (F402) sans les renommer.
+from datetime import date as _date
 from datetime import datetime
 from collections import Counter
 from typing import Any, Literal
@@ -1274,15 +1278,15 @@ def composer_synthese_fonds(db: Session, fonds: Fonds) -> SyntheseFonds:
             item = items_par_id.get(id_)
             if item is None:
                 continue
-            first_f = item.fichiers[0] if item.fichiers else None
-            src = resoudre_source_image(first_f) if first_f else None
+            f_vig = _choisir_fichier_vignette(item.fichiers)
+            src = resoudre_source_image(f_vig) if f_vig else None
             vignettes_liste.append(
                 VignetteSynthese(
                     item_cote=item.cote,
                     item_titre=item.titre or item.cote,
                     fonds_cote=fonds.cote,
                     vignette_url=src.vignette_url if src else None,
-                    extension=_extension(first_f.nom_fichier) if first_f else "",
+                    extension=_extension(f_vig.nom_fichier) if f_vig else "",
                 )
             )
         vignettes = tuple(vignettes_liste)
@@ -1971,6 +1975,26 @@ def _ids_echantillonnes(ids_ordonnes: list[int], n: int) -> list[int]:
     return [ids_ordonnes[int(i * stride)] for i in range(n)]
 
 
+def _choisir_fichier_vignette(fichiers: list[Fichier]) -> Fichier | None:
+    """Sélectionne le fichier le plus pertinent pour la vignette de synthèse.
+
+    Préfère le **premier fichier qui produit une vraie vignette image**
+    (JPG/JP2/PNG… — dérivé local ou thumb IIIF Nakala) au premier fichier
+    par ordre. Sans ça, un item à fac-similé dont la 1ʳᵉ entrée est un
+    `.xls`/`.pdf`/`.json` n'affichait qu'un placeholder alors qu'il a des
+    dizaines de scans image exploitables (cas Por Favor : ~36 JPG/item).
+
+    Retombe sur le premier fichier (placeholder d'extension) si aucun ne
+    donne de vignette ; `None` si l'item n'a aucun fichier.
+    """
+    if not fichiers:
+        return None
+    for f in fichiers:
+        if resoudre_source_image(f).vignette_url:
+            return f
+    return fichiers[0]
+
+
 def composer_synthese_collection(
     db: Session,
     collection: Collection,
@@ -2203,15 +2227,15 @@ def composer_synthese_collection(
             if entry is None:
                 continue
             item, fonds_cote = entry
-            first_f = item.fichiers[0] if item.fichiers else None
-            src = resoudre_source_image(first_f) if first_f else None
+            f_vig = _choisir_fichier_vignette(item.fichiers)
+            src = resoudre_source_image(f_vig) if f_vig else None
             vignettes_liste.append(
                 VignetteSynthese(
                     item_cote=item.cote,
                     item_titre=item.titre or item.cote,
                     fonds_cote=fonds_cote,
                     vignette_url=src.vignette_url if src else None,
-                    extension=_extension(first_f.nom_fichier) if first_f else "",
+                    extension=_extension(f_vig.nom_fichier) if f_vig else "",
                 )
             )
         vignettes = tuple(vignettes_liste)
@@ -2389,8 +2413,19 @@ _META_FICHIER_TECHNIQUES: frozenset[str] = frozenset(
         "hash",
         "hash_sha256",
         "sha",
+        "sha1",
         "sha256",
         "checksum",
+        # Empreintes / statut techniques Nakala (présents sur chaque
+        # fichier rapatrié). Sortis des agrégats *documentaires* de la
+        # fiche ; `sha1`/`puid` sont surfacés à part dans un bloc replié
+        # « Détails techniques », `mime_type`/`embargoed` en résumé format
+        # + badge statut (cf. `_resumer_technique_fichiers`).
+        "puid",
+        "mime_type",
+        "mimetype",
+        "embargoed",
+        "embargo",
     }
 )
 
@@ -2435,6 +2470,42 @@ class FichierFicheLigne:
 
 
 @dataclass(frozen=True)
+class LigneTechniqueFichier:
+    """Empreintes techniques d'un fichier pour le bloc replié « Détails
+    techniques » de la fiche (sha1 / puid / mime / embargo). Présentes
+    pour l'intégrité et le round-trip Nakala, hors de la lecture
+    archivistique courante."""
+
+    ordre: int
+    nom_fichier: str
+    mime_type: str | None
+    sha1: str | None
+    puid: str | None
+    embargo: str | None  # date formatée jj/mm/aaaa, ou None
+
+
+@dataclass(frozen=True)
+class ResumeTechniqueFichiers:
+    """Synthèse technique des fichiers d'un item pour la fiche notice.
+
+    Sépare ce qui a une valeur de consultation (format en résumé, statut
+    d'embargo) des empreintes pures (sha1/puid, repliées). Construit par
+    :func:`_resumer_technique_fichiers`.
+    """
+
+    nb_total: int
+    formats_texte: str  # « 36 images · 1 PDF · 1 tableur »
+    embargo_texte: str | None  # ligne de statut prête à afficher, ou None
+    embargo_actif: bool  # True = au moins un embargo encore en cours
+    lignes: tuple[LigneTechniqueFichier, ...]
+
+    @property
+    def a_technique(self) -> bool:
+        """Au moins une empreinte sha1/puid à montrer dans le bloc replié."""
+        return any(ligne.sha1 or ligne.puid for ligne in self.lignes)
+
+
+@dataclass(frozen=True)
 class TagAnnotationAgrege:
     """Tag agrégé au niveau item, calculé depuis les annotations
     W3C de tous ses fichiers (V0.9.7 γ-fiche).
@@ -2471,6 +2542,9 @@ class FicheItem:
     nb_fichiers: int
     agregats_fichier: tuple[AgregatChampFichier, ...]
     lignes_fichier: tuple[FichierFicheLigne, ...]  # liste compacte col 2
+    #: Synthèse technique (format, embargo, empreintes sha1/puid) sortie
+    #: des agrégats documentaires — résumé + bloc replié sur la fiche.
+    resume_technique_fichiers: ResumeTechniqueFichiers
     navigation: NavigationItem
     #: Tags annotations agrégés depuis les `AnnotationRegion` des
     #: fichiers de l'item — triés par fréquence décroissante puis
@@ -3062,6 +3136,143 @@ def _agreger_fichier_metadonnees(
     return tuple(agregats)
 
 
+#: mime → libellé de format humain (singulier) pour le résumé fichiers.
+_FORMATS_PLURIELS: frozenset[str] = frozenset({"image", "tableur", "texte", "vidéo"})
+
+
+#: extension de fichier → libellé de format humain (repli quand le mime
+#: type est absent, cas des corpus non-Nakala / locaux).
+_EXT_VERS_FORMAT: dict[str, str] = {
+    **{
+        e: "image"
+        for e in (
+            "jpg",
+            "jpeg",
+            "png",
+            "gif",
+            "webp",
+            "bmp",
+            "tif",
+            "tiff",
+            "jp2",
+            "svg",
+        )
+    },
+    "pdf": "PDF",
+    "json": "JSON",
+    **{e: "tableur" for e in ("xls", "xlsx", "ods", "csv")},
+    **{e: "texte" for e in ("txt", "md")},
+    **{e: "audio" for e in ("mp3", "wav", "ogg", "flac", "m4a", "aac")},
+    **{e: "vidéo" for e in ("mp4", "mov", "webm", "avi", "mkv")},
+}
+
+
+def _libelle_format(mime: str | None, nom_fichier: str | None = None) -> str:
+    """Regroupe un fichier en libellé de format humain singulier (« image »,
+    « PDF », « tableur »…), d'abord par mime type, sinon par extension.
+
+    Mime inconnu → renvoyé tel quel. Sans mime, repli sur l'extension
+    (`_EXT_VERS_FORMAT`, puis l'extension brute). Rien d'exploitable →
+    « inconnu »."""
+    m = (mime or "").lower().strip()
+    if m.startswith("image/"):
+        return "image"
+    if m == "application/pdf":
+        return "PDF"
+    if m == "application/json":
+        return "JSON"
+    if m.startswith("text/"):
+        return "texte"
+    if m.startswith("audio/"):
+        return "audio"
+    if m.startswith("video/"):
+        return "vidéo"
+    if "spreadsheet" in m or m.endswith("ms-excel"):
+        return "tableur"
+    if m:
+        return m
+    # Pas de mime → repli sur l'extension du fichier.
+    ext = _extension(nom_fichier or "")
+    if ext in _EXT_VERS_FORMAT:
+        return _EXT_VERS_FORMAT[ext]
+    return ext or "inconnu"
+
+
+def _date_iso(val: object) -> _date | None:
+    """Parse les 10 premiers caractères d'une date ISO (`2025-05-15T…`).
+    None si non parsable."""
+    if not isinstance(val, str) or len(val) < 10:
+        return None
+    try:
+        return _date.fromisoformat(val[:10])
+    except ValueError:
+        return None
+
+
+def _jma(d: _date) -> str:
+    return f"{d.day:02d}/{d.month:02d}/{d.year}"
+
+
+def _resumer_technique_fichiers(
+    fichiers: list[Fichier], *, today: _date | None = None
+) -> ResumeTechniqueFichiers:
+    """Synthèse technique des fichiers : résumé format (mime regroupé),
+    statut d'embargo (échéance la plus proche, actif vs échu) et lignes
+    d'empreintes (sha1/puid) pour le bloc replié de la fiche.
+
+    `today` injectable pour des tests déterministes (défaut : aujourd'hui).
+    """
+    today = today or _date.today()
+    formats: Counter[str] = Counter()
+    lignes: list[LigneTechniqueFichier] = []
+    embargo_dates: list[_date] = []
+    for f in fichiers:
+        meta = f.metadonnees if isinstance(f.metadonnees, dict) else {}
+        mime = meta.get("mime_type") or meta.get("mimetype")
+        emb_brut = meta.get("embargoed") or meta.get("embargo")
+        formats[_libelle_format(mime, f.nom_fichier)] += 1
+        d = _date_iso(emb_brut)
+        if d is not None:
+            embargo_dates.append(d)
+        lignes.append(
+            LigneTechniqueFichier(
+                ordre=f.ordre,
+                nom_fichier=f.nom_fichier,
+                mime_type=mime,
+                sha1=meta.get("sha1"),
+                puid=meta.get("puid"),
+                embargo=_jma(d) if d is not None else None,
+            )
+        )
+
+    ordonne = sorted(formats.items(), key=lambda kv: (-kv[1], kv[0]))
+    formats_texte = " · ".join(
+        f"{n} {lib}s" if n > 1 and lib in _FORMATS_PLURIELS else f"{n} {lib}"
+        for lib, n in ordonne
+    )
+
+    embargo_texte: str | None = None
+    embargo_actif = False
+    if embargo_dates:
+        actifs = [d for d in embargo_dates if d >= today]
+        if actifs:
+            embargo_actif = True
+            embargo_texte = (
+                f"Sous embargo · {len(actifs)} fichier"
+                f"{'s' if len(actifs) > 1 else ''} jusqu'au {_jma(max(actifs))}"
+            )
+        else:
+            embargo_texte = f"Embargo échu ({_jma(max(embargo_dates))})"
+
+    return ResumeTechniqueFichiers(
+        nb_total=len(fichiers),
+        formats_texte=formats_texte,
+        embargo_texte=embargo_texte,
+        embargo_actif=embargo_actif,
+        lignes=tuple(lignes),
+    )
+
+
 def composer_fiche_item(
     db: Session,
     cote: str,
@@ -3161,6 +3372,7 @@ def composer_fiche_item(
         nb_fichiers=nb_fichiers,
         agregats_fichier=_agreger_fichier_metadonnees(list(item.fichiers)),
         lignes_fichier=tuple(lignes),
+        resume_technique_fichiers=_resumer_technique_fichiers(list(item.fichiers)),
         navigation=navigation_items(db, item, fonds),
         tags_annotations=tags_annotations,
     )

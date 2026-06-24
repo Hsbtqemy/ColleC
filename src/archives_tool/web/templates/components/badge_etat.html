@@ -14,16 +14,16 @@
 
 {%- set _ETATS = {
   'item': {
-    'brouillon':  {'label': 'Brouillon',  'dot': '#888780'},
-    'a_verifier': {'label': 'À vérifier', 'dot': '#BA7517'},
-    'verifie':    {'label': 'Vérifié',    'dot': '#378ADD'},
-    'valide':     {'label': 'Validé',     'dot': '#639922'},
-    'a_corriger': {'label': 'À corriger', 'dot': '#E24B4A'},
+    'brouillon':  {'label': 'Brouillon',  'dot': 'var(--state-neutral)'},
+    'a_verifier': {'label': 'À vérifier', 'dot': 'var(--state-warn)'},
+    'verifie':    {'label': 'Vérifié',    'dot': 'var(--state-info)'},
+    'valide':     {'label': 'Validé',     'dot': 'var(--state-ok)'},
+    'a_corriger': {'label': 'À corriger', 'dot': 'var(--state-err)'},
   },
   'fichier': {
-    'actif':     {'label': 'Actif',     'dot': '#639922'},
-    'remplace':  {'label': 'Remplacé',  'dot': '#888780'},
-    'corbeille': {'label': 'Corbeille', 'dot': '#E24B4A'},
+    'actif':     {'label': 'Actif',     'dot': 'var(--state-ok)'},
+    'remplace':  {'label': 'Remplacé',  'dot': 'var(--state-neutral)'},
+    'corbeille': {'label': 'Corbeille', 'dot': 'var(--state-err)'},
   }
 } -%}
 

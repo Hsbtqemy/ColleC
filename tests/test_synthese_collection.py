@@ -16,6 +16,7 @@ from archives_tool.api.services.dashboard import (
     _agreger_item_metadonnees_quali,
     _annee_depuis_date_edtf,
     _calculer_distribution_temporelle,
+    _choisir_fichier_vignette,
     _ids_echantillonnes,
     _resoudre_libelle_langue,
     composer_synthese_collection,
@@ -25,6 +26,7 @@ from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.models import (
     Collection,
     EtatCatalogage,
+    Fichier,
     Item,
     TypeCollection,
 )
@@ -608,3 +610,32 @@ def test_synthese_pas_dans_swap_htmx(base_demo: Path) -> None:
     assert resp.status_code == 200
     assert "Synthèse" not in resp.text
     assert "<details open" not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Sélection du fichier de vignette (priorité aux images)
+# ---------------------------------------------------------------------------
+
+
+def test_choisir_fichier_vignette_prefere_image_a_placeholder() -> None:
+    """La vignette de synthèse doit pointer sur le premier fichier *image*
+    (qui produit une vraie miniature), pas sur le premier fichier par ordre
+    — sinon un item à fac-similé dont le 1ᵉʳ fichier est un .xls/.pdf
+    n'affiche qu'un placeholder malgré ses scans JPG (cas Por Favor)."""
+    doi = "10.34847/nkl.abcd"
+    xls = Fichier(
+        nom_fichier="metadonnees.xls",
+        ordre=1,
+        iiif_url_nakala=f"https://api.nakala.fr/data/{doi}/deadbeef",
+    )
+    jpg = Fichier(
+        nom_fichier="scan_01.jpg",
+        ordre=2,
+        iiif_url_nakala=f"https://api.nakala.fr/iiif/{doi}/deadbeef/info.json",
+    )
+    # Le JPG gagne bien qu'il ne soit pas le premier par ordre.
+    assert _choisir_fichier_vignette([xls, jpg]) is jpg
+    # Aucun fichier image → retombe sur le premier (placeholder d'extension).
+    assert _choisir_fichier_vignette([xls]) is xls
+    # Item sans fichier → None.
+    assert _choisir_fichier_vignette([]) is None

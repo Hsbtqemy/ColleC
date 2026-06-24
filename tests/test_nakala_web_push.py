@@ -223,6 +223,55 @@ def test_citation_item_pending_message(
     assert "Aucune citation disponible" in r.text
 
 
+def test_citation_html_safe_italique_url_et_echappement() -> None:
+    """Le filtre rend `<i>`/`<em>`, linkifie les URLs http(s), et échappe
+    tout le reste (anti-XSS)."""
+    from archives_tool.api.templating import _citation_html_safe
+
+    out = str(
+        _citation_html_safe(
+            "X <i>Titre</i> <em>v2</em> <script>a()</script> "
+            "https://doi.org/10.34847/NKL.X."
+        )
+    )
+    assert "<i>Titre</i>" in out
+    assert "<em>v2</em>" in out
+    assert "<script>" not in out
+    assert "&lt;script&gt;a()&lt;/script&gt;" in out
+    # URL → lien sûr ; le point final reste HORS du lien.
+    assert '<a href="https://doi.org/10.34847/NKL.X"' in out
+    assert 'rel="noopener noreferrer"' in out
+    assert out.rstrip().endswith("</a>.")
+    # `javascript:` n'est jamais transformé en lien (regex https?:// seule).
+    assert "<a" not in str(_citation_html_safe("javascript:alert(1)"))
+    # Cas vides.
+    assert _citation_html_safe(None) == ""
+    assert _citation_html_safe("") == ""
+
+
+def test_citation_item_italique_rendue_et_bouton_copier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le markup <i> du titre (renvoyé par Nakala, style APA) est rendu en
+    italique et pas échappé ; un <script> reste neutralisé ; un bouton
+    « Copier » câblé sur le texte de la citation est présent."""
+    cit = (
+        "Arce, E. (2025). <i>Por Favor Num.51</i> "
+        "https://doi.org/10.34847/NKL.6C6DPN0H <script>alert(1)</script>"
+    )
+    client = _faire_client(
+        tmp_path, monkeypatch, fake_cls=_faire_fake_citation(citation=cit)
+    )
+    r = client.get("/nakala/item/AS-001/citation", params={"fonds": "AS"})
+    assert r.status_code == 200
+    assert "<i>Por Favor Num.51</i>" in r.text  # italique préservé
+    assert "<script>alert(1)</script>" not in r.text  # script neutralisé
+    assert "&lt;script&gt;" in r.text
+    # DOI rendu cliquable.
+    assert '<a href="https://doi.org/10.34847/NKL.6C6DPN0H"' in r.text
+    assert 'data-copier="#citation-nakala-texte"' in r.text  # bouton copier
+
+
 def test_citation_item_inconnu_404(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

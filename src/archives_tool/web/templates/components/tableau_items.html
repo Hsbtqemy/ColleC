@@ -19,8 +19,8 @@
    }
    --------------------------------------------------------------------------- #}
 
-{% from 'components/badge_etat.html' import badge_etat %}
 {% from 'components/cellule_modifie.html' import cellule_modifie %}
+{% from 'components/cellule_etat.html' import cellule_etat %}
 {% from 'components/lien_doi.html' import lien_doi %}
 
 {%- set _COLS = {
@@ -38,7 +38,7 @@
   'modifie':                {'label': 'Modifié',        'align': 'right'},
 } -%}
 
-{%- macro _cell(key, item) -%}
+{%- macro _cell(key, item, etat_editable=false) -%}
   {%- if key == 'cote' -%}
     <td style="padding:12px 12px;vertical-align:top;">
       <a href="{{ item.href }}" class="font-mono hover:underline" style="font-size:13px;color:#1f1f1f;">{{ item.cote }}</a>
@@ -84,9 +84,10 @@
       {%- endif -%}
     </td>
   {%- elif key == 'etat' -%}
-    <td style="padding:12px 12px;vertical-align:top;white-space:nowrap;">
-      {{ badge_etat(item.etat) }}
-    </td>
+    {#- Cellule déléguée à `cellule_etat` : badge au repos, édition rapide
+        au survol (déclencheur ▾) quand `etat_editable`. Sinon badge seul,
+        identique à avant. -#}
+    {{ cellule_etat(item.id, item.cote, item.fonds_cote, item.etat, etat_editable) }}
   {%- elif key == 'fichiers' -%}
     <td class="font-tabular" style="padding:12px 12px;vertical-align:top;text-align:right;">
       <span style="font-size:13px;color:#1f1f1f;">{{ item.nb_fichiers }}</span>
@@ -143,18 +144,26 @@
 
   <div class="bg-white rounded-lg overflow-hidden" style="border:1px solid rgba(0,0,0,0.08);">
     <table class="w-full" style="border-collapse:separate;border-spacing:0;">
+      <caption class="sr-only">Items de la collection</caption>
       <thead>
         <tr class="bg-gray-50">
           {%- set ordre = ctx.ordre|default('asc') -%}
           {%- set id_wrap = ctx.id|default('tableau-items') -%}
+          {%- set triables = ctx.colonnes_triables|default(TRIS_ITEMS) -%}
           {%- for k in ctx.colonnes %}
             {%- set meta = _COLS.get(k, {'label': k, 'align':'left'}) -%}
-            {%- set active = ctx.sort == k -%}
-            <th class="border-b cursor-pointer hover:text-gray-900"
+            {%- set triable = k in triables -%}
+            {%- set active = triable and ctx.sort == k -%}
+            {%- if triable %}
+            {#- Colonne triable : en-tête cliquable (swap HTMX), flèche pleine
+                sur la colonne active, chevron ⇕ discret sinon (affordance). -#}
+            <th scope="col" class="border-b cursor-pointer hover:text-gray-900 select-none"
                 style="border-color:rgba(0,0,0,0.08);padding:8px 12px;font-size:12px;font-weight:500;
                        color:{{ '#1f1f1f' if active else '#6b7280' }};
                        text-align:{{ meta.align }};white-space:nowrap;"
                 data-sort-key="{{ k }}"
+                aria-sort="{{ ('ascending' if ordre == 'asc' else 'descending') if active else 'none' }}"
+                title="Trier par {{ meta.label }}"
                 hx-get="{{ ctx.cible_url|default('')|url_tri(k, ctx.sort|default(''), ordre) }}"
                 hx-target="#{{ id_wrap }}"
                 hx-swap="outerHTML"
@@ -167,20 +176,49 @@
                     <path d="M2 3.5 L5 7 L8 3.5" fill="none" stroke="currentColor"
                           stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
+                {%- else %}
+                  <svg width="8" height="10" viewBox="0 0 8 10" aria-hidden="true"
+                       style="opacity:0.3;">
+                    <path d="M4 0.5 L1.5 3.5 H6.5 Z M4 9.5 L1.5 6.5 H6.5 Z"
+                          fill="currentColor"/>
+                  </svg>
                 {%- endif %}
               </span>
             </th>
+            {%- else %}
+            {#- Colonne non triable (nombre de fichiers, métadonnées perso) :
+                en-tête inerte — ni curseur main, ni hx-get, ni flèche. Évite
+                le clic trompeur qui retombait silencieusement sur le tri cote. -#}
+            {#- Couleur de libellé normale (#6b7280, pas grisée) : la colonne
+                n'est pas désactivée, ses données restent visibles — seul le
+                tri est indisponible. La non-interactivité est signalée par
+                l'absence de chevron, de curseur main et d'effet de survol. -#}
+            <th scope="col" class="border-b"
+                style="border-color:rgba(0,0,0,0.08);padding:8px 12px;font-size:12px;font-weight:500;
+                       color:#6b7280;cursor:default;
+                       text-align:{{ meta.align }};white-space:nowrap;"
+                data-sort-key="{{ k }}"
+                title="Colonne non triable">
+              <span>{{ meta.label }}</span>
+            </th>
+            {%- endif %}
           {%- endfor %}
           {%- if ctx.url_retirer_template %}
-          <th class="border-b" style="border-color:rgba(0,0,0,0.08);padding:8px 8px;width:36px;" aria-label="Retirer"></th>
+          <th scope="col" class="border-b" style="border-color:rgba(0,0,0,0.08);padding:8px 8px;width:36px;" aria-label="Retirer"></th>
           {%- endif %}
         </tr>
       </thead>
       <tbody>
       {%- for it in ctx['items'] %}{# bracket : `dict.items` shadowerait l'accès attribut #}
-        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group"
-            style="border-color:rgba(0,0,0,0.08);">
-          {%- for k in ctx.colonnes %}{{ _cell(k, it) }}{% endfor %}
+        {#- Ligne entière cliquable → fiche notice. Le JS `ligne_cliquable.js`
+            (délégué sur document, survit aux swaps HTMX) navigue vers
+            `data-row-href` au clic, sauf sur une zone interactive (cote/lien,
+            bouton − Retirer, édition d'état inline) ou pendant une sélection
+            de texte. La cote reste le lien clavier-accessible. -#}
+        <tr class="border-b last:border-b-0 hover:bg-gray-50/60 transition-colors group cursor-pointer"
+            style="border-color:rgba(0,0,0,0.08);"
+            data-row-href="{{ it.href }}">
+          {%- for k in ctx.colonnes %}{{ _cell(k, it, ctx.etat_editable|default(false)) }}{% endfor %}
           {%- if ctx.url_retirer_template %}
           {# Bouton « − Retirer » discret, visible au hover de la ligne.
              Form POST sur la route /collection/<cote>/items/<id>/retirer.
@@ -202,6 +240,19 @@
             </form>
           </td>
           {%- endif %}
+        </tr>
+      {%- else %}
+        {#- Aucun item : message explicite plutôt qu'un corps de tableau
+            vide. Distingue « collection vide » de « filtres trop stricts ». -#}
+        <tr>
+          <td colspan="{{ (ctx.colonnes | length) + (1 if ctx.url_retirer_template else 0) }}"
+              style="padding:32px 12px;text-align:center;font-size:13px;color:#9ca3af;font-style:italic;">
+            {%- if ctx.compteur_filtres and ctx.compteur_filtres != 'aucun' -%}
+              Aucun item ne correspond aux filtres actifs.
+            {%- else -%}
+              Aucun item dans cette collection.
+            {%- endif -%}
+          </td>
         </tr>
       {%- endfor %}
       </tbody>

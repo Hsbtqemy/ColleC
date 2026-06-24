@@ -86,7 +86,7 @@
       {# Mode libre : sélecteur. fonds_id est obligatoire. #}
       <label for="fonds_id" style="display:block;font-size:12px;font-weight:500;color:#374151;margin-bottom:4px;">
         Fonds parent
-        <span style="color:#E24B4A;">*</span>
+        <span style="color:var(--state-err);">*</span>
       </label>
       <select id="fonds_id" name="fonds_id" required
               class="w-full"
@@ -99,7 +99,7 @@
         {% endfor %}
       </select>
       {% if erreurs and erreurs.fonds_id %}
-        <p style="font-size:12px;color:#E24B4A;margin-top:4px;">{{ erreurs.fonds_id }}</p>
+        <p style="font-size:12px;color:var(--state-err);margin-top:4px;">{{ erreurs.fonds_id }}</p>
       {% endif %}
     {% endif %}
   </section>

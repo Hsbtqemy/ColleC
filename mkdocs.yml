@@ -68,6 +68,8 @@ exclude_docs: |
   developpeurs/ocr-module-future.md
   developpeurs/contribution-fichiers-structures-future.md
   developpeurs/vocabulaire-scoping-future.md
+  developpeurs/champs-personnalises-nakala-future.md
+  developpeurs/operations-par-lot-future.md
   developpeurs/nakala-depot-future.md
   developpeurs/backlog-nakala-collection.md
   developpeurs/nakala-savoir-api.md

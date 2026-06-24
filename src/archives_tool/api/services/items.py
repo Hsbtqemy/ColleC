@@ -510,13 +510,30 @@ def _appliquer_filtres_items(
         # étiquettes sélectionnées (cohérent avec etats/langues en `.in_()`).
         stmt = stmt.where(
             Item.id.in_(
-                select(ItemEtiquette.item_id).where(
-                    ItemEtiquette.etiquette_id.in_(ids)
-                )
+                select(ItemEtiquette.item_id).where(ItemEtiquette.etiquette_id.in_(ids))
             )
         )
         filtres["etiquettes"] = ids
     return stmt, filtres
+
+
+# Mapping clé publique de tri → colonne SQL. Source de vérité du tri réel
+# des items ; ses clés doivent rester égales à `TRIS_ITEMS` (qui pilote
+# l'affordance UI). Un test garde-fou vérifie cette égalité pour éviter la
+# dérive (colonne annoncée triable mais non gérée, ou l'inverse).
+_MAPPING_TRI_ITEMS: dict[str, object] = {
+    "cote": Item.cote,
+    "titre": Item.titre,
+    "type": Item.type_coar,
+    "date": Item.date,
+    "annee": Item.annee,
+    "langue": Item.langue,
+    "etat": Item.etat_catalogage,
+    "description": Item.description,
+    "doi_nakala": Item.doi_nakala,
+    "doi_collection_nakala": Item.doi_collection_nakala,
+    "modifie": Item.modifie_le,
+}
 
 
 def _lister_items(
@@ -551,16 +568,8 @@ def _lister_items(
         etiquettes=etiquettes,
     )
 
-    mapping_tri = {
-        "cote": Item.cote,
-        "titre": Item.titre,
-        "date": Item.date,
-        "annee": Item.annee,
-        "etat": Item.etat_catalogage,
-        "modifie": Item.modifie_le,
-    }
     stmt, tri_eff, ordre_eff = appliquer_tri(
-        base_stmt, mapping_tri, tri, ordre, defaut=("cote", "asc")
+        base_stmt, _MAPPING_TRI_ITEMS, tri, ordre, defaut=("cote", "asc")
     )
 
     count_stmt = select(func.count(Item.id)).where(scope_filtre)

@@ -10,7 +10,7 @@
 
 {% macro lien_doi(doi) -%}
 {%- if doi -%}
-<a href="https://doi.org/{{ doi }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ doi }}</a>
+<a href="https://doi.org/{{ doi }}" class="font-mono hover:underline" style="font-size:12px;color:var(--state-info);">{{ doi }}</a>
 {%- else -%}
 <span style="font-size:13px;color:#9ca3af;">—</span>
 {%- endif -%}

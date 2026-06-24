@@ -69,7 +69,7 @@
           <a href="{{ action_url }}"
              onclick="event.stopPropagation();"
              class="hover:bg-blue-50 rounded"
-             style="font-size:11px;color:#378ADD;padding:2px 8px;
+             style="font-size:11px;color:var(--state-info);padding:2px 8px;
                     border:1px solid rgba(55,138,221,0.25);text-decoration:none;">
             {{ action_label }}
           </a>
@@ -110,14 +110,14 @@
 
 
 {%- macro valeur_doi(href, text=None) -%}
-  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:var(--state-info);">
     {{ text or href }}
   </a>
 {%- endmacro %}
 
 
 {%- macro valeur_url(href) -%}
-  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:#378ADD;">{{ href }}</a>
+  <a href="{{ href }}" class="font-mono hover:underline" style="font-size:12px;color:var(--state-info);">{{ href }}</a>
 {%- endmacro %}
 
 
@@ -225,7 +225,7 @@
                           title="Formaliser cette clé en champ personnalisé sur la miroir du fonds"
                           aria-label="Formaliser la clé {{ champ.cle }} en champ personnalisé"
                           class="rounded hover:bg-blue-50"
-                          style="padding:1px 8px;font-size:11px;color:#378ADD;
+                          style="padding:1px 8px;font-size:11px;color:var(--state-info);
                                  border:1px solid rgba(55,138,221,0.30);background:white;
                                  white-space:nowrap;">
                     Formaliser

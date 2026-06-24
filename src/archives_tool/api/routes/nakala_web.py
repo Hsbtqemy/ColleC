@@ -62,6 +62,11 @@ from archives_tool.api.services.nakala_depot_jobs import (
     lire_etat_job,
     reserver_job,
 )
+from archives_tool.api.services.nakala_fichiers import (
+    ComparaisonImpossible,
+    ReponseLectureInvalide,
+    comparer_fichiers_item,
+)
 from archives_tool.api.templating import templates
 from archives_tool.config import ConfigLocale
 from archives_tool.external.nakala.client import (
@@ -451,6 +456,68 @@ def citation_item(
         request,
         "partials/nakala_citation.html",
         _contexte_base(nom_base, utilisateur, citation=citation, erreur=erreur),
+    )
+
+
+# ---- Item : diagnostic synchronisation fichiers (P3+b, lecture seule) ---
+
+
+@router.get("/nakala/item/{cote}/comparer-fichiers", response_class=HTMLResponse)
+def comparer_fichiers_web(
+    cote: str,
+    request: Request,
+    fonds: str = Query(...),
+    db: Session = Depends(get_db),
+    config: ConfigLocale = Depends(get_config),
+    racines: dict = Depends(get_racines),
+    nom_base: str = Depends(get_nom_base),
+    utilisateur: str = Depends(get_utilisateur_courant),
+) -> HTMLResponse:
+    """Partial HTMX : diagnostic de synchronisation des fichiers d'un item
+    avec son dépôt Nakala (lecture seule, lazy — fait un appel réseau).
+
+    Pré-visualise ce qu'un push de fichiers ferait (nouveaux / modifiés /
+    orphelins / fantômes…), sans rien modifier. Chargé à la demande car
+    le pull Nakala + le recalcul des SHA-1 locaux prennent du temps — pas
+    à chaque rendu de fiche. Best-effort : toute erreur Nakala devient un
+    message dans le partial, jamais une 500 (sauf item local inconnu → 404).
+    """
+    item = _resoudre_item_ou_404(db, cote, fonds)  # 404 si item inconnu
+    rapport = None
+    erreur: str | None = None
+    if not item.doi_nakala:
+        erreur = "Cet item n'a pas de DOI Nakala."
+    else:
+        lecture = _client_ou_none(config)
+        if lecture is None:
+            erreur = "Nakala n'est pas configuré (section `nakala:`)."
+        else:
+            try:
+                rapport = comparer_fichiers_item(db, lecture, item, racines=racines)
+            except ErreurNakala as exc:
+                erreur = _message_erreur_nakala(exc, cote)
+            except (ReponseLectureInvalide, ComparaisonImpossible) as exc:
+                erreur = str(exc)
+            except ValueError:
+                # `lire_depot` ne garde pas `.json()` (≠ `citation()`) : un
+                # corps 200 non-JSON lève `json.JSONDecodeError` (⊂ ValueError).
+                # Best-effort : message, jamais 500. Les ValueError internes
+                # à la comparaison (résolution chemin / sha1) sont déjà avalées
+                # dans le service — celle-ci ne peut venir que de `lire_depot`.
+                erreur = "Réponse Nakala illisible (corps non-JSON)."
+            finally:
+                _fermer(lecture)
+    return templates.TemplateResponse(
+        request,
+        "partials/nakala_comparaison.html",
+        _contexte_base(
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            erreur=erreur,
+            cote=cote,
+            fonds=fonds,
+        ),
     )
 
 

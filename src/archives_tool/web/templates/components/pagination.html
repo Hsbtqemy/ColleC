@@ -13,7 +13,7 @@
     {{ first }}–{{ last }} sur {{ '{:,}'.format(p.total)|replace(',', ' ') }}
   </span>
   {%- if p.pages > 1 %}
-  <div class="flex items-center" style="gap:2px;" data-pager>
+  <nav class="flex items-center" style="gap:2px;" data-pager aria-label="Pagination">
     {%- if p.page > 1 %}
       <a href="{{ cible_url|url_page(p.page - 1) }}"
          hx-get="{{ cible_url|url_page(p.page - 1) }}"
@@ -54,6 +54,6 @@
         </svg>
       </a>
     {%- endif %}
-  </div>
+  </nav>
   {%- endif %}
 </div>

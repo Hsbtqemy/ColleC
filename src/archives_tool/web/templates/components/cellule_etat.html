@@ -1,0 +1,88 @@
+{# ---------------------------------------------------------------------------
+   cellule_etat.html — cellule « État » du tableau d'items + édition rapide
+   ---------------------------------------------------------------------------
+   Deux macros qui rendent toutes deux un `<td id="etat-cell-{item_id}">`
+   (id stable → cible de swap HTMX commune) :
+
+   - `cellule_etat`         : mode affichage. Badge coloré (source de vérité
+                              `badge_etat`). Si `editable`, un déclencheur ▾
+                              discret apparaît au survol de la ligne
+                              (`group-hover`) et ouvre l'éditeur via `hx-get`.
+   - `cellule_etat_editeur` : mode édition. `<select>` des 5 états qui POST
+                              sur `change` (reswap le badge) + ✕ qui annule
+                              (reswap le badge sans écrire).
+
+   La version du verrou optimiste n'est PAS portée par la ligne du tableau
+   (potentiellement périmée si la page est restée ouverte) : l'éditeur la lit
+   *fraîche* côté serveur à l'ouverture → fenêtre de conflit = durée
+   d'ouverture du menu (quasi nulle). En cas de conflit malgré tout, la route
+   renvoie le badge rechargé avec `note`.
+   --------------------------------------------------------------------------- #}
+
+{% from 'components/badge_etat.html' import badge_etat %}
+
+{% macro cellule_etat(item_id, cote, fonds_cote, etat, editable=false, note='') -%}
+  <td id="etat-cell-{{ item_id }}"
+      style="padding:12px 12px;vertical-align:top;white-space:nowrap;"
+      {% if note %}title="{{ note }}"{% endif %}>
+    <span class="inline-flex items-center gap-1">
+      {{ badge_etat(etat) }}
+      {%- if note %}
+      <span aria-hidden="true" title="{{ note }}"
+            style="font-size:11px;color:var(--state-warn);line-height:1;">⚠</span>
+      {%- endif %}
+      {%- if editable %}
+      <button type="button"
+              class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              title="Changer l'état de {{ cote }}"
+              aria-label="Changer l'état de {{ cote }}"
+              hx-get="/item/{{ cote }}/etat?fonds={{ fonds_cote }}"
+              hx-target="#etat-cell-{{ item_id }}"
+              hx-swap="outerHTML"
+              style="padding:0 4px;font-size:11px;color:#9ca3af;background:transparent;
+                     border:none;cursor:pointer;line-height:1;">
+        ▾
+      </button>
+      {%- endif %}
+    </span>
+  </td>
+{%- endmacro %}
+
+{% macro cellule_etat_editeur(item_id, cote, fonds_cote, etat, version, etats_options) -%}
+  <td id="etat-cell-{{ item_id }}"
+      style="padding:8px 12px;vertical-align:top;white-space:nowrap;">
+    <span class="inline-flex items-center gap-1">
+      {#- POST sur `change` : la popup native du dropdown vole brièvement le
+          focus (cf. note inline_edit.js) — on ne s'appuie donc pas sur blur.
+          `hx-vals` transporte la version lue fraîche à l'ouverture. -#}
+      {#- `autofocus` : HTMX (≥1.9) focalise l'élément autofocus du contenu
+          swappé — sinon le focus retombe sur <body> (le bouton ▾ qui a
+          déclenché le GET vient d'être retiré par le swap outerHTML). A11y
+          clavier / lecteur d'écran : on atterrit sur le <select>. -#}
+      <select name="valeur"
+              autofocus
+              aria-label="État de {{ cote }}"
+              hx-post="/item/{{ cote }}/etat?fonds={{ fonds_cote }}"
+              hx-vals='{"version": {{ version }}}'
+              hx-target="#etat-cell-{{ item_id }}"
+              hx-swap="outerHTML"
+              hx-trigger="change"
+              style="font-size:12px;padding:2px 4px;border:1px solid #d1d5db;
+                     border-radius:3px;background:white;">
+        {%- for code, libelle in etats_options %}
+        <option value="{{ code }}" {{ 'selected' if code == etat else '' }}>{{ libelle }}</option>
+        {%- endfor %}
+      </select>
+      <button type="button"
+              title="Annuler"
+              aria-label="Annuler le changement d'état"
+              hx-get="/item/{{ cote }}/etat?fonds={{ fonds_cote }}&amp;annuler=1"
+              hx-target="#etat-cell-{{ item_id }}"
+              hx-swap="outerHTML"
+              style="padding:0 4px;font-size:13px;color:#9ca3af;background:transparent;
+                     border:none;cursor:pointer;line-height:1;">
+        &times;
+      </button>
+    </span>
+  </td>
+{%- endmacro %}

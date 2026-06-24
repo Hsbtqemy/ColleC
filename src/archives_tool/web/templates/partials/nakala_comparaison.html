@@ -1,0 +1,67 @@
+{# Fragment HTMX : diagnostic de synchronisation fichiers item ↔ Nakala.
+   Reçoit `rapport` (RapportComparaisonFichiers | None), `erreur` (str | None),
+   `cote`, `fonds`. Lecture seule — pré-visualise un push, ne modifie rien. #}
+
+{%- macro _ligne(libelle, fichiers, couleur, alerte=false) -%}
+  {%- if fichiers -%}
+  <li style="padding:3px 0;font-size:12px;color:#374151;">
+    <span aria-hidden="true" style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:{{ couleur }};margin-right:6px;"></span>
+    {%- if alerte %}<span aria-hidden="true" style="color:var(--state-warn);">⚠ </span>{% endif -%}
+    <span style="font-weight:500;">{{ libelle }}</span>
+    <span class="font-tabular" style="color:#6b7280;">· {{ fichiers | length }}</span>
+    <div style="color:#9ca3af;font-size:11px;margin-left:13px;line-height:1.5;">
+      {%- for f in fichiers[:5] -%}
+        {{ f.nom_fichier }}{% if not loop.last %} · {% endif %}
+      {%- endfor -%}
+      {%- if fichiers | length > 5 %} … (+{{ fichiers | length - 5 }}){% endif -%}
+    </div>
+  </li>
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- if erreur -%}
+  <p style="font-size:12px;color:#9ca3af;font-style:italic;margin:0;">{{ erreur }}</p>
+{%- elif rapport -%}
+  {# Statut du dépôt — un push sur un dépôt publié casse les citations. #}
+  <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">
+    Dépôt
+    {%- if rapport.statut_distant == 'published' %}
+      <span style="color:#991b1b;font-weight:500;">publié</span> — un push fichiers casserait les DOIs DataCite mintés.
+    {%- else %}
+      <span style="font-weight:500;">{{ rapport.statut_distant or 'pending' }}</span>.
+    {%- endif %}
+  </div>
+
+  {%- if rapport.aucun_changement -%}
+    <p style="font-size:12px;color:#065f46;margin:0;display:flex;align-items:center;gap:6px;">
+      <span aria-hidden="true" style="width:7px;height:7px;border-radius:9999px;background:var(--state-ok);"></span>
+      Fichiers synchronisés avec Nakala — un push serait sans effet.
+    </p>
+    {%- if rapport.inchanges or rapport.nakala_only_sans_local %}
+    <p class="font-tabular" style="font-size:11px;color:#9ca3af;margin:6px 0 0;">
+      {{ rapport.inchanges | length }} inchangé(s) · {{ rapport.nakala_only_sans_local | length }} Nakala-only
+    </p>
+    {%- endif %}
+  {%- else -%}
+    <ul style="margin:0;padding:0;list-style:none;">
+      {{ _ligne("À ajouter (upload au push)", rapport.nouveaux, "var(--state-info)") }}
+      {{ _ligne("Modifiés (ré-upload)", rapport.modifies, "var(--state-warn)") }}
+      {{ _ligne("Transcriptions modifiées", rapport.descriptions_divergentes, "var(--state-info)") }}
+      {{ _ligne("Distants sans local (retirés au push sauf --retirer-orphelins)", rapport.orphelins_distants, "var(--state-err)", alerte=true) }}
+      {{ _ligne("Références fantômes (re-rapatrier l'item)", rapport.fichiers_fantomes, "var(--state-err)", alerte=true) }}
+      {{ _ligne("À retirer (corbeille)", rapport.non_actifs_a_retirer, "var(--state-neutral)") }}
+    </ul>
+    {%- if rapport.inchanges or rapport.nakala_only_sans_local %}
+    <p class="font-tabular" style="font-size:11px;color:#9ca3af;margin:6px 0 0;">
+      {{ rapport.inchanges | length }} inchangé(s) · {{ rapport.nakala_only_sans_local | length }} Nakala-only (préservés)
+    </p>
+    {%- endif %}
+  {%- endif -%}
+
+  <p style="font-size:11px;color:#9ca3af;margin:10px 0 0;border-top:1px solid rgba(0,0,0,0.06);padding-top:8px;">
+    Diagnostic en lecture seule. Le push effectif se fait en CLI :
+    <span class="font-mono" style="font-size:10px;">archives-tool nakala pousser-fichiers {{ cote }} --fonds {{ fonds }}</span>
+  </p>
+{%- else -%}
+  <p style="font-size:12px;color:#9ca3af;font-style:italic;margin:0;">Aucun résultat.</p>
+{%- endif -%}

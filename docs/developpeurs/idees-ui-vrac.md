@@ -45,7 +45,12 @@
 - **Quick actions au survol des lignes.** Icônes d'actions
   secondaires apparaissent au hover (dupliquer, modifier l'état,
   étiqueter, supprimer). Peu de code HTMX, gain UX
-  disproportionné.
+  disproportionné. **Modifier l'état : ✅ livré (2026-06-22)** —
+  `<select>` inline au survol du tableau de collection
+  (`routes/etat_rapide.py`). Les autres restent différés :
+  étiqueter (demande une colonne étiquette dans le tableau),
+  dupliquer (service inexistant), supprimer (contredirait le
+  gating par recopie de cote).
 
 ## Cohérences à pousser dans l'existant
 

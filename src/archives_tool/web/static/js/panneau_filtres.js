@@ -10,8 +10,26 @@
   const drawer = document.getElementById("panneau-filtres");
   if (!drawer) return;
 
-  function ouvrir() { drawer.dataset.ouvert = "true"; }
-  function fermer() { drawer.dataset.ouvert = "false"; }
+  // Libération du focus-trap actif (null quand le drawer est fermé).
+  let libererTrap = null;
+
+  function ouvrir() {
+    drawer.dataset.ouvert = "true";
+    // `inert` (posé fermé dans le template) retire le drawer hors-écran
+    // de l'ordre de tabulation ; on le réactive à l'ouverture.
+    drawer.removeAttribute("inert");
+    if (window.ColleCFocusTrap) {
+      libererTrap = window.ColleCFocusTrap.activer(drawer);
+    }
+  }
+  function fermer() {
+    drawer.dataset.ouvert = "false";
+    if (libererTrap) {
+      libererTrap();
+      libererTrap = null;
+    }
+    drawer.setAttribute("inert", "");
+  }
 
   // Delegation sur document plutot qu'attache par-bouton : HTMX
   // remplace `#tableau-items` apres un tri/pagination, ce qui efface

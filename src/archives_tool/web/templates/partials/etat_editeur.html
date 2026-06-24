@@ -1,0 +1,4 @@
+{# Fragment d'édition de la cellule État (<select> des 5 états + ✕).
+   Servi par la route GET (ouverture de l'éditeur). #}
+{%- from 'components/cellule_etat.html' import cellule_etat_editeur -%}
+{{- cellule_etat_editeur(item_id, cote, fonds_cote, etat, version, etats_options) -}}

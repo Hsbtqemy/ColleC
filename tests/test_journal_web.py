@@ -225,7 +225,9 @@ def test_page_journal_surface_une_suppression_reelle(base_demo: Path) -> None:
     assert "fonds" in page.text
 
 
-def test_page_journal_accessible_en_lecture_seule(base_demo_lecture_seule: Path) -> None:
+def test_page_journal_accessible_en_lecture_seule(
+    base_demo_lecture_seule: Path,
+) -> None:
     """La page est purement consultative : elle fonctionne en lecture seule."""
     client = TestClient(app)
     r = client.get("/journal")

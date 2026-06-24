@@ -123,11 +123,13 @@ des états module-globaux).
 ## Chantier UI⁺ — Surfaçage de l'existant & polissage du front (interleavable)
 
 **Origine** : point d'approfondissement du 2026-06-22 (revue de l'UI/front +
-cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **mini-chantier
-resserré LIVRÉ (2026-06-22, sur `dev`)** — Panier A (traçabilité) + Panier B
-(inline déjà fait, autocomplete, étiquettes + filtrage). **Reste optionnel** :
-QA / comparer-fichiers (A), quick-actions / hygiène transversale (B), Panier C.
-Sans dépendance dure (interleavable avec/avant le Chantier 2).
+cartographie des écarts CLI ↔ UI, 2 explorations). **Statut** : **Paniers A et
+B entièrement livrés** (mini-chantier resserré 2026-06-22 + hygiène
+transversale B-hyg-1/2/3 le 2026-06-24, sur `dev`) — traçabilité, inline +
+autocomplete, étiquettes + filtrage, QA / comparer-fichiers, quick-actions,
+tokens CSS, a11y de base, états vides. **Reste optionnel** : a11y large +
+Panier C (net-new). Sans dépendance dure (interleavable avec/avant le
+Chantier 2).
 
 !!! success "Livré (chantier UI⁺, 2026-06-22)"
     **Lot 1** page `/journal` (suppressions + push Nakala + renommages) ·
@@ -166,8 +168,8 @@ des **pages read-only** à brancher.
 | --- | --- | --- | --- | --- |
 | Vues **journal/audit** : suppressions (`OperationEntite`), push Nakala (`OperationPushNakala`), historique renommage | `montrer suppressions` / `montrer push-nakala` / `renommer historique` | Traçabilité (pilier) ; prépare V1.0 | Faible | ✅ Lot 1 |
 | Onglet **« Historique »** sur l'item (`ModificationItem`) | journal déjà alimenté | Transparence « qui/quoi/quand » | Faible | ✅ Lot 2 |
-| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ⏳ reste |
-| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ⏳ reste |
+| Page **QA `controler`** (santé base, read-only) | `qa/orchestrateur` | Nettoyage = opération de 1er ordre | Moyen | ✅ page `/controler` (base \| fonds) |
+| **`comparer-fichiers` Nakala** en diagnostic sur la fiche item | `nakala_fichiers.comparer_fichiers_item` | Pré-visualiser un push, non destructif | Moyen | ✅ lazy-load HTMX sur la fiche (lecture seule) |
 
 **Resté CLI volontairement** (principe n°6) : renommage batch, dérivés en
 masse, import profil YAML complet, push de fichiers binaires Nakala — un bouton
@@ -179,8 +181,8 @@ masse, import profil YAML complet, push de fichiers binaires Nakala — un bouto
 | --- | --- | --- | --- | --- |
 | **Édition inline étendue** (tous champs simples fonds/collection) + **autocomplete** des valeurs existantes | mécanique existante à propager ; `idees-ui-vrac` favori #2 | Quotidien | Faible | ✅ Lot 3 (inline déjà fait + autocomplete livré) |
 | **Étiquettes colorées** libres (≠ `etat_catalogage`) + **filtrage** | marquage workflow ; table dédiée (jamais exportée) + filtre drawer ; favori #1 | Quotidien | Faible-moyen | ✅ Lot 4 + 4c |
-| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ⏳ reste |
-| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ⏳ reste (a11y de base posée sur les pages neuves) |
+| **Quick actions au survol** des lignes | petit, visible ; favori #3 | Confort | Faible | ✅ changement d'état inline (`<select>` au survol du tableau collection) |
+| **Hygiène transversale** : états vides explicites, pagination visible, validation client légère, **tokens CSS** (couleurs en dur → variables), **a11y de base** (landmarks, aria tableaux/pagination, focus-trap modales) | passe « fonctionnel → poli » ; a11y ~40 % | Large, diffus | Faible→moyen par lots | ✅ B-hyg-1/2/3 (2026-06-24) |
 
 ### Panier C — Net-new ambitieux (différer, souvent meilleur après l'OCR)
 
@@ -195,11 +197,69 @@ relèvent du **Chantier 5** / `idees-ui-vrac.md`.
   + Panier B (inline déjà fait, autocomplete, étiquettes + filtrage) — est
   livré. Il comblait le trou le plus visible (la traçabilité existait en base
   mais était invisible dans le navigateur) et prépare la confiance V1.0.
-- **Reste, opportuniste** : QA `controler` + diagnostic `comparer-fichiers`
-  (Panier A) ; quick-actions + hygiène transversale / a11y / tokens CSS
+- **Complément (2026-06-22)** : **quick-action « changement d'état inline »**
+  au survol du tableau de collection — déclencheur ▾ discret (`group-hover`)
+  → éditeur `<select>` des 5 états en HTMX (GET ouvre / lit la version
+  fraîche, POST applique via `modifier_item` donc journalisé + verrou
+  optimiste, GET `?annuler` reswap le badge). Workflow de vérification en
+  série sans ouvrir chaque fiche. Masqué en lecture seule (trigger caché +
+  POST bloqué 423). Conflit de version → badge rechargé (pas de 409
+  invisible). `routes/etat_rapide.py` + `components/cellule_etat.html` ;
+  16 tests. **Reste du favori #3** (étiqueter / dupliquer / supprimer au
+  survol) volontairement différé : étiqueter demande une colonne étiquette
+  dans le tableau, dupliquer un service inexistant, supprimer contredirait
+  le gating par recopie de cote.
+- **Panier A complété (2026-06-22)** : **page QA `/controler`** (bilan de
+  santé, base \| fonds, lecture seule — surface les 14 contrôles `qa`) +
+  **diagnostic `comparer-fichiers`** en lazy-load HTMX sur la fiche item
+  (pré-visualise un push : nouveaux / modifiés / orphelins / fantômes /
+  transcriptions ; appel réseau à la demande, best-effort sans 500). Panier A
+  est désormais **entièrement livré**.
+- **Reste, opportuniste** : hygiène transversale / a11y / tokens CSS
   (Panier B) ; Panier C après l'OCR. Aucun n'est bloquant.
 - **Hors scope ici** : l'isolation per-user des états module-globaux reste un
   **prérequis V1.0 (Chantier 3)**, pas du polish UI (cf. § Transverse).
+
+#### Panier B « hygiène transversale » — ✅ LIVRÉ (2026-06-24)
+
+**Panier A : terminé.** **Panier B : terminé** — les trois lots d'hygiène
+transversale livrés en une passe (commits `f2021fd`, `81b1b58`, `d4ee5f2`
+sur `dev`) :
+
+- **B-hyg-1 — Tokens CSS ✅.** Les 5 couleurs sémantiques (~74 hex dupliqués
+  en styles inline, dicts Jinja et chaînes JS) centralisées en custom
+  properties CSS dans `input.css` `:root` (`--state-info/warn/ok/err/neutral`) ;
+  les tokens Tailwind `state-*` pointent dessus → source unique partagée par
+  les classes utilitaires ET les usages inline/JS. Changer une couleur = une
+  ligne. Zéro changement visuel.
+- **B-hyg-2 — a11y de base ✅.** Lien d'évitement (`.skip-link`) →
+  `<main id="contenu">` ; `<nav aria-label="Navigation principale">` (header,
+  `class="contents"` = zéro impact flex) ; `scope="col"` + `<caption>` sr-only
+  sur `tableau_items`/`tableau_collections` ; `<nav aria-label="Pagination">`.
+  **Focus-trap** : nouvel utilitaire partagé `static/js/focus_trap.js`
+  (`window.ColleCFocusTrap`) réutilisé par les deux overlays — drawer filtres
+  (`role=dialog` + `inert` à l'état fermé) et modale colonnes (`role=dialog`,
+  focus rendu au déclencheur à la fermeture).
+- **B-hyg-3 — états vides ✅.** Ligne d'état vide for-else sur `tableau_items`
+  (cas filtres-actifs-sans-résultat, avant : corps vide muet) et
+  `tableau_collections` ; état vide + CTA import + a11y sur `fonds_liste`. La
+  validation client (`required`) était déjà fournie par les macros
+  `_champ_form` ; la pagination déjà visible (compteur + nav). 4 tests
+  (`test_etats_vides`).
+
+Reste optionnel/opportuniste : la couverture a11y plus large (tous les
+formulaires hérités, contraste, gestion du focus sur swaps HTMX) et les tokens
+CSS non-sémantiques (gris, chips) — non bloquants, à puiser au gré des
+opportunités.
+
+**Panier C : différé** (command palette, preview pane, vue Avancement
+consolidée `plan-de-chantier`, modes comparaison/diaporama) — meilleur après
+le **Chantier 2 (OCR / recherche plein-texte)**, dont il décuple la valeur.
+Relève du **Chantier 5** / [`idees-ui-vrac.md`](idees-ui-vrac.md).
+
+**Alternative au polish** : basculer directement sur le **Chantier 2 (OCR
+text-first)** — le prochain saut de valeur dans l'ordre des dépendances. Le
+Panier B reste opportuniste et interleavable.
 
 **Renvois** : `idees-ui-vrac.md` (paniers B/C), `plan-de-chantier.md` (vue
 Avancement), `annotations-image-future.md` (l'autocomplete vocab y prépare le

@@ -70,7 +70,7 @@
           <td style="padding:8px 10px;text-align:right;color:#6b7280;">{{ c.ordre }}</td>
           <td style="padding:8px 10px;">
             {% if c.actif %}
-              <span style="color:#639922;">actif</span>
+              <span style="color:var(--state-ok);">actif</span>
             {% else %}
               <span style="color:#9ca3af;font-style:italic;">déprécié</span>
             {% endif %}
@@ -99,7 +99,7 @@
                         style="display:inline;">
                     <button type="submit"
                             class="rounded hover:bg-gray-50"
-                            style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#378ADD;">
+                            style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:var(--state-info);">
                       Réactiver
                     </button>
                   </form>
@@ -121,7 +121,7 @@
                       onsubmit="return confirm('Supprimer definitivement le champ « {{ c.cle }} » ?\n\nLes valeurs deja saisies sur les items SURVIVENT — elles retomberont en cle libre dans le cartouche. Reversible en recreant un champ avec la meme cle.\n\nPreferer Deprecier dans la majorite des cas.');">
                   <button type="submit"
                           class="rounded hover:bg-red-50"
-                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:#E24B4A;">
+                          style="padding:3px 8px;font-size:12px;border:1px solid rgba(0,0,0,0.10);color:var(--state-err);">
                     Supprimer
                   </button>
                 </form>

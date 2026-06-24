@@ -178,9 +178,7 @@ def etiqueter_item(
     if db.get(Item, item_id) is None:
         raise EtiquetteIntrouvable(f"item {item_id}")
     etiquette_par_id(db, etiquette_id)  # 404 si étiquette inconnue
-    existe = db.get(
-        ItemEtiquette, {"item_id": item_id, "etiquette_id": etiquette_id}
-    )
+    existe = db.get(ItemEtiquette, {"item_id": item_id, "etiquette_id": etiquette_id})
     if existe is None:
         db.add(
             ItemEtiquette(
@@ -192,9 +190,7 @@ def etiqueter_item(
 
 def retirer_etiquette_item(db: Session, item_id: int, etiquette_id: int) -> None:
     """Détache une étiquette d'un item (idempotent : no-op si absente)."""
-    lien = db.get(
-        ItemEtiquette, {"item_id": item_id, "etiquette_id": etiquette_id}
-    )
+    lien = db.get(ItemEtiquette, {"item_id": item_id, "etiquette_id": etiquette_id})
     if lien is not None:
         db.delete(lien)
         db.commit()

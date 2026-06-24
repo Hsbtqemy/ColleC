@@ -110,7 +110,9 @@ def composer_page_controle(
     if fonds is not None:
         fonds_id = fonds.id
         cote_courante = fonds.cote
-        scope_label = f"Fonds {fonds.cote}" + (f" — {fonds.titre}" if fonds.titre else "")
+        scope_label = f"Fonds {fonds.cote}" + (
+            f" — {fonds.titre}" if fonds.titre else ""
+        )
 
     perimetre = composer_perimetre(db, fonds_id=fonds_id)
     rapport = executer_controles(db, perimetre, racines=racines)

@@ -124,7 +124,9 @@ def test_fichier_cascade_sql_au_delete_item_bulk(engine) -> None:
         )
         s.add(fichier)
         s.flush()
-        s.add(AnnotationRegion(fichier_id=fichier.id, selecteur="xywh=0,0,1,1", corps=[]))
+        s.add(
+            AnnotationRegion(fichier_id=fichier.id, selecteur="xywh=0,0,1,1", corps=[])
+        )
         s.commit()
         item_id, fichier_id = item.id, fichier.id
 

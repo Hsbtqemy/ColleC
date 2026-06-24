@@ -1195,8 +1195,8 @@ def page_item_fiche(
     # Étiquettes de chantier (Lot 4b) : rendu serveur pour être glanceable
     # (modifié ensuite en HTMX). Hors `composer_fiche_item` pour ne pas
     # alourdir son budget SQL documenté.
-    etiquettes_courantes, etiquettes_disponibles = (
-        etiquettes_courantes_et_disponibles(db, fiche.item.id)
+    etiquettes_courantes, etiquettes_disponibles = etiquettes_courantes_et_disponibles(
+        db, fiche.item.id
     )
     return templates.TemplateResponse(
         request,

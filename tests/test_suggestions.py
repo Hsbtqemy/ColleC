@@ -56,7 +56,9 @@ def test_suggerer_valeurs_distinct_trie_et_ignore_vides(session) -> None:
 def test_suggerer_valeurs_filtre_prefixe(session) -> None:
     _fonds_avec_editeur(session, "A", "Éditions du Square")
     _fonds_avec_editeur(session, "C", "Hara-Kiri SARL")
-    vals = suggerer_valeurs(session, type_entite="fonds", champ="editeur", prefixe="hara")
+    vals = suggerer_valeurs(
+        session, type_entite="fonds", champ="editeur", prefixe="hara"
+    )
     assert vals == ["Hara-Kiri SARL"]  # insensible à la casse
 
 

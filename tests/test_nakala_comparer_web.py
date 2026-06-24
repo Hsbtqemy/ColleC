@@ -33,7 +33,11 @@ class _FakeClient:
         pass
 
     def lire_depot(self, doi: str) -> dict:
-        return {"status": self.STATUS, "files": list(self.FILES), "modDate": "2026-01-01"}
+        return {
+            "status": self.STATUS,
+            "files": list(self.FILES),
+            "modDate": "2026-01-01",
+        }
 
     def fermer(self) -> None:
         pass

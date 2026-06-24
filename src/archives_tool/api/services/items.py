@@ -510,9 +510,7 @@ def _appliquer_filtres_items(
         # étiquettes sélectionnées (cohérent avec etats/langues en `.in_()`).
         stmt = stmt.where(
             Item.id.in_(
-                select(ItemEtiquette.item_id).where(
-                    ItemEtiquette.etiquette_id.in_(ids)
-                )
+                select(ItemEtiquette.item_id).where(ItemEtiquette.etiquette_id.in_(ids))
             )
         )
         filtres["etiquettes"] = ids

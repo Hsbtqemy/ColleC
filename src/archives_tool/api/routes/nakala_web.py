@@ -462,9 +462,7 @@ def citation_item(
 # ---- Item : diagnostic synchronisation fichiers (P3+b, lecture seule) ---
 
 
-@router.get(
-    "/nakala/item/{cote}/comparer-fichiers", response_class=HTMLResponse
-)
+@router.get("/nakala/item/{cote}/comparer-fichiers", response_class=HTMLResponse)
 def comparer_fichiers_web(
     cote: str,
     request: Request,
@@ -513,7 +511,12 @@ def comparer_fichiers_web(
         request,
         "partials/nakala_comparaison.html",
         _contexte_base(
-            nom_base, utilisateur, rapport=rapport, erreur=erreur, cote=cote, fonds=fonds
+            nom_base,
+            utilisateur,
+            rapport=rapport,
+            erreur=erreur,
+            cote=cote,
+            fonds=fonds,
         ),
     )
 

@@ -89,7 +89,9 @@ def test_creer_etiquette_couleur_hors_palette(session: Session) -> None:
 
 
 def test_creer_etiquette_doublon_insensible_casse(session: Session) -> None:
-    creer_etiquette(session, FormulaireEtiquette(libelle="Litigieux", couleur=COULEUR_DEFAUT))
+    creer_etiquette(
+        session, FormulaireEtiquette(libelle="Litigieux", couleur=COULEUR_DEFAUT)
+    )
     with pytest.raises(EtiquetteInvalide):
         creer_etiquette(
             session, FormulaireEtiquette(libelle="litigieux", couleur=COULEUR_DEFAUT)
@@ -111,21 +113,25 @@ def test_modifier_etiquette(session: Session) -> None:
 
 def test_etiqueter_item_idempotent(session: Session) -> None:
     item = _item(session)
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item.id, et.id, ajoute_par="Marie")
     etiqueter_item(session, item.id, et.id)  # 2e fois → pas de doublon
     assert etiquettes_de_item(session, item.id) == [et]
     n = session.scalar(
-        select(func.count()).select_from(ItemEtiquette).where(
-            ItemEtiquette.item_id == item.id
-        )
+        select(func.count())
+        .select_from(ItemEtiquette)
+        .where(ItemEtiquette.item_id == item.id)
     )
     assert n == 1
 
 
 def test_retirer_etiquette_idempotent(session: Session) -> None:
     item = _item(session)
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item.id, et.id)
     retirer_etiquette_item(session, item.id, et.id)
     retirer_etiquette_item(session, item.id, et.id)  # no-op
@@ -143,7 +149,9 @@ def test_etiqueter_item_etiquette_inconnue(session: Session) -> None:
 
 def test_supprimer_etiquette_retire_les_etiquetages(session: Session) -> None:
     item = _item(session)
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item.id, et.id)
     supprimer_etiquette(session, et.id)
     assert etiquettes_de_item(session, item.id) == []
@@ -154,15 +162,17 @@ def test_supprimer_item_retire_les_etiquetages_mais_garde_letiquette(
     session: Session,
 ) -> None:
     item = _item(session)
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item.id, et.id)
     item_id = item.id
     supprimer_item(session, item_id)
     assert (
         session.scalar(
-            select(func.count()).select_from(ItemEtiquette).where(
-                ItemEtiquette.item_id == item_id
-            )
+            select(func.count())
+            .select_from(ItemEtiquette)
+            .where(ItemEtiquette.item_id == item_id)
         )
         == 0
     )
@@ -176,7 +186,9 @@ def test_supprimer_fonds_avec_item_etiquete_cascade(session: Session) -> None:
     chemin (`Fonds.items` delete-orphan)."""
     item = _item(session)
     fonds_id = item.fonds_id
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item.id, et.id)
     supprimer_fonds(session, fonds_id)  # ne doit pas lever
     assert session.scalar(select(func.count()).select_from(ItemEtiquette)) == 0
@@ -196,7 +208,9 @@ def test_lister_items_collection_filtre_par_etiquette(session: Session) -> None:
     item1 = session.scalar(
         select(Item).where(Item.cote == "HK-1", Item.fonds_id == fonds.id)
     )
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     etiqueter_item(session, item1.id, et.id)
 
     miroir = fonds.collection_miroir
@@ -210,7 +224,9 @@ def test_lister_items_collection_filtre_par_etiquette(session: Session) -> None:
 def test_parser_filtres_etiquette_valide_contre_options(session: Session) -> None:
     """Le parser ne garde que les ids d'étiquette présents dans les options
     (hors-options et non-entiers ignorés silencieusement)."""
-    et = creer_etiquette(session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT))
+    et = creer_etiquette(
+        session, FormulaireEtiquette(libelle="Relu", couleur=COULEUR_DEFAUT)
+    )
     options = OptionsFiltresCollection(etiquettes=(et,))
     filtres = parser_filtres_collection(
         etat=None,
@@ -352,9 +368,7 @@ def test_page_etiquettes_doublon_renvoie_400(base_demo: Path) -> None:
 def test_etiqueter_et_detacher_via_routes(base_demo: Path) -> None:
     cote, fonds_cote = _premier_item(base_demo)
     with _session_demo(base_demo) as db:
-        et = creer_etiquette(
-            db, FormulaireEtiquette(libelle="Relu", couleur="#639922")
-        )
+        et = creer_etiquette(db, FormulaireEtiquette(libelle="Relu", couleur="#639922"))
         et_id = et.id
 
     client = TestClient(app)

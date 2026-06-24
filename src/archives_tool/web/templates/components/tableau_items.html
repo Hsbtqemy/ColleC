@@ -241,6 +241,19 @@
           </td>
           {%- endif %}
         </tr>
+      {%- else %}
+        {#- Aucun item : message explicite plutôt qu'un corps de tableau
+            vide. Distingue « collection vide » de « filtres trop stricts ». -#}
+        <tr>
+          <td colspan="{{ (ctx.colonnes | length) + (1 if ctx.url_retirer_template else 0) }}"
+              style="padding:32px 12px;text-align:center;font-size:13px;color:#9ca3af;font-style:italic;">
+            {%- if ctx.compteur_filtres and ctx.compteur_filtres != 'aucun' -%}
+              Aucun item ne correspond aux filtres actifs.
+            {%- else -%}
+              Aucun item dans cette collection.
+            {%- endif -%}
+          </td>
+        </tr>
       {%- endfor %}
       </tbody>
     </table>

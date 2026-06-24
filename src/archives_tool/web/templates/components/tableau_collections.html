@@ -101,6 +101,12 @@
           {{ cellule_modifie(c.modifie_par, c.modifie_depuis) }}
         </td>
       </tr>
+    {%- else %}
+      <tr>
+        <td colspan="6" style="padding:32px 14px;text-align:center;font-size:13px;color:#9ca3af;font-style:italic;">
+          Aucune collection.
+        </td>
+      </tr>
     {%- endfor %}
     </tbody>
   </table>

@@ -366,13 +366,18 @@ interne, consommation **aval** ».
 ## Transverse / continu
 
 - **Dette technique** (relevée à la revue générale 2026-06-18) :
-  - **Isolation per-user des états module-globaux** — `sharedocs_session
-    ._session` (creds ShareDocs en RAM) et `nakala_depot_jobs._JOBS` /
-    `_id_actuel` sont partagés par toutes les requêtes. Inoffensif en
-    mono-utilisateur, mais **c'est le refactor V1.0 le plus structurant** :
-    ces registres doivent devenir per-utilisateur/session **avant** tout
-    déploiement multi-utilisateurs (Chantier 3). Déjà anticipé dans les
-    commentaires de code.
+  - **Isolation per-user des états module-globaux** — **✅ structure livrée
+    (2026-06-25)**. Les trois états serveur en mémoire (`sharedocs_session`
+    creds RAM, gardes mono-job de `nakala_depot_jobs` et `sharedocs_jobs`)
+    sont désormais **keyés par owner** : `sharedocs_session` = `dict[owner,
+    creds]` (la fuite cross-user était là), gardes `_id_actuel` =
+    `dict[owner, job_id]` (un user ne bloque plus les autres). Couture
+    `deps.get_owner_key()` → constante `"local"` aujourd'hui ; **l'activation
+    multi-user au Chantier 3 ne sera qu'une ligne** (renvoyer l'id de session)
+    sans toucher aux services (*resolver-ready*, aligné sur les clients creds).
+    8 tests d'isolation. **Reste V1.0** : le coffre chiffré multi-comptes +
+    l'auth durcie pour les secrets (cf. § *Authentification* et la doctrine
+    secrets ci-dessous) — distinct de cette couture d'état.
   - **Garde mono-job non extensible** — `nakala_depot_jobs._id_actuel` ne
     protège que le dépôt collection. À revoir au **Chantier 2** : l'OCR /
     extraction texte sera une 2ᵉ tâche de fond mutant des `Fichier`/`OcrPage`

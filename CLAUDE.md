@@ -2901,17 +2901,21 @@ dédiée avec URI + label, pas en dur dans le code.
       du verrou. **Risque** : activer `version_id_col` casse les tests
       qui n'incrémentent pas `version` à l'écriture — audit complet
       requis avant. Voir pattern dans `models/item.py:46-47`.
-- [ ] **Isolation per-user des états module-globaux (prérequis V1.0)** —
-      relevé à la revue générale 2026-06-18. `sharedocs_session._session`
-      (identifiants ShareDocs en RAM) et `nakala_depot_jobs._JOBS` /
-      `_id_actuel` (registre des tâches de fond) sont des **module-globaux
-      partagés par toutes les requêtes**. Inoffensif en mono-utilisateur
-      local (le mode actuel), mais **un déploiement multi-utilisateurs
-      exposerait les creds/jobs d'un utilisateur à tous les autres** : ces
-      registres doivent devenir per-utilisateur/session avant le Chantier 3.
-      C'est **le refactor V1.0 le plus structurant** côté état serveur.
-      Détail + voisinage (garde mono-job, doctrine secrets) dans
-      [`roadmap.md`](docs/developpeurs/roadmap.md) § *Transverse / continu*.
+- [x] **Isolation per-user des états module-globaux (prérequis V1.0)** —
+      **structure livrée (2026-06-25)**. Les trois états serveur en mémoire
+      (`sharedocs_session` creds RAM, `nakala_depot_jobs` + `sharedocs_jobs`
+      gardes mono-job) sont désormais **keyés par owner** : `sharedocs_session`
+      passe d'un singleton à `dict[owner, creds]` (la vraie fuite de
+      confidentialité cross-user), et la garde `_id_actuel` des deux runners
+      devient `dict[owner, job_id]` (un user ne bloque plus les autres ;
+      `_JOBS` reste keyé par UUID non devinable). La couture
+      `deps.get_owner_key()` renvoie la constante `OWNER_DEFAUT = "local"`
+      aujourd'hui (mode mono-utilisateur, comportement identique) ; les routes
+      la passent en `Depends`. **Activation multi-user (Chantier 3) = une
+      ligne** : faire renvoyer à `get_owner_key()` l'id de session courant,
+      sans toucher aux services (pattern *resolver-ready*). Tests d'isolation :
+      `tests/test_isolation_owner.py` (8). Doctrine secrets / coffre chiffré
+      multi-comptes restent V1.0 (cf. `deploiement-future.md`).
 - [x] **Tester `alembic downgrade` dans la CI** — **résolu passe 26
       P3+c.2** : 2 nouveaux tests dans `tests/test_migration.py` :
       `test_migration_downgrade_apres_refonte_v090_puis_upgrade_head_est_idempotent`

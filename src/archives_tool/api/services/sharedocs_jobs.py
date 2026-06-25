@@ -39,9 +39,13 @@ from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.external.sharedocs import ClientShareDocs
 from archives_tool.models import Item
 
+#: Défaut en mode local — réplique `deps.OWNER_DEFAUT` (ce module n'importe
+#: pas `deps` pour éviter un cycle). Garder alignés.
+OWNER_DEFAUT = "local"
+
 
 class JobConcurrent(Exception):
-    """Un autre import ShareDocs est déjà actif (``_id_actuel`` posé)."""
+    """Un autre import ShareDocs est déjà actif pour cet owner."""
 
 
 #: Cycle de vie d'un job : ``en_cours`` → ``termine`` | ``echec`` |
@@ -60,6 +64,7 @@ class EtatJobImport:
     racine: str
     chemin_retour: str  # dossier ShareDocs d'où l'import a été lancé
     total: int  # nombre de fichiers à importer (constant)
+    owner: str = OWNER_DEFAUT  # clé d'isolation (garde mono-job per-owner)
     chemins_distants: list[str] = field(default_factory=list)  # pour « Reprendre »
     fonds_cree: bool = False  # le fonds cible a été créé à la volée
     item_cree: bool = False  # l'item cible a été créé à la volée
@@ -78,7 +83,9 @@ class EtatJobImport:
 
 _lock = threading.Lock()
 _JOBS: dict[str, EtatJobImport] = {}
-_id_actuel: str | None = None
+#: owner -> job_id actif. Garde mono-job **per-owner** (en local, un seul
+#: owner ``OWNER_DEFAUT``). `_JOBS` reste keyé par UUID.
+_id_actuel: dict[str, str] = {}
 
 
 def lire_etat_job(job_id: str) -> EtatJobImport | None:
@@ -92,10 +99,10 @@ def lire_etat_job(job_id: str) -> EtatJobImport | None:
         return copy.deepcopy(etat) if etat is not None else None
 
 
-def est_job_actif() -> bool:
-    """True si un import ShareDocs est actuellement en cours."""
+def est_job_actif(*, owner: str = OWNER_DEFAUT) -> bool:
+    """True si un import ShareDocs est en cours pour cet owner."""
     with _lock:
-        return _id_actuel is not None
+        return owner in _id_actuel
 
 
 def reserver_job(
@@ -107,18 +114,20 @@ def reserver_job(
     chemins_distants: Sequence[str],
     fonds_cree: bool = False,
     item_cree: bool = False,
+    owner: str = OWNER_DEFAUT,
 ) -> str:
-    """Réserve atomiquement un job_id et pose la garde anti-concurrent.
+    """Réserve atomiquement un job_id et pose la garde anti-concurrent
+    **pour cet owner**.
 
-    Lève ``JobConcurrent`` si un import ShareDocs tourne déjà.
+    Lève ``JobConcurrent`` si un import ShareDocs tourne déjà pour ``owner``.
     """
-    global _id_actuel
     with _lock:
-        if _id_actuel is not None:
-            actif = _JOBS.get(_id_actuel)
+        actuel = _id_actuel.get(owner)
+        if actuel is not None:
+            actif = _JOBS.get(actuel)
             raise JobConcurrent(
                 f"Un import ShareDocs est déjà en cours "
-                f"(job {_id_actuel}, statut={actif.statut if actif else '?'})."
+                f"(job {actuel}, statut={actif.statut if actif else '?'})."
             )
         job_id = uuid4().hex
         _JOBS[job_id] = EtatJobImport(
@@ -131,8 +140,9 @@ def reserver_job(
             chemins_distants=list(chemins_distants),
             fonds_cree=fonds_cree,
             item_cree=item_cree,
+            owner=owner,
         )
-        _id_actuel = job_id
+        _id_actuel[owner] = job_id
     return job_id
 
 
@@ -199,8 +209,12 @@ def executer_import_sharedocs(
     passés explicitement — jamais lus d'un global), capture toute exception
     en ``echec``, et libère ``_id_actuel`` dans le ``finally``.
     """
-    global _id_actuel
     rapport: RapportImportShareDocs | None = None
+    # Owner capturé depuis l'Etat (posé par reserver_job) pour libérer la
+    # garde du bon owner dans le finally.
+    with _lock:
+        _etat0 = _JOBS.get(job_id)
+        owner = _etat0.owner if _etat0 is not None else OWNER_DEFAUT
     engine = creer_engine(chemin_db)
     try:
         factory = creer_session_factory(engine)
@@ -254,13 +268,12 @@ def executer_import_sharedocs(
     finally:
         engine.dispose()
         with _lock:
-            if _id_actuel == job_id:
-                _id_actuel = None
+            if _id_actuel.get(owner) == job_id:
+                del _id_actuel[owner]
 
 
 def _reset_pour_tests() -> None:
-    """Réinitialise le registre + la garde (isolation des tests)."""
-    global _id_actuel
+    """Réinitialise le registre + les gardes (tous owners) — isolation tests."""
     with _lock:
         _JOBS.clear()
-        _id_actuel = None
+        _id_actuel.clear()

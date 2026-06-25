@@ -24,6 +24,7 @@ from archives_tool.api.deps import (
     get_config,
     get_db,
     get_nom_base,
+    get_owner_key,
     get_racines,
     get_utilisateur_courant,
 )
@@ -83,10 +84,13 @@ def _redirect_erreur(message: str) -> RedirectResponse:
     return RedirectResponse(f"/sharedocs?erreur={quote(message)}", status_code=303)
 
 
-def _client_session_ou_none(config: ConfigLocale) -> ClientShareDocs | None:
-    """Construit le client depuis les identifiants en RAM, ou None si non
-    connecté (ou base_url devenue hors allowlist — dérive de config)."""
-    ids = sharedocs_session.identifiants()
+def _client_session_ou_none(
+    config: ConfigLocale, owner: str
+) -> ClientShareDocs | None:
+    """Construit le client depuis les identifiants en RAM de l'owner, ou
+    None si non connecté (ou base_url devenue hors allowlist — dérive de
+    config)."""
+    ids = sharedocs_session.identifiants(owner=owner)
     if ids is None:
         return None
     try:
@@ -235,14 +239,15 @@ def page_sharedocs(
     racines=Depends(get_racines),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> HTMLResponse:
     """Page ShareDocs : formulaire de connexion si déconnecté, sinon le
     contenu du dossier `chemin` (navigation)."""
-    etat = sharedocs_session.etat_public()
+    etat = sharedocs_session.etat_public(owner=owner)
     # `identifiants()` est l'autorité (lecture atomique) : si une déconnexion
     # concurrente survient, `ids` est None → on retombe gracieusement sur le
     # formulaire (pas d'`assert` qui crasherait en 500, ni ne saute sous -O).
-    ids = sharedocs_session.identifiants()
+    ids = sharedocs_session.identifiants(owner=owner)
     entrees = None
     fil = None
     if ids is not None:
@@ -258,8 +263,8 @@ def page_sharedocs(
         except ShareDocsAuthRefusee:
             # Identifiants devenus invalides → on déconnecte et on repropose
             # le formulaire (sinon la page resterait coincée en erreur).
-            sharedocs_session.deconnecter()
-            etat = sharedocs_session.etat_public()
+            sharedocs_session.deconnecter(owner=owner)
+            etat = sharedocs_session.etat_public(owner=owner)
             erreur = erreur or "Identifiants ShareDocs refusés — reconnectez-vous."
         except ShareDocsInjoignable:
             erreur = erreur or "ShareDocs injoignable (réseau / timeout)."
@@ -333,6 +338,7 @@ def apercu_importer(
     racines=Depends(get_racines),
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> HTMLResponse | RedirectResponse:
     """Aperçu (dry-run) de l'import des fichiers cochés vers un item.
 
@@ -343,7 +349,7 @@ def apercu_importer(
         return _redirect_erreur("Aucun fichier sélectionné.")
     if racine not in racines:
         return _redirect_erreur(f"Racine {racine!r} inconnue.")
-    client = _client_session_ou_none(config)
+    client = _client_session_ou_none(config, owner)
     if client is None:
         return _redirect_erreur("Non connecté à ShareDocs.")
     try:
@@ -413,6 +419,7 @@ def executer_importer(
     config: ConfigLocale = Depends(get_config),
     racines=Depends(get_racines),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> RedirectResponse:
     """Crée le fonds/item cible si besoin (synchrone, rapide), puis **lance
     le téléchargement en tâche de fond** et redirige vers la page de suivi.
@@ -425,15 +432,15 @@ def executer_importer(
         return _redirect_erreur("Aucun fichier sélectionné.")
     if racine not in racines:
         return _redirect_erreur(f"Racine {racine!r} inconnue.")
-    ids = sharedocs_session.identifiants()
+    ids = sharedocs_session.identifiants(owner=owner)
     if ids is None:
         return _redirect_erreur("Non connecté à ShareDocs.")
-    # Garde anti-concurrent AVANT toute création : si un import tourne déjà,
-    # on refuse tout de suite (sinon `_resoudre_cible` créerait un fonds/item
-    # qui resterait orphelin quand `reserver_job` lèverait `JobConcurrent`).
-    # `reserver_job` reste l'autorité atomique ci-dessous (fenêtre TOCTOU
-    # négligeable en mono-utilisateur).
-    if est_job_actif():
+    # Garde anti-concurrent AVANT toute création : si un import tourne déjà
+    # pour cet owner, on refuse tout de suite (sinon `_resoudre_cible`
+    # créerait un fonds/item qui resterait orphelin quand `reserver_job`
+    # lèverait `JobConcurrent`). `reserver_job` reste l'autorité atomique
+    # ci-dessous (fenêtre TOCTOU négligeable).
+    if est_job_actif(owner=owner):
         return _redirect_erreur("Un import ShareDocs est déjà en cours.")
     # Cible créée/résolue dans la requête (rapide) ; le thread ne fait que
     # le download (lent). On capture la cote/id avant de quitter la session.
@@ -462,6 +469,7 @@ def executer_importer(
             chemins_distants=fichiers,
             fonds_cree=cible.fonds_cree,
             item_cree=cible.item_cree,
+            owner=owner,
         )
     except JobConcurrent as e:
         return _redirect_erreur(str(e))
@@ -493,7 +501,7 @@ def executer_importer(
             if etat is not None:
                 etat.statut = "echec"
                 etat.erreur_globale = f"Démarrage du thread impossible : {exc}"
-            sharedocs_jobs._id_actuel = None
+            sharedocs_jobs._id_actuel.pop(owner, None)
         return _redirect_erreur(f"Démarrage de l'import échoué : {exc}")
 
     return RedirectResponse(f"/sharedocs/importer/suivi/{job_id}", status_code=303)
@@ -559,9 +567,10 @@ def connexion(
     user: str = Form(...),
     password: str = Form(...),
     config: ConfigLocale = Depends(get_config),
+    owner: str = Depends(get_owner_key),
 ) -> RedirectResponse:
     """Valide les identifiants par un PROPFIND racine puis les mémorise en
-    RAM. Bloqué 423 en lecture seule par le middleware."""
+    RAM (pour cet owner). Bloqué 423 en lecture seule par le middleware."""
     base_url = (base_url or "").strip()
     try:
         client = ClientShareDocs(
@@ -579,12 +588,13 @@ def connexion(
         return _redirect_erreur(f"Erreur ShareDocs : {e}")
     finally:
         client.fermer()
-    sharedocs_session.connecter(base_url, user, password)
+    sharedocs_session.connecter(base_url, user, password, owner=owner)
     return RedirectResponse("/sharedocs", status_code=303)
 
 
 @router.post("/sharedocs/deconnexion")
-def deconnexion() -> RedirectResponse:
-    """Oublie les identifiants ShareDocs (RAM). Bloqué 423 en lecture seule."""
-    sharedocs_session.deconnecter()
+def deconnexion(owner: str = Depends(get_owner_key)) -> RedirectResponse:
+    """Oublie les identifiants ShareDocs (RAM) de cet owner. Bloqué 423 en
+    lecture seule."""
+    sharedocs_session.deconnecter(owner=owner)
     return RedirectResponse("/sharedocs", status_code=303)

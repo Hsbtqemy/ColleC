@@ -184,7 +184,7 @@ def test_reserver_job_libere_apres_succes_via_executer() -> None:
 
     with nakala_depot_jobs._lock:
         nakala_depot_jobs._JOBS[job1].statut = "termine"
-        nakala_depot_jobs._id_actuel = None  # simule fin runner
+        nakala_depot_jobs._id_actuel.clear()  # simule fin runner (libère l'owner)
 
     job2 = reserver_job(fonds_cote="B", collection_cote="B", total=1)
     assert job2 != job1

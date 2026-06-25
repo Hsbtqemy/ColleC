@@ -114,6 +114,31 @@ def get_utilisateur_courant() -> str:
     return config.utilisateur if config else "anonyme"
 
 
+#: Clé d'« owner » par défaut, en mode local mono-utilisateur. Les états
+#: serveur gardés en mémoire (identifiants ShareDocs en RAM, gardes
+#: mono-job des tâches de fond) sont *keyés par cette clé*. En local, il
+#: n'y a qu'un owner — cette constante. Les modules de service répliquent
+#: ce littéral comme défaut de leur paramètre `owner` (ils n'importent pas
+#: `deps` pour éviter un cycle) ; garder les deux alignés.
+OWNER_DEFAUT = "local"
+
+
+def get_owner_key() -> str:
+    """Clé d'isolation des états serveur en mémoire (creds ShareDocs RAM,
+    gardes mono-job).
+
+    **Couture multi-utilisateurs (resolver-ready).** Aujourd'hui constante
+    (`OWNER_DEFAUT`) — mode local mono-utilisateur, un seul owner. Les
+    `sharedocs_session` / `nakala_depot_jobs` / `sharedocs_jobs` sont déjà
+    structurés *par owner* ; le jour où l'auth arrive (Chantier 3), il
+    suffira de faire renvoyer ici l'id de session/utilisateur courant
+    (cookie de session) pour que chaque utilisateur ait ses propres creds
+    et ses propres tâches, sans toucher aux services. Cf.
+    `deploiement-future.md` § *Authentification* et roadmap § *Transverse*.
+    """
+    return OWNER_DEFAUT
+
+
 def get_racines() -> dict[str, Path]:
     config = _charger_config()
     return dict(config.racines) if config else {}

@@ -53,6 +53,10 @@ from archives_tool.db import creer_engine, creer_session_factory
 from archives_tool.external.nakala.write_client import NakalaEcritureClient
 from archives_tool.models import Collection
 
+#: Défaut en mode local — réplique `deps.OWNER_DEFAUT` (ce module n'importe
+#: pas `deps` pour éviter un cycle). Garder alignés.
+OWNER_DEFAUT = "local"
+
 
 # ---------------------------------------------------------------------------
 # Erreurs publiques
@@ -93,6 +97,7 @@ class EtatJobDepot:
     fonds_cote: str  # contexte d'affichage (breadcrumb suivi)
     collection_cote: str
     total: int  # nombre d'items à traiter (constant)
+    owner: str = OWNER_DEFAUT  # clé d'isolation (garde mono-job per-owner)
     faits: int = 0  # incrémenté à chaque hook progress
     cote_courante: str | None = None  # cote du dernier item traité
     statut: str = "en_cours"
@@ -116,7 +121,10 @@ class EtatJobDepot:
 
 _lock = threading.Lock()
 _JOBS: dict[str, EtatJobDepot] = {}
-_id_actuel: str | None = None
+#: owner -> job_id actif. Garde mono-job **per-owner** : un seul dépôt par
+#: owner à la fois (en local, un seul owner ``OWNER_DEFAUT``). `_JOBS` reste
+#: keyé par UUID (un job_id non devinable n'est pas une fuite cross-owner).
+_id_actuel: dict[str, str] = {}
 
 
 def lire_etat_job(job_id: str) -> EtatJobDepot | None:
@@ -140,10 +148,10 @@ def lire_etat_job(job_id: str) -> EtatJobDepot | None:
         return copy.deepcopy(etat)
 
 
-def est_job_actif() -> bool:
-    """True si un job de dépôt est actuellement en cours d'exécution."""
+def est_job_actif(*, owner: str = OWNER_DEFAUT) -> bool:
+    """True si un job de dépôt est en cours pour cet owner."""
     with _lock:
-        return _id_actuel is not None
+        return owner in _id_actuel
 
 
 # ---------------------------------------------------------------------------
@@ -156,25 +164,27 @@ def reserver_job(
     fonds_cote: str,
     collection_cote: str,
     total: int,
+    owner: str = OWNER_DEFAUT,
 ) -> str:
-    """Réserve un job_id atomiquement et pose la garde anti-concurrent.
+    """Réserve un job_id atomiquement et pose la garde anti-concurrent
+    **pour cet owner**.
 
-    Lève ``JobConcurrent`` si ``_id_actuel`` est posé (un autre dépôt
-    tourne déjà). Sinon, crée l'``EtatJobDepot`` initial dans le registre
-    et renvoie le job_id (UUID4 hex). Le runner consommera ce job_id pour
-    mettre à jour l'état au fil de l'eau.
+    Lève ``JobConcurrent`` si un dépôt tourne déjà pour ``owner``. Sinon,
+    crée l'``EtatJobDepot`` initial dans le registre et renvoie le job_id
+    (UUID4 hex). Le runner consommera ce job_id pour mettre à jour l'état
+    au fil de l'eau.
 
     ``total`` doit être ``len(collection.items)`` calculé par l'appelant
     avant la réservation (évite un round-trip DB dans cette fonction
     critique sous lock).
     """
-    global _id_actuel
     with _lock:
-        if _id_actuel is not None:
-            actif = _JOBS.get(_id_actuel)
+        actuel = _id_actuel.get(owner)
+        if actuel is not None:
+            actif = _JOBS.get(actuel)
             raise JobConcurrent(
                 f"Un dépôt collection est déjà en cours "
-                f"(job {_id_actuel}, statut={actif.statut if actif else '?'})."
+                f"(job {actuel}, statut={actif.statut if actif else '?'})."
             )
         job_id = uuid4().hex
         _JOBS[job_id] = EtatJobDepot(
@@ -182,8 +192,9 @@ def reserver_job(
             fonds_cote=fonds_cote,
             collection_cote=collection_cote,
             total=total,
+            owner=owner,
         )
-        _id_actuel = job_id
+        _id_actuel[owner] = job_id
     return job_id
 
 
@@ -262,8 +273,13 @@ def executer_depot_collection(
     - ``job_id`` a été obtenu via ``reserver_job(...)``.
     - ``_JOBS[job_id]`` existe (posé par la réservation).
     """
-    global _id_actuel
     rapport: RapportDepotCollection | None = None
+    # Owner capturé depuis l'Etat (posé par reserver_job) — sert à libérer
+    # la garde du bon owner dans le finally, même si l'Etat est nettoyé
+    # entre-temps.
+    with _lock:
+        _etat0 = _JOBS.get(job_id)
+        owner = _etat0.owner if _etat0 is not None else OWNER_DEFAUT
     engine = creer_engine(chemin_db)
     try:
         factory = creer_session_factory(engine)
@@ -325,8 +341,8 @@ def executer_depot_collection(
     finally:
         engine.dispose()
         with _lock:
-            if _id_actuel == job_id:
-                _id_actuel = None
+            if _id_actuel.get(owner) == job_id:
+                del _id_actuel[owner]
 
 
 # ---------------------------------------------------------------------------
@@ -335,12 +351,11 @@ def executer_depot_collection(
 
 
 def _reset_pour_tests() -> None:
-    """Réinitialise le registre + la garde anti-concurrent.
+    """Réinitialise le registre + les gardes anti-concurrent (tous owners).
 
     À appeler dans une fixture pytest pour isoler les tests. Pas
     d'usage en production — préfixé ``_`` pour signaler le scope.
     """
-    global _id_actuel
     with _lock:
         _JOBS.clear()
-        _id_actuel = None
+        _id_actuel.clear()

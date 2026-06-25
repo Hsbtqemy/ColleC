@@ -30,6 +30,7 @@ from archives_tool.api.deps import (
     get_config,
     get_db,
     get_nom_base,
+    get_owner_key,
     get_racines,
     get_utilisateur_courant,
 )
@@ -864,6 +865,7 @@ def lancer_depot_collection(
     config: ConfigLocale = Depends(get_config),
     racines: dict[str, Path] = Depends(get_racines),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> RedirectResponse:
     """Lance le dépôt en tâche de fond.
 
@@ -887,6 +889,7 @@ def lancer_depot_collection(
             fonds_cote=collection.fonds.cote if collection.fonds else "",
             collection_cote=collection.cote,
             total=total,
+            owner=owner,
         )
     except JobConcurrent as exc:
         return _redirect_fonds_erreur(fonds or cote, str(exc))
@@ -926,7 +929,7 @@ def lancer_depot_collection(
                 etat.erreur_globale = (
                     f"Impossible de démarrer le thread de dépôt : {exc}"
                 )
-            nakala_depot_jobs._id_actuel = None
+            nakala_depot_jobs._id_actuel.pop(owner, None)
         return _redirect_fonds_erreur(
             fonds or cote,
             f"Démarrage du dépôt échoué : {exc}",

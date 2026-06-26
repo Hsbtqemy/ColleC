@@ -154,7 +154,7 @@ découverts en live et qui structurent tout le reste :
 | `PUT /collections/{id}` | Modifier une collection | **renvoie 204** ; remplace les metas |
 | `POST /datas/{id}/collections` | Rattacher un dépôt à des collections | additif (corps = liste de DOI) |
 | `PUT /datas/{id}/status/{status}` | Changer le statut (p.ex. publier) | → **204** (alternative au `PUT /datas {status}`) |
-| `DELETE /datas/{id}` | Supprimer un dépôt | **pending uniquement** |
+| `DELETE /datas/{id}` | Supprimer un dépôt | **pending uniquement** ; succès **202 ou 204** (la spec admet les deux) |
 | `DELETE /collections/{id}` | Supprimer une collection | private/pending |
 | `DELETE /datas/uploads/{sha1}` | Nettoyer un upload orphelin | du stockage temporaire (best-effort) |
 
@@ -397,6 +397,18 @@ l'enrichissement et **ramène l'ORCID à la forme nue** (`normaliser_orcid`,
 partagé par la lecture ET `diff_push`). Reste l'**ordre**, perdu côté Nakala
 — inoffensif au push (`diff_push` multiset) mais visible à la lecture. Donc
 le **round-trip ColleC est fidèle sauf l'ordre des créateurs**. Cf. §13/§16.
+
+> **`authorId` — dédoublonnage déterministe** (sonde **tierce** : NakalaPycon,
+> hors sondes ColleC ; cf.
+> [`nakala-audit-croise-nakalapycon.md`](nakala-audit-croise-nakalapycon.md)
+> §3.4). L'`authorId` attribué est **déterministe sur le couple ordonné exact**
+> `(givenname, surname)` : même couple → **même `authorId`** ; couple **inversé**
+> → `authorId` **différent** (aucune normalisation, `fullName` non utilisé pour
+> le regroupement). Il est en outre **recalculé à chaque `PUT /datas`** (sans
+> mémoire de l'ancien). **Conséquence rassurante pour ColleC** : tant qu'on émet
+> des `{givenname, surname}` stables et corrects (garanti par nos deux champs
+> séparés), nos pushes **ne créent pas de fiches-auteur fantômes**, et corriger
+> une inversion via `PUT` rattache réellement la donnée à la bonne identité.
 
 ### Fichier (dans une réponse `GET /datas`)
 
@@ -775,6 +787,7 @@ existe mais n'est pas (encore) exploité :
 | **Publication via `PUT …/status/{status}`** | ✅ sondée (S5) | `PUT /datas/{id}/status/published` (sans corps) → **204**, publie et **préserve les metas** (`av.metas == ap.metas`). Découple publication / écriture de metas, contrairement à `publier_item` qui re-pousse les metas locales (choix ColleC, principe n°1). ColleC garde l'approche actuelle (cf. §7) |
 | **`GET /users/me`, `/resourceprocessing/{id}`** | ✅ existent | identité de la clé ; état d'indexation ElasticSearch + DataCite (latence post-publication) — non sondés |
 | **Versioning (DOI `…​.vN`)** | ✅ déclencheur résolu | cf. §7 : **mutation de fichiers sur dépôt publié** = +1 version ; metas/pending/publication = en place. Versions = snapshot des **fichiers** (metas partagées) |
+| **Groupes / droits / `/authors/search` (schémas)** | ✅ vérifiés (spec + audit tiers) | corps `groups.users[]` = `array<{username, role}>` ; enums `Role` **data** `[ROLE_ADMIN, ROLE_EDITOR, ROLE_READER]` (≠ **groupe** `[ROLE_OWNER, ROLE_ADMIN, ROLE_USER]`) ; `/authors/search` accepte `order/page/limit/searchOperator/searchField` (tri primaire par `givenname`). Détail : [`nakala-audit-croise-nakalapycon.md`](nakala-audit-croise-nakalapycon.md) §3. Hors périmètre ColleC actuel |
 
 ### Non testé / non testable
 
@@ -1035,6 +1048,7 @@ reste cohérente.
 | Conception / architecture / phasage | [`nakala-depot-future.md`](nakala-depot-future.md) |
 | **Backlog actionnable (issu de ce savoir)** | [`backlog-nakala-api.md`](backlog-nakala-api.md) |
 | Backlog niveau collection | [`backlog-nakala-collection.md`](backlog-nakala-collection.md) |
+| **Audit croisé (wrapper tiers NakalaPycon)** | [`nakala-audit-croise-nakalapycon.md`](nakala-audit-croise-nakalapycon.md) — confirmations mutuelles + quirks qu'un wrapper naïf subit |
 | Guide d'usage CLI | [`../guide/cli/nakala.md`](../guide/cli/nakala.md) |
 | **Sondes live** | `scripts/explorer_put_files_nakala.py` (PUT `files[]`, H1-H11), `scripts/explorer_files_granulaire_nakala.py` (POST/DELETE granulaires, T2), `scripts/verifier_parite_vocabulaires_nakala.py` (parité vocab S1, lecture seule) |
 | Tests d'intégration (opt-in `-m integration`) | `tests/test_nakala_*_integration.py` |

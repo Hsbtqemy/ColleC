@@ -74,6 +74,7 @@ exclude_docs: |
   developpeurs/backlog-nakala-collection.md
   developpeurs/nakala-savoir-api.md
   developpeurs/backlog-nakala-api.md
+  developpeurs/nakala-audit-croise-nakalapycon.md
 
 markdown_extensions:
   - admonition

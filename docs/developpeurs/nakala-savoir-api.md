@@ -585,7 +585,8 @@ Vocabulaire des statuts (`/vocabularies/dataStatuses`,
 | Donnée | `pending` | **brouillon** — modifiable, supprimable (`DELETE /datas/{id}`) |
 | | `published` | **irréversible** — DOI DataCite minté (en prod), **non supprimable**, **pas de dé-publication** |
 | | `old` | version supersédée |
-| | `deleted`, `moderated` | supprimée / en modération |
+| | `deleted` | supprimée |
+| | `moderated` | **validée par un modérateur** — reste publiquement lisible ; sens unique via l'endpoint statut (cf. *Modération* ci-dessous) |
 | Collection | `private` | brouillon de collection |
 | | `public` | collection publiée |
 
@@ -668,6 +669,68 @@ zéro pollution) :
 > **politique de qualité** (garde-fou `DepotPublie`, flag `--force-published`),
 > pas une nécessité technique — **confirmé pertinent à garder**. Cf. Partie
 > II §12 (difficulté #2).
+
+### Modération (sondé live 2026-06-26 — compte modérateur + déposant apitest)
+
+Workflow de **modération** Nakala (Huma-Num). Caractérisé live avec le compte
+modérateur de test `mnakala` (ROLE_MODERATOR) **et** les comptes déposant
+`unakala2/3`. Source de référence : le script officiel Huma-Num/MSHB
+`gitlab.huma-num.fr/Plateforme-HN-MSHB/moderation-lot-nakala` (Chloé Choquet).
+
+Le statut `moderated` = donnée publiée **validée/traitée par un modérateur** ;
+elle **reste publiquement lisible** (`GET` anonyme → 200). Le workflow réel :
+le déposant publie puis **demande la modération** (outil séparé
+`depot-lot-nakala`), un modérateur traite la demande.
+
+**File de modération (lecture)** : `POST /users/datas/{scope}` avec
+`scope=moderable`, corps `{page, limit, orders, status:["published"]}` →
+`{totalRecords, data:[…]}`. Renvoie les données que **ce** modérateur peut
+modérer, **tous déposants confondus** (champ `depositor.username` par item).
+⚠️ `moderable` est une **valeur de l'enum `{scope}`**
+(`deposited, owned, shared, editable, readable, moderable, all`), **pas** un
+chemin ni un tag « moderation » — d'où sa quasi-invisibilité dans le Swagger.
+
+**Action de modération (écriture)** : `PUT /datas/{id}/status/moderated` →
+**204** (réservé ROLE_MODERATOR). Pose `lastModerator={username,…}` +
+`lastModerationDate`.
+
+**Machine à états / permissions (sondé) — la modération est à sens unique :**
+
+| Transition | Mécanisme | Qui | Résultat |
+|---|---|---|---|
+| `published → moderated` | `PUT …/status/moderated` | modérateur | **204** |
+| `moderated → published / pending` via **statut** | `PUT …/status/{…}` | **personne** (modérateur ET propriétaire) | **403** (`Access Denied` / `You are not allowed to change the data status`) |
+| `moderated → published` via **édition** | `PUT /datas/{id}` (metas+files) | **propriétaire/déposant** | **204** (l'édition invalide la validation → repasse `published`) |
+
+- **Pas de « refuser » par l'API** : la seule transition modérateur est
+  →`moderated`. Le « retour » se fait **côté déposant**, indirectement, en
+  **éditant** la donnée.
+- `lastModerator` / `lastModerationDate` **persistent** après le revert (le
+  **statut** redevient `published`, mais la **trace** de modération reste —
+  historique).
+- **Faux-wipe au revert** : le `PUT /datas/{id}` de revert subit la règle
+  `files[]` = remplacement total (§8 H1) → renvoyer les `files` existants
+  (par `sha1`) pour ne pas perdre les fichiers. Round-trip fidèle validé live
+  (statut restauré, fichier + metas préservés).
+- **Prod** : la clé de test `ROLE_MODERATOR` n'existe qu'en apitest ; en prod
+  un compte standard est `ROLE_USER` (pas de modération via l'API).
+
+> **→ côté ColleC** : ColleC ne fait que **lire** les champs de modération
+> (déjà capturés au pull : `status`, `lastModerator…`). L'**action**
+> modérateur est **hors scope** — couverte par le script officiel MSHB, elle
+> agit tous-déposants-confondus (≠ « les collections de cette instance ») et
+> reste à sens unique côté modérateur. Seule brique candidate côté déposant :
+> **afficher** le statut/tampon de modération sur la fiche item.
+
+> **Leçons méta de découverte** (cette caractérisation a d'abord conclu « pas
+> d'API de modération » — à tort) :
+> 1. un grep « moderat » rate `moder**able**` (valeur d'enum `{scope}`) ;
+>    l'absence de **tag** « moderation » dans le Swagger ne prouve **pas**
+>    l'absence de capacité.
+> 2. l'enum `status [published, moderated]` liste les valeurs **settables**,
+>    **pas** la réversibilité : la machine à permissions renvoie 403.
+> 3. le revert `moderated → published` est un **effet de bord d'une édition**,
+>    pas une transition de statut.
 
 ## 7. Versioning (DOI `…​.vN`)
 

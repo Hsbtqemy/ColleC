@@ -1305,7 +1305,14 @@ Entités principales — détails dans [`docs/reference/schema.md`](docs/referen
 - **SourceExterne**, **RessourceExterne**, **LienExterneItem** : V2+,
   pour Nakala.
 
-- **Utilisateur** : identité simple (nom, actif), pas d'auth forte.
+- **Utilisateur** (table livrée — couche identité Phase 1) : référentiel
+  des comptes nommés du futur mode serveur (`id`, `nom` unique, `actif`,
+  `peut_editer`). Pas d'auth forte (attribution). **Non consulté en mode
+  local** (l'identité vient de `config_local.yaml`) ; sert la session /
+  login du mode serveur (Phase 2, à venir). Modèle + service
+  (`api/services/utilisateurs.py`) + CLI `archives-tool utilisateurs`
+  livrés ; périmètre minimal V1.0 (la matrice scope/invité/expiration
+  viendra par migration au besoin). Migration `x2b3c4d5e6f7`.
 
 - **Racine** : nom logique → chemin local (par utilisateur, dans la
   config locale, jamais en base partagée).
@@ -2332,17 +2339,34 @@ V1.0.
 
 **Session 1 — auth et adaptation modèle**
 
-- Variable `ARCHIVES_MODE` (`local` | `serveur`) détectée au
-  démarrage.
-- Table `Utilisateur` (id, nom, actif, peut_editer) +
-  migration Alembic.
-- Page de login simple (sélection dans liste, cookie de session,
-  pas de mot de passe).
-- Middleware FastAPI pour la session.
-- Adaptation des services pour utiliser l'utilisateur de session
-  en mode serveur, `config_local.yaml` en mode local.
-- CLI `archives-tool utilisateurs` (ajouter, lister, modifier,
+> **Avancement (2026-06-26)** : les **prérequis de dé-risquage** et la
+> **Phase 1 de la couche identité** sont livrés en amont, en mode local
+> (sans déploiement) :
+> - **Isolation per-owner** des états serveur en mémoire (creds ShareDocs
+>   RAM + gardes mono-job) via la couture `deps.get_owner_key()`
+>   (constante `"local"` aujourd'hui, id de session demain) — la fuite
+>   cross-user structurelle est neutralisée. Cf. *Décisions notables* +
+>   `test_isolation_owner.py`.
+> - **Table `Utilisateur` + service + CLI** `archives-tool utilisateurs`
+>   (ajouter/lister/modifier/désactiver) — modèle minimal V1.0
+>   (`nom` unique, `actif`, `peut_editer`), migration `x2b3c4d5e6f7`.
+>   Non consulté en mode local.
+>
+> **Reste (Phase 2)** : `ARCHIVES_MODE` + session/login + rendre les 3
+> coutures (`get_utilisateur_courant`/`get_owner_key`/`est_lecture_seule`)
+> mode-aware. Cookie de session = **HMAC stdlib** décidé (zéro dépendance).
+
+- ✅ Table `Utilisateur` (id, nom, actif, peut_editer) + migration Alembic.
+- ✅ CLI `archives-tool utilisateurs` (ajouter, lister, modifier,
   désactiver).
+- Variable `ARCHIVES_MODE` (`local` | `serveur`) détectée au
+  démarrage. *(Phase 2)*
+- Page de login simple (sélection dans liste, cookie de session signé
+  HMAC, pas de mot de passe). *(Phase 2)*
+- Middleware FastAPI pour la session. *(Phase 2)*
+- Adaptation des **3 coutures de `deps`** pour utiliser l'utilisateur de
+  session en mode serveur, `config_local.yaml` en mode local (les
+  services restent intacts — injection par dépendance). *(Phase 2)*
 
 **Session 2 — déploiement**
 

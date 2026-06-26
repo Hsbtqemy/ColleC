@@ -131,6 +131,7 @@ nav:
       - deriver: guide/cli/deriver.md
       - nakala: guide/cli/nakala.md
       - sharedocs: guide/cli/sharedocs.md
+      - utilisateurs: guide/cli/utilisateurs.md
   - Référence:
     - Vue d'ensemble: reference/index.md
     - Profils d'import: reference/profils.md

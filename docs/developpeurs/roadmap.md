@@ -299,8 +299,26 @@ l'ingestion bulk + poids `bm25`.
 
 À déclencher quand l'accès distant / à plusieurs devient un vrai besoin.
 
+!!! success "Amorcé en amont (2026-06-26, en mode local, sans déploiement)"
+    Deux briques fondatrices livrées tôt pour dé-risquer et préparer le
+    terrain (comportement local strictement inchangé) :
+
+    - **Isolation per-owner** des états serveur en mémoire (creds ShareDocs
+      RAM + gardes mono-job) via la couture `deps.get_owner_key()`
+      (constante `"local"` → id de session demain). La fuite cross-user
+      structurelle est neutralisée (`test_isolation_owner.py`, 8 tests).
+    - **Couche identité Phase 1** : table `Utilisateur` (nom unique, actif,
+      peut_editer) + service + CLI `archives-tool utilisateurs`
+      (ajouter/lister/modifier/désactiver), migration `x2b3c4d5e6f7`.
+      Non consulté en mode local.
+
+    **Reste (Phase 2)** : `ARCHIVES_MODE` + session/login (cookie HMAC
+    stdlib, pas de mot de passe) + rendre les 3 coutures de `deps`
+    mode-aware. Les services restent intacts (injection par dépendance).
+
 - Auth simple (attribution, pas sécurité forte) + droits + session ;
-  table `Utilisateur` + middleware ; `ARCHIVES_MODE` local/serveur.
+  ✅ table `Utilisateur` ; reste : middleware + login ; `ARCHIVES_MODE`
+  local/serveur.
 - Docker multi-stage + Caddy/nginx ; mount WebDAV (davfs2) ; TLS
   Let's Encrypt ; **sauvegarde quotidienne** (restic).
 - **Tranche d'un coup plusieurs questions ouvertes** : auth, droits par

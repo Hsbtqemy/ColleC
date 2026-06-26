@@ -41,6 +41,7 @@ from .journal import (
 from .preferences import PreferencesAffichage
 from .profil import ChampPersonnalise, ProfilImport, ValeurControlee, Vocabulaire
 from .session_import import ETAPES_IMPORT, SessionImport
+from .utilisateur import Utilisateur
 
 __all__ = [
     "AnnotationRegion",
@@ -68,6 +69,7 @@ __all__ = [
     "PreferencesAffichage",
     "SessionImport",
     "ETAPES_IMPORT",
+    "Utilisateur",
     "SourceExterne",
     "RessourceExterne",
     "LienExterneItem",

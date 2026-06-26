@@ -58,6 +58,14 @@ from archives_tool.api.services.fonds import (
 )
 from archives_tool.api.services.operations_entite import lister_suppressions
 from archives_tool.api.services.operations_push_nakala import lister_push_nakala
+from archives_tool.api.services.utilisateurs import (
+    NomDejaUtilise,
+    UtilisateurIntrouvable,
+    creer_utilisateur,
+    desactiver_utilisateur,
+    lister_utilisateurs,
+    modifier_utilisateur,
+)
 from archives_tool.api.services.nakala import (
     RafraichissementImpossible,
     RapatriementInvalide,
@@ -4166,6 +4174,121 @@ def cmd_sharedocs_importer(
         )
     ):
         raise typer.Exit(1)
+
+
+utilisateurs_app = typer.Typer(
+    help="Gestion des comptes utilisateur (mode serveur — couche identité Phase 1).",
+    no_args_is_help=True,
+)
+app.add_typer(utilisateurs_app, name="utilisateurs")
+
+
+@utilisateurs_app.command("ajouter")
+def cmd_utilisateurs_ajouter(
+    nom: str = typer.Argument(..., help="Nom du compte (unique)."),
+    lecteur: bool = typer.Option(
+        False,
+        "--lecteur",
+        help="Créer le compte en lecture seule (peut_editer=False).",
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Créer un compte utilisateur (actif, éditeur par défaut)."""
+    with _ouvrir_session_existante(db_path) as session:
+        try:
+            utilisateur = creer_utilisateur(session, nom, peut_editer=not lecteur)
+        except NomDejaUtilise:
+            typer.echo(f"Erreur : un compte nommé {nom!r} existe déjà.", err=True)
+            raise typer.Exit(1) from None
+        except ValueError as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(2) from None
+        role = "éditeur" if utilisateur.peut_editer else "lecteur seul"
+        typer.echo(f"✓ Compte {utilisateur.nom!r} créé ({role}).")
+
+
+@utilisateurs_app.command("lister")
+def cmd_utilisateurs_lister(
+    actifs_seuls: bool = typer.Option(
+        False, "--actifs-seuls", help="N'afficher que les comptes actifs."
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Lister les comptes utilisateur."""
+    with _ouvrir_session_existante(db_path) as session:
+        utilisateurs = lister_utilisateurs(
+            session, inclure_inactifs=not actifs_seuls
+        )
+    if not utilisateurs:
+        typer.echo("Aucun compte utilisateur.")
+        return
+    table = Table(title="Comptes utilisateur")
+    table.add_column("Nom")
+    table.add_column("Droit")
+    table.add_column("État")
+    for u in utilisateurs:
+        table.add_row(
+            u.nom,
+            "éditeur" if u.peut_editer else "lecteur seul",
+            "actif" if u.actif else "désactivé",
+        )
+    console_mod.console.print(table)
+
+
+@utilisateurs_app.command("modifier")
+def cmd_utilisateurs_modifier(
+    nom: str = typer.Argument(..., help="Nom du compte à modifier."),
+    nouveau_nom: str | None = typer.Option(
+        None, "--nom", help="Renommer le compte."
+    ),
+    editer: bool | None = typer.Option(
+        None,
+        "--editeur/--lecteur",
+        help="Donner (--editeur) ou retirer (--lecteur) le droit d'écriture.",
+    ),
+    actif: bool | None = typer.Option(
+        None,
+        "--actif/--inactif",
+        help="Réactiver (--actif) ou désactiver (--inactif) le compte.",
+    ),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Modifier un compte (nom, droit d'écriture, activation)."""
+    with _ouvrir_session_existante(db_path) as session:
+        try:
+            utilisateur = modifier_utilisateur(
+                session,
+                nom,
+                nouveau_nom=nouveau_nom,
+                peut_editer=editer,
+                actif=actif,
+            )
+        except UtilisateurIntrouvable:
+            typer.echo(f"Erreur : aucun compte nommé {nom!r}.", err=True)
+            raise typer.Exit(1) from None
+        except NomDejaUtilise:
+            typer.echo(f"Erreur : le nom {nouveau_nom!r} est déjà pris.", err=True)
+            raise typer.Exit(1) from None
+        except ValueError as e:
+            typer.echo(f"Erreur : {e}", err=True)
+            raise typer.Exit(2) from None
+        typer.echo(f"✓ Compte {utilisateur.nom!r} mis à jour.")
+
+
+@utilisateurs_app.command("desactiver")
+def cmd_utilisateurs_desactiver(
+    nom: str = typer.Argument(..., help="Nom du compte à désactiver."),
+    db_path: Path = _DB_PATH_OPTION,
+) -> None:
+    """Désactiver un compte (soft delete : masqué du login, conservé pour
+    la traçabilité ; réversible via `modifier --actif`)."""
+    with _ouvrir_session_existante(db_path) as session:
+        try:
+            utilisateur = desactiver_utilisateur(session, nom)
+        except UtilisateurIntrouvable:
+            typer.echo(f"Erreur : aucun compte nommé {nom!r}.", err=True)
+            raise typer.Exit(1) from None
+        typer.echo(f"✓ Compte {utilisateur.nom!r} désactivé.")
 
 
 def main() -> None:

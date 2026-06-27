@@ -68,16 +68,21 @@ Contraintes dures (re-sondées) :
   Fonds/Collections de l'instance.
 - Modérer pose `lastModerator`/`lastModerationDate` **indélébiles** (le statut,
   lui, revient à `published` par une édition du déposant).
-- **Apitest** : les 4 files test sont **vides** (`totalRecords=0`, aucune
-  attribution entre comptes test) → le **204 n'y est pas reproductible**
-  (artefact de données de test, pas un blocage de fond). En contexte réel
-  (modérateur avec file peuplée), le `PUT moderated` aboutit — c'est ce que
-  fait tourner la technique de Chloé.
+- **Compte modérateur dédié** : sur apitest, les 4 comptes déposants ont
+  `ROLE_MODERATOR` mais une file **vide** ; les demandes routent vers un **5ᵉ
+  compte `mnakala`** (clé séparée sur test.nakala.fr) dont la file est peuplée.
+  *Avoir le rôle ≠ recevoir les demandes* (assignation). La porte est
+  l'appartenance à la file, **pas** l'endpoint `…/resources/{id}/action` (qui
+  renvoie `[]` même pour une donnée bien dans la file).
 
-**Conclusion de faisabilité** : le *traitement* de la file (= toute la
-technique de Chloé) **est** réimplémentable en clean-room — `POST moderable`
-+ boucle `PUT moderated`, entièrement API. Seul l'amont (peupler la file) n'est
-pas API — mais ce n'est pas non plus ce que fait le script.
+**Conclusion de faisabilité — confirmée LIVE (2026-06-27)** : le *traitement*
+de la file (= toute la technique de Chloé) **est** réimplémentable en
+clean-room — `POST moderable` + boucle `PUT moderated`, entièrement API. Cycle
+complet **vérifié de bout en bout** via `mnakala` sur une donnée de sa file :
+`PUT status/moderated` → **204** (`lastModerator`/`lastModerationDate` posés) →
+revert-statut 403 ×2 → revert par édition → `published`, trace persistante.
+Seul l'amont (peupler la file = la demande) n'est pas API — mais ce n'est pas
+ce que fait le script non plus.
 
 ## 4. Tensions de positionnement (le vrai sujet)
 

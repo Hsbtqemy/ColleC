@@ -714,11 +714,26 @@ exactement ce que fait la technique de Chloé Choquet (cf. ci-dessous).
 > `PUT /datas/{doi}/status/moderated` sur chaque DOI. **Aucune notion de
 > « demande » dans le code** : il modère tout ce que *la file lui rend*. La
 > porte est donc la **file `moderable`** (peuplée serveur-side en amont), pas
-> un statut ni un appel de demande. ⚠️ **Sur apitest, les 4 files test sont
-> toutes vides** (`totalRecords=0`) — aucune attribution entre comptes test →
-> le **204 n'y est pas reproductible**, non par bug mais faute de donnée dans
-> une portée. (Le « request » **n'est pas un statut de donnée** : les statuts
-> sont `pending/published/deleted/old/moderated`.)
+> un statut ni un appel de demande. (Le « request » **n'est pas un statut de
+> donnée** : les statuts sont `pending/published/deleted/old/moderated`.)
+>
+> **Compte modérateur dédié `mnakala`** : sur apitest il existe un **5ᵉ compte**
+> (en plus de `tnakala`/`unakala1`/`unakala2`/`unakala3`), `mnakala`, dont la
+> clé figure dans une table séparée de test.nakala.fr (clé **non-UUID** : un
+> `g` non-hexa). Les **4 comptes déposants ont `ROLE_MODERATOR` mais une file
+> `moderable` vide** ; les demandes routent vers **`mnakala`**, dont la file
+> est peuplée. Donc *avoir le rôle ≠ recevoir les demandes* — la file est par
+> **assignation**, et `mnakala` est le modérateur de l'instance. ⚠️ La porte
+> est l'**appartenance à la file `moderable`**, **pas** l'endpoint
+> `GET …/resources/{id}/action` (qui renvoie `[]` *même* pour une donnée bien
+> présente dans la file — il liste un autre type de `Task`, sans rapport).
+>
+> **Cycle complet confirmé LIVE de bout en bout (2026-06-27, mnakala)** sur une
+> donnée publiée de sa file : `PUT status/moderated` → **204** (`status=moderated`,
+> `lastModerator={mnakala}` + `lastModerationDate` posés) → revert-statut **403**
+> ×2 → revert par édition propriétaire → **204** `published` → `lastModerator`
+> **persiste**, `version` inchangé. Tout le modèle ci-dessous est donc *vérifié*,
+> plus seulement déduit.
 
 **Machine à états / permissions (sondé) — la modération est à sens unique :**
 

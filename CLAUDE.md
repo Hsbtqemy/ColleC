@@ -137,8 +137,10 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   `PUT …/status/moderated`) = toute la technique de C. Choquet. Porte =
   **être dans la file `moderable`** du modérateur (peuplée en amont,
   non-API) ; `ROLE_MODERATOR` nécessaire non suffisant (403 hors portée, même
-  sur sa propre donnée) ; files apitest toutes vides → 204 non démontrable en
-  sandbox. **Pas un outil officiel** (technique non maintenue comblant un
+  sur sa propre donnée). **Cycle 204 confirmé LIVE de bout en bout (2026-06-27)**
+  via le **5ᵉ compte test dédié `mnakala`** (les 4 déposants ont le rôle mais
+  une file vide ; les demandes routent vers mnakala). **Pas un outil officiel**
+  (technique non maintenue comblant un
   manque réel — Nakala n'outille pas la modération en lot) → l'intégrer ne
   doublonne rien d'officiel. Vraie tension : file Huma-Num-wide ≠ catalogue ;
   action de gouvernance ; code de C. Choquet CC BY-NC-SA **non vendorisable**

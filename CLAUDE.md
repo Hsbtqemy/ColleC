@@ -132,15 +132,19 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
 - [`moderation-future.md`](docs/developpeurs/moderation-future.md)
   — **note de design (non tranchée)** : faut-il intégrer une *console de
   modération* dans ColleC (ColleC s'adresse aussi aux modérateurs MSHS) ?
-  Faisabilité (re-sondée live) : le *traitement* de la file est API-jouable
-  (`POST /users/datas/moderable` + `PUT …/status/moderated`), mais
-  `ROLE_MODERATOR` est **nécessaire non suffisant** — il faut une **demande**
-  en attente, **non créable via l'API** (UI/`depot-lot` ; 403 même en
-  auto-modération). Tensions : file Huma-Num-wide ≠ catalogue ; doublon de
-  l'outil officiel MSHB (CC BY-NC-SA, non vendorisable) ; action de
-  gouvernance. MVP esquissé (zone `/moderation` gatée `ROLE_MODERATOR`,
-  lecture + modération par lot derrière confirmation, clean-room). Seul le
-  **tampon read-only** sur la fiche est livré. Cf. `nakala-savoir-api.md` §6.
+  Faisabilité (re-sondée live + **source du script lu**) : le *traitement* de
+  la file est entièrement API-jouable (`POST /users/datas/moderable` → boucle
+  `PUT …/status/moderated`) = toute la technique de C. Choquet. Porte =
+  **être dans la file `moderable`** du modérateur (peuplée en amont,
+  non-API) ; `ROLE_MODERATOR` nécessaire non suffisant (403 hors portée, même
+  sur sa propre donnée) ; files apitest toutes vides → 204 non démontrable en
+  sandbox. **Pas un outil officiel** (technique non maintenue comblant un
+  manque réel — Nakala n'outille pas la modération en lot) → l'intégrer ne
+  doublonne rien d'officiel. Vraie tension : file Huma-Num-wide ≠ catalogue ;
+  action de gouvernance ; code de C. Choquet CC BY-NC-SA **non vendorisable**
+  (→ réimplémentation clean-room). MVP esquissé (zone `/moderation` gatée
+  `ROLE_MODERATOR`, lecture + modération par lot derrière confirmation). Seul
+  le **tampon read-only** sur la fiche est livré. Cf. `nakala-savoir-api.md` §6.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

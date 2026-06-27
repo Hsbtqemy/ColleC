@@ -693,24 +693,39 @@ chemin ni un tag « moderation » — d'où sa quasi-invisibilité dans le Swagg
 **Action de modération (écriture)** : `PUT /datas/{id}/status/moderated`.
 **`ROLE_MODERATOR` est nécessaire mais NON suffisant** : l'action n'aboutit
 (**204**, pose `lastModerator={username,…}` + `lastModerationDate`) **que si
-le dépôt a une demande / `Task` de modération en attente**. Sans demande →
-**403** « You are not allowed to change the data status » *même pour un
-modérateur* (re-sondé live 2026-06-27, cf. ci-dessous).
+la donnée est dans la file `moderable` de CE modérateur** — c.-à-d. dans sa
+*portée de modération*. Sinon → **403** « You are not allowed to change the
+data status », y compris **sur sa propre donnée** (auto-modération testée →
+403) et sur une donnée publiée hors de sa portée (re-sondé live 2026-06-27).
 
-⚠️ **La demande de modération n'est PAS un endpoint API public.** Dans le
-contrat OpenAPI, `moderationRequester` / `lastModerationRequestDate` sont des
-champs en **lecture seule** ; aucun `POST` ne crée la demande. Elle se pose
-via l'**UI test.nakala.fr** / l'outil `depot-lot-nakala`. Conséquence : un
-client **pur-API** (ColleC) **ne peut pas initier** une modération — il ne
-peut que lire l'état résultant. Les tâches attribuées se lisent via
-`GET /users/resources/{id}/action` (→ `Task[]` ; `[]` = aucune demande).
+⚠️ **Comment une donnée entre dans la file `moderable` n'est PAS exposé en
+API publique.** Le champ `moderationRequester` / `lastModerationRequestDate`
+(lecture seule) traduit une **demande** côté déposant ; mais **aucun `POST`**
+ne crée cette demande / cette attribution dans le contrat OpenAPI — elle se
+fait en amont (UI / outil `depot-lot-nakala`, *quasiment au moment du dépôt*).
+Conséquence : un client **pur-API** (ColleC) **ne peut pas initier** une
+modération ; en revanche il **peut traiter la file** d'un modérateur
+(`POST /users/datas/moderable` puis `PUT …/status/moderated`) — c'est
+exactement ce que fait la technique de Chloé Choquet (cf. ci-dessous).
+
+> **Mécanisme réel du script de C. Choquet** (lu sur le source, public) : il
+> `POST /users/datas/moderable` (`{page, limit, orders, status:["published"]}`),
+> **filtre les résultats par `depositor.username`**, puis boucle
+> `PUT /datas/{doi}/status/moderated` sur chaque DOI. **Aucune notion de
+> « demande » dans le code** : il modère tout ce que *la file lui rend*. La
+> porte est donc la **file `moderable`** (peuplée serveur-side en amont), pas
+> un statut ni un appel de demande. ⚠️ **Sur apitest, les 4 files test sont
+> toutes vides** (`totalRecords=0`) — aucune attribution entre comptes test →
+> le **204 n'y est pas reproductible**, non par bug mais faute de donnée dans
+> une portée. (Le « request » **n'est pas un statut de donnée** : les statuts
+> sont `pending/published/deleted/old/moderated`.)
 
 **Machine à états / permissions (sondé) — la modération est à sens unique :**
 
 | Transition | Mécanisme | Qui | Résultat |
 |---|---|---|---|
-| `published → moderated` | `PUT …/status/moderated` | modérateur **avec demande en attente** | **204** |
-| `published → moderated` | `PUT …/status/moderated` | modérateur **sans demande** | **403** (rôle insuffisant seul) |
+| `published → moderated` | `PUT …/status/moderated` | modérateur, donnée **dans sa file `moderable`** | **204** |
+| `published → moderated` | `PUT …/status/moderated` | modérateur, donnée **hors de sa portée** (ou la sienne) | **403** |
 | `moderated → published / pending` via **statut** | `PUT …/status/{…}` | **personne** (modérateur ET propriétaire) | **403** (`Access Denied` / `You are not allowed to change the data status`) |
 | `moderated → published` via **édition** | `PUT /datas/{id}` (metas+files) | **propriétaire/déposant** | **204** (l'édition invalide la validation → repasse `published`) |
 
@@ -734,28 +749,31 @@ peut que lire l'état résultant. Les tâches attribuées se lisent via
   à l'inverse, **les 4 comptes test** (`tnakala`, `unakala1/2/3` — clés
   publiques sur test.nakala.fr) portent **tous** `ROLE_MODERATOR` : c'est
   pourquoi le rôle seul ne suffit pas à expliquer qui peut modérer (le
-  discriminant est la **demande**, pas le rôle, sur apitest). Vérité du compte
+  discriminant est la **portée `moderable`**, pas le rôle). Vérité du compte
   via `GET /users/me` (`username`, `roles`).
 - **Re-vérification (live apitest 2026-06-27, clés test publiques)** : sonde
   clean-room `scripts/explorer_moderation_nakala.py` (dérivée de ces faits,
-  **pas** du code MSHB CC BY-NC-SA). C'est elle qui a **réfuté le §6
-  initial** : sur un dépôt publié *sans demande*, `PUT status/moderated` →
-  **403** malgré `ROLE_MODERATOR` (d'où l'ajout du prérequis de demande
-  ci-dessus). La sonde est *consciente du prérequis* : sans demande elle
-  vérifie le 403 attendu + l'explique ; avec demande (posée via l'UI) elle
-  joue le cycle complet (204 → 403 du revert-statut ×2 → revert par édition →
-  `published`). Auto-restaurante (finit `published`).
+  **pas** du code de C. Choquet, CC BY-NC-SA). C'est elle qui a **réfuté le §6
+  initial** : sur un dépôt publié hors portée, `PUT status/moderated` → **403**
+  malgré `ROLE_MODERATOR` (d'où la correction « file `moderable` » ci-dessus).
+  Vérifié aussi : **les 4 files test sont vides** → 204 non reproductible sur
+  apitest. La sonde est *consciente du prérequis* : hors portée elle vérifie
+  le 403 attendu + l'explique ; si une donnée est dans la file (contexte réel
+  ou demande posée via l'UI) elle joue le cycle complet (204 → 403 du
+  revert-statut ×2 → revert par édition → `published`). Auto-restaurante.
 
-> **→ côté ColleC** : ColleC ne fait que **lire** les champs de modération
-> (présents dans le JSON brut caché au pull — `RessourceExterne.metadonnees_brutes`
-> : `status`, `lastModerator`, `lastModerationDate`). L'**action** modérateur
-> est **doublement hors scope** : (1) elle est couverte par l'outil officiel
-> MSHB (agit tous-déposants-confondus, à sens unique) ; (2) surtout, **la
-> demande de modération n'a pas d'endpoint API public** — ColleC, client
-> pur-API, ne pourrait pas même *initier* une modération. Seule brique côté
-> ColleC : **afficher** le tampon de modération sur la fiche item (livré —
-> `dashboard._moderation_nakala` + `item_fiche.html`, lecture seule depuis le
-> cache).
+> **→ côté ColleC** : aujourd'hui ColleC ne fait que **lire** les champs de
+> modération (JSON brut caché au pull — `RessourceExterne.metadonnees_brutes`
+> : `status`, `lastModerator`, `lastModerationDate`) → tampon read-only sur la
+> fiche (livré : `dashboard._moderation_nakala` + `item_fiche.html`).
+> **Brique candidate** (non tranchée — cf. [`moderation-future.md`](moderation-future.md))
+> : une *console de modération* qui **traite la file** d'un compte
+> `ROLE_MODERATOR` (`POST /users/datas/moderable` → boucle `PUT
+> …/status/moderated`), exactement comme la technique de C. Choquet — c'est
+> **API-jouable**. Limite : ColleC ne peut pas *initier* la demande (non-API),
+> seulement traiter une file peuplée en amont. (À noter : ce n'est **pas** un
+> outil Huma-Num officiel, mais une technique comblant un manque réel — Nakala
+> n'outille pas la modération en lot.)
 
 > **Leçons méta de découverte** (à chaque passe, une conclusion trop hâtive
 > a été corrigée — d'où l'intérêt des sondes auto-restaurantes) :
@@ -768,10 +786,14 @@ peut que lire l'état résultant. Les tâches attribuées se lisent via
 >    pas une transition de statut.
 > 4. **`ROLE_MODERATOR` ≠ droit de modérer ici-et-maintenant** : la 1ʳᵉ passe
 >    (2026-06-26) avait conclu « le modérateur fait `PUT status/moderated` →
->    204 » en présence (non remarquée) d'une demande ; la re-probe (2026-06-27)
->    sur un dépôt *sans* demande a obtenu 403 → le **prérequis de demande**
->    était l'angle mort. Le rôle autorise la *capacité*, la demande autorise
->    l'*acte*.
+>    204 » sans voir que la donnée était dans sa file `moderable` ; la re-probe
+>    (2026-06-27) sur une donnée *hors portée* a obtenu 403 → la **portée
+>    `moderable`** était l'angle mort. Le rôle autorise la *capacité*, la
+>    présence dans la file autorise l'*acte*.
+> 5. **lire le source clarifie** : la « demande » n'est ni un statut ni un
+>    appel API — le script de C. Choquet ne fait que *lister la file puis
+>    PUT-moderated en boucle*. Ce qui peuple la file est serveur-side, en
+>    amont (champ `moderationRequester`), hors API publique.
 
 ## 7. Versioning (DOI `…​.vN`)
 

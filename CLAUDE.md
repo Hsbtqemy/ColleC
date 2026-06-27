@@ -129,6 +129,18 @@ MkDocs, accessibles aux contributeurs et à Claude Code) :
   (irréversible, présumé par identité logicielle) : publication réelle,
   relations donnée↔donnée, versioning `.vN` sur prod. Cf.
   `backlog-nakala-api.md` § *Audit de parité*.
+- [`moderation-future.md`](docs/developpeurs/moderation-future.md)
+  — **note de design (non tranchée)** : faut-il intégrer une *console de
+  modération* dans ColleC (ColleC s'adresse aussi aux modérateurs MSHS) ?
+  Faisabilité (re-sondée live) : le *traitement* de la file est API-jouable
+  (`POST /users/datas/moderable` + `PUT …/status/moderated`), mais
+  `ROLE_MODERATOR` est **nécessaire non suffisant** — il faut une **demande**
+  en attente, **non créable via l'API** (UI/`depot-lot` ; 403 même en
+  auto-modération). Tensions : file Huma-Num-wide ≠ catalogue ; doublon de
+  l'outil officiel MSHB (CC BY-NC-SA, non vendorisable) ; action de
+  gouvernance. MVP esquissé (zone `/moderation` gatée `ROLE_MODERATOR`,
+  lecture + modération par lot derrière confirmation, clean-room). Seul le
+  **tampon read-only** sur la fiche est livré. Cf. `nakala-savoir-api.md` §6.
 - [`nakala-depot-future.md`](docs/developpeurs/nakala-depot-future.md)
   — **dépôt + round-trip Nakala** (ColleC possède le chemin
   lecture/écriture, sans couplage madbot). Architecture pull /

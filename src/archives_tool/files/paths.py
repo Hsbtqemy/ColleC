@@ -12,6 +12,7 @@ Règles transversales du projet :
 from __future__ import annotations
 
 import hashlib
+import ntpath
 import sys
 import unicodedata
 from collections.abc import Iterable, Mapping
@@ -40,9 +41,23 @@ def valider_chemin_relatif(chemin_relatif: str) -> PurePosixPath:
 
     Garde-fou unique pour empêcher qu'une valeur en base ne sorte de
     sa racine. Utilisé par `resoudre_chemin` et tout calcul de cible
-    issu d'un template utilisateur.
+    issu d'un template utilisateur ou d'une source distante.
+
+    La garde est **OS-agnostique** : on rejette explicitement les
+    antislashs et les lettres de lecteur Windows *avant* l'analyse
+    POSIX. Sans cela, un nom du type ``..\\..\\x`` ou ``C:\\x`` passerait
+    le contrôle (``PurePosixPath`` ne connaît que ``/`` — il voit ``\\``
+    et ``C:`` comme des caractères ordinaires, donc ni `..` ni absolu),
+    puis ``Path.joinpath`` les réinterpréterait comme séparateurs/racine
+    en production Windows → écriture **hors racine** (cf. revue sécurité
+    F1, écriture de fichier arbitraire prouvée end-to-end). Les chemins
+    relatifs légitimes du projet sont toujours POSIX (`/` uniquement),
+    donc ce durcissement ne rejette aucune valeur saine.
     """
-    rel = PurePosixPath(normaliser_nfc(chemin_relatif))
+    brut = normaliser_nfc(chemin_relatif)
+    if "\\" in brut or ntpath.splitdrive(brut)[0]:
+        raise ValueError(f"Chemin relatif invalide : {chemin_relatif!r}")
+    rel = PurePosixPath(brut)
     if rel.is_absolute() or ".." in rel.parts:
         raise ValueError(f"Chemin relatif invalide : {chemin_relatif!r}")
     return rel

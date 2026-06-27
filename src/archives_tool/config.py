@@ -28,29 +28,42 @@ _logger = logging.getLogger(__name__)
 _HOTES_NAKALA_DEFAUT = ("api.nakala.fr", "apitest.nakala.fr", "api-test.nakala.fr")
 
 
-def _valider_url_nakala(base_url: str, hotes_autorises: list[str]) -> str:
-    """Valide / normalise une `base_url` Nakala (anti-SSRF + HTTPS). Lève
-    `ValueError` (capté par Pydantic). Parité avec le client ShareDocs :
-    HTTPS exigé (la clé API circule en header `X-API-KEY` → jamais sur du
-    HTTP en clair), pas d'identifiants dans l'URL, hôte dans l'allowlist,
-    pas d'IP interne. Renvoie l'URL sans `/` final."""
+def _valider_url_anti_ssrf(
+    base_url: str,
+    hotes_autorises: list[str],
+    *,
+    etiquette: str,
+    indice_allowlist: str,
+) -> str:
+    """Valide / normalise une `base_url` distante (anti-SSRF + HTTPS). Lève
+    `ValueError` (capté par Pydantic). HTTPS exigé (les secrets circulent en
+    header / en Basic auth → jamais sur du HTTP en clair), pas d'identifiants
+    dans l'URL, hôte dans l'allowlist, pas d'IP interne. Renvoie l'URL sans
+    `/` final.
+
+    Helper commun à Nakala et ShareDocs : avant, ShareDocs ne vérifiait que
+    le préfixe `https://` (ni allowlist, ni userinfo, ni IP interne) — une
+    `base_url` interne ou hors allowlist passait la config (revue sécurité
+    F2). Le client ShareDocs re-validait au runtime, mais la défense en
+    profondeur manquait au niveau config.
+    """
     base_url = (base_url or "").strip().rstrip("/")
     parts = urlsplit(base_url)
     if parts.scheme != "https":
         raise ValueError(
-            f"nakala.base_url : HTTPS requis (schéma reçu : {parts.scheme or '∅'!r})."
+            f"{etiquette} : HTTPS requis (schéma reçu : {parts.scheme or '∅'!r})."
         )
     if parts.username or parts.password:
-        raise ValueError("nakala.base_url : pas d'identifiants dans l'URL.")
+        raise ValueError(f"{etiquette} : pas d'identifiants dans l'URL.")
     host = (parts.hostname or "").lower()
     if not host:
-        raise ValueError("nakala.base_url : hôte manquant.")
+        raise ValueError(f"{etiquette} : hôte manquant.")
     autorises = {h.lower() for h in hotes_autorises}
     if host not in autorises:
         raise ValueError(
-            f"nakala.base_url : hôte non autorisé {host!r}. "
+            f"{etiquette} : hôte non autorisé {host!r}. "
             f"Autorisé(s) : {', '.join(sorted(autorises)) or '(aucun)'} "
-            "(ajouter à nakala.hotes_autorises si légitime)."
+            f"({indice_allowlist})."
         )
     try:
         ip = ipaddress.ip_address(host)
@@ -58,8 +71,19 @@ def _valider_url_nakala(base_url: str, hotes_autorises: list[str]) -> str:
         pass  # nom de domaine, pas une IP → OK
     else:
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-            raise ValueError("nakala.base_url : adresse IP interne interdite.")
+            raise ValueError(f"{etiquette} : adresse IP interne interdite.")
     return base_url
+
+
+def _valider_url_nakala(base_url: str, hotes_autorises: list[str]) -> str:
+    """Valide une `base_url` Nakala (anti-SSRF + HTTPS). Cf.
+    `_valider_url_anti_ssrf`."""
+    return _valider_url_anti_ssrf(
+        base_url,
+        hotes_autorises,
+        etiquette="nakala.base_url",
+        indice_allowlist="ajouter à nakala.hotes_autorises si légitime",
+    )
 
 
 class NakalaConfig(BaseModel):
@@ -112,13 +136,23 @@ class ShareDocsConfig(BaseModel):
     base_url: str
     hotes_autorises: list[str] = Field(default_factory=list)
 
-    @field_validator("base_url")
-    @classmethod
-    def _base_url_https(cls, v: str) -> str:
-        v = v.rstrip("/")
-        if not v.startswith("https://"):
-            raise ValueError("sharedocs.base_url doit commencer par https://")
-        return v
+    @model_validator(mode="after")
+    def _valider_base_url(self) -> ShareDocsConfig:
+        # Allowlist effective : `hotes_autorises` vide → on retombe sur le
+        # défaut du client (import paresseux = source unique, pas de cycle au
+        # chargement de config). Le client `ClientShareDocs` reste l'autorité
+        # qui re-valide au runtime ; cette validation est la défense en
+        # profondeur côté config (F2), à parité avec Nakala.
+        from archives_tool.external.sharedocs.client import HOTES_AUTORISES_DEFAUT
+
+        effectifs = self.hotes_autorises or sorted(HOTES_AUTORISES_DEFAUT)
+        self.base_url = _valider_url_anti_ssrf(
+            self.base_url,
+            list(effectifs),
+            etiquette="sharedocs.base_url",
+            indice_allowlist="ajouter à sharedocs.hotes_autorises si légitime",
+        )
+        return self
 
 
 class ConfigLocale(BaseModel):

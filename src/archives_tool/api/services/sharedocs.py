@@ -150,6 +150,9 @@ def importer_depuis_sharedocs(
     deja_en_base = {(f.racine, f.chemin_relatif) for f in item.fichiers}
     ordre_courant = max((f.ordre for f in item.fichiers), default=0)
     cote_nfc = normaliser_nfc(item.cote)
+    # Racine résolue une fois : sert de référence à la ceinture de
+    # confinement post-résolution (anti-traversal en écriture, cf. F1).
+    base_resolu = racines[racine_cible].resolve()
     # Chemins relatifs déjà traités DANS ce lot — distingue une collision
     # intra-lot (deux fichiers distants de même basename → même cible) d'un
     # vrai « déjà en base ». Sans ça, le 2e serait silencieusement perdu.
@@ -174,15 +177,24 @@ def importer_depuis_sharedocs(
         # en cours », ce qui est le moment le plus long (download réseau).
         if on_progress is not None:
             on_progress(index, total, chemin.rsplit("/", 1)[-1])
-        nom = normaliser_nfc(chemin.rsplit("/", 1)[-1])
-        if not nom:  # chemin distant finissant par "/" → basename vide
+        # Basename robuste : un serveur distant hostile (ou un MITM) peut
+        # renvoyer un chemin à antislashs (séparateur Windows) ou absolu —
+        # on remplace `\` par `/` AVANT de couper, pour extraire le vrai
+        # nom et non `..\..\x`. On rejette tout résidu de remontée/séparateur.
+        nom = normaliser_nfc(chemin.replace("\\", "/").rsplit("/", 1)[-1])
+        if not nom or nom in (".", ".."):  # basename vide ou remontée
             _noter(nom, "", retenu=False, raison="nom_invalide")
             continue
         chemin_relatif = f"{cote_nfc}/{nom}"
-        # Cible absolue traversal-safe. `..` dans le nom / racine inconnue →
-        # consigné, le lot continue (jamais de traversal effectif).
+        # Cible absolue traversal-safe. La garde centrale `resoudre_chemin`
+        # rejette `..`, l'absolu, les antislashs et les drives Windows ; la
+        # ceinture `is_relative_to` post-résolution confine sous la racine
+        # (couvre aussi un éventuel échappement par symlink). `..` / racine
+        # inconnue → consigné, le lot continue (jamais de traversal effectif).
         try:
             cible = resoudre_chemin(racines, racine_cible, chemin_relatif)
+            if not cible.resolve().is_relative_to(base_resolu):
+                raise ValueError(f"Cible hors racine : {chemin_relatif!r}")
         except (KeyError, ValueError):
             _noter(nom, chemin_relatif, retenu=False, raison="chemin_invalide")
             continue
@@ -231,7 +243,9 @@ def importer_depuis_sharedocs(
             )
             _noter(nom, chemin_relatif, retenu=False, raison="echec_telechargement")
             continue
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            # ValueError : nom à NUL byte → `embedded null byte` (n'est pas
+            # un OSError). Capté ici pour ne pas casser tout le lot (F3).
             logger.warning("ShareDocs import : échec écriture %s : %s", chemin, exc)
             _noter(nom, chemin_relatif, retenu=False, raison="echec_ecriture")
             continue

@@ -31,7 +31,12 @@ class NomDejaUtilise(Exception):
 def _normaliser_nom(nom: str) -> str:
     """NFC + strip — un nom n'est pas un chemin, mais on garde la
     normalisation Unicode du projet pour éviter les doublons visuels
-    (« José » NFC vs NFD)."""
+    (« José » NFC vs NFD).
+
+    ⚠ Pas de casefold : l'unicité reste **sensible à la casse** (`"Marie"`
+    ≠ `"marie"`). Tolérable tant que `nom` n'est pas l'identifiant de login
+    (mode local : table non consultée). À trancher avant la Phase 2
+    (ident-2, cf. docstring de `models/utilisateur.py`)."""
     return unicodedata.normalize("NFC", (nom or "").strip())
 
 

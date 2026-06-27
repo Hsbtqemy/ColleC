@@ -373,6 +373,62 @@ def test_racine_inconnue_leve(env) -> None:
             )
 
 
+def test_traversal_nom_distant_ne_sort_pas_de_racine(env) -> None:
+    """Revue sécurité F1 : un chemin distant malveillant (antislashs Windows,
+    remontée `..`) ne doit JAMAIS écrire hors de la racine. Le basename est
+    extrait proprement (le fichier atterrit DANS la racine) ou le nom est
+    rejeté — jamais de fichier au-dessus de la racine d'import."""
+    db, racines = env
+    racine = racines["import"]
+    au_dessus = racine.parent  # tmp_path
+    malveillants = [
+        "..\\..\\evade.txt",  # remontée via séparateur Windows
+        "x/../../../evade2.txt",  # remontée POSIX → basename seul retenu
+        "sous\\..\\..\\evade3.txt",  # mixte
+    ]
+    with _session(db) as s:
+        importer_depuis_sharedocs(
+            s,
+            _client(),
+            malveillants,
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    # Aucun fichier créé au-dessus de la racine (à 1 ou 2 niveaux).
+    for nom in ("evade.txt", "evade2.txt", "evade3.txt"):
+        assert not (au_dessus / nom).exists()
+        assert not (au_dessus.parent / nom).exists()
+    # Tout fichier réellement écrit reste confiné sous la racine.
+    racine_resolue = racine.resolve()
+    for p in racine.rglob("*"):
+        if p.is_file():
+            assert racine_resolue in p.resolve().parents
+
+
+def test_nom_nul_byte_ne_casse_pas_le_lot(env) -> None:
+    """Revue sécurité F3 : un nom à NUL byte lève un `ValueError` (et non un
+    `OSError`) — capté pour ne pas casser tout le lot. Le fichier valide du
+    même lot est importé normalement."""
+    db, racines = env
+    with _session(db) as s:
+        rapport = importer_depuis_sharedocs(
+            s,
+            _client(),
+            ["d/a\x00.jpg", "d/ok.jpg"],
+            _item(s),
+            racine_cible="import",
+            racines=racines,
+            dry_run=False,
+        )
+    # Le lot n'a pas planté ; seul le fichier valide est retenu.
+    assert rapport.nb_retenus == 1
+    with _session(db) as s:
+        noms = {f.nom_fichier for f in s.scalars(select(Fichier)).all()}
+    assert noms == {"ok.jpg"}
+
+
 def test_echec_telechargement_partiel_continue(env) -> None:
     """Un fichier en échec (404) est consigné ; les autres passent."""
     db, racines = env

@@ -88,15 +88,25 @@ _JOBS: dict[str, EtatJobImport] = {}
 _id_actuel: dict[str, str] = {}
 
 
-def lire_etat_job(job_id: str) -> EtatJobImport | None:
+def lire_etat_job(job_id: str, *, owner: str | None = None) -> EtatJobImport | None:
     """Snapshot deepcopy thread-safe d'un job (``None`` si inconnu).
 
     Le deepcopy (pris sous lock) garantit que la route HTMX lit un état
     cohérent même si le runner mute les champs entre deux accès Jinja.
+
+    ``owner`` : si fourni, un job appartenant à un AUTRE owner est traité
+    comme inconnu (``None``). C'est le **contrôle d'accès** des jobs — le
+    ``job_id`` (UUID non devinable) n'est que de la défense en profondeur,
+    pas une autorisation (un id transite en clair dans les URLs/logs). Sans
+    ce filtre, un utilisateur pourrait lire l'état d'un job d'autrui en
+    mode multi-utilisateurs (revue sécurité, IDOR). ``None`` (défaut) =
+    pas de filtre, pour les tests et la CLI mono-processus.
     """
     with _lock:
         etat = _JOBS.get(job_id)
-        return copy.deepcopy(etat) if etat is not None else None
+        if etat is None or (owner is not None and etat.owner != owner):
+            return None
+        return copy.deepcopy(etat)
 
 
 def est_job_actif(*, owner: str = OWNER_DEFAUT) -> bool:
@@ -146,16 +156,22 @@ def reserver_job(
     return job_id
 
 
-def demander_annulation(job_id: str) -> bool:
+def demander_annulation(job_id: str, *, owner: str | None = None) -> bool:
     """Pose le drapeau d'annulation sur un job **en cours** (thread-safe).
 
     Renvoie True si l'annulation a été enregistrée (job connu et en cours),
     False sinon (inconnu ou déjà terminé/échoué/annulé). L'arrêt est
     coopératif : le runner le constate avant le fichier suivant.
+
+    ``owner`` : si fourni, l'annulation d'un job appartenant à un AUTRE
+    owner est refusée (``False``) — sans ce filtre un utilisateur pourrait
+    saboter l'import d'autrui via son ``job_id`` (revue sécurité, IDOR).
     """
     with _lock:
         etat = _JOBS.get(job_id)
         if etat is None or etat.statut != "en_cours":
+            return False
+        if owner is not None and etat.owner != owner:
             return False
         etat.annule = True
         return True

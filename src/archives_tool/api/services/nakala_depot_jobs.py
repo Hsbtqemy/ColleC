@@ -123,11 +123,14 @@ _lock = threading.Lock()
 _JOBS: dict[str, EtatJobDepot] = {}
 #: owner -> job_id actif. Garde mono-job **per-owner** : un seul dépôt par
 #: owner à la fois (en local, un seul owner ``OWNER_DEFAUT``). `_JOBS` reste
-#: keyé par UUID (un job_id non devinable n'est pas une fuite cross-owner).
+#: keyé par UUID. Le job_id non devinable est de la défense en profondeur ;
+#: le **contrôle d'accès** cross-owner est le filtre ``owner`` de
+#: ``lire_etat_job`` (un id transite en clair dans URLs/logs, ce n'est pas
+#: une autorisation).
 _id_actuel: dict[str, str] = {}
 
 
-def lire_etat_job(job_id: str) -> EtatJobDepot | None:
+def lire_etat_job(job_id: str, *, owner: str | None = None) -> EtatJobDepot | None:
     """Lecture thread-safe d'un état de job. ``None`` si inconnu.
 
     Renvoie un **snapshot deepcopy** pris sous lock, pas l'objet vivant.
@@ -140,10 +143,14 @@ def lire_etat_job(job_id: str) -> EtatJobDepot | None:
     Le deepcopy couvre les listes (`deposes`, `sautes`, …) — sans cela,
     le reader recevrait une référence au même list object que le writer
     pourrait remplacer en cours d'itération Jinja.
+
+    ``owner`` : si fourni, un job d'un AUTRE owner est traité comme inconnu
+    (``None``) — contrôle d'accès des jobs (revue sécurité, IDOR). ``None``
+    (défaut) = pas de filtre (tests / mono-processus).
     """
     with _lock:
         etat = _JOBS.get(job_id)
-        if etat is None:
+        if etat is None or (owner is not None and etat.owner != owner):
             return None
         return copy.deepcopy(etat)
 

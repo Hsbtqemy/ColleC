@@ -517,12 +517,14 @@ def page_suivi_import(
     request: Request,
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> HTMLResponse | RedirectResponse:
     """Page de suivi de l'import — barre de progression (HTMX every 2s).
 
-    Si le job est inconnu (serveur redémarré → registre vidé), retour au
-    parcours avec un message."""
-    etat = lire_etat_job(job_id)
+    Si le job est inconnu (serveur redémarré → registre vidé) **ou
+    appartient à un autre owner** (IDOR), retour au parcours avec un
+    message — un job d'autrui est indiscernable d'un job inexistant."""
+    etat = lire_etat_job(job_id, owner=owner)
     if etat is None:
         return _redirect_erreur(
             f"Import {job_id[:8]}… introuvable (serveur redémarré ou job "
@@ -540,9 +542,14 @@ def page_suivi_import(
     response_class=HTMLResponse,
     response_model=None,
 )
-def fragment_statut_import(job_id: str, request: Request) -> HTMLResponse:
-    """Fragment HTMX (every 2s) — barre + fichier courant. 404 si inconnu."""
-    etat = lire_etat_job(job_id)
+def fragment_statut_import(
+    job_id: str,
+    request: Request,
+    owner: str = Depends(get_owner_key),
+) -> HTMLResponse:
+    """Fragment HTMX (every 2s) — barre + fichier courant. 404 si inconnu
+    ou appartenant à un autre owner (IDOR)."""
+    etat = lire_etat_job(job_id, owner=owner)
     if etat is None:
         return HTMLResponse("<p>Import introuvable.</p>", status_code=404)
     return templates.TemplateResponse(
@@ -553,11 +560,18 @@ def fragment_statut_import(job_id: str, request: Request) -> HTMLResponse:
 
 
 @router.post("/sharedocs/importer/annuler/{job_id}")
-def annuler_import(job_id: str) -> RedirectResponse:
+def annuler_import(
+    job_id: str,
+    owner: str = Depends(get_owner_key),
+) -> RedirectResponse:
     """Demande l'annulation coopérative d'un import en cours, puis revient à
     la page de suivi (le runner s'arrête après le fichier courant ; les
-    fichiers déjà importés sont conservés). Bloqué 423 en lecture seule."""
-    demander_annulation(job_id)
+    fichiers déjà importés sont conservés). Bloqué 423 en lecture seule.
+
+    ``owner`` : l'annulation est refusée pour un job d'un autre owner —
+    sans ce filtre on pourrait saboter l'import d'autrui via son job_id
+    (revue sécurité, IDOR)."""
+    demander_annulation(job_id, owner=owner)
     return RedirectResponse(f"/sharedocs/importer/suivi/{job_id}", status_code=303)
 
 

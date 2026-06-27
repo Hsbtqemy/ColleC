@@ -2599,6 +2599,29 @@ racines:
 Avantages : portabilité entre machines, collaboration possible avec des
 chemins différents par utilisateur.
 
+**Garde anti-traversal centrale OS-agnostique** (revue sécurité
+2026-06-27, finding F1). `files/paths.valider_chemin_relatif` (utilisée
+par `resoudre_chemin`, le renamer, la qa, l'import et l'ingestion
+ShareDocs) rejette désormais explicitement les **antislashs** et les
+**lettres de lecteur Windows** (`ntpath.splitdrive`) *avant* l'analyse
+POSIX. Sans cela, `PurePosixPath` voyait `..\..\x` ou `C:\x` comme des
+caractères ordinaires (ni `..`, ni absolu) et `Path.joinpath` les
+réinterprétait en séparateurs/racine en production Windows → **écriture
+de fichier hors racine** (arbitraire, prouvée end-to-end via l'ingestion
+ShareDocs). Les chemins relatifs légitimes du projet sont toujours POSIX
+(`/`), donc le durcissement ne rejette aucune valeur saine. Défense en
+profondeur côté ShareDocs : extraction du *vrai* basename (normalisation
+`\`→`/` avant `rsplit`) + ceinture `Path.resolve().is_relative_to(racine)`
+post-résolution (couvre aussi l'échappement par symlink). Deux autres
+findings traités dans la même passe : **IDOR jobs** (les routes
+suivi/statut/annulation des tâches de fond filtrent maintenant par
+`owner` — un job d'autrui est indiscernable d'un inconnu, prérequis
+multi-user) et **F2** (validation anti-SSRF de `ShareDocsConfig` mise à
+parité avec Nakala : allowlist d'hôte + userinfo + IP interne, plus
+seulement `https://`). Dette identité Phase 2 actée en docstrings
+(`peut_editer=True` par défaut à inverser vers le moindre privilège ;
+unicité `nom` sensible à la casse à trancher avant le login).
+
 ### Métadonnées étendues en JSON
 
 Les champs Dublin Core étendus et spécifiques à chaque collection sont

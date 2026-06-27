@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from archives_tool.config import ConfigLocale, NakalaConfig, charger_config
+from archives_tool.config import (
+    ConfigLocale,
+    NakalaConfig,
+    ShareDocsConfig,
+    charger_config,
+)
 
 
 def _ecrire_yaml(chemin: Path, contenu: str) -> Path:
@@ -143,6 +148,51 @@ def test_nakala_hotes_autorises_surchargeable() -> None:
         hotes_autorises=["nakala.mon-instance.fr"],
     )
     assert cfg.base_url == "https://nakala.mon-instance.fr"
+
+
+# --- F2 (revue sécurité) : anti-SSRF de ShareDocsConfig.base_url ---
+#
+# Avant, ShareDocsConfig ne vérifiait que le préfixe https:// — ni allowlist,
+# ni userinfo, ni IP interne. Désormais à parité avec NakalaConfig (défense en
+# profondeur côté config ; le client reste l'autorité au runtime).
+
+
+def test_sharedocs_hote_par_defaut_accepte() -> None:
+    cfg = ShareDocsConfig(base_url="https://sharedocs.huma-num.fr/dav/colleC/")
+    assert cfg.base_url == "https://sharedocs.huma-num.fr/dav/colleC"
+
+
+def test_sharedocs_base_url_non_https_rejete() -> None:
+    with pytest.raises(ValidationError, match="HTTPS"):
+        ShareDocsConfig(base_url="http://sharedocs.huma-num.fr/dav")
+
+
+def test_sharedocs_hote_non_autorise_rejete() -> None:
+    # Avant F2 : un hôte arbitraire passait (seul https:// était vérifié).
+    with pytest.raises(ValidationError, match="non autoris"):
+        ShareDocsConfig(base_url="https://evil.example.com/dav")
+
+
+def test_sharedocs_userinfo_rejete() -> None:
+    with pytest.raises(ValidationError, match="identifiants"):
+        ShareDocsConfig(base_url="https://user:pass@sharedocs.huma-num.fr/dav")
+
+
+def test_sharedocs_ip_interne_rejetee() -> None:
+    # Avant F2 : `https://192.168.x` passait la config. IP ajoutée à
+    # l'allowlist → prouve que la garde IP interne mord quand même.
+    with pytest.raises(ValidationError, match="interne"):
+        ShareDocsConfig(
+            base_url="https://192.168.1.50/dav", hotes_autorises=["192.168.1.50"]
+        )
+
+
+def test_sharedocs_hotes_autorises_surchargeable() -> None:
+    cfg = ShareDocsConfig(
+        base_url="https://dav.mon-instance.fr/colleC",
+        hotes_autorises=["dav.mon-instance.fr"],
+    )
+    assert cfg.base_url == "https://dav.mon-instance.fr/colleC"
 
 
 # --- R2 : une section distante invalide ne fait pas tomber TOUTE la config ---

@@ -12,6 +12,7 @@ from archives_tool.files.paths import (
     hash_sha256,
     normaliser_nfc,
     resoudre_chemin,
+    valider_chemin_relatif,
     vers_posix,
 )
 
@@ -58,6 +59,40 @@ def test_resoudre_chemin_rejette_remontee(tmp_path: Path) -> None:
 def test_resoudre_chemin_rejette_absolu(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         resoudre_chemin({"scans": tmp_path}, "scans", "/abs/chemin.tif")
+
+
+# --- Revue sécurité F1 : traversal OS-agnostique (antislash / drive Windows) ---
+#
+# PurePosixPath ne connaît que `/` : un nom à antislashs ou un chemin
+# absolu Windows échappait à la garde `..`/absolu, puis Path.joinpath les
+# réinterprétait en prod Windows → écriture hors racine (prouvé E2E).
+
+
+@pytest.mark.parametrize(
+    "chemin",
+    [
+        "..\\..\\evade.tif",  # remontée via séparateur Windows
+        "AS-001\\..\\..\\evade.tif",  # remontée mid-chemin
+        "C:\\Windows\\x.dll",  # absolu Windows (drive)
+        "AS-001/C:\\x.dll",  # drive en milieu de chemin (capté par `\\`)
+        "a\\b.tif",  # tout antislash, même sans remontée
+    ],
+)
+def test_valider_chemin_relatif_rejette_antislash_et_drive(chemin: str) -> None:
+    with pytest.raises(ValueError):
+        valider_chemin_relatif(chemin)
+
+
+def test_valider_chemin_relatif_accepte_posix_legitime() -> None:
+    rel = valider_chemin_relatif("rev1/1923/0001.tif")
+    assert rel.parts == ("rev1", "1923", "0001.tif")
+
+
+def test_resoudre_chemin_rejette_antislash(tmp_path: Path) -> None:
+    # La chaîne complète F1 : un nom à antislashs ne doit jamais produire
+    # une cible hors racine — la garde lève AVANT le joinpath.
+    with pytest.raises(ValueError):
+        resoudre_chemin({"scans": tmp_path}, "scans", "AS-001/..\\..\\evade.tif")
 
 
 def test_hash_sha256_valeur_connue(tmp_path: Path) -> None:

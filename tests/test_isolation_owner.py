@@ -160,3 +160,52 @@ def test_defaut_local_partage_entre_appels_sans_owner() -> None:
     assert sharedocs_session.est_connecte(owner=deps.OWNER_DEFAUT) is True
     nakala_depot_jobs.reserver_job(fonds_cote="X", collection_cote="X", total=0)
     assert nakala_depot_jobs.est_job_actif() is True
+
+
+# ---------------------------------------------------------------------------
+# IDOR — contrôle d'accès cross-owner sur les jobs (lecture / annulation)
+#
+# `_JOBS` est keyé par UUID (non devinable) ; le job_id n'est PAS une
+# autorisation (il transite en clair dans URLs/logs). Le filtre `owner` des
+# accesseurs est le vrai contrôle d'accès. Sans lui, un owner pouvait lire
+# l'état (arborescence privée) ou annuler le job d'un autre owner.
+# ---------------------------------------------------------------------------
+
+
+def _job_sharedocs(owner: str) -> str:
+    return sharedocs_jobs.reserver_job(
+        item_cote="IT",
+        fonds_cote="F",
+        racine="scans",
+        chemin_retour="/",
+        chemins_distants=["/a.tif"],
+        owner=owner,
+    )
+
+
+def test_lire_etat_job_sharedocs_filtre_par_owner() -> None:
+    job_a = _job_sharedocs("alice")
+    # Bob, en devinant le job_id de A, ne voit RIEN (indiscernable d'inconnu).
+    assert sharedocs_jobs.lire_etat_job(job_a, owner="bob") is None
+    # A voit son job ; l'accès sans owner (tests/CLI) reste permis.
+    assert sharedocs_jobs.lire_etat_job(job_a, owner="alice") is not None
+    assert sharedocs_jobs.lire_etat_job(job_a) is not None
+
+
+def test_annuler_job_sharedocs_refuse_autre_owner() -> None:
+    job_a = _job_sharedocs("alice")
+    # Bob ne peut pas saboter l'import de A.
+    assert sharedocs_jobs.demander_annulation(job_a, owner="bob") is False
+    assert sharedocs_jobs.lire_etat_job(job_a, owner="alice").annule is False
+    # A peut annuler le sien.
+    assert sharedocs_jobs.demander_annulation(job_a, owner="alice") is True
+    assert sharedocs_jobs.lire_etat_job(job_a, owner="alice").annule is True
+
+
+def test_lire_etat_job_nakala_filtre_par_owner() -> None:
+    job_a = nakala_depot_jobs.reserver_job(
+        fonds_cote="X", collection_cote="X", total=1, owner="alice"
+    )
+    assert nakala_depot_jobs.lire_etat_job(job_a, owner="bob") is None
+    assert nakala_depot_jobs.lire_etat_job(job_a, owner="alice") is not None
+    assert nakala_depot_jobs.lire_etat_job(job_a) is not None

@@ -951,14 +951,15 @@ def page_suivi_depot(
     request: Request,
     nom_base: str = Depends(get_nom_base),
     utilisateur: str = Depends(get_utilisateur_courant),
+    owner: str = Depends(get_owner_key),
 ) -> HTMLResponse | RedirectResponse:
     """Page de suivi du dépôt — affiche barre de progression + journal.
 
     Le fragment HTMX `every 2s` (statut) met à jour la barre. Si le job
-    n'existe pas (uvicorn redémarré → registre vidé), retour à `/nakala`
-    avec un message d'erreur.
+    n'existe pas (uvicorn redémarré → registre vidé) **ou appartient à un
+    autre owner** (IDOR), retour à `/nakala` avec un message d'erreur.
     """
-    etat = lire_etat_job(job_id)
+    etat = lire_etat_job(job_id, owner=owner)
     if etat is None:
         return _redirect_erreur(
             f"Job {job_id[:8]}… introuvable "
@@ -985,13 +986,15 @@ def page_suivi_depot(
 def fragment_statut_depot(
     job_id: str,
     request: Request,
+    owner: str = Depends(get_owner_key),
 ) -> HTMLResponse:
     """Fragment HTMX (every 2s) — barre + dernière cote traitée.
 
     Retourne le markup partiel à injecter dans la page suivi. 404 si
-    le job est inconnu — HTMX peut afficher un message côté client.
+    le job est inconnu ou appartient à un autre owner (IDOR) — HTMX peut
+    afficher un message côté client.
     """
-    etat = lire_etat_job(job_id)
+    etat = lire_etat_job(job_id, owner=owner)
     if etat is None:
         return HTMLResponse(
             "<p>Job introuvable.</p>",

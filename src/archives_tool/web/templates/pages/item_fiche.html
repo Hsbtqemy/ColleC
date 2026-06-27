@@ -291,6 +291,30 @@
          lent ~3-5 s → pas à chaque rendu de fiche). Seulement si l'item a
          un DOI Nakala. #}
       {% if item.doi_nakala %}
+      {# Tampon de modération Nakala (lecture seule, lu du cache au rendu —
+         aucun appel réseau). Présent seulement si le dépôt a été validé par
+         un modérateur Huma-Num ou en porte la trace (cf. savoir-api §6). #}
+      {% set mod = fiche.moderation_nakala %}
+      {% if mod %}
+      <section style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);">
+        <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
+          Modération Nakala
+        </h3>
+        {% if mod.est_moderee %}
+        <p style="font-size:12.5px;color:#166534;display:flex;align-items:center;gap:6px;margin:0;">
+          <span aria-hidden="true">✓</span>
+          <span>Validé par un modérateur Nakala{% if mod.date %} le {{ mod.date }}{% endif %}{% if mod.moderateur %} · {{ mod.moderateur }}{% endif %}.</span>
+        </p>
+        {% else %}
+        <p style="font-size:12.5px;color:#6b7280;margin:0;">
+          Modération antérieure (statut revenu à « publié »){% if mod.date %} — {{ mod.date }}{% endif %}{% if mod.moderateur %} · {{ mod.moderateur }}{% endif %}.
+        </p>
+        {% endif %}
+        <p style="font-size:10.5px;color:#9ca3af;margin:4px 0 0;">
+          État relevé au dernier rapatriement ; ColleC ne modère pas (action réservée à Huma-Num).
+        </p>
+      </section>
+      {% endif %}
       <section style="padding:12px 14px;border-top:1px solid rgba(0,0,0,0.06);">
         <h3 style="font-size:11px;font-weight:500;color:#9ca3af;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px;">
           Citation Nakala

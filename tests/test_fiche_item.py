@@ -329,3 +329,144 @@ def test_meta_fichier_techniques_couvre_urls_nakala() -> None:
     la liste noire — sinon les agrégats sont pollués par fingerprints."""
     pour_etre_couverts = {"data_url", "embed_url", "preview_url", "thumb"}
     assert pour_etre_couverts.issubset(_META_FICHIER_TECHNIQUES)
+
+
+# ---------------------------------------------------------------------------
+# Tampon de modération Nakala (lecture seule, lu du cache)
+# ---------------------------------------------------------------------------
+
+
+def test_nom_moderateur_extrait_un_nom_lisible() -> None:
+    from archives_tool.api.services.dashboard import _nom_moderateur
+
+    assert _nom_moderateur({"username": "mnakala", "fullName": "M. Modérateur"}) == (
+        "M. Modérateur"
+    )
+    assert _nom_moderateur({"username": "mnakala"}) == "mnakala"
+    assert _nom_moderateur({}) is None
+    assert _nom_moderateur("Chloé") == "Chloé"
+    assert _nom_moderateur(None) is None
+
+
+def _db_avec_depot_nakala(
+    tmp_path: Path, brut: dict | None, *, doi: str = "10.34847/nkl.demo"
+):
+    """Base jetable : fonds AS + item AS-001 (doi_nakala) + cache Nakala
+    (RessourceExterne avec `metadonnees_brutes=brut`). `brut=None` =
+    aucune ressource cachée."""
+    from archives_tool.api.services.fonds import FormulaireFonds, creer_fonds
+    from archives_tool.api.services.items import FormulaireItem, creer_item
+    from archives_tool.api.services.nakala import source_nakala
+    from archives_tool.models import Base, RessourceExterne
+
+    eng = creer_engine(tmp_path / "mod.db")
+    Base.metadata.create_all(eng)
+    with creer_session_factory(eng)() as s:
+        f = creer_fonds(s, FormulaireFonds(cote="AS", titre="AS"))
+        creer_item(
+            s, FormulaireItem(cote="AS-001", titre="x", fonds_id=f.id, doi_nakala=doi)
+        )
+        if brut is not None:
+            src = source_nakala(s)
+            s.add(
+                RessourceExterne(
+                    source_id=src.id, identifiant_externe=doi, metadonnees_brutes=brut
+                )
+            )
+        s.commit()
+    return eng
+
+
+def test_moderation_nakala_aucun_doi_renvoie_none(tmp_path: Path) -> None:
+    from archives_tool.api.services.dashboard import _moderation_nakala
+    from archives_tool.models import Item
+
+    eng = _db_avec_depot_nakala(tmp_path, None)
+    with creer_session_factory(eng)() as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        item.doi_nakala = None
+        s.flush()
+        assert _moderation_nakala(s, item) is None
+    eng.dispose()
+
+
+def test_moderation_nakala_doi_sans_cache_renvoie_none(tmp_path: Path) -> None:
+    from archives_tool.api.services.dashboard import _moderation_nakala
+    from archives_tool.models import Item
+
+    eng = _db_avec_depot_nakala(tmp_path, None)  # pas de RessourceExterne
+    with creer_session_factory(eng)() as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        assert _moderation_nakala(s, item) is None
+    eng.dispose()
+
+
+def test_moderation_nakala_publie_sans_trace_renvoie_none(tmp_path: Path) -> None:
+    from archives_tool.api.services.dashboard import _moderation_nakala
+    from archives_tool.models import Item
+
+    eng = _db_avec_depot_nakala(tmp_path, {"status": "published"})
+    with creer_session_factory(eng)() as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        assert _moderation_nakala(s, item) is None
+    eng.dispose()
+
+
+def test_moderation_nakala_statut_modere(tmp_path: Path) -> None:
+    from archives_tool.api.services.dashboard import _moderation_nakala
+    from archives_tool.models import Item
+
+    brut = {
+        "status": "moderated",
+        "lastModerator": {"username": "mnakala", "fullName": "M. Modérateur"},
+        "lastModerationDate": "2026-06-26T14:03:00+02:00",
+    }
+    eng = _db_avec_depot_nakala(tmp_path, brut)
+    with creer_session_factory(eng)() as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        mod = _moderation_nakala(s, item)
+    assert mod is not None
+    assert mod.est_moderee is True
+    assert mod.moderateur == "M. Modérateur"
+    assert mod.date == "2026-06-26"  # tronqué à la date
+    eng.dispose()
+
+
+def test_moderation_nakala_trace_historique_apres_revert(tmp_path: Path) -> None:
+    """Statut revenu à `published` mais lastModerator persiste (trace)."""
+    from archives_tool.api.services.dashboard import _moderation_nakala
+    from archives_tool.models import Item
+
+    brut = {
+        "status": "published",
+        "lastModerator": {"username": "mnakala"},
+        "lastModerationDate": "2026-06-26T14:03:00+02:00",
+    }
+    eng = _db_avec_depot_nakala(tmp_path, brut)
+    with creer_session_factory(eng)() as s:
+        item = s.scalar(select(Item).where(Item.cote == "AS-001"))
+        mod = _moderation_nakala(s, item)
+    assert mod is not None
+    assert mod.est_moderee is False  # plus modérée, mais trace présente
+    assert mod.moderateur == "mnakala"
+    assert mod.date == "2026-06-26"
+    eng.dispose()
+
+
+def test_composer_fiche_item_expose_moderation(tmp_path: Path) -> None:
+    """Bout-en-bout : composer_fiche_item peuple `moderation_nakala`."""
+    from archives_tool.api.services.fonds import lire_fonds_par_cote
+
+    brut = {
+        "status": "moderated",
+        "lastModerator": {"fullName": "Chloé Choquet"},
+        "lastModerationDate": "2026-06-26T09:00:00+02:00",
+    }
+    eng = _db_avec_depot_nakala(tmp_path, brut)
+    with creer_session_factory(eng)() as s:
+        fonds = lire_fonds_par_cote(s, "AS")
+        fiche = composer_fiche_item(s, "AS-001", fonds)
+    assert fiche.moderation_nakala is not None
+    assert fiche.moderation_nakala.est_moderee is True
+    assert fiche.moderation_nakala.moderateur == "Chloé Choquet"
+    eng.dispose()

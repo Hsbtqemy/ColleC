@@ -63,7 +63,9 @@ from archives_tool.models import (
     Item,
     ItemCollection,
     ItemEtiquette,
+    RessourceExterne,
     RoleCollaborateur,
+    SourceExterne,
     TypeCollection,
 )
 
@@ -2552,6 +2554,9 @@ class FicheItem:
     #: notice de voir d'un coup d'œil « qui dessine / qui est représenté »
     #: sans ouvrir page par page (V0.9.7 γ-fiche).
     tags_annotations: tuple[TagAnnotationAgrege, ...] = ()
+    #: Tampon de modération Nakala (lecture seule, lu du cache au rendu) —
+    #: None si l'item n'est pas déposé ou n'a aucune trace de modération.
+    moderation_nakala: ModerationNakala | None = None
 
 
 def _extension(nom_fichier: str) -> str:
@@ -3273,6 +3278,78 @@ def _resumer_technique_fichiers(
     )
 
 
+@dataclass(frozen=True)
+class ModerationNakala:
+    """Tampon de modération Nakala (lecture seule), lu depuis le cache.
+
+    Le statut ``moderated`` = donnée publiée **validée par un modérateur**
+    Huma-Num ; elle reste publiquement lisible. ``lastModerator`` /
+    ``lastModerationDate`` **persistent comme trace** même après un revert
+    vers ``published`` (cf. nakala-savoir-api §6). ColleC ne fait que
+    *lire* ces champs — l'action de modération est hors scope (réservée au
+    rôle modérateur via l'outil officiel MSHB).
+    """
+
+    #: ``status == "moderated"`` au dernier pull (validation courante).
+    est_moderee: bool
+    #: Nom lisible du dernier modérateur, ou None.
+    moderateur: str | None
+    #: Date de modération (AAAA-MM-JJ), ou None.
+    date: str | None
+
+
+def _nom_moderateur(raw: Any) -> str | None:
+    """Nom lisible d'un ``lastModerator`` Nakala (``{username, …}``)."""
+    if isinstance(raw, dict):
+        for cle in ("fullName", "name", "username"):
+            valeur = raw.get(cle)
+            if isinstance(valeur, str) and valeur.strip():
+                return valeur.strip()
+        return None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _moderation_nakala(db: Session, item: Item) -> ModerationNakala | None:
+    """Tampon de modération depuis le **cache** Nakala de l'item, ou None.
+
+    Lecture seule, **zéro réseau** : lit le JSON brut déjà mis en cache au
+    pull (``RessourceExterne.metadonnees_brutes``). Renvoie None si l'item
+    n'a pas de DOI Nakala, pas de ressource en cache, ou aucune trace de
+    modération. Une seule requête SQL, et uniquement pour les items déposés.
+    """
+    doi = item.doi_nakala
+    if not doi:
+        return None
+    # Source + ressource en une requête (jointure) ; jamais de création de
+    # source ici (on est sur un rendu en lecture). Code source = "nakala".
+    from archives_tool.api.services.nakala import SOURCE_NAKALA_CODE
+
+    ressource = db.scalar(
+        select(RessourceExterne)
+        .join(SourceExterne, SourceExterne.id == RessourceExterne.source_id)
+        .where(
+            SourceExterne.code == SOURCE_NAKALA_CODE,
+            RessourceExterne.identifiant_externe == doi,
+        )
+    )
+    brut = ressource.metadonnees_brutes if ressource is not None else None
+    if not isinstance(brut, dict):
+        return None
+    est_moderee = brut.get("status") == "moderated"
+    moderateur = _nom_moderateur(brut.get("lastModerator"))
+    date = brut.get("lastModerationDate")
+    if isinstance(date, str) and date.strip():
+        date = date.strip().split("T", 1)[0]  # AAAA-MM-JJ
+    else:
+        date = None
+    # Rien à afficher sans statut modéré ni trace historique.
+    if not est_moderee and not moderateur and not date:
+        return None
+    return ModerationNakala(est_moderee=est_moderee, moderateur=moderateur, date=date)
+
+
 def composer_fiche_item(
     db: Session,
     cote: str,
@@ -3375,6 +3452,7 @@ def composer_fiche_item(
         resume_technique_fichiers=_resumer_technique_fichiers(list(item.fichiers)),
         navigation=navigation_items(db, item, fonds),
         tags_annotations=tags_annotations,
+        moderation_nakala=_moderation_nakala(db, item),
     )
 
 

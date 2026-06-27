@@ -690,15 +690,27 @@ modérer, **tous déposants confondus** (champ `depositor.username` par item).
 (`deposited, owned, shared, editable, readable, moderable, all`), **pas** un
 chemin ni un tag « moderation » — d'où sa quasi-invisibilité dans le Swagger.
 
-**Action de modération (écriture)** : `PUT /datas/{id}/status/moderated` →
-**204** (réservé ROLE_MODERATOR). Pose `lastModerator={username,…}` +
-`lastModerationDate`.
+**Action de modération (écriture)** : `PUT /datas/{id}/status/moderated`.
+**`ROLE_MODERATOR` est nécessaire mais NON suffisant** : l'action n'aboutit
+(**204**, pose `lastModerator={username,…}` + `lastModerationDate`) **que si
+le dépôt a une demande / `Task` de modération en attente**. Sans demande →
+**403** « You are not allowed to change the data status » *même pour un
+modérateur* (re-sondé live 2026-06-27, cf. ci-dessous).
+
+⚠️ **La demande de modération n'est PAS un endpoint API public.** Dans le
+contrat OpenAPI, `moderationRequester` / `lastModerationRequestDate` sont des
+champs en **lecture seule** ; aucun `POST` ne crée la demande. Elle se pose
+via l'**UI test.nakala.fr** / l'outil `depot-lot-nakala`. Conséquence : un
+client **pur-API** (ColleC) **ne peut pas initier** une modération — il ne
+peut que lire l'état résultant. Les tâches attribuées se lisent via
+`GET /users/resources/{id}/action` (→ `Task[]` ; `[]` = aucune demande).
 
 **Machine à états / permissions (sondé) — la modération est à sens unique :**
 
 | Transition | Mécanisme | Qui | Résultat |
 |---|---|---|---|
-| `published → moderated` | `PUT …/status/moderated` | modérateur | **204** |
+| `published → moderated` | `PUT …/status/moderated` | modérateur **avec demande en attente** | **204** |
+| `published → moderated` | `PUT …/status/moderated` | modérateur **sans demande** | **403** (rôle insuffisant seul) |
 | `moderated → published / pending` via **statut** | `PUT …/status/{…}` | **personne** (modérateur ET propriétaire) | **403** (`Access Denied` / `You are not allowed to change the data status`) |
 | `moderated → published` via **édition** | `PUT /datas/{id}` (metas+files) | **propriétaire/déposant** | **204** (l'édition invalide la validation → repasse `published`) |
 
@@ -711,19 +723,42 @@ chemin ni un tag « moderation » — d'où sa quasi-invisibilité dans le Swagg
 - **Faux-wipe au revert** : le `PUT /datas/{id}` de revert subit la règle
   `files[]` = remplacement total (§8 H1) → renvoyer les `files` existants
   (par `sha1`) pour ne pas perdre les fichiers. Round-trip fidèle validé live
-  (statut restauré, fichier + metas préservés).
-- **Prod** : la clé de test `ROLE_MODERATOR` n'existe qu'en apitest ; en prod
-  un compte standard est `ROLE_USER` (pas de modération via l'API).
+  (statut restauré, fichier + metas préservés). Affinage §7 (re-sondé
+  2026-06-27) : **re-poster les `files[]` au même `sha1` NE crée PAS de
+  version** (`version` reste à 1) — seul un *changement* de fichier versionne.
+- **Prod** : `ROLE_MODERATOR` **existe aussi en prod** — porté par quelques
+  comptes désignés (~1 par MSHS). Un compte *déposant* standard est `ROLE_USER`
+  (pas de modération), mais la modération via l'API est une **vraie capacité
+  de prod** pour les comptes habilités. (Correction d'une note antérieure qui
+  affirmait à tort que `ROLE_MODERATOR` n'existait qu'en apitest.) Sur apitest,
+  à l'inverse, **les 4 comptes test** (`tnakala`, `unakala1/2/3` — clés
+  publiques sur test.nakala.fr) portent **tous** `ROLE_MODERATOR` : c'est
+  pourquoi le rôle seul ne suffit pas à expliquer qui peut modérer (le
+  discriminant est la **demande**, pas le rôle, sur apitest). Vérité du compte
+  via `GET /users/me` (`username`, `roles`).
+- **Re-vérification (live apitest 2026-06-27, clés test publiques)** : sonde
+  clean-room `scripts/explorer_moderation_nakala.py` (dérivée de ces faits,
+  **pas** du code MSHB CC BY-NC-SA). C'est elle qui a **réfuté le §6
+  initial** : sur un dépôt publié *sans demande*, `PUT status/moderated` →
+  **403** malgré `ROLE_MODERATOR` (d'où l'ajout du prérequis de demande
+  ci-dessus). La sonde est *consciente du prérequis* : sans demande elle
+  vérifie le 403 attendu + l'explique ; avec demande (posée via l'UI) elle
+  joue le cycle complet (204 → 403 du revert-statut ×2 → revert par édition →
+  `published`). Auto-restaurante (finit `published`).
 
 > **→ côté ColleC** : ColleC ne fait que **lire** les champs de modération
-> (déjà capturés au pull : `status`, `lastModerator…`). L'**action**
-> modérateur est **hors scope** — couverte par le script officiel MSHB, elle
-> agit tous-déposants-confondus (≠ « les collections de cette instance ») et
-> reste à sens unique côté modérateur. Seule brique candidate côté déposant :
-> **afficher** le statut/tampon de modération sur la fiche item.
+> (présents dans le JSON brut caché au pull — `RessourceExterne.metadonnees_brutes`
+> : `status`, `lastModerator`, `lastModerationDate`). L'**action** modérateur
+> est **doublement hors scope** : (1) elle est couverte par l'outil officiel
+> MSHB (agit tous-déposants-confondus, à sens unique) ; (2) surtout, **la
+> demande de modération n'a pas d'endpoint API public** — ColleC, client
+> pur-API, ne pourrait pas même *initier* une modération. Seule brique côté
+> ColleC : **afficher** le tampon de modération sur la fiche item (livré —
+> `dashboard._moderation_nakala` + `item_fiche.html`, lecture seule depuis le
+> cache).
 
-> **Leçons méta de découverte** (cette caractérisation a d'abord conclu « pas
-> d'API de modération » — à tort) :
+> **Leçons méta de découverte** (à chaque passe, une conclusion trop hâtive
+> a été corrigée — d'où l'intérêt des sondes auto-restaurantes) :
 > 1. un grep « moderat » rate `moder**able**` (valeur d'enum `{scope}`) ;
 >    l'absence de **tag** « moderation » dans le Swagger ne prouve **pas**
 >    l'absence de capacité.
@@ -731,6 +766,12 @@ chemin ni un tag « moderation » — d'où sa quasi-invisibilité dans le Swagg
 >    **pas** la réversibilité : la machine à permissions renvoie 403.
 > 3. le revert `moderated → published` est un **effet de bord d'une édition**,
 >    pas une transition de statut.
+> 4. **`ROLE_MODERATOR` ≠ droit de modérer ici-et-maintenant** : la 1ʳᵉ passe
+>    (2026-06-26) avait conclu « le modérateur fait `PUT status/moderated` →
+>    204 » en présence (non remarquée) d'une demande ; la re-probe (2026-06-27)
+>    sur un dépôt *sans* demande a obtenu 403 → le **prérequis de demande**
+>    était l'angle mort. Le rôle autorise la *capacité*, la demande autorise
+>    l'*acte*.
 
 ## 7. Versioning (DOI `…​.vN`)
 

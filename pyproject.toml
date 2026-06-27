@@ -19,6 +19,9 @@ dependencies = [
     "uvicorn[standard]>=0.27",
     "jinja2>=3.1",
     "python-multipart>=0.0.27",
+    # Client HTTP des intégrations distantes (Nakala, ShareDocs) — importé au
+    # chargement de l'app, donc dépendance RUNTIME (≠ dev).
+    "httpx>=0.27",
 ]
 
 [project.scripts]
@@ -28,7 +31,6 @@ archives-tool = "archives_tool.cli:main"
 dev = [
     "pytest>=8",
     "ruff>=0.4",
-    "httpx>=0.27",
 ]
 docs = [
     "mkdocs>=1.5",
